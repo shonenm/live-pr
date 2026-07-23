@@ -1,4 +1,4 @@
-# livepr
+# live-pr
 
 Living pull request for LLM-assisted development.
 
@@ -13,7 +13,7 @@ iteration — pivots, discarded approaches, why each decision was made — happe
 locally with the coding agent and is thrown away. The decision flow never lands
 on the timeline; the PR is written once, at the end, as a terse summary.
 
-livepr keeps a living artifact during development:
+live-pr keeps a living artifact during development:
 
 - **head** — the current conclusion, pinned on top (ignore the messy flow, see
   where we are now)
@@ -46,12 +46,12 @@ Experience mock only — `prototype/`. Styled after GitHub PR / `gh-dash`
 (Primer palette, status pills, two-pane conversation view), built on `fzf`.
 
 ```sh
-prototype/livepr-mock
+prototype/live-pr-mock
 # popup experience:
-tmux popup -E -w 92% -h 92% -- "$PWD/prototype/livepr-mock"
+tmux popup -E -w 92% -h 92% -- "$PWD/prototype/live-pr-mock"
 ```
 
 `j`/`k` to move the timeline, `Enter` on a commit to open the reviewer
-(default `nvim -c "CodeDiff {sha}~1 {sha}"`, override via `$LIVEPR_REVIEWER`).
+(default `nvim -c "CodeDiff {sha}~1 {sha}"`, override via `$LIVE_PR_REVIEWER`).
 
 Tech selection for the real implementation is pending.

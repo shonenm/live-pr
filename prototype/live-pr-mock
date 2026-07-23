@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# livepr-mock — throwaway TUI mock to validate the "living PR" experience.
+# live-pr-mock — throwaway TUI mock to validate the "living PR" experience.
 # Styled after GitHub's PR page / gh-dash (Primer palette, status pills, a
 # two-pane conversation view). The pinned PR header (Open badge, base<-head,
 # labels) sits on top; the decision/pivot/commit timeline is the list; each
 # event renders as a GitHub-style comment card in the preview. Enter launches
 # the pluggable reviewer scoped to the commit.
 #
-#   Reviewer template (env LIVEPR_REVIEWER), {sha} substituted:
+#   Reviewer template (env LIVE_PR_REVIEWER), {sha} substituted:
 #     default: nvim -c "CodeDiff {sha}~1 {sha}"      (your codediff review mode)
 #     try:     git show {sha} | delta | less -R  |  difit {sha}
 #
-# Run:  ./livepr-mock
-#       tmux popup -E -w 92% -h 92% -- "$PWD/livepr-mock"
+# Run:  ./live-pr-mock
+#       tmux popup -E -w 92% -h 92% -- "$PWD/live-pr-mock"
 
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-self="$here/livepr-mock"
+self="$here/live-pr-mock"
 tl="$here/timeline.jsonl"
 concl="$here/conclusion.md"
-reviewer_tmpl="${LIVEPR_REVIEWER:-nvim -c \"CodeDiff {sha}~1 {sha}\"}"
+reviewer_tmpl="${LIVE_PR_REVIEWER:-nvim -c \"CodeDiff {sha}~1 {sha}\"}"
 cd "$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || echo "$here")"
 
 # --- Primer palette (R;G;B) ---------------------------------------------------

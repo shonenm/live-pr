@@ -5,12 +5,12 @@
 | 層 | 採用 | 理由の要点 |
 | --- | --- | --- |
 | 言語 / TUI | **Go + Bubble Tea + Lipgloss + Bubbles** | gh-dash と同一スタック。単一バイナリ。サブプロセス制御が強い |
-| CLI | **Cobra**（サブコマンド） | `livepr`(TUI) と `livepr hook/append/pivot/pr` を1バイナリに |
-| ストレージ | **append-only JSONL**（`.livepr/<branch>/`） | 追記のみで安全。head は `conclusion.md` を上書き |
+| CLI | **Cobra**（サブコマンド） | `live-pr`(TUI) と `live-pr hook/append/pivot/pr` を1バイナリに |
+| ストレージ | **append-only JSONL**（`.live-pr/<branch>/`） | 追記のみで安全。head は `conclusion.md` を上書き |
 | Git / GitHub | **`git` / `gh` を shell out** | go-git を持ち込まない。gh-dash と同じ流儀 |
 | reviewer 起動 | コマンドテンプレ + `tea.ExecProcess` | TUI を suspend→nvim 等を実行→resume |
-| エージェント連携 | Claude Code hooks → `livepr hook` | 初手は Claude 専用。要約は `claude -p` headless |
-| 設定 | **TOML**（`~/.config/livepr/config.toml`） | Go 親和。per-repo override 可 |
+| エージェント連携 | Claude Code hooks → `live-pr hook` | 初手は Claude 専用。要約は `claude -p` headless |
+| 設定 | **TOML**（`~/.config/live-pr/config.toml`） | Go 親和。per-repo override 可 |
 | 配布 | 単一バイナリ（goreleaser + Homebrew tap は後） | 依存ゼロで入る |
 
 要は **gh-dash と同じ土台に乗る**。参照実装が豊富で、狙う見た目にも最短。
@@ -33,28 +33,28 @@
 
 ```
 [ 物語レイヤ (本体) ]                     Go 1.22+
-  .livepr/<branch-slug>/
+  .live-pr/<branch-slug>/
     timeline.jsonl   append-only  {ts,kind,title,body,sha?,...}
     conclusion.md    overwrite    head（現状結論）
     config.toml?     per-repo override
 
 [ 供給: agent hooks ]
   Claude Code settings.json
-    Stop        → livepr hook stop        # セッション要約を1件 append
+    Stop        → live-pr hook stop        # セッション要約を1件 append
     PostToolUse → (任意) commit 検出で commit event
-  手動          → livepr pivot "…" / livepr note "…"
+  手動          → live-pr pivot "…" / live-pr note "…"
   要約生成       → claude -p headless（初手）。将来 API / 他エージェント差し替え
 
 [ 表示: TUI (Bubble Tea) ]
-  livepr        # PR 風二ペイン。head 固定 + timeline + preview
+  live-pr        # PR 風二ペイン。head 固定 + timeline + preview
   reviewer 起動  # tea.ExecProcess で {sha} を差した nvim 等を全画面起動→復帰
 
 [ 出力: PR export ]
-  livepr pr     # conclusion(top) + timeline(<details>で流れ) → gh pr create --body-file
+  live-pr pr     # conclusion(top) + timeline(<details>で流れ) → gh pr create --body-file
 ```
 
 CLI 一覧（Cobra）:
-`livepr`（TUI）/ `livepr hook <event>` / `livepr append|pivot|note` / `livepr pr` / `livepr init`
+`live-pr`（TUI）/ `live-pr hook <event>` / `live-pr append|pivot|note` / `live-pr pr` / `live-pr init`
 
 ## 依存ライブラリ（初期）
 
@@ -68,11 +68,11 @@ CLI 一覧（Cobra）:
 
 ## 未決定（実装前に詰める）
 
-1. **要約トリガーの信頼性**（調査の open question）: `Stop` hook = セッション終端で1要約が堅い。`PostToolUse` は多すぎる。**pivot の自動検出は難しい** → 初手は「自動=セッション要約+commit」「手動=`livepr pivot` で本当の方針転換」。
+1. **要約トリガーの信頼性**（調査の open question）: `Stop` hook = セッション終端で1要約が堅い。`PostToolUse` は多すぎる。**pivot の自動検出は難しい** → 初手は「自動=セッション要約+commit」「手動=`live-pr pivot` で本当の方針転換」。
 2. **timeline ファイルを commit するか gitignore か**: PR body の材料として commit したい気持ちと、ノイズ回避の綱引き。初手は gitignore（ローカル）、export 時に読むだけ。
 3. **要約の生成手段**: `claude -p` headless に依存するか、Anthropic API を直接叩くか。前者が怠けられるが Claude CLI 前提になる。
 4. **設定形式**: TOML 推奨だが gh-dash 慣れなら YAML でも可。
 
 ## 次の一歩（提案）
 
-`go mod init` → 最小の縦切り: `livepr append` で JSONL に1行足す CLI と、それを読んで gh-dash 風に描く Bubble Tea 版 TUI（モックのレイアウトを移植）。reviewer 起動まで通せば、hook/PR export は後付けできる。
+`go mod init` → 最小の縦切り: `live-pr append` で JSONL に1行足す CLI と、それを読んで gh-dash 風に描く Bubble Tea 版 TUI（モックのレイアウトを移植）。reviewer 起動まで通せば、hook/PR export は後付けできる。
