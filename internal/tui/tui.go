@@ -12,27 +12,38 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/internal/review"
 	"github.com/shonenm/live-pr/internal/store"
 )
 
 type keyMap struct {
 	Up   key.Binding
 	Down key.Binding
+	Open key.Binding
 	Help key.Binding
 	Quit key.Binding
 }
 
-func (k keyMap) ShortHelp() []key.Binding { return []key.Binding{k.Up, k.Down, k.Help, k.Quit} }
-func (k keyMap) FullHelp() [][]key.Binding { return [][]key.Binding{{k.Up, k.Down}, {k.Help, k.Quit}} }
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Open, k.Help, k.Quit}
+}
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Up, k.Down}, {k.Open, k.Help, k.Quit}}
+}
 
 var keys = keyMap{
 	Up:   key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
 	Down: key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
+	Open: key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
 	Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit: key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
+
+// reviewerDone is delivered after the external reviewer process exits.
+type reviewerDone struct{ err error }
 
 // Model holds the living-PR view state.
 type Model struct {
@@ -40,6 +51,8 @@ type Model struct {
 	base, head string
 	events     []event.Event
 	cursor     int
+	reviewer   string // reviewer command template
+	status     string // transient status line (e.g. reviewer error)
 
 	vp    viewport.Model
 	help  help.Model
@@ -59,13 +72,22 @@ func New() (Model, error) {
 		return Model{}, err
 	}
 	return Model{
-		title:  deriveTitle(st.Conclusion(), st.Branch),
-		base:   git.DefaultBase(),
-		head:   st.Branch,
-		events: events,
-		help:   help.New(),
-		keys:   keys,
+		title:    deriveTitle(st.Conclusion(), st.Branch),
+		base:     git.DefaultBase(),
+		head:     st.Branch,
+		events:   events,
+		reviewer: config.Load(st.Root).Reviewer,
+		help:     help.New(),
+		keys:     keys,
 	}, nil
+}
+
+// current returns the selected event, or nil when the timeline is empty.
+func (m Model) current() *event.Event {
+	if len(m.events) == 0 || m.cursor < 0 || m.cursor >= len(m.events) {
+		return nil
+	}
+	return &m.events[m.cursor]
 }
 
 // Run launches the TUI.
@@ -94,12 +116,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncPreview()
 		return m, nil
 
+	case reviewerDone:
+		if msg.err != nil {
+			m.status = "reviewer: " + msg.err.Error()
+		} else {
+			m.status = ""
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+			return m, nil
+		case key.Matches(msg, m.keys.Open):
+			if e := m.current(); e != nil && e.Kind == event.Commit && e.SHA != "" {
+				cmd := review.Command(m.reviewer, e.SHA, m.base, m.head)
+				return m, tea.ExecProcess(cmd, func(err error) tea.Msg { return reviewerDone{err} })
+			}
+			m.status = "select a commit to review"
 			return m, nil
 		case key.Matches(msg, m.keys.Down):
 			if m.cursor < len(m.events)-1 {
@@ -244,7 +281,7 @@ func (m Model) buildPreview(e event.Event) string {
 			stat = stMuted.Render("(commit " + e.SHA + " not found in this repo)")
 		}
 		parts = append(parts, "", rule, pill("◉ "+e.SHA, cGreen), "", stat,
-			"", stMuted.Render("↵ open this commit in the reviewer (coming in P2)"))
+			"", stMuted.Render("↵ open this commit in the reviewer"))
 	}
 	return strings.Join(parts, "\n")
 }
@@ -260,6 +297,9 @@ func (m Model) renderPreview() string {
 // --- footer ------------------------------------------------------------------
 
 func (m Model) renderFooter() string {
+	if m.status != "" {
+		return stRedF.Render(m.status)
+	}
 	return m.help.View(m.keys)
 }
 

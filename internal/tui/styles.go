@@ -27,6 +27,7 @@ var (
 	stMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted))
 	stBold   = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Bold(true)
 	stGreenF = lipgloss.NewStyle().Foreground(lipgloss.Color(cGreenF))
+	stRedF   = lipgloss.NewStyle().Foreground(lipgloss.Color(cRedF))
 
 	// comment-card header bar in the preview
 	stCardBar = lipgloss.NewStyle().Background(lipgloss.Color(cSubtle)).Foreground(lipgloss.Color(cFg))

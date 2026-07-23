@@ -60,3 +60,26 @@ func TestCursorMovesAndPreviewSwitches(t *testing.T) {
 		t.Errorf("cursor should clamp at last event, got %d", m.cursor)
 	}
 }
+
+func TestEnterLaunchesReviewerOnCommitOnly(t *testing.T) {
+	m := testModel()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+
+	// cursor 0 = decision (non-commit): no reviewer, a status hint instead.
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if cmd != nil {
+		t.Errorf("enter on a non-commit event must not launch the reviewer")
+	}
+	if m.status == "" {
+		t.Errorf("expected a status hint when entering on a non-commit event")
+	}
+
+	// move to the commit event, enter → a reviewer command is returned.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Errorf("enter on a commit event must return a reviewer command")
+	}
+}
