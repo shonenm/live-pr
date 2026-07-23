@@ -4,6 +4,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -17,6 +18,7 @@ import (
 	"github.com/shonenm/live-pr/internal/git"
 	"github.com/shonenm/live-pr/internal/review"
 	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/internal/timeline"
 )
 
 type keyMap struct {
@@ -67,13 +69,20 @@ func New() (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
+	base := git.DefaultBase()
+	// Best-effort: fold any new base..HEAD commits into the timeline before load.
+	_, _ = timeline.SyncCommits(st.Timeline(), base)
+
 	events, err := event.Load(st.Timeline())
 	if err != nil {
 		return Model{}, err
 	}
+	// Display chronologically: synced commits interleave with manual events by TS.
+	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
+
 	return Model{
 		title:    deriveTitle(st.Conclusion(), st.Branch),
-		base:     git.DefaultBase(),
+		base:     base,
 		head:     st.Branch,
 		events:   events,
 		reviewer: config.Load(st.Root).Reviewer,
