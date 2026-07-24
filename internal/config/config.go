@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -14,11 +15,26 @@ type Config struct {
 	// Reviewer is the command template launched to review a commit. Placeholders
 	// {sha} {base} {head} are substituted; it is run through `sh -c`.
 	Reviewer string `toml:"reviewer"`
+
+	// SummaryMinIntervalMinutes throttles the Stop-hook summarizer: no new
+	// summary is added within this window of the previous one (0 = no throttle).
+	SummaryMinIntervalMinutes int `toml:"summary_min_interval_minutes"`
+
+	// SummarizeModel optionally overrides the model used for summarization.
+	SummarizeModel string `toml:"summarize_model"`
 }
 
 // Default returns built-in settings (delegates diff review to codediff/nvim).
 func Default() Config {
-	return Config{Reviewer: `nvim -c "CodeDiff {sha}~1 {sha}"`}
+	return Config{
+		Reviewer:                  `nvim -c "CodeDiff {sha}~1 {sha}"`,
+		SummaryMinIntervalMinutes: 10,
+	}
+}
+
+// SummaryInterval is the throttle window as a duration.
+func (c Config) SummaryInterval() time.Duration {
+	return time.Duration(c.SummaryMinIntervalMinutes) * time.Minute
 }
 
 // Load returns Default overlaid with the global config, then the per-repo
