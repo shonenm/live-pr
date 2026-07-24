@@ -42,16 +42,24 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 
 ## Status
 
-Experience mock only — `prototype/`. Styled after GitHub PR / `gh-dash`
-(Primer palette, status pills, two-pane conversation view), built on `fzf`.
+Go implementation in progress (Bubble Tea + Lipgloss, single binary). See
+[docs/roadmap.md](docs/roadmap.md).
+
+- **P0–P2 (done)** — event model + JSONL store, CLI (`append`/`note`/`decision`/`pivot`/`init`), GitHub-PR/gh-dash-styled read-only TUI, pluggable reviewer launch on a commit.
+- **P3 (done)** — auto-feed `base..HEAD` commits into the timeline (`live-pr sync`, and on TUI open).
+- **P4 (done)** — Claude Code `Stop` hook (`live-pr hook stop`) summarizes each session into the timeline, throttled.
+- **P5 (next)** — export the timeline as a GitHub PR body.
 
 ```sh
-prototype/live-pr-mock
-# popup experience:
-tmux popup -E -w 92% -h 92% -- "$PWD/prototype/live-pr-mock"
+go build -o live-pr .
+
+live-pr init            # create .live-pr/<branch>/ for this branch
+live-pr init --hooks    # print the Claude Code Stop-hook config to install
+live-pr sync            # import base..HEAD commits
+live-pr                 # open the timeline (TUI); Enter on a commit → reviewer
 ```
 
-`j`/`k` to move the timeline, `Enter` on a commit to open the reviewer
-(default `nvim -c "CodeDiff {sha}~1 {sha}"`, override via `$LIVE_PR_REVIEWER`).
+Reviewer defaults to `nvim -c "CodeDiff {sha}~1 {sha}"`; override in
+`~/.config/live-pr/config.toml` (or per-repo `.live-pr/config.toml`).
 
-Tech selection for the real implementation is pending.
+The original fzf experience mock lives in `prototype/`.
