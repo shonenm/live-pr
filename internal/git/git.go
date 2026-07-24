@@ -22,6 +22,12 @@ func CurrentBranch() (string, error) {
 	return run("rev-parse", "--abbrev-ref", "HEAD")
 }
 
+// Push pushes the branch to origin, setting upstream.
+func Push(branch string) error {
+	_, err := run("push", "-u", "origin", branch)
+	return err
+}
+
 // DefaultBase returns the branch to compare against: the remote's default
 // (origin/HEAD, e.g. "origin/main") when known, else a local main/master,
 // falling back to "main".
