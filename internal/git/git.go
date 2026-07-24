@@ -37,6 +37,44 @@ func DefaultBase() string {
 	return "main"
 }
 
+// Commit is a git commit reduced to what the timeline needs.
+type Commit struct {
+	SHA     string
+	Date    string // "2006-01-02T15:04"
+	Subject string
+	Body    string
+}
+
+// Commits returns the commits in base..HEAD, oldest first. An empty range yields
+// no commits; an unresolvable base returns an error.
+func Commits(base string) ([]Commit, error) {
+	// \x1f separates fields, \x1e separates records (so bodies may contain \n).
+	out, err := run("log", "--reverse",
+		"--date=format:%Y-%m-%dT%H:%M",
+		"--format=%h%x1f%ad%x1f%s%x1f%b%x1e",
+		base+"..HEAD")
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	for _, rec := range strings.Split(out, "\x1e") {
+		rec = strings.Trim(rec, "\n")
+		if rec == "" {
+			continue
+		}
+		f := strings.SplitN(rec, "\x1f", 4)
+		if len(f) < 3 {
+			continue
+		}
+		c := Commit{SHA: f[0], Date: f[1], Subject: f[2]}
+		if len(f) == 4 {
+			c.Body = strings.TrimSpace(f[3])
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
+}
+
 // ShowStat returns `git show --stat` for a commit, colorized, with a compact
 // author/date header. Empty string if the sha cannot be resolved.
 func ShowStat(sha string) string {
