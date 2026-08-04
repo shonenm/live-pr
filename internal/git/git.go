@@ -81,6 +81,20 @@ func Commits(base string) ([]Commit, error) {
 	return commits, nil
 }
 
+// Show returns the full `git show` for a commit (stat + colorized patch),
+// capped to a sane number of lines. Empty string if the sha is unresolvable.
+func Show(sha string) string {
+	out, err := run("show", "--color=always", "--stat", "-p", sha)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) > 800 {
+		lines = append(lines[:800], "… (truncated)")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // ShowStat returns `git show --stat` for a commit, colorized, with a compact
 // author/date header. Empty string if the sha cannot be resolved.
 func ShowStat(sha string) string {

@@ -30,7 +30,7 @@ func TestViewRendersHeaderAndTimeline(t *testing.T) {
 	m = updated.(Model)
 
 	out := m.View()
-	for _, want := range []string{"Open", "main", "feature/x", "DECISION", "chose Go", "Conversation"} {
+	for _, want := range []string{"Open", "main", "feature/x", "decision", "chose Go", "Conversation"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q", want)
 		}
@@ -50,8 +50,8 @@ func TestCursorMovesAndPreviewSwitches(t *testing.T) {
 	if m.cursor != 1 {
 		t.Fatalf("cursor should be 1 after j, got %d", m.cursor)
 	}
-	if !strings.Contains(m.View(), "COMMIT") {
-		t.Errorf("preview/list should show the COMMIT event after moving down")
+	if !strings.Contains(m.View(), "commit") {
+		t.Errorf("timeline should show the commit event after moving down")
 	}
 	// cannot move past the end
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
