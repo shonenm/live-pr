@@ -46,15 +46,15 @@
   要約生成       → claude -p headless（初手）。将来 API / 他エージェント差し替え
 
 [ 表示: TUI (Bubble Tea) ]
-  live-pr        # PR 風二ペイン。head 固定 + timeline + preview
-  reviewer 起動  # tea.ExecProcess で {sha} を差した nvim 等を全画面起動→復帰
+  live-pr        # 左: PR Conversation timeline / 右: 選択 commit の git show
+  reviewer 起動  # Enter → tea.ExecProcess で nvim 等を全画面起動→復帰
 
 [ 出力: PR export ]
-  live-pr pr     # conclusion(top) + timeline(<details>で流れ) → gh pr create --body-file
+  live-pr pr     # conclusion(top) + Development timeline → gh pr create/edit
 ```
 
 CLI 一覧（Cobra）:
-`live-pr`（TUI）/ `live-pr hook <event>` / `live-pr append|pivot|note` / `live-pr pr` / `live-pr init`
+`live-pr`（TUI）/ `live-pr hook stop` / `live-pr append|decision|pivot|note` / `live-pr sync` / `live-pr pr` / `live-pr init`
 
 ## 依存ライブラリ（初期）
 
@@ -66,13 +66,14 @@ CLI 一覧（Cobra）:
 - 標準 `encoding/json` — JSONL
 - `git` / `gh` は exec（ライブラリ不要）
 
-## 未決定（実装前に詰める）
+## 実装で確定した事項
 
-1. **要約トリガーの信頼性**（調査の open question）: `Stop` hook = セッション終端で1要約が堅い。`PostToolUse` は多すぎる。**pivot の自動検出は難しい** → 初手は「自動=セッション要約+commit」「手動=`live-pr pivot` で本当の方針転換」。
-2. **timeline ファイルを commit するか gitignore か**: PR body の材料として commit したい気持ちと、ノイズ回避の綱引き。初手は gitignore（ローカル）、export 時に読むだけ。
-3. **要約の生成手段**: `claude -p` headless に依存するか、Anthropic API を直接叩くか。前者が怠けられるが Claude CLI 前提になる。
-4. **設定形式**: TOML 推奨だが gh-dash 慣れなら YAML でも可。
+1. **要約トリガー**: Claude Codeの`Stop` hookでセッション終端に要約。短時間の重複実行は設定可能な間隔で抑制し、pivotは`live-pr pivot`で手動記録。
+2. **timelineの扱い**: `.live-pr/`はgitignoreし、ローカルruntimeとして保持。PR export時に読み込む。
+3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
+4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
+5. **TUI**: GitHub PRのConversationを左ペイン、選択commitのdiffを右ペインに表示。外部reviewerはEnterで起動。
 
-## 次の一歩（提案）
+## 現在地
 
-`go mod init` → 最小の縦切り: `live-pr append` で JSONL に1行足す CLI と、それを読んで gh-dash 風に描く Bubble Tea 版 TUI（モックのレイアウトを移植）。reviewer 起動まで通せば、hook/PR export は後付けできる。
+P0〜P5とConversation中心のTUIを実装済み。次はgoreleaser / Homebrew tap、shell completion、テーマ設定、他エージェントadapterなどの配布・連携整備。

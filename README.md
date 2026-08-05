@@ -45,10 +45,12 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 Go implementation in progress (Bubble Tea + Lipgloss, single binary). See
 [docs/roadmap.md](docs/roadmap.md).
 
-- **P0–P2 (done)** — event model + JSONL store, CLI (`append`/`note`/`decision`/`pivot`/`init`), GitHub-PR/gh-dash-styled read-only TUI, pluggable reviewer launch on a commit.
+- **P0–P2 (done)** — event model + JSONL store, CLI (`append`/`note`/`decision`/`pivot`/`init`), TUI, and pluggable reviewer launch on a commit.
 - **P3 (done)** — auto-feed `base..HEAD` commits into the timeline (`live-pr sync`, and on TUI open).
 - **P4 (done)** — Claude Code `Stop` hook (`live-pr hook stop`) summarizes each session into the timeline, throttled.
-- **P5 (next)** — export the timeline as a GitHub PR body.
+- **P5 (done)** — create or update a GitHub PR from the conclusion and timeline (`live-pr pr`).
+- **Current TUI** — GitHub-PR conversation timeline on the left, selected commit diff on the right; Enter opens the configured external reviewer.
+- **P6 (next)** — distribution, shell completion, theming, and adapters for other agents.
 
 ```sh
 go build -o live-pr .
@@ -56,7 +58,9 @@ go build -o live-pr .
 live-pr init            # create .live-pr/<branch>/ for this branch
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
-live-pr                 # open the timeline (TUI); Enter on a commit → reviewer
+live-pr                 # open conversation + embedded commit diff TUI
+live-pr pr --dry-run    # preview the generated PR title/body
+live-pr pr              # push and create or update the GitHub PR
 ```
 
 Reviewer defaults to `nvim -c "CodeDiff {sha}~1 {sha}"`; override in

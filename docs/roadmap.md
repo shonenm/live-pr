@@ -15,41 +15,41 @@
 
 ## フェーズ
 
-### P0 — 骨組み + データ層
+### P0 — 骨組み + データ層 ✅
 - `go mod init github.com/shonenm/live-pr`、Cobra 骨組み。
 - Event 型（`ts,kind,title,body,sha?`）と JSONL ストア（`.live-pr/<branch-slug>/timeline.jsonl` の read/append）。ブランチ解決。`live-pr init`。
 - `live-pr append --kind … --title … --body …`、薄いラッパー `live-pr note|pivot`。
 - **Done**: CLI で timeline を手で積める。`cat timeline.jsonl` で確認。
 - 後回し: それ以外全部。
 
-### P1 — 読み取り専用 TUI（体験の本実装）
+### P1 — 読み取り専用 TUI（体験の本実装） ✅
 - Bubble Tea: 現ブランチの `conclusion.md` + `timeline.jsonl` を読む。
-- レイアウトを lipgloss で本実装（モックで検証済みの gh-dash/Primer を移植）: pin ヘッダ（Open バッジ・base←head・ラベル・タブ）／種別ピルのタイムライン（`list`）／コメントカード風プレビュー（`viewport`）／`j/k`・`tab`・help（`bubbles`）。
-- commit イベントは `git show --stat` を表示。
-- **Done**: `live-pr` が手積みタイムラインを PR 風に表示。fzf モックを置換。tmux popup で確認。
-- 後回し: 自動供給・起動・export。
+- GitHub PR の Conversation を模した2ペイン構成: 左に note / decision / pivot / summary の全文と commit 行を時系列表示し、右に選択した commit の `git show --stat -p` を表示。
+- Open バッジ、base←head、Conversation / Files changed / Commits タブ風ヘッダ、Primer dark 配色、種別ラベル、選択アクセントバーを実装。
+- `j/k`・矢印キーで選択し、選択項目が見える位置へ自動スクロール。非 commit 選択時は diff の代わりにイベント本文を表示。
+- **Done**: `live-pr` が意思決定の会話と commit diff を同時に表示。fzf モックを置換。
 
-### P2 — reviewer 起動（マイルストーン M1: 使えるレビューツール）
-- `tea.ExecProcess` で設定した reviewer を commit にスコープ起動（Enter）。TOML の reviewer テンプレ（`{sha}/{base}/{file}`）。suspend→実行→resume。
+### P2 — reviewer 起動（マイルストーン M1: 使えるレビューツール） ✅
+- `tea.ExecProcess` で設定した reviewer を commit にスコープ起動（Enter）。TOML の reviewer テンプレ（`{sha}/{base}/{head}`）。suspend→実行→resume。
 - **Done**: commit で Enter → nvim CodeDiff が開き、戻ってタイムライン継続。手積みタイムライン上で実レビューが回る。
 - 後回し: 自動供給・export。
 
-### P3 — git から自動供給（commit）
+### P3 — git から自動供給（commit） ✅
 - `live-pr sync`（TUI 起動時にも自動）: `base..HEAD` の commit を走査し timeline に upsert（sha で冪等）。hook 無しでも commit が自動で並ぶ。
 - base ブランチ検出は codereview-branch の `origin/HEAD`→`main`/`master` ロジックを踏襲。
 - **Done**: 実 commit がタイムラインに自動反映。decision/pivot はまだ手動。
 
-### P4 — agent hooks（マイルストーン M2: 新規性の実証）
+### P4 — agent hooks（マイルストーン M2: 新規性の実証） ✅
 - `live-pr hook stop`: Claude Code `Stop` hook から呼ばれ、stdin JSON の transcript path を読み、`claude -p` でセッションを要約→`summary` イベントを append。方針転換は要約プロンプト側で拾う（自動 pivot 検出は heuristic 止まり、手動 `live-pr pivot` を主とする）。
 - `live-pr init --hooks` で settings.json スニペットを導入。
 - **Done**: Claude セッション終了 → 要約がタイムラインに自動で乗る。**ここが差別化の核**。
 - 後回し: 他エージェント adapter。
 
-### P5 — PR export（マイルストーン M3: ループ完成）
-- `live-pr pr`: body = `conclusion.md`（最上部）+ タイムラインを整形（流れを「Development timeline」節 / `<details>`）→ `gh pr create --base <base> --body-file`。既存 PR は body 更新。
+### P5 — PR export（マイルストーン M3: ループ完成） ✅
+- `live-pr pr`: body = `conclusion.md`（最上部）+ 時系列の「Development timeline」節 → `gh pr create --base <base> --body-file`。既存 PR は title/body を更新。
 - **Done**: 意思決定の流れを反映した PR を GitHub に出す。
 
-### P6 — 仕上げ / 配布
+### P6 — 仕上げ / 配布（次）
 - goreleaser + Homebrew tap、補完、テーマ設定、他エージェント hook adapter。dotfiles のツール登録。
 
 ## マイルストーン
@@ -69,7 +69,7 @@ internal/
   event/        Event 型・種別・JSONL ストア
   store/        .live-pr/<branch> パス解決・conclusion
   git/          shell-out（branch/base/commits/show）
-  tui/          bubbletea model/update/view・lipgloss スタイル・components
+  tui/          Conversation timeline + embedded commit diff・lipgloss スタイル
   review/       reviewer テンプレ + tea.ExecProcess 起動
   summarize/    claude -p 呼び出し・プロンプト（interface で抽象化）
   pr/           body 組み立て + gh
@@ -78,6 +78,6 @@ prototype/      既存 fzf モック（参照用に残す）
 docs/
 ```
 
-## 最初の一歩
+## 現在地
 
-P0→P1→P2 を一気に通す（＝M1）。この時点で live-pr の commit を live-pr でレビューできる。以降 P3/P4/P5 は独立に足せる。
+P0〜P5と、Conversation中心のTUI改修まで `main` に統合済み。意思決定の記録・commit同期・セッション要約・ローカルレビュー・GitHub PR exportの一連のループが動く。次はP6の配布と連携先拡張。
