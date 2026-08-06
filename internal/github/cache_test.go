@@ -10,6 +10,8 @@ func TestCacheRoundTripAndHeadIsolation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "github.json")
 	c := NewCache("feature/x")
 	c.PR = &PR{Number: 12, URL: "https://example/pr/12"}
+	c.Comments = []Comment{{ID: 42, Body: "cached comment"}}
+	c.Activities = []Activity{{ID: 7, Event: "labeled"}}
 	c.LastPublishedManagedBodyHash = "hash"
 	if err := SaveCache(path, c); err != nil {
 		t.Fatal(err)
@@ -19,7 +21,7 @@ func TestCacheRoundTripAndHeadIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.PR == nil || got.PR.Number != 12 || got.LastPublishedManagedBodyHash != "hash" {
+	if got.PR == nil || got.PR.Number != 12 || len(got.Comments) != 1 || got.Comments[0].ID != 42 || len(got.Activities) != 1 || got.Activities[0].Event != "labeled" || got.LastPublishedManagedBodyHash != "hash" {
 		t.Fatalf("unexpected cache: %#v", got)
 	}
 	other, err := LoadCache(path, "feature-x")

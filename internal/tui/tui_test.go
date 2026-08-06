@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -129,6 +130,139 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 	m = u.(Model)
 	if m.cache.LastPublishedManagedBodyHash != "published-hash" {
 		t.Fatal("a pull-only refresh must preserve the publish baseline when no open PR is found")
+	}
+}
+
+func TestCachedCommentRendersMarkdownAndOpensBrowser(t *testing.T) {
+	m := testModel()
+	comment := gh.Comment{ID: 42, NodeID: "IC_42", Body: "**reviewed** ![image](https://example.com/image.png)", CreatedAt: "2026-08-01T10:00:00Z", HTMLURL: "https://github.com/acme/repo/pull/1#issuecomment-42"}
+	comment.User.Login = "alice"
+	m.cache.Comments = []gh.Comment{comment}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	out := m.View()
+	for _, want := range []string{"@alice", "reviewed", "https://example.com/image.png"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("comment view missing %q", want)
+		}
+	}
+	if strings.Contains(out, "**reviewed**") || strings.Contains(out, "![image]") {
+		t.Fatalf("comment Markdown was not rendered: %q", out)
+	}
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}); cmd == nil {
+		t.Fatal("o should open the selected GitHub comment")
+	}
+	cmd := browserCommand(comment.HTMLURL)
+	if got := cmd.Args[len(cmd.Args)-1]; got != comment.HTMLURL {
+		t.Fatalf("browser target = %q", got)
+	}
+}
+
+func TestCommentSelectionSurvivesRefresh(t *testing.T) {
+	m := testModel()
+	comment := gh.Comment{ID: 42, NodeID: "IC_42", Body: "selected", CreatedAt: "2026-08-01T10:00:00Z"}
+	m.cache.Comments = []gh.Comment{comment}
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	m.cursors[conversationTab] = 2
+
+	newer := gh.Comment{ID: 43, NodeID: "IC_43", Body: "new", CreatedAt: "2026-08-02T10:00:00Z"}
+	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 1}, comments: []gh.Comment{comment, newer}})
+	m = u.(Model)
+	if selected := m.selectedComment(); selected == nil || selected.NodeID != "IC_42" {
+		t.Fatalf("selection moved after refresh: %#v", selected)
+	}
+}
+
+func TestGitHubCommentsAreBoxedAndActivityIsUnboxed(t *testing.T) {
+	m := testModel()
+	comment := gh.Comment{ID: 1, Body: "**comment**", CreatedAt: "2026-08-01T10:00:00Z"}
+	comment.User.Login = "alice"
+	activity := gh.Activity{ID: 2, Event: "labeled", CreatedAt: "2026-08-01T10:01:00Z"}
+	activity.Actor.Login = "bob"
+	activity.Label.Name = "bug"
+
+	commentLines := m.commentLines(comment, false, 60)
+	activityLines := m.activityLines(activity, false)
+	commentView := strings.Join(commentLines, "\n")
+	if !strings.Contains(commentView, "╭") || strings.Contains(commentView, "github ·") {
+		t.Fatalf("GitHub comment should use a source-free card: %q", commentLines)
+	}
+	activityView := strings.Join(activityLines, "\n")
+	if strings.Contains(activityView, "╭") || strings.Contains(activityView, "github ·") || !strings.Contains(activityView, "labeled") {
+		t.Fatalf("GitHub activity should be an unboxed source-free row: %q", activityLines)
+	}
+	if cBorder == cCloudBorder {
+		t.Fatal("local and GitHub cards must use different border intensity")
+	}
+}
+
+func TestLocalCommentsMatchCloudCardsAndGitCommitsStayUnboxed(t *testing.T) {
+	m := testModel()
+	local := strings.Join(m.eventLines(m.events[0], false, 60), "\n")
+	commit := strings.Join(m.eventLines(m.events[1], false, 60), "\n")
+	if !strings.Contains(local, "╭") || strings.Contains(local, "local ·") || !strings.Contains(local, "claude-agent") {
+		t.Fatalf("local event should be a source-free card: %q", local)
+	}
+	if strings.Contains(commit, "╭") || !strings.Contains(commit, "git") || !strings.Contains(commit, "committed") {
+		t.Fatalf("git commit should be an unboxed sourced row: %q", commit)
+	}
+}
+
+func TestConversationOrdersRFC3339OffsetsChronologically(t *testing.T) {
+	m := testModel()
+	earlier := gh.Comment{ID: 1, CreatedAt: "2026-08-01T10:00:00+09:00"}
+	later := gh.Comment{ID: 2, CreatedAt: "2026-08-01T02:00:00Z"}
+	m.events = nil
+	m.cache.Comments = []gh.Comment{later, earlier}
+	items := m.conversationItems()
+	if len(items) != 2 || items[0].comment.ID != 1 || items[1].comment.ID != 2 {
+		t.Fatalf("comments not ordered by instant: %#v", items)
+	}
+}
+
+func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
+	m := testModel()
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	m.cache.Comments = []gh.Comment{{ID: 1, Body: "cached"}}
+	m.cache.Activities = []gh.Activity{{ID: 2, Event: "labeled"}}
+	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 9}, commentsErr: errors.New("comments unavailable"), activitiesErr: errors.New("activity unavailable")})
+	m = u.(Model)
+	if m.cache.PR == nil || m.cache.PR.Number != 9 || len(m.cache.Comments) != 1 || len(m.cache.Activities) != 1 {
+		t.Fatalf("partial refresh lost usable state: %#v", m.cache)
+	}
+	if !strings.Contains(m.githubStatus, "comments/activity stale") {
+		t.Fatalf("missing partial-refresh status: %q", m.githubStatus)
+	}
+}
+
+func TestRefreshAndPublishAreMutuallyExclusive(t *testing.T) {
+	m := testModel()
+	m.refreshing = true
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = u.(Model)
+	if cmd != nil || m.publishing || !strings.Contains(m.status, "wait") {
+		t.Fatal("publish should wait for refresh")
+	}
+	m.refreshing, m.publishing = false, true
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}); cmd != nil {
+		t.Fatal("refresh should not overlap publish")
+	}
+}
+
+func TestPublishIsExplicitAndSingleFlight(t *testing.T) {
+	m := testModel()
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	m = u.(Model)
+	if cmd == nil || !m.publishing {
+		t.Fatal("p should explicitly start publishing")
+	}
+	if _, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")}); duplicate != nil {
+		t.Fatal("a second publish must not start while one is in flight")
 	}
 }
 
