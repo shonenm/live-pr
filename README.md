@@ -49,8 +49,9 @@ Go implementation in progress (Bubble Tea + Lipgloss, single binary). See
 - **P3 (done)** — auto-feed `base..HEAD` commits into the timeline (`live-pr sync`, and on TUI open).
 - **P4 (done)** — Claude Code `Stop` hook (`live-pr hook stop`) summarizes each session into the timeline, throttled.
 - **P5 (done)** — create or update a GitHub PR from the conclusion and timeline (`live-pr pr`). Only the marked live-pr section is updated, so other PR body content is preserved; conflicting managed edits fail safely.
-- **Current TUI** — functional Conversation / Files changed / Commits tabs with local diffs. Cached PR metadata is shown immediately, refreshed once on open, and refreshed again only when you press `r`.
-- **Next** — complete GitHub conversation sync, then move to distribution, theming, and other-agent adapters.
+- **Current TUI** — functional Conversation / Files changed / Commits tabs with local diffs. Cached PR metadata, top-level comments, and GitHub activity are shown immediately, refreshed once on open, and refreshed again only when you press `r`.
+- **PR workflow** — press `p` to explicitly create/update the PR. Local events and GitHub comments use bordered cards with different border intensity instead of source labels; GitHub activity and Git commits remain unboxed timeline rows. Image/video embeds stay as URLs, and `o` opens the focused GitHub comment.
+- **Next** — add outbound comments and review/inline-comment sync, then move to distribution, theming, and other-agent adapters.
 
 ```sh
 go build -o live-pr .
@@ -59,7 +60,8 @@ live-pr init            # create .live-pr/<branch>/ for this branch
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
 live-pr                 # open the three-tab TUI (Tab/Shift+Tab or 1/2/3)
-                        # r: refresh GitHub metadata; Enter: review a commit
+                        # r: refresh GitHub; p: publish PR; o: open comment
+                        # Enter: review a commit
 live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
 ```
@@ -67,4 +69,4 @@ live-pr pr              # push and create or update the GitHub PR
 Reviewer defaults to `nvim -c "CodeDiff {sha}~1 {sha}"`; override in
 `~/.config/live-pr/config.toml` (or per-repo `.live-pr/config.toml`).
 
-The original fzf experience mock lives in `prototype/`.
+The original fzf experience mock lives in `prototype/`. The planned embedded/external diff-tool contract is documented in [docs/diff-tool-integration.md](docs/diff-tool-integration.md).

@@ -54,7 +54,9 @@
 - **Done**: GitHub操作を共通adapterへ分離し、PR未存在と通信・認証エラーを区別。
 - **Done**: PR bodyをmanaged marker内だけ更新し、外側を保持。前回publish後のremote編集・marker削除は競合として停止。
 - **Done**: branch単位の`github.json`をatomic保存。cacheを即表示して起動時に1回background refreshし、以後は`r`でのみ再取得。
-- **Next**: GitHub comments / reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
+- **Done**: TUIの`p`から明示的にPRを作成・更新。CLIと同じpublish service、managed-body競合保護、cache更新を利用。
+- **Done**: GitHubのtop-level commentsとissue activityを取得・cacheし、Conversationへ時系列統合。local eventsとGitHub commentsは枠の濃さが異なるcard、GitHub activityとGit commitsは枠なしtimeline row。source文字列は表示領域節約のため付けない。画像・動画はURL表示し、`o`で選択コメントをbrowser表示。
+- **Next**: reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
 
 ### P6 — 仕上げ / 配布
 - GitHub双方向連携の完成後、goreleaser + Homebrew tap、補完、テーマ設定、他エージェント hook adapter。dotfiles のツール登録。
@@ -87,4 +89,4 @@ docs/
 
 ## 現在地
 
-P0〜P5とConversation中心のTUIを`main`へ統合済み。現在は3タブとGitHub同期基盤まで実装し、次にGitHub conversationの取得・投稿を完成させる。その動作確認後にP6の配布へ進む。
+P0〜P5とConversation中心のTUIを`main`へ統合済み。3タブ、TUIからのPR publish、top-level GitHub commentsのMarkdown表示まで実装。次にreview/inline comment同期と通常コメント投稿を完成させ、その動作確認後にP6の配布へ進む。
