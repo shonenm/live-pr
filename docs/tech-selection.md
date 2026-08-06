@@ -36,6 +36,7 @@
   .live-pr/<branch-slug>/
     timeline.jsonl   append-only  {ts,kind,title,body,sha?,...}
     conclusion.md    overwrite    head（現状結論）
+    github.json      atomic replace  PR binding/cache/publish baseline
     config.toml?     per-repo override
 
 [ 供給: agent hooks ]
@@ -46,11 +47,13 @@
   要約生成       → claude -p headless（初手）。将来 API / 他エージェント差し替え
 
 [ 表示: TUI (Bubble Tea) ]
-  live-pr        # 左: PR Conversation timeline / 右: 選択 commit の git show
+  live-pr        # Conversation / Files changed / Commits
+  local git      # file/commit一覧とdiff。GitHub待ちなし
+  GitHub metadata# cacheを即表示→起動時1回refresh。以後はrのみ
   reviewer 起動  # Enter → tea.ExecProcess で nvim 等を全画面起動→復帰
 
 [ 出力: PR export ]
-  live-pr pr     # conclusion(top) + Development timeline → gh pr create/edit
+  live-pr pr     # managed bodyだけを安全にgh pr create/edit
 ```
 
 CLI 一覧（Cobra）:
@@ -72,8 +75,10 @@ CLI 一覧（Cobra）:
 2. **timelineの扱い**: `.live-pr/`はgitignoreし、ローカルruntimeとして保持。PR export時に読み込む。
 3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
 4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
-5. **TUI**: GitHub PRのConversationを左ペイン、選択commitのdiffを右ペインに表示。外部reviewerはEnterで起動。
+5. **TUI**: Conversation / Files changed / Commitsの3タブ。各タブの選択位置を保持し、詳細ペインへlocal diffを表示。
+6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
+7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
 
 ## 現在地
 
-P0〜P5とConversation中心のTUIを実装済み。次はgoreleaser / Homebrew tap、shell completion、テーマ設定、他エージェントadapterなどの配布・連携整備。
+3タブとGitHub同期基盤まで実装済み。次はGitHub comments / reviewsの取得・Conversation統合と通常コメント投稿を行い、全体確認後に配布へ進む。

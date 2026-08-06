@@ -48,9 +48,9 @@ Go implementation in progress (Bubble Tea + Lipgloss, single binary). See
 - **P0–P2 (done)** — event model + JSONL store, CLI (`append`/`note`/`decision`/`pivot`/`init`), TUI, and pluggable reviewer launch on a commit.
 - **P3 (done)** — auto-feed `base..HEAD` commits into the timeline (`live-pr sync`, and on TUI open).
 - **P4 (done)** — Claude Code `Stop` hook (`live-pr hook stop`) summarizes each session into the timeline, throttled.
-- **P5 (done)** — create or update a GitHub PR from the conclusion and timeline (`live-pr pr`).
-- **Current TUI** — GitHub-PR conversation timeline on the left, selected commit diff on the right; Enter opens the configured external reviewer.
-- **P6 (next)** — distribution, shell completion, theming, and adapters for other agents.
+- **P5 (done)** — create or update a GitHub PR from the conclusion and timeline (`live-pr pr`). Only the marked live-pr section is updated, so other PR body content is preserved; conflicting managed edits fail safely.
+- **Current TUI** — functional Conversation / Files changed / Commits tabs with local diffs. Cached PR metadata is shown immediately, refreshed once on open, and refreshed again only when you press `r`.
+- **Next** — complete GitHub conversation sync, then move to distribution, theming, and other-agent adapters.
 
 ```sh
 go build -o live-pr .
@@ -58,8 +58,9 @@ go build -o live-pr .
 live-pr init            # create .live-pr/<branch>/ for this branch
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
-live-pr                 # open conversation + embedded commit diff TUI
-live-pr pr --dry-run    # preview the generated PR title/body
+live-pr                 # open the three-tab TUI (Tab/Shift+Tab or 1/2/3)
+                        # r: refresh GitHub metadata; Enter: review a commit
+live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
 ```
 
