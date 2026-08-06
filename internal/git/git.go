@@ -3,6 +3,7 @@
 package git
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -81,6 +82,52 @@ func Commits(base string) ([]Commit, error) {
 	return commits, nil
 }
 
+// ChangedFile is one entry in base...HEAD.
+type ChangedFile struct {
+	Status  string
+	Path    string
+	OldPath string
+}
+
+// ChangedFiles returns changed paths in base...HEAD order.
+func ChangedFiles(base string) ([]ChangedFile, error) {
+	out, err := exec.Command("git", "diff", "--name-status", "-z", base+"...HEAD").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git diff --name-status: %w", err)
+	}
+	parts := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	var files []ChangedFile
+	for i := 0; i < len(parts) && parts[i] != ""; {
+		status := parts[i]
+		i++
+		if i >= len(parts) {
+			break
+		}
+		if strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C") {
+			if i+1 >= len(parts) {
+				break
+			}
+			files = append(files, ChangedFile{Status: status, OldPath: parts[i], Path: parts[i+1]})
+			i += 2
+			continue
+		}
+		files = append(files, ChangedFile{Status: status, Path: parts[i]})
+		i++
+	}
+	return files, nil
+}
+
+// FileDiff returns the colorized base...HEAD patch for the selected paths.
+func FileDiff(base string, paths ...string) string {
+	args := []string{"diff", "--color=always", base + "...HEAD", "--"}
+	args = append(args, paths...)
+	out, err := run(args...)
+	if err != nil {
+		return ""
+	}
+	return truncate(out, 800)
+}
+
 // Show returns the full `git show` for a commit (stat + colorized patch),
 // capped to a sane number of lines. Empty string if the sha is unresolvable.
 func Show(sha string) string {
@@ -88,9 +135,13 @@ func Show(sha string) string {
 	if err != nil {
 		return ""
 	}
-	lines := strings.Split(out, "\n")
-	if len(lines) > 800 {
-		lines = append(lines[:800], "… (truncated)")
+	return truncate(out, 800)
+}
+
+func truncate(s string, maxLines int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > maxLines {
+		lines = append(lines[:maxLines], "… (truncated)")
 	}
 	return strings.Join(lines, "\n")
 }
