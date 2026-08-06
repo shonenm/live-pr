@@ -50,3 +50,6 @@ func (s *Store) Timeline() string { return filepath.Join(s.Dir, "timeline.jsonl"
 
 // Conclusion is the path to the pinned head document.
 func (s *Store) Conclusion() string { return filepath.Join(s.Dir, "conclusion.md") }
+
+// GitHubCache is the path to mutable remote state kept separate from timeline.jsonl.
+func (s *Store) GitHubCache() string { return filepath.Join(s.Dir, "github.json") }

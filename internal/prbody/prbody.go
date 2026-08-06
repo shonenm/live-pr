@@ -2,10 +2,24 @@
 package prbody
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/shonenm/live-pr/internal/event"
+)
+
+const (
+	ManagedStart = "<!-- live-pr:managed:start v=1 -->"
+	ManagedEnd   = "<!-- live-pr:managed:end -->"
+)
+
+var (
+	// ErrManagedConflict means the live-pr-owned block changed since it was fetched.
+	ErrManagedConflict = errors.New("managed PR body changed on GitHub")
+	// ErrMalformedManagedBlock means marker ownership cannot be determined safely.
+	ErrMalformedManagedBlock = errors.New("malformed live-pr managed block")
 )
 
 func label(k event.Kind) string {
@@ -40,6 +54,8 @@ func Title(conclusion, branch string) string {
 // chronological development timeline below it.
 func Render(conclusion string, events []event.Event) string {
 	var b strings.Builder
+	b.WriteString(ManagedStart)
+	b.WriteString("\n")
 
 	if c := strings.TrimSpace(conclusion); c != "" && !isPlaceholder(c) {
 		b.WriteString(c)
@@ -56,7 +72,67 @@ func Render(conclusion string, events []event.Event) string {
 	}
 
 	b.WriteString("\n---\n_Decision timeline captured with [live-pr](https://github.com/shonenm/live-pr)._\n")
+	b.WriteString(ManagedEnd)
+	b.WriteString("\n")
 	return b.String()
+}
+
+// Merge replaces only live-pr's managed block. Text outside the block is
+// preserved. An unmarked remote body is preserved and the block is appended.
+// expectedHash must match the fetched managed block before it can be replaced.
+func Merge(remote, next, expectedHash string) (string, error) {
+	_, _, _, err := managedRange(next)
+	if err != nil {
+		return "", err
+	}
+	start, end, current, err := managedRange(remote)
+	if errors.Is(err, errNoManagedBlock) {
+		if expectedHash != "" {
+			return "", ErrManagedConflict
+		}
+		if strings.TrimSpace(remote) == "" {
+			return next, nil
+		}
+		return strings.TrimRight(remote, "\n") + "\n\n" + next, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if expectedHash == "" || Hash(current) != expectedHash {
+		if current == strings.TrimSpace(next) {
+			return remote, nil
+		}
+		return "", ErrManagedConflict
+	}
+	return remote[:start] + strings.TrimSpace(next) + remote[end:], nil
+}
+
+// ManagedHash returns the hash of the managed block, or an empty string when
+// no valid block exists.
+func ManagedHash(body string) string {
+	_, _, block, err := managedRange(body)
+	if err != nil {
+		return ""
+	}
+	return Hash(block)
+}
+
+// Hash returns a stable content hash used for optimistic conflict detection.
+func Hash(s string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.TrimSpace(s)))) }
+
+var errNoManagedBlock = errors.New("no managed block")
+
+func managedRange(body string) (start, end int, block string, err error) {
+	start = strings.Index(body, ManagedStart)
+	endMarker := strings.Index(body, ManagedEnd)
+	if start < 0 && endMarker < 0 {
+		return 0, 0, "", errNoManagedBlock
+	}
+	if start < 0 || endMarker < start || strings.Count(body, ManagedStart) != 1 || strings.Count(body, ManagedEnd) != 1 {
+		return 0, 0, "", ErrMalformedManagedBlock
+	}
+	end = endMarker + len(ManagedEnd)
+	return start, end, strings.TrimSpace(body[start:end]), nil
 }
 
 func writeEvent(b *strings.Builder, e event.Event) {
