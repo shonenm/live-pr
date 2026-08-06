@@ -23,6 +23,44 @@ type PR struct {
 	State  string `json:"state"`
 }
 
+// Comment is a top-level PR conversation comment.
+type Comment struct {
+	ID        int64  `json:"id"`
+	NodeID    string `json:"node_id"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	HTMLURL   string `json:"html_url"`
+	User      struct {
+		Login string `json:"login"`
+	} `json:"user"`
+}
+
+// Activity is a non-comment PR timeline event from GitHub's issue events API.
+type Activity struct {
+	ID        int64  `json:"id"`
+	NodeID    string `json:"node_id"`
+	Event     string `json:"event"`
+	CreatedAt string `json:"created_at"`
+	CommitID  string `json:"commit_id"`
+	Actor     struct {
+		Login string `json:"login"`
+	} `json:"actor"`
+	Label struct {
+		Name string `json:"name"`
+	} `json:"label"`
+	Assignee struct {
+		Login string `json:"login"`
+	} `json:"assignee"`
+	RequestedReviewer struct {
+		Login string `json:"login"`
+	} `json:"requested_reviewer"`
+	Rename struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	} `json:"rename"`
+}
+
 type runner func(args ...string) ([]byte, error)
 
 // Client runs GitHub operations through gh.
@@ -52,6 +90,42 @@ func (c Client) FindOpen(head string) (PR, error) {
 		return PR{}, ErrPRNotFound
 	}
 	return prs[0], nil
+}
+
+// IssueComments returns every top-level Conversation comment for a PR.
+func (c Client) IssueComments(number int) ([]Comment, error) {
+	endpoint := fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments?per_page=100", number)
+	out, err := c.run("api", "--paginate", "--slurp", endpoint)
+	if err != nil {
+		return nil, commandError("gh api issue comments", out, err)
+	}
+	var pages [][]Comment
+	if err := json.Unmarshal(out, &pages); err != nil {
+		return nil, fmt.Errorf("decode issue comments: %w", err)
+	}
+	var comments []Comment
+	for _, page := range pages {
+		comments = append(comments, page...)
+	}
+	return comments, nil
+}
+
+// IssueActivities returns non-comment activity from the PR timeline.
+func (c Client) IssueActivities(number int) ([]Activity, error) {
+	endpoint := fmt.Sprintf("repos/{owner}/{repo}/issues/%d/events?per_page=100", number)
+	out, err := c.run("api", "--paginate", "--slurp", endpoint)
+	if err != nil {
+		return nil, commandError("gh api issue events", out, err)
+	}
+	var pages [][]Activity
+	if err := json.Unmarshal(out, &pages); err != nil {
+		return nil, fmt.Errorf("decode issue events: %w", err)
+	}
+	var activities []Activity
+	for _, page := range pages {
+		activities = append(activities, page...)
+	}
+	return activities, nil
 }
 
 // Update replaces the title and body of an existing PR.

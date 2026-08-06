@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +22,8 @@ import (
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
+	md "github.com/shonenm/live-pr/internal/markdown"
+	"github.com/shonenm/live-pr/internal/publish"
 	"github.com/shonenm/live-pr/internal/review"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/timeline"
@@ -35,14 +39,14 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PrevTab, NextTab, Open, Refresh, Help, Quit key.Binding
+	Up, Down, PrevTab, NextTab, Open, Browse, Refresh, Publish, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.NextTab, k.Open, k.Refresh, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.NextTab, k.Open, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PrevTab, k.NextTab}, {k.Open, k.Refresh, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PrevTab, k.NextTab}, {k.Open, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -51,7 +55,9 @@ var keys = keyMap{
 	PrevTab: key.NewBinding(key.WithKeys("shift+tab", "h", "left"), key.WithHelp("h/⇧tab", "previous tab")),
 	NextTab: key.NewBinding(key.WithKeys("tab", "l", "right"), key.WithHelp("l/tab", "next tab")),
 	Open:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
+	Browse:  key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open comment")),
 	Refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
+	Publish: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
 	Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
@@ -60,8 +66,27 @@ var keys = keyMap{
 type reviewerDone struct{ err error }
 
 type githubRefreshed struct {
-	pr  gh.PR
-	err error
+	pr            gh.PR
+	comments      []gh.Comment
+	activities    []gh.Activity
+	err           error
+	commentsErr   error
+	activitiesErr error
+}
+
+type publishDone struct {
+	result publish.Result
+	err    error
+}
+
+type browserDone struct{ err error }
+
+type conversationItem struct {
+	key      string
+	ts       string
+	event    *event.Event
+	comment  *gh.Comment
+	activity *gh.Activity
 }
 
 // Model holds the living-PR view state.
@@ -79,6 +104,7 @@ type Model struct {
 	cachePath    string
 	cache        gh.Cache
 	refreshing   bool
+	publishing   bool
 
 	list   viewport.Model
 	detail viewport.Model
@@ -156,8 +182,14 @@ func (m Model) Init() tea.Cmd {
 
 func fetchGitHub(head string) tea.Cmd {
 	return func() tea.Msg {
-		pr, err := gh.New().FindOpen(head)
-		return githubRefreshed{pr: pr, err: err}
+		client := gh.New()
+		pr, err := client.FindOpen(head)
+		if err != nil {
+			return githubRefreshed{err: err}
+		}
+		comments, commentsErr := client.IssueComments(pr.Number)
+		activities, activitiesErr := client.IssueActivities(pr.Number)
+		return githubRefreshed{pr: pr, comments: comments, activities: activities, commentsErr: commentsErr, activitiesErr: activitiesErr}
 	}
 }
 
@@ -206,16 +238,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case browserDone:
+		if msg.err != nil {
+			m.status = "browser: " + msg.err.Error()
+		} else if strings.HasPrefix(m.status, "browser:") {
+			m.status = ""
+		}
+		return m, nil
+
+	case publishDone:
+		m.publishing = false
+		if msg.err != nil {
+			m.status = "publish: " + msg.err.Error()
+			return m, nil
+		}
+		if cache, err := gh.LoadCache(m.cachePath, m.head); err == nil {
+			m.cache = cache
+		}
+		action := "updated"
+		if msg.result.Created {
+			action = "created"
+		}
+		m.status = ""
+		m.githubStatus = "PR " + action + ": " + msg.result.PR.URL
+		return m, nil
+
 	case githubRefreshed:
 		m.refreshing = false
+		selectedKey := m.selectedConversationKey()
 		now := time.Now().UTC().Format(time.RFC3339)
 		switch {
 		case msg.err == nil:
 			m.cache.PR = &msg.pr
 			m.cache.FetchedAt = now
+			stale := []string{}
+			if msg.commentsErr == nil {
+				m.cache.Comments = msg.comments
+			} else {
+				stale = append(stale, "comments")
+			}
+			if msg.activitiesErr == nil {
+				m.cache.Activities = msg.activities
+			} else {
+				stale = append(stale, "activity")
+			}
 			m.githubStatus = "GitHub: updated now"
+			if len(stale) > 0 {
+				m.githubStatus = "GitHub: PR updated · " + strings.Join(stale, "/") + " stale"
+			}
 		case errors.Is(msg.err, gh.ErrPRNotFound):
 			m.cache.PR = nil
+			m.cache.Comments = nil
+			m.cache.Activities = nil
 			m.cache.FetchedAt = now
 			m.githubStatus = "Local only · no GitHub PR"
 		default:
@@ -226,6 +300,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if strings.HasPrefix(m.status, "GitHub cache") {
 			m.status = ""
 		}
+		m.restoreConversationSelection(selectedKey)
+		m.sync()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -248,12 +324,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sync()
 			return m, nil
 		case key.Matches(msg, m.keys.Refresh):
-			if m.refreshing {
+			if m.refreshing || m.publishing {
 				return m, nil
 			}
 			m.refreshing = true
 			m.githubStatus = "GitHub: refreshing…"
 			return m, fetchGitHub(m.head)
+		case key.Matches(msg, m.keys.Publish):
+			if m.publishing {
+				return m, nil
+			}
+			if m.refreshing {
+				m.status = "wait for GitHub refresh before publishing"
+				return m, nil
+			}
+			m.publishing = true
+			m.status = "publishing PR…"
+			base := m.base
+			return m, func() tea.Msg {
+				result, err := publish.Run(publish.Options{Base: base})
+				return publishDone{result: result, err: err}
+			}
+		case key.Matches(msg, m.keys.Browse):
+			comment := m.selectedComment()
+			if comment == nil || comment.HTMLURL == "" {
+				return m, nil
+			}
+			url := comment.HTMLURL
+			return m, func() tea.Msg { return browserDone{err: openURL(url)} }
 		case key.Matches(msg, m.keys.Open):
 			sha := m.selectedCommitSHA()
 			if sha == "" {
@@ -282,6 +380,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) conversationItems() []conversationItem {
+	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities))
+	for i := range m.events {
+		e := &m.events[i]
+		items = append(items, conversationItem{key: fmt.Sprintf("event:%d", i), ts: e.TS, event: e})
+	}
+	for i := range m.cache.Comments {
+		comment := &m.cache.Comments[i]
+		key := comment.NodeID
+		if key == "" {
+			key = fmt.Sprintf("%d", comment.ID)
+		}
+		items = append(items, conversationItem{key: "comment:" + key, ts: comment.CreatedAt, comment: comment})
+	}
+	for i := range m.cache.Activities {
+		activity := &m.cache.Activities[i]
+		key := activity.NodeID
+		if key == "" {
+			key = fmt.Sprintf("%d", activity.ID)
+		}
+		items = append(items, conversationItem{key: "activity:" + key, ts: activity.CreatedAt, activity: activity})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return conversationTime(items[i].ts).Before(conversationTime(items[j].ts))
+	})
+	return items
+}
+
+func (m Model) selectedConversationItem() *conversationItem {
+	items := m.conversationItems()
+	i := m.cursors[conversationTab]
+	if i < 0 || i >= len(items) {
+		return nil
+	}
+	return &items[i]
+}
+
+func (m Model) selectedConversationKey() string {
+	if item := m.selectedConversationItem(); item != nil {
+		return item.key
+	}
+	return ""
+}
+
+func (m *Model) restoreConversationSelection(key string) {
+	if key == "" {
+		return
+	}
+	for i, item := range m.conversationItems() {
+		if item.key == key {
+			m.cursors[conversationTab] = i
+			return
+		}
+	}
+	if n := len(m.conversationItems()); n > 0 && m.cursors[conversationTab] >= n {
+		m.cursors[conversationTab] = n - 1
+	}
+}
+
 func (m Model) activeLen() int {
 	switch m.active {
 	case filesTab:
@@ -289,8 +446,17 @@ func (m Model) activeLen() int {
 	case commitsTab:
 		return len(m.commits)
 	default:
-		return len(m.events)
+		return len(m.conversationItems())
 	}
+}
+
+func (m Model) selectedComment() *gh.Comment {
+	if m.active == conversationTab {
+		if item := m.selectedConversationItem(); item != nil {
+			return item.comment
+		}
+	}
+	return nil
 }
 
 func (m Model) selectedCommitSHA() string {
@@ -300,11 +466,8 @@ func (m Model) selectedCommitSHA() string {
 			return m.commits[i].SHA
 		}
 	case conversationTab:
-		if i := m.cursors[conversationTab]; i >= 0 && i < len(m.events) {
-			e := m.events[i]
-			if e.Kind == event.Commit {
-				return e.SHA
-			}
+		if item := m.selectedConversationItem(); item != nil && item.event != nil && item.event.Kind == event.Commit {
+			return item.event.SHA
 		}
 	}
 	return ""
@@ -316,6 +479,7 @@ func (m *Model) sync() {
 		return
 	}
 	m.keys.Open.SetEnabled(m.active != filesTab)
+	m.keys.Browse.SetEnabled(m.selectedComment() != nil)
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
 	if off := selectedLine - 1; off > 0 {
@@ -349,7 +513,7 @@ func (m Model) renderHeader() string {
 		Padding(0, 1).Render(badgeText)
 	l1 := badge + "  " + stBold.Render(m.title)
 	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) +
-		stMuted.Render(fmt.Sprintf("   · %d commits · %d events", len(m.commits), len(m.events)))
+		stMuted.Render(fmt.Sprintf("   · %d commits · %d events · %d comments · %d activity", len(m.commits), len(m.events), len(m.cache.Comments), len(m.cache.Activities)))
 	tabs := m.renderTab(conversationTab, "Conversation") + "   " +
 		m.renderTab(filesTab, "Files changed "+itoa(len(m.files))) + "   " +
 		m.renderTab(commitsTab, "Commits "+itoa(len(m.commits)))
@@ -376,45 +540,103 @@ func (m Model) buildList() (string, int) {
 }
 
 func (m Model) buildConversation() (string, int) {
-	if len(m.events) == 0 {
+	items := m.conversationItems()
+	if len(items) == 0 {
 		return stMuted.Render("(no events yet — try `live-pr note …`)"), 0
 	}
 	var lines []string
 	selectedLine := 0
-	for i, e := range m.events {
-		if i == m.cursors[conversationTab] {
+	for i, item := range items {
+		selected := i == m.cursors[conversationTab]
+		if selected {
 			selectedLine = len(lines)
 		}
-		lines = append(lines, m.eventLines(e, i == m.cursors[conversationTab], m.list.Width)...)
+		if item.comment != nil {
+			lines = append(lines, m.commentLines(*item.comment, selected, m.list.Width)...)
+		} else if item.activity != nil {
+			lines = append(lines, m.activityLines(*item.activity, selected)...)
+		} else {
+			lines = append(lines, m.eventLines(*item.event, selected, m.list.Width)...)
+		}
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n"), selectedLine
 }
 
 func (m Model) eventLines(e event.Event, selected bool, width int) []string {
-	bar := selectionBar(selected)
+	if e.Kind == event.Commit {
+		line := stMuted.Render("git · ") + stGreenF.Render(e.SHA) + stMuted.Render(" committed ") + stFg.Render(e.Title) + stMuted.Render(" · "+shortTS(e.TS))
+		return []string{selectionBar(selected) + line}
+	}
 	who := "🤖 claude-agent"
 	if e.Kind == event.Note {
 		who = "👤 you"
 	}
-	var hdr string
-	if e.Kind == event.Commit {
-		hdr = kindLabel(e.Kind) + " " + stGreenF.Render(e.SHA) + stMuted.Render(" · "+shortTS(e.TS))
-	} else {
-		hdr = stMuted.Render(who+" · ") + kindLabel(e.Kind) + stMuted.Render(" · "+shortTS(e.TS))
+	header := stMuted.Render(who+" · ") + kindLabel(e.Kind) + stMuted.Render(" · "+shortTS(e.TS))
+	body := stBold.Render(e.Title)
+	if strings.TrimSpace(e.Body) != "" {
+		body += "\n" + md.Render(e.Body, width-7)
 	}
-	lines := []string{bar + hdr}
-	for _, ln := range wrapLines(e.Title, stBold, width-3) {
-		lines = append(lines, bar+ln)
+	return cardLines(header, body, selected, width, cBorder)
+}
+
+func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
+	header := stMuted.Render("💬 @" + comment.User.Login + " · comment · " + shortTS(comment.CreatedAt))
+	return cardLines(header, md.Render(comment.Body, width-7), selected, width, cCloudBorder)
+}
+
+func cardLines(header, body string, selected bool, width int, border string) []string {
+	if selected {
+		border = cAccent
 	}
-	if body := strings.TrimSpace(e.Body); body != "" {
-		for _, para := range strings.Split(body, "\n") {
-			for _, ln := range wrapLines(para, stMuted, width-3) {
-				lines = append(lines, bar+ln)
-			}
-		}
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(border)).
+		Padding(0, 1).
+		Width(max(12, width-4)).
+		Render(header + "\n" + body)
+	bar := selectionBar(selected)
+	lines := strings.Split(box, "\n")
+	for i := range lines {
+		lines[i] = bar + lines[i]
 	}
 	return lines
+}
+
+func (m Model) activityLines(activity gh.Activity, selected bool) []string {
+	line := stMuted.Render("● @"+activity.Actor.Login+" ") + activitySummary(activity) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
+	return []string{selectionBar(selected) + line}
+}
+
+func activitySummary(activity gh.Activity) string {
+	switch activity.Event {
+	case "labeled", "unlabeled":
+		return activity.Event + " " + kindLabelText(activity.Label.Name)
+	case "assigned", "unassigned":
+		return activity.Event + " @" + activity.Assignee.Login
+	case "review_requested", "review_request_removed":
+		return strings.ReplaceAll(activity.Event, "_", " ") + " @" + activity.RequestedReviewer.Login
+	case "renamed":
+		return "renamed " + activity.Rename.From + " → " + activity.Rename.To
+	case "head_ref_force_pushed":
+		return "force-pushed " + shortSHA(activity.CommitID)
+	default:
+		return strings.ReplaceAll(activity.Event, "_", " ")
+	}
+}
+
+func kindLabelText(label string) string {
+	if label == "" {
+		return "label"
+	}
+	return "`" + label + "`"
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func (m Model) buildFiles() (string, int) {
@@ -462,17 +684,23 @@ func (m Model) buildDetail() string {
 	case commitsTab:
 		return m.commitDetail(m.selectedCommitSHA())
 	default:
-		i := m.cursors[conversationTab]
-		if i < 0 || i >= len(m.events) {
+		item := m.selectedConversationItem()
+		if item == nil {
 			return stMuted.Render("no events")
 		}
-		e := m.events[i]
-		if e.Kind == event.Commit {
-			return m.commitDetail(e.SHA)
+		if item.comment != nil {
+			head := stMuted.Render("💬 @" + item.comment.User.Login + " · " + shortTS(item.comment.CreatedAt) + " · press o to open")
+			return head + "\n\n" + md.Render(item.comment.Body, m.detail.Width)
 		}
-		head := stMuted.Render("— " + string(e.Kind) + " · no diff —")
-		body := lipgloss.NewStyle().Width(m.detail.Width).Render(strings.TrimSpace(e.Body))
-		return head + "\n\n" + body
+		if item.activity != nil {
+			return stMuted.Render("activity · "+shortTS(item.activity.CreatedAt)) + "\n\n" +
+				stFg.Render("@"+item.activity.Actor.Login+" "+activitySummary(*item.activity))
+		}
+		if item.event.Kind == event.Commit {
+			return m.commitDetail(item.event.SHA)
+		}
+		head := stMuted.Render(string(item.event.Kind) + " · no diff")
+		return head + "\n\n" + md.Render(item.event.Body, m.detail.Width)
 	}
 }
 
@@ -533,6 +761,29 @@ func wrapLines(text string, style lipgloss.Style, width int) []string {
 	}
 	return strings.Split(style.Width(width).Render(text), "\n")
 }
+
+func conversationTime(ts string) time.Time {
+	if t, err := time.Parse(time.RFC3339, ts); err == nil {
+		return t
+	}
+	if t, err := time.ParseInLocation("2006-01-02T15:04", ts, time.Local); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+func browserCommand(url string) *exec.Cmd {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url)
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		return exec.Command("xdg-open", url)
+	}
+}
+
+func openURL(url string) error { return browserCommand(url).Run() }
 
 func shortTS(ts string) string { return strings.Replace(ts, "T", " ", 1) }
 func itoa(n int) string        { return fmt.Sprintf("%d", n) }

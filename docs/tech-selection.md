@@ -49,7 +49,8 @@
 [ 表示: TUI (Bubble Tea) ]
   live-pr        # Conversation / Files changed / Commits
   local git      # file/commit一覧とdiff。GitHub待ちなし
-  GitHub metadata# cacheを即表示→起動時1回refresh。以後はrのみ
+  GitHub state   # PR + top-level comments + issue activityをcache即表示→起動時1回refresh。以後はrのみ
+  Markdown       # comment本文をglamourで枠付き描画。activityは枠なし。mediaはURL表示
   reviewer 起動  # Enter → tea.ExecProcess で nvim 等を全画面起動→復帰
 
 [ 出力: PR export ]
@@ -78,7 +79,9 @@ CLI 一覧（Cobra）:
 5. **TUI**: Conversation / Files changed / Commitsの3タブ。各タブの選択位置を保持し、詳細ペインへlocal diffを表示。
 6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
 7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
+8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
+9. **Conversation表示**: top-level GitHub commentsとissue activityをlocal eventと時系列統合。local/cloudのcomment系は枠の濃さで区別し、activity/commit系は枠なしrow。source文字列は表示しない。画像・動画はURLのまま、`o`でcomment permalinkをbrowser表示。
 
 ## 現在地
 
-3タブとGitHub同期基盤まで実装済み。次はGitHub comments / reviewsの取得・Conversation統合と通常コメント投稿を行い、全体確認後に配布へ進む。
+3タブ、GitHub同期基盤、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review commentsの同期と通常コメント投稿を行い、全体確認後に配布へ進む。
