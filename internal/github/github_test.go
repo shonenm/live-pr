@@ -32,6 +32,44 @@ func TestFindOpenDistinguishesMissingAndFailure(t *testing.T) {
 	}
 }
 
+func TestIssueCommentsFlattensPages(t *testing.T) {
+	var got []string
+	c := Client{run: func(args ...string) ([]byte, error) {
+		got = append([]string(nil), args...)
+		return []byte(`[[{"id":1,"body":"first","user":{"login":"alice"}}],[{"id":2,"body":"second","user":{"login":"bob"}}]]`), nil
+	}}
+	comments, err := c.IssueComments(12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 2 || comments[1].User.Login != "bob" {
+		t.Fatalf("unexpected comments: %#v", comments)
+	}
+	want := []string{"api", "--paginate", "--slurp", "repos/{owner}/{repo}/issues/12/comments?per_page=100"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args=%v", got)
+	}
+}
+
+func TestIssueActivitiesFlattensPages(t *testing.T) {
+	var got []string
+	c := Client{run: func(args ...string) ([]byte, error) {
+		got = append([]string(nil), args...)
+		return []byte(`[[{"id":1,"event":"labeled","actor":{"login":"alice"},"label":{"name":"bug"}}],[{"id":2,"event":"closed"}]]`), nil
+	}}
+	activities, err := c.IssueActivities(12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activities) != 2 || activities[0].Actor.Login != "alice" || activities[0].Label.Name != "bug" {
+		t.Fatalf("unexpected activities: %#v", activities)
+	}
+	want := []string{"api", "--paginate", "--slurp", "repos/{owner}/{repo}/issues/12/events?per_page=100"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args=%v", got)
+	}
+}
+
 func TestUpdateArgumentsAndError(t *testing.T) {
 	var got []string
 	c := Client{run: func(args ...string) ([]byte, error) {

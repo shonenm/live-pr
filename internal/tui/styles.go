@@ -8,13 +8,14 @@ import (
 
 // GitHub Primer (dark) palette + per-kind label colors.
 const (
-	cFg     = "#e6edf3"
-	cMuted  = "#7d8590"
-	cBorder = "#30363d"
-	cAccent = "#2f81f7"
-	cOpen   = "#238636"
-	cGreenF = "#3fb950"
-	cRedF   = "#f85149"
+	cFg          = "#e6edf3"
+	cMuted       = "#7d8590"
+	cBorder      = "#30363d"
+	cCloudBorder = "#6e7681"
+	cAccent      = "#2f81f7"
+	cOpen        = "#238636"
+	cGreenF      = "#3fb950"
+	cRedF        = "#f85149"
 
 	cDecision = "#4493f8"
 	cPivot    = "#db6d28"
