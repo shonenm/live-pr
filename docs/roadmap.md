@@ -49,8 +49,15 @@
 - `live-pr pr`: body = `conclusion.md`（最上部）+ 時系列の「Development timeline」節 → `gh pr create --base <base> --body-file`。既存 PR は title/body を更新。
 - **Done**: 意思決定の流れを反映した PR を GitHub に出す。
 
-### P6 — 仕上げ / 配布（次）
-- goreleaser + Homebrew tap、補完、テーマ設定、他エージェント hook adapter。dotfiles のツール登録。
+### P5.1 — TUI tabs + GitHub同期基盤
+- **Done**: Conversation / Files changed / Commitsを実タブ化。ローカルGitからfile/commit一覧とdiffを表示。
+- **Done**: GitHub操作を共通adapterへ分離し、PR未存在と通信・認証エラーを区別。
+- **Done**: PR bodyをmanaged marker内だけ更新し、外側を保持。前回publish後のremote編集・marker削除は競合として停止。
+- **Done**: branch単位の`github.json`をatomic保存。cacheを即表示して起動時に1回background refreshし、以後は`r`でのみ再取得。
+- **Next**: GitHub comments / reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
+
+### P6 — 仕上げ / 配布
+- GitHub双方向連携の完成後、goreleaser + Homebrew tap、補完、テーマ設定、他エージェント hook adapter。dotfiles のツール登録。
 
 ## マイルストーン
 
@@ -80,4 +87,4 @@ docs/
 
 ## 現在地
 
-P0〜P5と、Conversation中心のTUI改修まで `main` に統合済み。意思決定の記録・commit同期・セッション要約・ローカルレビュー・GitHub PR exportの一連のループが動く。次はP6の配布と連携先拡張。
+P0〜P5とConversation中心のTUIを`main`へ統合済み。現在は3タブとGitHub同期基盤まで実装し、次にGitHub conversationの取得・投稿を完成させる。その動作確認後にP6の配布へ進む。
