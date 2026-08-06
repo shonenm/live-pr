@@ -1,14 +1,16 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
+	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prbody"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/timeline"
@@ -50,54 +52,96 @@ func runPR(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	bodyFile, err := os.CreateTemp("", "live-pr-body-*.md")
+	cache, err := gh.LoadCache(st.GitHubCache(), st.Branch)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(bodyFile.Name())
-	if _, err := bodyFile.WriteString(body); err != nil {
+	client := gh.New()
+	pr, findErr := client.FindOpen(st.Branch)
+	if findErr == nil {
+		expected := cache.LastPublishedManagedBodyHash
+		if force, _ := cmd.Flags().GetBool("force-managed-body"); force {
+			expected = prbody.ManagedHash(pr.Body)
+		}
+		body, err = prbody.Merge(pr.Body, body, expected)
+		if err != nil {
+			return err
+		}
+	} else if !errors.Is(findErr, gh.ErrPRNotFound) {
+		return findErr
+	}
+	if len(body) > 65536 {
+		return fmt.Errorf("PR body is %d bytes; GitHub limit is 65536", len(body))
+	}
+
+	bodyFile, err := writeBodyFile(body)
+	if err != nil {
 		return err
 	}
-	bodyFile.Close()
+	defer os.Remove(bodyFile)
 
 	if err := git.Push(st.Branch); err != nil {
 		return fmt.Errorf("git push: %w", err)
 	}
 
-	if url := existingPRURL(st.Branch); url != "" {
-		if err := exec.Command("gh", "pr", "edit", st.Branch, "--title", title, "--body-file", bodyFile.Name()).Run(); err != nil {
-			return fmt.Errorf("gh pr edit: %w", err)
+	if findErr == nil {
+		if err := client.Update(st.Branch, title, bodyFile); err != nil {
+			return err
 		}
-		fmt.Println("updated", url)
+		pr.Title, pr.Body = title, body
+		cache.PR = &pr
+		cache.FetchedAt = time.Now().UTC().Format(time.RFC3339)
+		cache.LastPublishedManagedBodyHash = prbody.ManagedHash(body)
+		if err := gh.SaveCache(st.GitHubCache(), cache); err != nil {
+			return err
+		}
+		fmt.Println("updated", pr.URL)
 		return nil
 	}
 
 	// gh --base wants a branch name; the comparison base may be a remote ref.
 	prBase := strings.TrimPrefix(base, "origin/")
-	args := []string{"pr", "create", "--base", prBase, "--head", st.Branch, "--title", title, "--body-file", bodyFile.Name()}
-	if draft, _ := cmd.Flags().GetBool("draft"); draft {
-		args = append(args, "--draft")
-	}
-	out, err := exec.Command("gh", args...).CombinedOutput()
+	draft, _ := cmd.Flags().GetBool("draft")
+	out, err := client.Create(prBase, st.Branch, title, bodyFile, draft)
 	if err != nil {
-		return fmt.Errorf("gh pr create: %w\n%s", err, out)
+		return err
 	}
-	fmt.Print(string(out))
+	created, refreshErr := client.FindOpen(st.Branch)
+	if refreshErr != nil {
+		created = gh.PR{URL: out, Title: title, Body: body, State: "OPEN"}
+	}
+	cache.PR = &created
+	cache.FetchedAt = time.Now().UTC().Format(time.RFC3339)
+	cache.LastPublishedManagedBodyHash = prbody.ManagedHash(body)
+	if err := gh.SaveCache(st.GitHubCache(), cache); err != nil {
+		return err
+	}
+	fmt.Println(out)
 	return nil
 }
 
-// existingPRURL returns the URL of an open PR for branch, or "" if none.
-func existingPRURL(branch string) string {
-	out, err := exec.Command("gh", "pr", "view", branch, "--json", "url", "--jq", ".url").Output()
+func writeBodyFile(body string) (string, error) {
+	f, err := os.CreateTemp("", "live-pr-body-*.md")
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(string(out))
+	name := f.Name()
+	if _, err := f.WriteString(body); err != nil {
+		_ = f.Close()
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	return name, nil
 }
 
 func init() {
 	prCmd.Flags().String("base", "", "base branch (default: repo default branch)")
 	prCmd.Flags().Bool("draft", false, "create as a draft PR")
 	prCmd.Flags().Bool("dry-run", false, "print the assembled PR body instead of creating/updating")
+	prCmd.Flags().Bool("force-managed-body", false, "overwrite a conflicting live-pr managed block")
 	rootCmd.AddCommand(prCmd)
 }

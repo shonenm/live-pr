@@ -1,6 +1,7 @@
 package prbody
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -47,5 +48,60 @@ func TestRenderOmitsPlaceholderConclusion(t *testing.T) {
 	}
 	if !strings.Contains(out, "_No timeline events yet._") {
 		t.Errorf("empty timeline should say so:\n%s", out)
+	}
+}
+
+func TestRenderWrapsManagedBlock(t *testing.T) {
+	out := Render("# Feature", nil)
+	if !strings.HasPrefix(out, ManagedStart+"\n") || !strings.Contains(out, ManagedEnd) {
+		t.Fatalf("missing managed markers:\n%s", out)
+	}
+	if ManagedHash(out) == "" {
+		t.Fatal("managed block should have a hash")
+	}
+}
+
+func TestMergePreservesOutsideAndDetectsConflict(t *testing.T) {
+	old := Render("# Old", nil)
+	remote := "human intro\n\n" + old + "\nhuman footer\n"
+	next := Render("# New", nil)
+
+	merged, err := Merge(remote, next, ManagedHash(remote))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"human intro", "# New", "human footer"} {
+		if !strings.Contains(merged, want) {
+			t.Fatalf("merged body missing %q:\n%s", want, merged)
+		}
+	}
+	if strings.Contains(merged, "# Old") {
+		t.Fatalf("old managed body remained:\n%s", merged)
+	}
+
+	if _, err := Merge(remote, next, Hash("different")); !errors.Is(err, ErrManagedConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestMergeRequiresBaselineForExistingOrDeletedManagedBlock(t *testing.T) {
+	old := Render("# Old", nil)
+	next := Render("# New", nil)
+	if _, err := Merge(old, next, ""); !errors.Is(err, ErrManagedConflict) {
+		t.Fatalf("expected missing-baseline conflict, got %v", err)
+	}
+	if _, err := Merge("human body after managed block was deleted", next, ManagedHash(old)); !errors.Is(err, ErrManagedConflict) {
+		t.Fatalf("expected deleted-block conflict, got %v", err)
+	}
+}
+
+func TestMergeAppendsToUnmanagedBody(t *testing.T) {
+	next := Render("# Feature", nil)
+	merged, err := Merge("human-owned body", next, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(merged, "human-owned body") || !strings.Contains(merged, ManagedStart) {
+		t.Fatalf("unexpected merge:\n%s", merged)
 	}
 }
