@@ -11,16 +11,16 @@ func TestFindOpen(t *testing.T) {
 	var got []string
 	c := Client{run: func(args ...string) ([]byte, error) {
 		got = append([]string(nil), args...)
-		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN","baseRefName":"release","assignees":[{"login":"alice"}],"labels":[{"name":"bug","color":"d73a4a"}]}]`), nil
+		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN","baseRefName":"release","author":{"login":"octocat"},"createdAt":"2026-08-07T14:49:25Z","assignees":[{"login":"alice"}],"labels":[{"name":"bug","color":"d73a4a"}]}]`), nil
 	}}
 	pr, err := c.FindOpen("feature")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Number != 12 || pr.Body != "body" || pr.BaseRefName != "release" || len(pr.Assignees) != 1 || pr.Assignees[0].Login != "alice" || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
+	if pr.Number != 12 || pr.Body != "body" || pr.BaseRefName != "release" || pr.Author.Login != "octocat" || pr.CreatedAt != "2026-08-07T14:49:25Z" || len(pr.Assignees) != 1 || pr.Assignees[0].Login != "alice" || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
 		t.Fatalf("unexpected PR: %#v", pr)
 	}
-	if args := strings.Join(got, " "); !strings.Contains(args, "assignees") || !strings.Contains(args, "labels") {
+	if args := strings.Join(got, " "); !strings.Contains(args, "author") || !strings.Contains(args, "createdAt") || !strings.Contains(args, "assignees") || !strings.Contains(args, "labels") {
 		t.Fatalf("metadata fields not requested: %v", got)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/publish"
 )
 
 func testModel() Model {
@@ -94,6 +95,49 @@ func TestConversationExcludesCommits(t *testing.T) {
 	m = updated.(Model)
 	if m.cursors[conversationTab] != 0 {
 		t.Fatalf("cursor moved into hidden commits: %d", m.cursors[conversationTab])
+	}
+}
+
+func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: hidden"}}
+	m.cache.PR = &gh.PR{
+		URL:       "https://github.com/acme/repo/pull/14",
+		Body:      "**opening** ![image](https://example.com/image.png)",
+		Author:    gh.PRUser{Login: "shonenm"},
+		CreatedAt: "2026-08-07T14:49:25Z",
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+
+	items := m.conversationItems()
+	if len(items) != 1 || items[0].pr == nil || items[0].event != nil {
+		t.Fatalf("conversation items = %#v", items)
+	}
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"@shonenm", "description", "opening", "https://example.com/image.png"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("description view missing %q: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "**opening**") || strings.Contains(out, "![image]") || strings.Contains(out, "feat: hidden") {
+		t.Fatalf("description Markdown or hidden commit rendered incorrectly: %q", out)
+	}
+	if got := m.selectedBrowseURL(); got != m.cache.PR.URL {
+		t.Fatalf("description browse URL = %q", got)
+	}
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}); cmd == nil {
+		t.Fatal("o should open the selected PR description")
+	}
+}
+
+func TestEmptyPRDescriptionHasPlaceholder(t *testing.T) {
+	m := testModel()
+	m.events = nil
+	m.cache.PR = &gh.PR{URL: "https://example/pr/1"}
+	lines := ansi.Strip(strings.Join(m.descriptionLines(*m.cache.PR, false, 60), "\n"))
+	if !strings.Contains(lines, "(no description provided)") {
+		t.Fatalf("empty description = %q", lines)
 	}
 }
 
@@ -230,8 +274,68 @@ func TestCommentSelectionSurvivesRefresh(t *testing.T) {
 	newer := gh.Comment{ID: 43, NodeID: "IC_43", Body: "new", CreatedAt: "2026-08-02T10:00:00Z"}
 	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 1}, comments: []gh.Comment{comment, newer}})
 	m = u.(Model)
-	if selected := m.selectedComment(); selected == nil || selected.NodeID != "IC_42" {
+	if selected := m.selectedConversationItem(); selected == nil || selected.comment == nil || selected.comment.NodeID != "IC_42" {
 		t.Fatalf("selection moved after refresh: %#v", selected)
+	}
+}
+
+func TestDescriptionOrderAndSelectionSurviveRefresh(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "local"}}
+	m.cache.PR = &gh.PR{URL: "https://example/pr/1", Body: "old", CreatedAt: "2026-08-01T10:00:00Z"}
+	m.cache.Comments = []gh.Comment{{ID: 2, CreatedAt: "2026-08-01T10:02:00Z"}}
+	m.cache.Activities = []gh.Activity{{ID: 3, CreatedAt: "2026-08-01T10:03:00Z"}}
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+
+	items := m.conversationItems()
+	if len(items) != 4 || items[0].pr == nil || items[1].event == nil || items[2].comment == nil || items[3].activity == nil {
+		t.Fatalf("conversation order = %#v", items)
+	}
+	m.cursors[conversationTab] = 0
+	u, _ := m.Update(githubRefreshed{
+		pr:         gh.PR{URL: "https://example/pr/1", Body: "edited", CreatedAt: "2026-08-01T10:00:00Z"},
+		comments:   m.cache.Comments,
+		activities: m.cache.Activities,
+	})
+	m = u.(Model)
+	selected := m.selectedConversationItem()
+	if selected == nil || selected.pr == nil || selected.pr.Body != "edited" || m.cursors[conversationTab] != 0 {
+		t.Fatalf("description selection after refresh = %#v cursor=%d", selected, m.cursors[conversationTab])
+	}
+}
+
+func TestLocalEventSelectionSurvivesCommitInsertion(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{
+		{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "first"},
+		{TS: "2026-08-01T10:02:00Z", Kind: event.Decision, Title: "selected", Body: "keep me"},
+	}
+	m.cursors[conversationTab] = 1
+	selectedKey := m.selectedConversationKey()
+	m.events = append([]event.Event{{TS: "2026-08-01T10:00:00Z", Kind: event.Commit, Title: "inserted", SHA: "abc"}}, m.events...)
+	m.restoreConversationSelection(selectedKey)
+
+	selected := m.selectedConversationItem()
+	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.cursors[conversationTab] != 1 {
+		t.Fatalf("selection after commit insertion = %#v cursor=%d", selected, m.cursors[conversationTab])
+	}
+}
+
+func TestPublishInsertionPreservesConversationSelection(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "selected"}}
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	cache := gh.NewCache(m.head)
+	cache.PR = &gh.PR{URL: "https://example/pr/1", Body: "new", CreatedAt: "2026-08-01T10:00:00Z"}
+	if err := gh.SaveCache(m.cachePath, cache); err != nil {
+		t.Fatal(err)
+	}
+
+	u, _ := m.Update(publishDone{result: publish.Result{PR: *cache.PR, Created: true}})
+	m = u.(Model)
+	selected := m.selectedConversationItem()
+	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.cursors[conversationTab] != 1 {
+		t.Fatalf("selection after publish = %#v cursor=%d", selected, m.cursors[conversationTab])
 	}
 }
 

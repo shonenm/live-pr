@@ -60,7 +60,7 @@ var keys = keyMap{
 	Commits:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "choose commit")),
 	Select:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
 	Back:       key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
-	Browse:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open comment")),
+	Browse:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
 	Refresh:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
 	Publish:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
 	Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
@@ -97,6 +97,7 @@ type detailContent struct {
 type conversationItem struct {
 	key      string
 	ts       string
+	pr       *gh.PR
 	event    *event.Event
 	comment  *gh.Comment
 	activity *gh.Activity
@@ -382,6 +383,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "publish: " + msg.err.Error()
 			return m, nil
 		}
+		selectedKey := m.selectedConversationKey()
 		if cache, err := gh.LoadCache(m.cachePath, m.head); err == nil {
 			m.cache = cache
 		}
@@ -392,6 +394,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		m.githubStatus = "PR " + action + ": " + msg.result.PR.URL
 		m.layout()
+		m.restoreConversationSelection(selectedKey)
 		return m, m.sync()
 
 	case githubRefreshed:
@@ -499,11 +502,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return publishDone{result: result, err: err}
 			}
 		case key.Matches(msg, m.keys.Browse):
-			comment := m.selectedComment()
-			if comment == nil || comment.HTMLURL == "" {
+			url := m.selectedBrowseURL()
+			if url == "" {
 				return m, nil
 			}
-			url := comment.HTMLURL
 			return m, func() tea.Msg { return browserDone{err: openURL(url)} }
 		case key.Matches(msg, m.keys.Commits):
 			m.active = commitsTab
@@ -553,11 +555,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) conversationItems() []conversationItem {
-	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities))
+	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities)+1)
+	if m.cache.PR != nil {
+		items = append(items, conversationItem{key: "description:" + m.cache.PR.URL, ts: m.cache.PR.CreatedAt, pr: m.cache.PR})
+	}
+	eventOccurrences := map[string]int{}
 	for i := range m.events {
 		e := &m.events[i]
 		if e.Kind != event.Commit {
-			items = append(items, conversationItem{key: fmt.Sprintf("event:%d", i), ts: e.TS, event: e})
+			baseKey := fmt.Sprintf("event:%q:%q:%q:%q", e.TS, e.Kind, e.Title, e.Body)
+			occurrence := eventOccurrences[baseKey]
+			eventOccurrences[baseKey]++
+			items = append(items, conversationItem{key: fmt.Sprintf("%s:%d", baseKey, occurrence), ts: e.TS, event: e})
 		}
 	}
 	for i := range m.cache.Comments {
@@ -620,13 +629,21 @@ func (m Model) activeLen() int {
 	return len(m.conversationItems())
 }
 
-func (m Model) selectedComment() *gh.Comment {
-	if m.active == conversationTab {
-		if item := m.selectedConversationItem(); item != nil {
-			return item.comment
-		}
+func (m Model) selectedBrowseURL() string {
+	if m.active != conversationTab {
+		return ""
 	}
-	return nil
+	item := m.selectedConversationItem()
+	if item == nil {
+		return ""
+	}
+	if item.pr != nil {
+		return item.pr.URL
+	}
+	if item.comment != nil {
+		return item.comment.HTMLURL
+	}
+	return ""
 }
 
 func (m Model) selectedCommitSHA() string {
@@ -644,7 +661,7 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.Commits.SetEnabled(m.active == conversationTab)
 	m.keys.Select.SetEnabled(m.active == commitsTab)
 	m.keys.Back.SetEnabled(m.active == commitsTab)
-	m.keys.Browse.SetEnabled(m.active == conversationTab && m.selectedComment() != nil)
+	m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
 	if off := selectedLine - 1; off > 0 {
@@ -826,7 +843,9 @@ func (m Model) buildConversation() (string, int) {
 		if selected {
 			selectedLine = len(lines)
 		}
-		if item.comment != nil {
+		if item.pr != nil {
+			lines = append(lines, m.descriptionLines(*item.pr, selected, m.list.Width)...)
+		} else if item.comment != nil {
 			lines = append(lines, m.commentLines(*item.comment, selected, m.list.Width)...)
 		} else if item.activity != nil {
 			lines = append(lines, m.activityLines(*item.activity, selected)...)
@@ -849,6 +868,15 @@ func (m Model) eventLines(e event.Event, selected bool, width int) []string {
 		body += "\n" + md.Render(e.Body, width-7)
 	}
 	return cardLines(header, body, selected, width, cBorder)
+}
+
+func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
+	body := pr.Body
+	if strings.TrimSpace(body) == "" {
+		body = "(no description provided)"
+	}
+	header := stMuted.Render("💬 @" + pr.Author.Login + " · description · " + shortTS(pr.CreatedAt))
+	return cardLines(header, md.Render(body, width-7), selected, width, cCloudBorder)
 }
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
