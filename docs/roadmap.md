@@ -56,6 +56,7 @@
 - **Done**: branch単位の`github.json`をatomic保存。cacheを即表示して起動時に1回background refreshし、以後は`r`でのみ再取得。
 - **Done**: TUIの`p`から明示的にPRを作成・更新。CLIと同じpublish service、managed-body競合保護、cache更新を利用。
 - **Done**: GitHubのtop-level commentsとissue activityを取得・cacheし、Conversationへ時系列統合。local eventsとGitHub commentsは枠の濃さが異なるcard、GitHub activityとGit commitsは枠なしtimeline row。source文字列は表示領域節約のため付けない。画像・動画はURL表示し、`o`で選択コメントをbrowser表示。
+- **Done**: PR assigneesとlabelsを同じcache-first refreshで取得し、headerへassignee名とGitHub色のlabel pillを表示。
 - **Done**: `[diff].command`をPTY/VTで右paneへ埋め込み、local PRと対話型CodeReview（`base...HEAD`）を起動時から並列表示。`Shift+Tab`/click focus、resize/input/lifecycle、raw Git・`[diff].display` fallbackに対応。
 - **Next**: reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
 
