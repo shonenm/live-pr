@@ -76,7 +76,7 @@ func TestViewRendersHeaderAndTimeline(t *testing.T) {
 	m = updated.(Model)
 
 	out := m.View()
-	for _, want := range []string{"Local", "main", "feature/x", "decision", "chose Go", "Conversation"} {
+	for _, want := range []string{"Local", "main", "feature/x", "1 files changed", "decision", "chose Go"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q", want)
 		}
@@ -107,29 +107,45 @@ func TestCursorMovesAndPreviewSwitches(t *testing.T) {
 	}
 }
 
-func TestTabsSwitchAndKeepIndependentCursors(t *testing.T) {
+func TestCommitPickerSelectsCommitAndEscRestoresBranchReview(t *testing.T) {
 	m := testModel()
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m = u.(Model)
-	if m.active != filesTab || !strings.Contains(m.View(), "internal/tui/tui.go") {
-		t.Fatalf("tab should switch to changed files")
-	}
-
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
 	if m.active != commitsTab || !strings.Contains(m.View(), "feat: x") {
-		t.Fatalf("3 should switch to commits")
+		t.Fatalf("c should replace Conversation with the commit picker")
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if m.active != conversationTab || m.cursors[conversationTab] != 1 {
-		t.Fatalf("conversation cursor should be preserved")
+	if m.reviewSHA != "abc1234" || !strings.Contains(ansi.Strip(m.renderHeader()), "commit abc1234") {
+		t.Fatalf("Enter did not select commit review: sha=%q", m.reviewSHA)
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	if m.active != conversationTab || m.reviewSHA != "" || m.cursors[conversationTab] != 1 {
+		t.Fatalf("Esc should restore branch review and the Conversation cursor")
+	}
+}
+
+func TestCommitPickerCancelKeepsBranchTerminal(t *testing.T) {
+	m := testModel()
+	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
+	branchTerminal := m.diffTerminal
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	defer m.close()
+	if m.active != conversationTab || m.diffTerminal != branchTerminal || m.reviewSHA != "" {
+		t.Fatal("canceling an unselected picker restarted branch review")
 	}
 }
 
@@ -326,33 +342,64 @@ func TestTranslateDiffMouseUsesContentBounds(t *testing.T) {
 	}
 }
 
-func TestShiftTabRoutesKeysToEmbeddedCodeReview(t *testing.T) {
+func TestReviewFocusKeys(t *testing.T) {
 	m := testModel()
 	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	m = u.(Model)
 	if !m.focusDiff {
-		t.Fatal("Shift+Tab should focus CodeReview")
+		t.Fatal("l should focus review")
+	}
+	footer := ansi.Strip(m.renderFooter())
+	if !strings.Contains(footer, "q / Shift+Tab: left pane") || strings.Contains(footer, "branch review") {
+		t.Fatalf("focused footer is misleading: %q", footer)
 	}
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	m = u.(Model)
-	if cmd != nil {
-		t.Fatal("focused q should be forwarded, not quit live-pr")
+	if cmd != nil || m.focusDiff {
+		t.Fatal("q should return focus to the left pane")
+	}
+	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
+		t.Fatal("q on the left pane should quit")
+	} else if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("left-pane q returned %T", cmd())
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if !m.focusDiff {
+		t.Fatal("Shift+Tab should focus review")
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
 	if m.focusDiff {
-		t.Fatal("second Shift+Tab should return focus to local PR")
+		t.Fatal("second Shift+Tab should return focus to the left pane")
 	}
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
-		t.Fatal("local PR q should quit")
+		t.Fatal("Ctrl+C should quit from the left pane")
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Fatalf("quit command returned %T", cmd())
+	}
+}
+
+func TestStaticReviewFocusKeys(t *testing.T) {
+	m := testModel()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = u.(Model)
+	if !m.focusDiff {
+		t.Fatal("l should focus the static review fallback")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(Model)
+	if m.focusDiff {
+		t.Fatal("q should return from the static review fallback")
 	}
 }
 
@@ -426,32 +473,18 @@ func TestPublishIsExplicitAndSingleFlight(t *testing.T) {
 	}
 }
 
-func TestEnterLaunchesReviewerOnCommitOnly(t *testing.T) {
+func TestCommitSelectionStartsEmbeddedCommitCommandAndFocusesReview(t *testing.T) {
 	m := testModel()
+	m.root = t.TempDir()
+	m.diffCommitCommand = "cat"
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-
-	// cursor 0 = decision (non-commit): no reviewer, a status hint instead.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = u.(Model)
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if cmd != nil {
-		t.Errorf("enter on a non-commit event must not launch the reviewer")
-	}
-	if m.status == "" {
-		t.Errorf("expected a status hint when entering on a non-commit event")
-	}
-
-	// move to the commit event, enter → a reviewer command is returned.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = u.(Model)
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
-		t.Errorf("enter on a commit event must return a reviewer command")
-	}
-
-	// The Commits tab reuses the same reviewer action.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
-	m = u.(Model)
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
-		t.Errorf("enter in the Commits tab must return a reviewer command")
+	defer m.close()
+	if cmd == nil || m.reviewSHA != "abc1234" || !m.focusDiff || m.diffTerminal == nil {
+		t.Fatalf("commit selection did not start/focus embedded review: sha=%q focus=%v terminal=%v", m.reviewSHA, m.focusDiff, m.diffTerminal != nil)
 	}
 }

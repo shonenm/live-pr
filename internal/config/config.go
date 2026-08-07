@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -12,8 +13,8 @@ import (
 
 // Config holds user-tunable settings.
 type Config struct {
-	// Reviewer is the command template launched to review a commit. Placeholders
-	// {sha} {base} {head} are substituted; it is run through `sh -c`.
+	// Reviewer is the legacy commit template used when diff.commit_command is
+	// absent. {sha}/{base}/{head} map to the corresponding LIVE_PR_* values.
 	Reviewer string `toml:"reviewer"`
 
 	// SummaryMinIntervalMinutes throttles the Stop-hook summarizer: no new
@@ -30,20 +31,36 @@ type Config struct {
 // DiffConfig customizes how raw Git diff is rendered in the right pane.
 type DiffConfig struct {
 	// Command runs an interactive reviewer in the right pane's embedded PTY.
-	// It receives LIVE_PR_BASE, LIVE_PR_HEAD, and LIVE_PR_PR_URL.
+	// It receives LIVE_PR_BASE, LIVE_PR_HEAD, LIVE_PR_PR_URL, and LIVE_PR_SHA.
 	Command string `toml:"command"`
+
+	// CommitCommand runs the embedded reviewer for LIVE_PR_SHA.
+	CommitCommand string `toml:"commit_command"`
 
 	// Display receives raw diff on stdin and writes ANSI text to stdout when no
 	// interactive command is configured. Empty keeps the built-in Git output.
 	Display string `toml:"display"`
 }
 
-// Default returns built-in settings (delegates diff review to codediff/nvim).
+// Default returns built-in settings, including legacy commit compatibility.
 func Default() Config {
 	return Config{
 		Reviewer:                  `nvim -c "CodeDiff {sha}~1 {sha}"`,
 		SummaryMinIntervalMinutes: 10,
 	}
+}
+
+// CommitReviewCommand returns the embedded commit command, falling back to
+// the legacy reviewer template for existing configurations.
+func (c Config) CommitReviewCommand() string {
+	if c.Diff.CommitCommand != "" {
+		return c.Diff.CommitCommand
+	}
+	return strings.NewReplacer(
+		"{sha}", "$LIVE_PR_SHA",
+		"{base}", "$LIVE_PR_BASE",
+		"{head}", "$LIVE_PR_HEAD",
+	).Replace(c.Reviewer)
 }
 
 // SummaryInterval is the throttle window as a duration.
