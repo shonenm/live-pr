@@ -8,15 +8,20 @@ import (
 )
 
 func TestFindOpen(t *testing.T) {
+	var got []string
 	c := Client{run: func(args ...string) ([]byte, error) {
-		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN","baseRefName":"release"}]`), nil
+		got = append([]string(nil), args...)
+		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN","baseRefName":"release","assignees":[{"login":"alice"}],"labels":[{"name":"bug","color":"d73a4a"}]}]`), nil
 	}}
 	pr, err := c.FindOpen("feature")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Number != 12 || pr.Body != "body" || pr.BaseRefName != "release" {
+	if pr.Number != 12 || pr.Body != "body" || pr.BaseRefName != "release" || len(pr.Assignees) != 1 || pr.Assignees[0].Login != "alice" || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
 		t.Fatalf("unexpected PR: %#v", pr)
+	}
+	if args := strings.Join(got, " "); !strings.Contains(args, "assignees") || !strings.Contains(args, "labels") {
+		t.Fatalf("metadata fields not requested: %v", got)
 	}
 }
 

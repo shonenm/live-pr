@@ -16,12 +16,25 @@ var ErrPRNotFound = errors.New("pull request not found")
 
 // PR is the remote pull-request state needed by live-pr.
 type PR struct {
-	Number      int    `json:"number"`
-	URL         string `json:"url"`
-	Title       string `json:"title"`
-	Body        string `json:"body"`
-	State       string `json:"state"`
-	BaseRefName string `json:"baseRefName,omitempty"`
+	Number      int       `json:"number"`
+	URL         string    `json:"url"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	State       string    `json:"state"`
+	BaseRefName string    `json:"baseRefName,omitempty"`
+	Assignees   []PRUser  `json:"assignees,omitempty"`
+	Labels      []PRLabel `json:"labels,omitempty"`
+}
+
+// PRUser is a GitHub account attached to PR metadata.
+type PRUser struct {
+	Login string `json:"login"`
+}
+
+// PRLabel is a GitHub label and its six-digit RGB color.
+type PRLabel struct {
+	Name  string `json:"name"`
+	Color string `json:"color"`
 }
 
 // Comment is a top-level PR conversation comment.
@@ -79,7 +92,7 @@ func New() Client {
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
 // only a successful empty list becomes ErrPRNotFound.
 func (c Client) FindOpen(head string) (PR, error) {
-	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", "number,url,title,body,state,baseRefName")
+	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", "number,url,title,body,state,baseRefName,assignees,labels")
 	if err != nil {
 		return PR{}, commandError("gh pr list", out, err)
 	}

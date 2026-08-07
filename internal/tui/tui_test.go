@@ -8,6 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/event"
@@ -28,6 +30,43 @@ func testModel() Model {
 		commits: []git.Commit{{SHA: "abc1234", Subject: "feat: x", Date: "2026-07-21T11:00"}},
 		help:    help.New(),
 		keys:    keys,
+	}
+}
+
+func TestHeaderShowsCachedPRAssigneesAndLabels(t *testing.T) {
+	m := testModel()
+	m.w = 120
+	m.cache.PR = &gh.PR{
+		Number:    12,
+		State:     "OPEN",
+		Assignees: []gh.PRUser{{Login: "alice"}, {Login: "bob"}},
+		Labels:    []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}},
+	}
+	plain := ansi.Strip(m.renderHeader())
+	for _, want := range []string{"#12 open", "@alice @bob", "bug", "docs"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("header missing %q: %q", want, plain)
+		}
+	}
+	if m.headerHeight() != headerBaseLines+1 {
+		t.Fatalf("PR header height = %d", m.headerHeight())
+	}
+	m.w = 25
+	if width := lipgloss.Width(m.renderPRMeta(*m.cache.PR)); width > m.w {
+		t.Fatalf("metadata width = %d, want <= %d", width, m.w)
+	}
+	m.cache.PR = nil
+	if m.headerHeight() != headerBaseLines {
+		t.Fatalf("local header height = %d", m.headerHeight())
+	}
+}
+
+func TestLabelForegroundChoosesHigherContrast(t *testing.T) {
+	if got := contrastingLabelForeground(0x00aa00); got != "#0d1117" {
+		t.Fatalf("green foreground = %s", got)
+	}
+	if got := contrastingLabelForeground(0x000080); got != "#ffffff" {
+		t.Fatalf("navy foreground = %s", got)
 	}
 }
 
@@ -91,6 +130,19 @@ func TestTabsSwitchAndKeepIndependentCursors(t *testing.T) {
 	m = u.(Model)
 	if m.active != conversationTab || m.cursors[conversationTab] != 1 {
 		t.Fatalf("conversation cursor should be preserved")
+	}
+}
+
+func TestPRRefreshAddsMetadataHeaderRow(t *testing.T) {
+	m := testModel()
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	before := m.detail.Height
+	u, _ = m.Update(githubRefreshed{pr: gh.PR{Number: 12, State: "OPEN"}})
+	m = u.(Model)
+	if m.detail.Height != before-1 || m.headerHeight() != headerBaseLines+1 {
+		t.Fatalf("metadata row not reflected in layout: before=%d after=%d header=%d", before, m.detail.Height, m.headerHeight())
 	}
 }
 
@@ -256,18 +308,19 @@ func TestRefreshAndPublishAreMutuallyExclusive(t *testing.T) {
 }
 
 func TestTranslateDiffMouseUsesContentBounds(t *testing.T) {
-	msg := tea.MouseMsg{X: 42, Y: headerLines, Action: tea.MouseActionPress}
-	local, ok := translateDiffMouse(msg, 40, 80, 20)
+	headerHeight := headerBaseLines + 1
+	msg := tea.MouseMsg{X: 42, Y: headerHeight, Action: tea.MouseActionPress}
+	local, ok := translateDiffMouse(msg, 40, 80, 20, headerHeight)
 	if !ok || local.X != 0 || local.Y != 0 {
 		t.Fatalf("translated = %+v, ok=%v", local, ok)
 	}
 	for _, outside := range []tea.MouseMsg{
-		{X: 41, Y: headerLines},
-		{X: 122, Y: headerLines},
-		{X: 42, Y: headerLines - 1},
-		{X: 42, Y: headerLines + 20},
+		{X: 41, Y: headerHeight},
+		{X: 122, Y: headerHeight},
+		{X: 42, Y: headerHeight - 1},
+		{X: 42, Y: headerHeight + 20},
 	} {
-		if _, ok := translateDiffMouse(outside, 40, 80, 20); ok {
+		if _, ok := translateDiffMouse(outside, 40, 80, 20, headerHeight); ok {
 			t.Fatalf("outside event accepted: %+v", outside)
 		}
 	}
