@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -251,6 +252,112 @@ func TestRefreshAndPublishAreMutuallyExclusive(t *testing.T) {
 	m.refreshing, m.publishing = false, true
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}); cmd != nil {
 		t.Fatal("refresh should not overlap publish")
+	}
+}
+
+func TestTranslateDiffMouseUsesContentBounds(t *testing.T) {
+	msg := tea.MouseMsg{X: 42, Y: headerLines, Action: tea.MouseActionPress}
+	local, ok := translateDiffMouse(msg, 40, 80, 20)
+	if !ok || local.X != 0 || local.Y != 0 {
+		t.Fatalf("translated = %+v, ok=%v", local, ok)
+	}
+	for _, outside := range []tea.MouseMsg{
+		{X: 41, Y: headerLines},
+		{X: 122, Y: headerLines},
+		{X: 42, Y: headerLines - 1},
+		{X: 42, Y: headerLines + 20},
+	} {
+		if _, ok := translateDiffMouse(outside, 40, 80, 20); ok {
+			t.Fatalf("outside event accepted: %+v", outside)
+		}
+	}
+}
+
+func TestShiftTabRoutesKeysToEmbeddedCodeReview(t *testing.T) {
+	m := testModel()
+	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if !m.focusDiff {
+		t.Fatal("Shift+Tab should focus CodeReview")
+	}
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(Model)
+	if cmd != nil {
+		t.Fatal("focused q should be forwarded, not quit live-pr")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if m.focusDiff {
+		t.Fatal("second Shift+Tab should return focus to local PR")
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("local PR q should quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("quit command returned %T", cmd())
+	}
+}
+
+func TestConfiguredDiffDisplayIsAsyncCachedAndRejectsStaleResults(t *testing.T) {
+	m := testModel()
+	m.diffDisplay = "sed 's/foo/bar/g'"
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	detail := detailContent{key: "commit:abc", raw: "foo", renderable: true}
+	cmd := m.syncDetail(detail)
+	if cmd == nil || !strings.Contains(m.detail.View(), "foo") {
+		t.Fatal("raw diff should display while configured command runs")
+	}
+	if duplicate := m.syncDetail(detail); duplicate != nil {
+		t.Fatal("same diff command should be single-flight")
+	}
+	msg := cmd().(diffRendered)
+	u, _ = m.Update(msg)
+	m = u.(Model)
+	if !strings.Contains(m.detail.View(), "bar") {
+		t.Fatalf("rendered diff not applied: %q", m.detail.View())
+	}
+	if cached := m.syncDetail(detail); cached != nil {
+		t.Fatal("rendered diff should be cached")
+	}
+
+	m.detail.SetContent("current")
+	m.detailKey = "current-key"
+	u, _ = m.Update(diffRendered{key: "stale-key", output: "stale", raw: "raw", err: errors.New("diff display stale failure")})
+	m = u.(Model)
+	if strings.Contains(m.detail.View(), "stale") || strings.Contains(m.status, "stale failure") {
+		t.Fatal("late result affected the current selection")
+	}
+}
+
+func TestDefaultDiffDisplayUsesRawOutput(t *testing.T) {
+	m := testModel()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	if cmd := m.syncDetail(detailContent{key: "commit:abc", raw: "raw diff", renderable: true}); cmd != nil || !strings.Contains(m.detail.View(), "raw diff") {
+		t.Fatal("empty config must keep raw Git output without a command")
+	}
+}
+
+func TestConfiguredDiffFailureKeepsRawOutput(t *testing.T) {
+	m := testModel()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	m.diffDisplay = "exit 2"
+	detail := detailContent{key: "commit:abc", raw: "raw diff", renderable: true}
+	cmd := m.syncDetail(detail)
+	u, _ = m.Update(cmd())
+	m = u.(Model)
+	if !strings.Contains(m.detail.View(), "raw diff") || !strings.Contains(m.status, "diff display") {
+		t.Fatalf("failure did not fall back to raw diff: detail=%q status=%q", m.detail.View(), m.status)
+	}
+	if retry := m.syncDetail(detail); retry != nil || !strings.Contains(m.detail.View(), "raw diff") || m.status != "" {
+		t.Fatalf("failed result should be cached and its error cleared after navigation")
 	}
 }
 

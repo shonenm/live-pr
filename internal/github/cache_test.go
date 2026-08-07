@@ -6,6 +6,17 @@ import (
 	"testing"
 )
 
+func TestCacheBase(t *testing.T) {
+	cache := NewCache("feature")
+	if got := cache.Base("main"); got != "main" {
+		t.Fatalf("fallback base = %q", got)
+	}
+	cache.PR = &PR{BaseRefName: "release"}
+	if got := cache.Base("main"); got != "release" {
+		t.Fatalf("PR base = %q", got)
+	}
+}
+
 func TestCacheRoundTripAndHeadIsolation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "github.json")
 	c := NewCache("feature/x")

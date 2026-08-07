@@ -44,6 +44,21 @@ func DefaultBase() string {
 	return "main"
 }
 
+// ResolveBase turns a GitHub base name into the freshest local Git revision,
+// preferring its origin remote-tracking ref when available.
+func ResolveBase(base string) string {
+	if base == "" {
+		return DefaultBase()
+	}
+	if strings.HasPrefix(base, "origin/") {
+		return base
+	}
+	if _, err := run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+base); err == nil {
+		return "origin/" + base
+	}
+	return base
+}
+
 // Commit is a git commit reduced to what the timeline needs.
 type Commit struct {
 	SHA     string
