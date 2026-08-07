@@ -5,10 +5,12 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/diffview"
@@ -278,7 +281,7 @@ func fetchGitHub(head string) tea.Cmd {
 }
 
 const (
-	headerLines     = 4
+	headerBaseLines = 4
 	footerLines     = 1
 	listRatio       = 52
 	reviewListRatio = 38
@@ -297,7 +300,7 @@ func (m *Model) layout() {
 	if detailW < 10 {
 		detailW = 10
 	}
-	bodyH := m.h - headerLines - footerLines
+	bodyH := m.h - m.headerHeight() - footerLines
 	if bodyH < 3 {
 		bodyH = 3
 	}
@@ -383,7 +386,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.status = ""
 		m.githubStatus = "PR " + action + ": " + msg.result.PR.URL
-		return m, nil
+		m.layout()
+		return m, m.sync()
 
 	case githubRefreshed:
 		m.refreshing = false
@@ -424,12 +428,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if strings.HasPrefix(m.status, "GitHub cache") {
 			m.status = ""
 		}
+		m.layout()
 		m.restoreConversationSelection(selectedKey)
 		return m, tea.Batch(diffCmd, m.sync())
 
 	case tea.MouseMsg:
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			if local, ok := translateDiffMouse(msg, m.list.Width, m.detail.Width, m.detail.Height); ok {
+			if local, ok := translateDiffMouse(msg, m.list.Width, m.detail.Width, m.detail.Height, m.headerHeight()); ok {
 				m.focusDiff = true
 				return m, m.diffTerminal.Update(local)
 			}
@@ -662,14 +667,14 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 	return nil
 }
 
-func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight int) (tea.MouseMsg, bool) {
+func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight, headerHeight int) (tea.MouseMsg, bool) {
 	contentX := listWidth + 2 // detail left border + padding
 	if msg.X < contentX || msg.X >= contentX+detailWidth ||
-		msg.Y < headerLines || msg.Y >= headerLines+detailHeight {
+		msg.Y < headerHeight || msg.Y >= headerHeight+detailHeight {
 		return tea.MouseMsg{}, false
 	}
 	msg.X -= contentX
-	msg.Y -= headerLines
+	msg.Y -= headerHeight
 	return msg, true
 }
 
@@ -693,6 +698,13 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 }
 
+func (m Model) headerHeight() int {
+	if m.cache.PR != nil {
+		return headerBaseLines + 1
+	}
+	return headerBaseLines
+}
+
 func (m Model) renderHeader() string {
 	badgeText, badgeColor := "Local", cMuted
 	if m.cache.PR != nil {
@@ -704,11 +716,77 @@ func (m Model) renderHeader() string {
 	l1 := badge + "  " + stBold.Render(m.title)
 	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) +
 		stMuted.Render(fmt.Sprintf("   · %d commits · %d events · %d comments · %d activity", len(m.commits), len(m.events), len(m.cache.Comments), len(m.cache.Activities)))
-	tabs := m.renderTab(conversationTab, "Conversation") + "   " +
-		m.renderTab(filesTab, "Files changed "+itoa(len(m.files))) + "   " +
-		m.renderTab(commitsTab, "Commits "+itoa(len(m.commits)))
-	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).Render(strings.Repeat("─", max(0, m.w)))
-	return lipgloss.JoinVertical(lipgloss.Left, l1, l2, tabs, rule)
+	lines := []string{l1, l2}
+	if m.cache.PR != nil {
+		lines = append(lines, m.renderPRMeta(*m.cache.PR))
+	}
+	lines = append(lines,
+		m.renderTab(conversationTab, "Conversation")+"   "+
+			m.renderTab(filesTab, "Files changed "+itoa(len(m.files)))+"   "+
+			m.renderTab(commitsTab, "Commits "+itoa(len(m.commits))),
+		lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).Render(strings.Repeat("─", max(0, m.w))),
+	)
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m Model) renderPRMeta(pr gh.PR) string {
+	assignees := stMuted.Render("👤 unassigned")
+	if len(pr.Assignees) > 0 {
+		users := make([]string, 0, len(pr.Assignees))
+		for _, user := range pr.Assignees {
+			users = append(users, "@"+user.Login)
+		}
+		assignees = stMuted.Render("👤 ") + stFg.Render(strings.Join(users, " "))
+	}
+	labels := stMuted.Render("🏷 no labels")
+	if len(pr.Labels) > 0 {
+		pills := make([]string, 0, len(pr.Labels))
+		for _, label := range pr.Labels {
+			pills = append(pills, labelPill(label))
+		}
+		labels = stMuted.Render("🏷 ") + strings.Join(pills, " ")
+	}
+	line := "  " + assignees + "   " + labels
+	if m.w > 0 {
+		return ansi.Truncate(line, m.w, "…")
+	}
+	return line
+}
+
+func labelPill(label gh.PRLabel) string {
+	background, foreground := cBorder, cFg
+	color := strings.TrimPrefix(label.Color, "#")
+	if rgb, err := strconv.ParseUint(color, 16, 24); err == nil && len(color) == 6 {
+		background = "#" + color
+		foreground = contrastingLabelForeground(rgb)
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color(background)).Foreground(lipgloss.Color(foreground)).Padding(0, 1).Render(label.Name)
+}
+
+func contrastingLabelForeground(background uint64) string {
+	const dark uint64 = 0x0d1117
+	bgLuminance := relativeLuminance(background)
+	whiteContrast := (1.0 + 0.05) / (bgLuminance + 0.05)
+	darkLuminance := relativeLuminance(dark)
+	darkContrast := (math.Max(bgLuminance, darkLuminance) + 0.05) / (math.Min(bgLuminance, darkLuminance) + 0.05)
+	if darkContrast > whiteContrast {
+		return "#0d1117"
+	}
+	return "#ffffff"
+}
+
+func relativeLuminance(rgb uint64) float64 {
+	channel := func(value uint64) float64 {
+		v := float64(value) / 255
+		if v <= 0.04045 {
+			return v / 12.92
+		}
+		return math.Pow((v+0.055)/1.055, 2.4)
+	}
+	r := channel((rgb >> 16) & 0xff)
+	g := channel((rgb >> 8) & 0xff)
+	b := channel(rgb & 0xff)
+	return 0.2126*r + 0.7152*g + 0.0722*b
 }
 
 func (m Model) renderTab(t tab, label string) string {
