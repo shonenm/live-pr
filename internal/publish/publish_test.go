@@ -80,6 +80,7 @@ type fakeGitHub struct {
 	updated     bool
 	draft       bool
 	body        string
+	base        string
 	createCalls int
 	updateErr   error
 	createErr   error
@@ -99,9 +100,9 @@ func (f *fakeGitHub) Update(_, _ string, bodyFile string) error {
 	}
 	return f.updateErr
 }
-func (f *fakeGitHub) Create(_, _, _ string, bodyFile string, draft bool) (string, error) {
+func (f *fakeGitHub) Create(base, _, _ string, bodyFile string, draft bool) (string, error) {
 	body, err := os.ReadFile(bodyFile)
-	f.created, f.draft, f.body = true, draft, string(body)
+	f.created, f.draft, f.body, f.base = true, draft, string(body), base
 	f.createCalls++
 	if err != nil {
 		return "", err
@@ -127,7 +128,7 @@ func TestRunCreatesAndCachesPublishedBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cache.PR == nil || cache.PR.Number != 12 || cache.LastPublishedManagedBodyHash == "" {
+	if cache.PR == nil || cache.PR.Number != 12 || cache.PR.BaseRefName != "main" || cache.LastPublishedManagedBodyHash == "" {
 		t.Fatalf("publish cache not updated: %#v", cache)
 	}
 }
@@ -152,6 +153,27 @@ func TestRunUpdatesExistingPRAndCache(t *testing.T) {
 	got, err := gh.LoadCache(st.GitHubCache(), "feature")
 	if err != nil || got.PR == nil || got.PR.Number != 12 || got.LastPublishedManagedBodyHash != prbody.ManagedHash(client.body) {
 		t.Fatalf("update cache mismatch: cache=%#v err=%v", got, err)
+	}
+}
+
+func TestRunUsesAndProtectsExistingPRBase(t *testing.T) {
+	st := setupRepo(t)
+	old := prbody.Render("# Old", nil)
+	cache := gh.NewCache("feature")
+	cache.LastPublishedManagedBodyHash = prbody.ManagedHash(old)
+	if err := gh.SaveCache(st.GitHubCache(), cache); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeGitHub{pr: gh.PR{Number: 12, URL: "https://example/pr/12", Body: old, BaseRefName: "release"}}
+	if _, err := run(Options{}, client, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := gh.LoadCache(st.GitHubCache(), "feature")
+	if err != nil || got.Base("") != "release" {
+		t.Fatalf("remote base not cached: cache=%#v err=%v", got, err)
+	}
+	if _, err := run(Options{Base: "main"}, client, func(string) error { return nil }); err == nil || !strings.Contains(err.Error(), "open PR base") {
+		t.Fatalf("expected base mismatch, got %v", err)
 	}
 }
 

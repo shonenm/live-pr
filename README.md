@@ -19,8 +19,7 @@ live-pr keeps a living artifact during development:
   where we are now)
 - **timeline** — an append-only, chronological feed of `decision` / `pivot` /
   `summary` / `commit` / `note` events, fed automatically by agent hooks
-- **reviewer** — pluggable; the diff review is delegated to your own tool
-  (nvim / hunk viewer / difit / …), launched scoped to a commit
+- **reviewer** — pluggable; an interactive local reviewer such as Neovim CodeReview can stay embedded beside the conversation and review the full PR-equivalent branch diff
 - **export** — at the end, the timeline is turned into a real GitHub PR body
 
 Read it in a tmux popup, review code like a GitHub PR, ship it as a PR whose
@@ -49,7 +48,7 @@ Go implementation in progress (Bubble Tea + Lipgloss, single binary). See
 - **P3 (done)** — auto-feed `base..HEAD` commits into the timeline (`live-pr sync`, and on TUI open).
 - **P4 (done)** — Claude Code `Stop` hook (`live-pr hook stop`) summarizes each session into the timeline, throttled.
 - **P5 (done)** — create or update a GitHub PR from the conclusion and timeline (`live-pr pr`). Only the marked live-pr section is updated, so other PR body content is preserved; conflicting managed edits fail safely.
-- **Current TUI** — functional Conversation / Files changed / Commits tabs with local diffs. Cached PR metadata, top-level comments, and GitHub activity are shown immediately, refreshed once on open, and refreshed again only when you press `r`.
+- **Current TUI** — functional Conversation / Files changed / Commits tabs beside an optional PTY-embedded CodeReview workspace. `[diff].command` opens the interactive reviewer at startup against the PR-equivalent branch range; raw Git and `[diff].display` remain fallbacks. Cached PR metadata, top-level comments, and GitHub activity are shown immediately, refreshed once on open, and refreshed again only when you press `r`.
 - **PR workflow** — press `p` to explicitly create/update the PR. Local events and GitHub comments use bordered cards with different border intensity instead of source labels; GitHub activity and Git commits remain unboxed timeline rows. Image/video embeds stay as URLs, and `o` opens the focused GitHub comment.
 - **Next** — add outbound comments and review/inline-comment sync, then move to distribution, theming, and other-agent adapters.
 
@@ -61,12 +60,19 @@ live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
 live-pr                 # open the three-tab TUI (Tab/Shift+Tab or 1/2/3)
                         # r: refresh GitHub; p: publish PR; o: open comment
-                        # Enter: review a commit
+                        # Shift+Tab: focus local PR / embedded CodeReview
 live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
 ```
 
-Reviewer defaults to `nvim -c "CodeDiff {sha}~1 {sha}"`; override in
-`~/.config/live-pr/config.toml` (or per-repo `.live-pr/config.toml`).
+Configure the right-side local PR review workspace in `~/.config/live-pr/config.toml` (or per-repo `.live-pr/config.toml`):
 
-The original fzf experience mock lives in `prototype/`. The planned embedded/external diff-tool contract is documented in [docs/diff-tool-integration.md](docs/diff-tool-integration.md).
+```toml
+[diff]
+command = 'nvim -c "CodeReviewBranch $LIVE_PR_BASE"'
+display = "delta --color-only" # fallback after CodeReview exits
+```
+
+Without `command`, the right pane uses raw Git output, optionally filtered by `display`. The legacy commit-scoped `reviewer` setting remains available when embedded CodeReview is disabled.
+
+The original fzf experience mock lives in `prototype/`. Right-pane display configuration and its boundary with the existing external reviewer are documented in [docs/diff-tool-integration.md](docs/diff-tool-integration.md).

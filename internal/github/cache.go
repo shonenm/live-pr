@@ -25,6 +25,14 @@ type Cache struct {
 // NewCache returns an initialized empty cache.
 func NewCache(head string) Cache { return Cache{Version: CacheVersion, Head: head} }
 
+// Base returns the bound PR base when known, otherwise fallback.
+func (c Cache) Base(fallback string) string {
+	if c.PR != nil && c.PR.BaseRefName != "" {
+		return c.PR.BaseRefName
+	}
+	return fallback
+}
+
 // LoadCache loads path. A missing file is an empty cache, while malformed or
 // unsupported data is reported so callers can keep running without trusting it.
 func LoadCache(path, head string) (Cache, error) {
