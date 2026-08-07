@@ -83,7 +83,7 @@ CLI 一覧（Cobra）:
 6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
 7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
 8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
-9. **GitHub表示**: top-level commentsとissue activityをlocal eventと時系列統合。local/cloudのcomment系は枠の濃さで区別し、activity/commit系は枠なしrow。source文字列は表示せず、画像・動画はURLのまま、`o`でcomment permalinkをbrowser表示。PR assignees/labelsはcacheし、headerへcompact表示。
+9. **GitHub表示**: top-level commentsとissue activityをlocal eventと時系列統合。local/cloudのcomment系は枠の濃さで区別し、activityは枠なしrow、commitは専用pickerにのみ表示。source文字列は表示せず、画像・動画はURLのまま、`o`でcomment permalinkをbrowser表示。PR assignees/labelsはcacheし、headerへcompact表示。
 10. **Diff表示**: `[diff].command`はbranch `base...HEAD`、`commit_command`は選択SHAをembedded PTYで表示。`l`で右、右の`q`で左、左の`q`で終了、`Shift+Tab`/clickでfocus切替。未設定・終了・失敗時は対応scopeのraw Git、任意で`[diff].display`をfallback適用。
 
 ## 現在地

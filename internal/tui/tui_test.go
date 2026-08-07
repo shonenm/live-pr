@@ -83,27 +83,17 @@ func TestViewRendersHeaderAndTimeline(t *testing.T) {
 	}
 }
 
-func TestCursorMovesAndPreviewSwitches(t *testing.T) {
+func TestConversationExcludesCommits(t *testing.T) {
 	m := testModel()
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = updated.(Model)
+	if items := m.conversationItems(); len(items) != 1 || items[0].event.Kind == event.Commit {
+		t.Fatalf("conversation items = %#v", items)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated.(Model)
 	if m.cursors[conversationTab] != 0 {
-		t.Fatalf("cursor should start at 0, got %d", m.cursors[conversationTab])
-	}
-	// j → move to the commit event; must not panic and cursor advances.
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = updated.(Model)
-	if m.cursors[conversationTab] != 1 {
-		t.Fatalf("cursor should be 1 after j, got %d", m.cursors[conversationTab])
-	}
-	if !strings.Contains(m.View(), "commit") {
-		t.Errorf("timeline should show the commit event after moving down")
-	}
-	// cannot move past the end
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = updated.(Model)
-	if m.cursors[conversationTab] != 1 {
-		t.Errorf("cursor should clamp at last event, got %d", m.cursors[conversationTab])
+		t.Fatalf("cursor moved into hidden commits: %d", m.cursors[conversationTab])
 	}
 }
 
@@ -112,8 +102,6 @@ func TestCommitPickerSelectsCommitAndEscRestoresBranchReview(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
 	if m.active != commitsTab || !strings.Contains(m.View(), "feat: x") {
@@ -128,7 +116,7 @@ func TestCommitPickerSelectsCommitAndEscRestoresBranchReview(t *testing.T) {
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(Model)
-	if m.active != conversationTab || m.reviewSHA != "" || m.cursors[conversationTab] != 1 {
+	if m.active != conversationTab || m.reviewSHA != "" || m.cursors[conversationTab] != 0 {
 		t.Fatalf("Esc should restore branch review and the Conversation cursor")
 	}
 }
@@ -237,7 +225,7 @@ func TestCommentSelectionSurvivesRefresh(t *testing.T) {
 	comment := gh.Comment{ID: 42, NodeID: "IC_42", Body: "selected", CreatedAt: "2026-08-01T10:00:00Z"}
 	m.cache.Comments = []gh.Comment{comment}
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
-	m.cursors[conversationTab] = 2
+	m.cursors[conversationTab] = 1
 
 	newer := gh.Comment{ID: 43, NodeID: "IC_43", Body: "new", CreatedAt: "2026-08-02T10:00:00Z"}
 	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 1}, comments: []gh.Comment{comment, newer}})
@@ -270,15 +258,11 @@ func TestGitHubCommentsAreBoxedAndActivityIsUnboxed(t *testing.T) {
 	}
 }
 
-func TestLocalCommentsMatchCloudCardsAndGitCommitsStayUnboxed(t *testing.T) {
+func TestLocalEventsUseSourceFreeCards(t *testing.T) {
 	m := testModel()
 	local := strings.Join(m.eventLines(m.events[0], false, 60), "\n")
-	commit := strings.Join(m.eventLines(m.events[1], false, 60), "\n")
 	if !strings.Contains(local, "╭") || strings.Contains(local, "local ·") || !strings.Contains(local, "claude-agent") {
 		t.Fatalf("local event should be a source-free card: %q", local)
-	}
-	if strings.Contains(commit, "╭") || !strings.Contains(commit, "git") || !strings.Contains(commit, "committed") {
-		t.Fatalf("git commit should be an unboxed sourced row: %q", commit)
 	}
 }
 

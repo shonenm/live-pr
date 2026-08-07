@@ -556,7 +556,9 @@ func (m Model) conversationItems() []conversationItem {
 	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities))
 	for i := range m.events {
 		e := &m.events[i]
-		items = append(items, conversationItem{key: fmt.Sprintf("event:%d", i), ts: e.TS, event: e})
+		if e.Kind != event.Commit {
+			items = append(items, conversationItem{key: fmt.Sprintf("event:%d", i), ts: e.TS, event: e})
+		}
 	}
 	for i := range m.cache.Comments {
 		comment := &m.cache.Comments[i]
@@ -815,7 +817,7 @@ func (m Model) buildList() (string, int) {
 func (m Model) buildConversation() (string, int) {
 	items := m.conversationItems()
 	if len(items) == 0 {
-		return stMuted.Render("(no events yet — try `live-pr note …`)"), 0
+		return stMuted.Render("(no conversation yet — try `live-pr note …`)"), 0
 	}
 	var lines []string
 	selectedLine := 0
@@ -837,10 +839,6 @@ func (m Model) buildConversation() (string, int) {
 }
 
 func (m Model) eventLines(e event.Event, selected bool, width int) []string {
-	if e.Kind == event.Commit {
-		line := stMuted.Render("git · ") + stGreenF.Render(e.SHA) + stMuted.Render(" committed ") + stFg.Render(e.Title) + stMuted.Render(" · "+shortTS(e.TS))
-		return []string{selectionBar(selected) + line}
-	}
 	who := "🤖 claude-agent"
 	if e.Kind == event.Note {
 		who = "👤 you"
