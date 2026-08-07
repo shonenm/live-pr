@@ -1,119 +1,108 @@
-# Diff tool integration design
+# Embedded local PR code review
 
-## Goal
+## Product goal
 
-Keep the TUI instant and useful without external tools, while allowing users to:
+live-pr has two core surfaces that must remain visible together:
 
-1. transform the embedded diff with a non-interactive renderer such as `delta`;
-2. open the selected commit, file, or full range in an interactive reviewer such as Neovim or a browser-based diff tool.
+```text
+┌ local PR ─────────────────┬ CodeReview ─────────────────────┐
+│ conversation and history │ interactive base...HEAD review │
+└───────────────────────────┴─────────────────────────────────┘
+```
 
-The built-in `git diff` / `git show` output remains the fallback and the default.
+The right pane is not merely a prettier `git diff`. It is an interactive local code-review workspace for the same change range represented by the GitHub PR. The reviewer opens when live-pr starts and stays inside the Bubble Tea screen.
 
-## Two integration classes
-
-### Embedded renderer
-
-A renderer is a non-interactive filter. live-pr sends the already-bounded ANSI diff to stdin and replaces the detail pane when the renderer finishes.
+## Configuration
 
 ```toml
 [diff]
-renderer = "delta --color-only"
+command = 'nvim -c "CodeReviewBranch $LIVE_PR_BASE"'
 ```
 
-Behavior:
+The command runs in a real embedded pseudoterminal (PTY), so full-screen tools such as Neovim work without suspending live-pr or opening another tmux pane.
 
-- show the raw local Git diff immediately;
-- start the renderer only for the selected item;
-- replace the pane only if the selection is still current;
-- keep a small in-memory cache keyed by tool command and diff identity;
-- enforce output and execution limits;
-- retain the raw diff and show a footer warning when the renderer fails.
+It starts in the repository root with:
 
-No renderer runs during startup for unselected files or commits.
+- `LIVE_PR_BASE`: PR base branch;
+- `LIVE_PR_HEAD`: current branch;
+- `LIVE_PR_PR_URL`: cached GitHub PR URL, or empty before a PR exists;
+- `TERM=xterm-256color` from the embedded terminal.
 
-### Interactive reviewer
+`CodeReviewBranch` compares the merge base with `HEAD`, matching the branch-only three-dot range used for a PR. live-pr takes the base from the cached/fetched GitHub PR (`baseRefName`); `live-pr pr --base …` also persists it. For local comparison it prefers the matching `origin/<base>` remote-tracking ref over a possibly stale local branch. The repository default branch is used only before a PR-specific base is known.
 
-A reviewer owns the terminal temporarily through `tea.ExecProcess` and returns to live-pr when it exits. Commands are scoped because commit, file, and range review need different arguments.
+## Interaction
+
+- local PR has focus at startup;
+- `Shift+Tab` switches focus between local PR and CodeReview;
+- clicking either pane also changes focus;
+- while CodeReview has focus, keys are sent directly to Neovim;
+- `Shift+Tab` is reserved by live-pr and is not sent to Neovim;
+- the active CodeReview border uses the accent color;
+- switch back to local PR before pressing `q` to exit live-pr.
+
+The PTY is resized with the right pane, preserving Neovim's full-screen behavior. Closing live-pr closes and reaps the embedded reviewer process.
+
+## Fallback display
+
+Without `command`, live-pr keeps its built-in selected-file/commit Git output:
+
+```text
+Git diff/show → right pane
+```
+
+An optional non-interactive formatter remains available as a fallback:
 
 ```toml
 [diff]
-review_commit = 'nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
-review_file = 'nvim -c "CodeDiff $LIVE_PR_BASE $LIVE_PR_HEAD" -- "$LIVE_PR_FILE"'
-review_range = 'nvim -c "CodeDiff $LIVE_PR_BASE $LIVE_PR_HEAD"'
+display = "delta --color-only"
 ```
 
-Environment variables:
+`display` receives raw Git diff on stdin and writes terminal text to stdout. If both are configured, `command` owns the pane while it is running; `display` is used only after the embedded reviewer exits or fails.
 
-| Variable | Meaning |
-| --- | --- |
-| `LIVE_PR_SHA` | selected commit SHA |
-| `LIVE_PR_BASE` | comparison base |
-| `LIVE_PR_HEAD` | current head branch |
-| `LIVE_PR_FILE` | selected new/current path |
-| `LIVE_PR_OLD_FILE` | old path for rename/copy |
-| `LIVE_PR_PR_URL` | linked PR URL, when available |
+Static formatter behavior remains:
 
-Values are passed as environment variables rather than interpolated into shell text. Commands keep the existing `sh -c` contract so quotes and pipes remain supported; every variable used as an argument must be double-quoted. This avoids treating branch names and file paths as shell syntax.
+- raw Git appears first;
+- formatting runs in the background;
+- stale results are discarded;
+- results are cached by command, width, and diff identity;
+- failure or timeout retains raw Git.
 
-## Backward compatibility
+## Existing commit reviewer
 
-The existing flat setting remains valid:
+The legacy commit-scoped setting remains for configurations without an embedded reviewer:
 
 ```toml
-reviewer = 'nvim -c "CodeDiff {sha}~1 {sha}"'
+reviewer = 'nvim -c "CodeReview {sha}~1 {sha}"'
 ```
 
-Resolution order:
+When no embedded `diff.command` is active, Enter launches it using the old suspend/resume path. It is disabled while embedded CodeReview owns the right pane.
 
-1. use the matching `[diff].review_*` command;
-2. fall back to the legacy `reviewer` for commit scope;
-3. leave Enter disabled when no command exists for the active scope.
+## Architecture
 
-Legacy `{sha}`, `{base}`, and `{head}` substitution remains supported for backward compatibility. New configuration should use environment variables.
+- `internal/git`: raw file/commit fallback diffs;
+- `internal/config`: `[diff].command` and `[diff].display`;
+- `internal/embeddedterm`: PTY/VT lifecycle around Portalis;
+- `internal/diffview`: bounded non-interactive fallback formatter;
+- `internal/tui`: layout, focus, event routing, and fallback selection;
+- `internal/review`: legacy commit-scoped external launch.
 
-## TUI behavior
+The embedded terminal supplies PTY process I/O, xterm key encoding, ANSI/VT parsing, alternate-screen support, Unicode cell widths, mouse events, and resize propagation. live-pr remains responsible for pane allocation and which events are forwarded. Portalis is pinned to a commit through a temporary module-path replacement until its repository/module names align.
 
-| Context | Embedded detail | Enter |
-| --- | --- | --- |
-| Conversation commit | commit patch | `review_commit` |
-| Files changed | selected file patch | `review_file` |
-| Commits | commit patch | `review_commit` |
-| Files changed tab with no selection | placeholder | disabled |
-| Full range action | unchanged current pane | `review_range` |
+## Failure behavior
 
-Suggested keys:
+If the embedded command cannot start or exits unexpectedly:
 
-- `Enter`: reviewer for the current selection;
-- `D`: reviewer for the complete base-to-head range;
-- raw/renderer switching is unnecessary initially; renderer failure already falls back to raw output.
+1. return focus to local PR;
+2. show the failure in the footer;
+3. restore the configured static formatter or raw Git fallback;
+4. keep GitHub refresh, publish, and conversation navigation operational.
 
-## Execution and caching
-
-- Embedded renderer: background `tea.Cmd`, non-interactive stdin/stdout, two-second default timeout, existing 800-line output ceiling.
-- Interactive reviewer: foreground `tea.ExecProcess`, no arbitrary timeout.
-- Renderer cache: memory-only; key by command + commit SHA, or command + base/head/file paths.
-- Selection changes never wait for a previous renderer. Late results whose key no longer matches are discarded.
-- No rendered diff is persisted in `github.json`; it is derived local state.
-
-## Error UX
-
-- Missing renderer: raw diff remains visible; footer reports the command error once.
-- Missing scoped reviewer: Enter is disabled and omitted from help.
-- Reviewer non-zero exit: return to the same tab, cursor, and scroll position with a footer error.
-- Binary or empty diff: show the existing placeholder and do not invoke the renderer.
-
-## Implementation seams
-
-1. Extend `internal/config.Config` with a nested `Diff` struct while retaining `Reviewer`.
-2. Replace direct placeholder expansion in `internal/review` with a scope-aware command builder and environment variables.
-3. Add renderer execution and result messages to `internal/tui`; keep raw `internal/git` output unchanged.
-4. Enable reviewer bindings per active tab and available scoped command.
-5. Add tests for config fallback, environment propagation, file rename paths, late renderer results, timeout/failure fallback, and tab state restoration.
+The embedded PTY is currently supported on macOS and Linux. Windows builds retain the raw/static diff fallback because the pinned PTY implementation is Unix-only.
 
 ## Non-goals
 
-- No Go plugin API.
-- No tool-specific dependency or bundled diff executable.
-- No daemon or persistent rendered-diff cache.
-- No parsing of third-party renderer output back into structured hunks.
-- No inline GitHub review-comment creation in this integration layer.
+- implementing a second code-review UI inside live-pr;
+- parsing Neovim's screen back into structured diff objects;
+- syncing CodeReview's in-memory reviewed marks to GitHub;
+- requiring tmux or another external pane manager;
+- making GitHub network access a prerequisite for local review.
