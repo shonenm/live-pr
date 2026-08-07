@@ -49,15 +49,15 @@
 - `live-pr pr`: body = `conclusion.md`（最上部）+ 時系列の「Development timeline」節 → `gh pr create --base <base> --body-file`。既存 PR は title/body を更新。
 - **Done**: 意思決定の流れを反映した PR を GitHub に出す。
 
-### P5.1 — TUI tabs + GitHub同期基盤
-- **Done**: Conversation / Files changed / Commitsを実タブ化。ローカルGitからfile/commit一覧とdiffを表示。
+### P5.1 — TUI + GitHub同期基盤
+- **Done**: tabを廃止し、左Conversation・右Files changed/CodeReviewを固定表示。`c`で左をcommit pickerへ切替え、`Enter`で右をcommit scopeへ切替。`Esc`でbranch scopeへ戻る。
 - **Done**: GitHub操作を共通adapterへ分離し、PR未存在と通信・認証エラーを区別。
 - **Done**: PR bodyをmanaged marker内だけ更新し、外側を保持。前回publish後のremote編集・marker削除は競合として停止。
 - **Done**: branch単位の`github.json`をatomic保存。cacheを即表示して起動時に1回background refreshし、以後は`r`でのみ再取得。
 - **Done**: TUIの`p`から明示的にPRを作成・更新。CLIと同じpublish service、managed-body競合保護、cache更新を利用。
 - **Done**: GitHubのtop-level commentsとissue activityを取得・cacheし、Conversationへ時系列統合。local eventsとGitHub commentsは枠の濃さが異なるcard、GitHub activityとGit commitsは枠なしtimeline row。source文字列は表示領域節約のため付けない。画像・動画はURL表示し、`o`で選択コメントをbrowser表示。
 - **Done**: PR assigneesとlabelsを同じcache-first refreshで取得し、headerへassignee名とGitHub色のlabel pillを表示。
-- **Done**: `[diff].command`をPTY/VTで右paneへ埋め込み、local PRと対話型CodeReview（`base...HEAD`）を起動時から並列表示。`Shift+Tab`/click focus、resize/input/lifecycle、raw Git・`[diff].display` fallbackに対応。
+- **Done**: `[diff].command` / `commit_command`をPTY/VTで右paneへ埋め込み、branch/commit scopeを切替。`l`/`q`/`Shift+Tab`/click focus、resize/input/lifecycle、raw Git・`[diff].display` fallbackに対応。
 - **Next**: reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
 
 ### P6 — 仕上げ / 配布
@@ -91,4 +91,4 @@ docs/
 
 ## 現在地
 
-P0〜P5とConversation中心のTUIを`main`へ統合済み。3タブ、TUIからのPR publish、top-level GitHub commentsのMarkdown表示まで実装。次にreview/inline comment同期と通常コメント投稿を完成させ、その動作確認後にP6の配布へ進む。
+P0〜P5とConversation中心のTUIを`main`へ統合済み。固定2pane、branch/commit review切替、TUIからのPR publish、top-level GitHub commentsのMarkdown表示まで実装。次にreview/inline comment同期と通常コメント投稿を完成させ、その動作確認後にP6の配布へ進む。
