@@ -14,13 +14,15 @@ The right pane is not merely a prettier `git diff`. It is an interactive local c
 
 ## Configuration
 
+Equivalent behavior is built in; use the same keys in the global or per-repository config to override it:
+
 ```toml
 [diff]
 command = 'nvim -c "CodeReviewBranch $LIVE_PR_BASE"'
 commit_command = 'nvim -c "CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
 ```
 
-The command runs in a real embedded pseudoterminal (PTY), so full-screen tools such as Neovim work without suspending live-pr or opening another tmux pane.
+The command runs in a real embedded pseudoterminal (PTY), so full-screen tools such as Neovim work without suspending live-pr or opening another tmux pane. `command = ""` explicitly disables the built-in branch reviewer. The built-in commit behavior is deliberately supplied through the legacy top-level `reviewer` fallback, so an explicit `commit_command` takes precedence and existing `reviewer` overrides remain compatible.
 
 It starts in the repository root with:
 
@@ -50,7 +52,7 @@ The PTY is resized with the right pane. Each branch/commit switch closes and rea
 
 ## Fallback display
 
-Without the command for the current scope, live-pr keeps a matching built-in view:
+When the command for the current scope is disabled, unsupported, exits, or fails, live-pr keeps a matching built-in view:
 
 ```text
 branch scope → git diff base...HEAD

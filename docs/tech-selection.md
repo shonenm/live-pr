@@ -49,7 +49,7 @@
 [ 表示: TUI (Bubble Tea) ]
   live-pr        # 左Conversation / commit picker、右branch / commit CodeReview
   local git      # file/commit一覧とdiff。GitHub待ちなし
-  GitHub state   # PR + top-level comments + issue activityをcache即表示→起動時1回refresh。以後はrのみ
+  GitHub state   # PR description + top-level comments + issue activityをcache即表示→起動時1回refresh。以後はrのみ
   Markdown       # comment本文をglamourで枠付き描画。activityは枠なし。mediaはURL表示
   embedded review # branch command / commit_commandをPTY/VT内でscope切替
   diff fallback   # scope command未設定/終了時は対応raw Git、任意で[diff].displayをstdin/stdout整形
@@ -83,8 +83,8 @@ CLI 一覧（Cobra）:
 6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
 7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
 8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
-9. **GitHub表示**: top-level commentsとissue activityをlocal eventと時系列統合。local/cloudのcomment系は枠の濃さで区別し、activityは枠なしrow、commitは専用pickerにのみ表示。source文字列は表示せず、画像・動画はURLのまま、`o`でcomment permalinkをbrowser表示。PR assignees/labelsはcacheし、headerへcompact表示。
-10. **Diff表示**: `[diff].command`はbranch `base...HEAD`、`commit_command`は選択SHAをembedded PTYで表示。`l`で右、右の`q`で左、左の`q`で終了、`Shift+Tab`/clickでfocus切替。未設定・終了・失敗時は対応scopeのraw Git、任意で`[diff].display`をfallback適用。
+9. **GitHub表示**: PR opening description、top-level comments、issue activityをlocal eventと時系列統合。description/commentsとlocal eventは枠の濃さで区別し、activityは枠なしrow、commitは専用pickerにのみ表示。画像・動画はURLのまま、`o`でdescription/commentをGitHub表示。PR assignees/labelsはcacheし、headerへcompact表示。
+10. **Diff表示**: built-in defaultはbranch `CodeReviewBranch`、commit `CodeReview`をembedded PTYで表示し、設定でoverrideまたは明示無効化できる。`l`で右、右の`q`で左、左の`q`で終了、`Shift+Tab`/clickでfocus切替。未設定・unsupported・終了・失敗時は対応scopeのraw Git、任意で`[diff].display`をfallback適用。
 
 ## 現在地
 
