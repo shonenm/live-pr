@@ -71,4 +71,11 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if diff := FileDiff("main", renamed.OldPath, renamed.Path); !strings.Contains(diff, "rename from old.go") || !strings.Contains(diff, "rename to new.go") {
 		t.Fatalf("unexpected rename diff: %q", diff)
 	}
+	runGit("update-ref", "refs/remotes/origin/release", "HEAD~1")
+	if got := ResolveBase("release"); got != "origin/release" {
+		t.Fatalf("resolved base = %q", got)
+	}
+	if got := ResolveBase("local-only"); got != "local-only" {
+		t.Fatalf("local fallback = %q", got)
+	}
 }

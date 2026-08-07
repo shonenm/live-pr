@@ -19,6 +19,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shonenm/live-pr/internal/config"
+	"github.com/shonenm/live-pr/internal/diffview"
+	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -39,21 +41,22 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PrevTab, NextTab, Open, Browse, Refresh, Publish, Help, Quit key.Binding
+	Up, Down, PrevTab, NextTab, Focus, Open, Browse, Refresh, Publish, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.NextTab, k.Open, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.NextTab, k.Focus, k.Open, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PrevTab, k.NextTab}, {k.Open, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PrevTab, k.NextTab, k.Focus}, {k.Open, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
 	Up:      key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
 	Down:    key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	PrevTab: key.NewBinding(key.WithKeys("shift+tab", "h", "left"), key.WithHelp("h/⇧tab", "previous tab")),
+	PrevTab: key.NewBinding(key.WithKeys("h", "left"), key.WithHelp("h/←", "previous tab")),
 	NextTab: key.NewBinding(key.WithKeys("tab", "l", "right"), key.WithHelp("l/tab", "next tab")),
+	Focus:   key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus PR/CodeReview")),
 	Open:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
 	Browse:  key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open comment")),
 	Refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
@@ -81,6 +84,17 @@ type publishDone struct {
 
 type browserDone struct{ err error }
 
+type diffRendered struct {
+	key, output, raw string
+	err              error
+}
+
+type detailContent struct {
+	key        string
+	raw        string
+	renderable bool
+}
+
 type conversationItem struct {
 	key      string
 	ts       string
@@ -92,6 +106,7 @@ type conversationItem struct {
 // Model holds the living-PR view state.
 type Model struct {
 	title        string
+	root         string
 	base, head   string
 	events       []event.Event
 	files        []git.ChangedFile
@@ -101,10 +116,19 @@ type Model struct {
 	reviewer     string
 	status       string
 	githubStatus string
+	timelinePath string
 	cachePath    string
 	cache        gh.Cache
 	refreshing   bool
 	publishing   bool
+
+	diffDisplay  string
+	diffCommand  string
+	diffTerminal *embeddedterm.Terminal
+	focusDiff    bool
+	detailKey    string
+	diffCache    map[string]string
+	diffPending  map[string]bool
 
 	list   viewport.Model
 	detail viewport.Model
@@ -120,7 +144,13 @@ func New() (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
-	base := git.DefaultBase()
+	status := ""
+	cache, cacheErr := gh.LoadCache(st.GitHubCache(), st.Branch)
+	if cacheErr != nil {
+		cache = gh.NewCache(st.Branch)
+		status = "GitHub cache ignored: " + cacheErr.Error()
+	}
+	base := git.ResolveBase(cache.Base(git.DefaultBase()))
 	_, _ = timeline.SyncCommits(st.Timeline(), base)
 
 	events, err := event.Load(st.Timeline())
@@ -131,33 +161,40 @@ func New() (Model, error) {
 
 	commits, commitErr := git.Commits(base)
 	files, fileErr := git.ChangedFiles(base)
-	status := ""
-	if commitErr != nil || fileErr != nil {
+	if (commitErr != nil || fileErr != nil) && status == "" {
 		status = "local git data is incomplete"
-	}
-	cache, cacheErr := gh.LoadCache(st.GitHubCache(), st.Branch)
-	if cacheErr != nil {
-		cache = gh.NewCache(st.Branch)
-		status = "GitHub cache ignored: " + cacheErr.Error()
 	}
 	githubStatus := "Local only · checking for PR…"
 	if cache.PR != nil {
 		githubStatus = "GitHub: cached · refreshing…"
 	}
+	cfg := config.Load(st.Root)
+	prURL := ""
+	if cache.PR != nil {
+		prURL = cache.PR.URL
+	}
+	diffTerminal := embeddedterm.New(cfg.Diff.Command, st.Root, embeddedterm.Environment(base, st.Branch, prURL))
 
 	return Model{
 		title:        deriveTitle(st.Conclusion(), st.Branch),
+		root:         st.Root,
 		base:         base,
 		head:         st.Branch,
 		events:       events,
 		files:        files,
 		commits:      commits,
-		reviewer:     config.Load(st.Root).Reviewer,
+		reviewer:     cfg.Reviewer,
 		status:       status,
 		githubStatus: githubStatus,
+		timelinePath: st.Timeline(),
 		cachePath:    st.GitHubCache(),
 		cache:        cache,
 		refreshing:   true,
+		diffDisplay:  cfg.Diff.Display,
+		diffCommand:  cfg.Diff.Command,
+		diffTerminal: diffTerminal,
+		diffCache:    map[string]string{},
+		diffPending:  map[string]bool{},
 		help:         help.New(),
 		keys:         keys,
 	}, nil
@@ -169,15 +206,62 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
-	return err
+	final, runErr := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	if model, ok := final.(Model); ok {
+		model.close()
+	} else {
+		m.close()
+	}
+	return runErr
 }
 
 func (m Model) Init() tea.Cmd {
-	if m.cachePath == "" {
+	var cmds []tea.Cmd
+	if m.cachePath != "" {
+		cmds = append(cmds, fetchGitHub(m.head))
+	}
+	if m.diffTerminal != nil {
+		cmds = append(cmds, m.diffTerminal.Init())
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *Model) close() {
+	if m.diffTerminal != nil {
+		m.diffTerminal.Close()
+	}
+}
+
+func (m *Model) useBase(base, prURL string) tea.Cmd {
+	base = git.ResolveBase(base)
+	if base == "" || base == m.base {
 		return nil
 	}
-	return fetchGitHub(m.head)
+	m.base = base
+	_, _ = timeline.SyncCommits(m.timelinePath, base)
+	if events, err := event.Load(m.timelinePath); err == nil {
+		m.events = events
+		sort.SliceStable(m.events, func(i, j int) bool { return m.events[i].TS < m.events[j].TS })
+	}
+	m.commits, _ = git.Commits(base)
+	m.files, _ = git.ChangedFiles(base)
+	if m.diffTerminal != nil {
+		m.diffTerminal.Close()
+	}
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(base, m.head, prURL))
+	m.focusDiff = false
+	m.layout()
+	if m.diffTerminal != nil {
+		return m.diffTerminal.Init()
+	}
+	return nil
+}
+
+func renderDiff(key, command, raw string, width int) tea.Cmd {
+	return func() tea.Msg {
+		out, err := diffview.Render(command, raw, width)
+		return diffRendered{key: key, output: out, raw: raw, err: err}
+	}
 }
 
 func fetchGitHub(head string) tea.Cmd {
@@ -194,13 +278,18 @@ func fetchGitHub(head string) tea.Cmd {
 }
 
 const (
-	headerLines = 4
-	footerLines = 1
-	listRatio   = 52
+	headerLines     = 4
+	footerLines     = 1
+	listRatio       = 52
+	reviewListRatio = 38
 )
 
 func (m *Model) layout() {
-	listW := m.w * listRatio / 100
+	ratio := listRatio
+	if m.diffTerminal != nil && m.diffTerminal.Available() {
+		ratio = reviewListRatio
+	}
+	listW := m.w * ratio / 100
 	if listW < 20 {
 		listW = 20
 	}
@@ -220,14 +309,47 @@ func (m *Model) layout() {
 		m.list.Width, m.list.Height = listW, bodyH
 		m.detail.Width, m.detail.Height = detailW, bodyH
 	}
+	if m.diffTerminal != nil {
+		m.diffTerminal.Resize(detailW, bodyH)
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.diffTerminal != nil && m.diffTerminal.Handles(msg) {
+		cmd := m.diffTerminal.Update(msg)
+		if !m.diffTerminal.Available() {
+			if err := m.diffTerminal.Err(); err != nil {
+				m.status = err.Error() + " · showing raw diff"
+			}
+			m.focusDiff = false
+			m.layout()
+			return m, tea.Batch(cmd, m.sync())
+		}
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.layout()
-		m.sync()
+		return m, m.sync()
+
+	case diffRendered:
+		delete(m.diffPending, msg.key)
+		if msg.err != nil {
+			m.diffCache[msg.key] = msg.raw
+		} else {
+			m.diffCache[msg.key] = msg.output
+		}
+		if m.detailKey == msg.key {
+			if msg.err != nil {
+				m.status = msg.err.Error()
+			} else if strings.HasPrefix(m.status, "diff display") {
+				m.status = ""
+			}
+			m.detail.SetContent(m.diffCache[msg.key])
+			m.detail.GotoTop()
+		}
 		return m, nil
 
 	case reviewerDone:
@@ -267,10 +389,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshing = false
 		selectedKey := m.selectedConversationKey()
 		now := time.Now().UTC().Format(time.RFC3339)
+		var diffCmd tea.Cmd
 		switch {
 		case msg.err == nil:
 			m.cache.PR = &msg.pr
 			m.cache.FetchedAt = now
+			diffCmd = m.useBase(msg.pr.BaseRefName, msg.pr.URL)
 			stale := []string{}
 			if msg.commentsErr == nil {
 				m.cache.Comments = msg.comments
@@ -301,10 +425,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = ""
 		}
 		m.restoreConversationSelection(selectedKey)
-		m.sync()
+		return m, tea.Batch(diffCmd, m.sync())
+
+	case tea.MouseMsg:
+		if m.diffTerminal != nil && m.diffTerminal.Available() {
+			if local, ok := translateDiffMouse(msg, m.list.Width, m.detail.Width, m.detail.Height); ok {
+				m.focusDiff = true
+				return m, m.diffTerminal.Update(local)
+			}
+			if msg.Action == tea.MouseActionPress {
+				m.focusDiff = false
+			}
+		}
 		return m, nil
 
 	case tea.KeyMsg:
+		if key.Matches(msg, m.keys.Focus) && m.diffTerminal != nil && m.diffTerminal.Available() {
+			m.focusDiff = !m.focusDiff
+			return m, nil
+		}
+		if m.focusDiff && m.diffTerminal != nil && m.diffTerminal.Available() {
+			return m, m.diffTerminal.Update(msg)
+		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -313,16 +455,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case msg.String() == "1" || msg.String() == "2" || msg.String() == "3":
 			m.active = tab(int(msg.String()[0] - '1'))
-			m.sync()
-			return m, nil
+			return m, m.sync()
 		case key.Matches(msg, m.keys.NextTab):
 			m.active = (m.active + 1) % tabCount
-			m.sync()
-			return m, nil
+			return m, m.sync()
 		case key.Matches(msg, m.keys.PrevTab):
 			m.active = (m.active + tabCount - 1) % tabCount
-			m.sync()
-			return m, nil
+			return m, m.sync()
 		case key.Matches(msg, m.keys.Refresh):
 			if m.refreshing || m.publishing {
 				return m, nil
@@ -363,13 +502,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Down):
 			if m.cursors[m.active] < m.activeLen()-1 {
 				m.cursors[m.active]++
-				m.sync()
+				return m, m.sync()
 			}
 			return m, nil
 		case key.Matches(msg, m.keys.Up):
 			if m.cursors[m.active] > 0 {
 				m.cursors[m.active]--
-				m.sync()
+				return m, m.sync()
 			}
 			return m, nil
 		}
@@ -474,11 +613,13 @@ func (m Model) selectedCommitSHA() string {
 }
 
 // sync rebuilds both panes for the current tab and selection.
-func (m *Model) sync() {
+func (m *Model) sync() tea.Cmd {
 	if !m.ready {
-		return
+		return nil
 	}
-	m.keys.Open.SetEnabled(m.active != filesTab)
+	embedded := m.diffTerminal != nil && m.diffTerminal.Available()
+	m.keys.Focus.SetEnabled(embedded)
+	m.keys.Open.SetEnabled(!embedded && m.active != filesTab)
 	m.keys.Browse.SetEnabled(m.selectedComment() != nil)
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
@@ -487,18 +628,67 @@ func (m *Model) sync() {
 	} else {
 		m.list.GotoTop()
 	}
-	m.detail.SetContent(m.buildDetail())
+
+	return m.syncDetail(m.buildDetail())
+}
+
+func (m *Model) syncDetail(detail detailContent) tea.Cmd {
+	if strings.HasPrefix(m.status, "diff display") {
+		m.status = ""
+	}
+	m.detailKey = ""
+	output := detail.raw
+	embedded := m.diffTerminal != nil && m.diffTerminal.Available()
+	if !embedded && m.diffDisplay != "" && detail.renderable && detail.raw != "" {
+		key := fmt.Sprintf("%s\x00%d\x00%s", m.diffDisplay, m.detail.Width, detail.key)
+		m.detailKey = key
+		if m.diffCache == nil {
+			m.diffCache = map[string]string{}
+		}
+		if m.diffPending == nil {
+			m.diffPending = map[string]bool{}
+		}
+		if cached, ok := m.diffCache[key]; ok {
+			output = cached
+		} else if !m.diffPending[key] {
+			m.diffPending[key] = true
+			m.detail.SetContent(output)
+			m.detail.GotoTop()
+			return renderDiff(key, m.diffDisplay, detail.raw, m.detail.Width)
+		}
+	}
+	m.detail.SetContent(output)
 	m.detail.GotoTop()
+	return nil
+}
+
+func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight int) (tea.MouseMsg, bool) {
+	contentX := listWidth + 2 // detail left border + padding
+	if msg.X < contentX || msg.X >= contentX+detailWidth ||
+		msg.Y < headerLines || msg.Y >= headerLines+detailHeight {
+		return tea.MouseMsg{}, false
+	}
+	msg.X -= contentX
+	msg.Y -= headerLines
+	return msg, true
 }
 
 func (m Model) View() string {
 	if !m.ready {
 		return "loading…"
 	}
+	detailContent := m.detail.View()
+	borderColor := cBorder
+	if m.diffTerminal != nil && m.diffTerminal.Available() {
+		detailContent = m.diffTerminal.View(m.detail.Width, m.detail.Height)
+		if m.focusDiff {
+			borderColor = cAccent
+		}
+	}
 	detail := lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
-		BorderForeground(lipgloss.Color(cBorder)).PaddingLeft(1).
-		Render(m.detail.View())
+		BorderForeground(lipgloss.Color(borderColor)).PaddingLeft(1).
+		Render(detailContent)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), detail)
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 }
@@ -666,52 +856,52 @@ func (m Model) buildCommits() (string, int) {
 	return strings.Join(lines, "\n"), m.cursors[commitsTab]
 }
 
-func (m Model) buildDetail() string {
+func (m Model) buildDetail() detailContent {
 	switch m.active {
 	case filesTab:
 		i := m.cursors[filesTab]
 		if i < 0 || i >= len(m.files) {
-			return stMuted.Render("no changed files")
+			return detailContent{raw: stMuted.Render("no changed files")}
 		}
 		paths := []string{m.files[i].Path}
 		if m.files[i].OldPath != "" {
 			paths = append([]string{m.files[i].OldPath}, paths...)
 		}
 		if d := git.FileDiff(m.base, paths...); d != "" {
-			return d
+			return detailContent{key: "file:" + m.base + ":" + strings.Join(paths, "\x00"), raw: d, renderable: true}
 		}
-		return stMuted.Render("(no text diff for " + m.files[i].Path + ")")
+		return detailContent{raw: stMuted.Render("(no text diff for " + m.files[i].Path + ")")}
 	case commitsTab:
 		return m.commitDetail(m.selectedCommitSHA())
 	default:
 		item := m.selectedConversationItem()
 		if item == nil {
-			return stMuted.Render("no events")
+			return detailContent{raw: stMuted.Render("no events")}
 		}
 		if item.comment != nil {
 			head := stMuted.Render("💬 @" + item.comment.User.Login + " · " + shortTS(item.comment.CreatedAt) + " · press o to open")
-			return head + "\n\n" + md.Render(item.comment.Body, m.detail.Width)
+			return detailContent{raw: head + "\n\n" + md.Render(item.comment.Body, m.detail.Width)}
 		}
 		if item.activity != nil {
-			return stMuted.Render("activity · "+shortTS(item.activity.CreatedAt)) + "\n\n" +
-				stFg.Render("@"+item.activity.Actor.Login+" "+activitySummary(*item.activity))
+			return detailContent{raw: stMuted.Render("activity · "+shortTS(item.activity.CreatedAt)) + "\n\n" +
+				stFg.Render("@"+item.activity.Actor.Login+" "+activitySummary(*item.activity))}
 		}
 		if item.event.Kind == event.Commit {
 			return m.commitDetail(item.event.SHA)
 		}
 		head := stMuted.Render(string(item.event.Kind) + " · no diff")
-		return head + "\n\n" + md.Render(item.event.Body, m.detail.Width)
+		return detailContent{raw: head + "\n\n" + md.Render(item.event.Body, m.detail.Width)}
 	}
 }
 
-func (m Model) commitDetail(sha string) string {
+func (m Model) commitDetail(sha string) detailContent {
 	if sha == "" {
-		return stMuted.Render("no commit selected")
+		return detailContent{raw: stMuted.Render("no commit selected")}
 	}
 	if d := git.Show(sha); d != "" {
-		return d
+		return detailContent{key: "commit:" + sha, raw: d, renderable: true}
 	}
-	return stMuted.Render("(commit " + sha + " not found in this repo)")
+	return detailContent{raw: stMuted.Render("(commit " + sha + " not found in this repo)")}
 }
 
 func (m Model) renderFooter() string {

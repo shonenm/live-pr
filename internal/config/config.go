@@ -22,6 +22,20 @@ type Config struct {
 
 	// SummarizeModel optionally overrides the model used for summarization.
 	SummarizeModel string `toml:"summarize_model"`
+
+	// Diff controls the optional right-pane diff display filter.
+	Diff DiffConfig `toml:"diff"`
+}
+
+// DiffConfig customizes how raw Git diff is rendered in the right pane.
+type DiffConfig struct {
+	// Command runs an interactive reviewer in the right pane's embedded PTY.
+	// It receives LIVE_PR_BASE, LIVE_PR_HEAD, and LIVE_PR_PR_URL.
+	Command string `toml:"command"`
+
+	// Display receives raw diff on stdin and writes ANSI text to stdout when no
+	// interactive command is configured. Empty keeps the built-in Git output.
+	Display string `toml:"display"`
 }
 
 // Default returns built-in settings (delegates diff review to codediff/nvim).

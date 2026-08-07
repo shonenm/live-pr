@@ -8,7 +8,7 @@
 | CLI | **Cobra**（サブコマンド） | `live-pr`(TUI) と `live-pr hook/append/pivot/pr` を1バイナリに |
 | ストレージ | **append-only JSONL**（`.live-pr/<branch>/`） | 追記のみで安全。head は `conclusion.md` を上書き |
 | Git / GitHub | **`git` / `gh` を shell out** | go-git を持ち込まない。gh-dash と同じ流儀 |
-| reviewer 起動 | コマンドテンプレ + `tea.ExecProcess` | TUI を suspend→nvim 等を実行→resume |
+| reviewer表示 | Portalis PTY/VT + command config | Bubble Tea右pane内でNeovim CodeReviewを常時対話操作。tmux不要 |
 | エージェント連携 | Claude Code hooks → `live-pr hook` | 初手は Claude 専用。要約は `claude -p` headless |
 | 設定 | **TOML**（`~/.config/live-pr/config.toml`） | Go 親和。per-repo override 可 |
 | 配布 | 単一バイナリ（goreleaser + Homebrew tap は後） | 依存ゼロで入る |
@@ -21,7 +21,7 @@
 
 | 候補 | 長所 | 短所 | 判定 |
 | --- | --- | --- | --- |
-| **Go + Bubble Tea** | gh-dash と同一。単一バイナリ。`lipgloss` で Primer を容易に再現。`viewport`/`list`/`help` 完備。`tea.ExecProcess` で外部 reviewer を綺麗に起動。GitHub-TUI の参照コード多数（gh-dash, glow, soft-serve）。バイナリ起動が ms 級 → hook から叩く CLI にも最適 | Go の冗長さ | ◎ 採用 |
+| **Go + Bubble Tea** | gh-dash と同一。単一バイナリ。`lipgloss` で Primer を容易に再現。`viewport`/`list`/`help` 完備。PTY/VT componentをpaneとして組み込める。GitHub-TUI の参照コード多数（gh-dash, glow, soft-serve）。バイナリ起動が ms 級 → hook から叩く CLI にも最適 | Go の冗長さ | ◎ 採用 |
 | Rust + Ratatui | 高速・単一バイナリ | suspend/resume と外部起動が手数多い。GitHub-TUI の参照が薄い。オーバースペック | ○ 次点 |
 | Python + Textual | CSS ライクで Primer 再現が速い。反復が速い | 単一バイナリでない（uv/pipx 配布）。hook から叩く CLI の起動遅延（~100-300ms） | △ |
 | Node + Ink | React 的 | ランタイム依存。gh-dash 的な作り込みに不向き。dotfiles の非 JS 文化と不一致 | △ |
@@ -51,7 +51,9 @@
   local git      # file/commit一覧とdiff。GitHub待ちなし
   GitHub state   # PR + top-level comments + issue activityをcache即表示→起動時1回refresh。以後はrのみ
   Markdown       # comment本文をglamourで枠付き描画。activityは枠なし。mediaはURL表示
-  reviewer 起動  # Enter → tea.ExecProcess で nvim 等を全画面起動→復帰
+  embedded review # [diff].commandをPTY/VT内で起動。local PRとbase...HEAD CodeReviewを常時並列表示
+  diff fallback   # command未設定/終了時はraw Git、任意で[diff].displayをstdin/stdout整形
+  legacy reviewer # embedded review未使用時のみEnter→tea.ExecProcess
 
 [ 出力: PR export ]
   live-pr pr     # managed bodyだけを安全にgh pr create/edit
@@ -67,6 +69,7 @@ CLI 一覧（Cobra）:
 - `github.com/charmbracelet/bubbles` — viewport / list / help / key
 - `github.com/spf13/cobra` — サブコマンド
 - `github.com/BurntSushi/toml` — 設定
+- `github.com/Starframe/portalis` — right paneのPTY/VT terminal（module移転中のためreplaceでcommit固定）
 - 標準 `encoding/json` — JSONL
 - `git` / `gh` は exec（ライブラリ不要）
 
@@ -80,7 +83,8 @@ CLI 一覧（Cobra）:
 6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
 7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
 8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
-9. **Conversation表示**: top-level GitHub commentsとissue activityをlocal eventと時系列統合。local/cloudのcomment系は枠の濃さで区別し、activity/commit系は枠なしrow。source文字列は表示しない。画像・動画はURLのまま、`o`でcomment permalinkをbrowser表示。
+9. **Conversation表示**: top-level GitHub commentsとissue activityをlocal eventと時系列統合。local/cloudのcomment系は枠の濃さで区別し、activity/commit系は枠なしrow。source文字列は表示せず、画像・動画はURLのまま、`o`でcomment permalinkをbrowser表示。
+10. **Diff表示**: `[diff].command`があれば右paneのembedded PTYで起動時から対話型CodeReviewを表示し、`Shift+Tab`/clickでlocal PRとのfocusを切替。rangeは`base...HEAD`。未設定・終了・失敗時はraw Git、任意で`[diff].display`をfallback適用。
 
 ## 現在地
 
