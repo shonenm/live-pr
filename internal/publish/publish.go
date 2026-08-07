@@ -49,9 +49,7 @@ func BuildPreview(base string) (Preview, error) {
 	if err != nil {
 		return Preview{}, err
 	}
-	if base == "" {
-		base = git.DefaultBase()
-	}
+	base = git.ResolveBase(base)
 	_, _ = timeline.SyncCommits(st.Timeline(), base)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
@@ -74,10 +72,6 @@ func Run(opts Options) (Result, error) {
 }
 
 func run(opts Options, client githubClient, push func(string) error) (Result, error) {
-	preview, err := BuildPreview(opts.Base)
-	if err != nil {
-		return Result{}, err
-	}
 	st, err := store.Discover()
 	if err != nil {
 		return Result{}, err
@@ -87,6 +81,19 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 		return Result{}, err
 	}
 	pr, findErr := client.FindOpen(st.Branch)
+	base := opts.Base
+	if findErr == nil && pr.BaseRefName != "" {
+		if requested := normalizeBase(base); requested != "" && requested != pr.BaseRefName {
+			return Result{}, fmt.Errorf("open PR base is %s, not %s", pr.BaseRefName, requested)
+		}
+		base = pr.BaseRefName
+	} else if base == "" {
+		base = cache.Base(git.DefaultBase())
+	}
+	preview, err := BuildPreview(base)
+	if err != nil {
+		return Result{}, err
+	}
 	body := preview.Body
 	if findErr == nil {
 		expected := cache.LastPublishedManagedBodyHash
@@ -120,7 +127,7 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 		}
 		pr.Title, pr.Body = preview.Title, body
 	} else {
-		base := strings.TrimPrefix(preview.Base, "origin/")
+		base := normalizeBase(preview.Base)
 		url, err := client.Create(base, st.Branch, preview.Title, bodyFile, opts.Draft)
 		if err != nil {
 			return Result{}, err
@@ -128,6 +135,12 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 		if pr, err = client.FindOpen(st.Branch); err != nil {
 			pr = gh.PR{URL: url, Title: preview.Title, Body: body, State: "OPEN"}
 		}
+		if pr.BaseRefName == "" {
+			pr.BaseRefName = base
+		}
+	}
+	if pr.BaseRefName == "" {
+		pr.BaseRefName = normalizeBase(preview.Base)
 	}
 
 	cache.PR = &pr
@@ -138,6 +151,8 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 	}
 	return Result{PR: pr, Created: created}, nil
 }
+
+func normalizeBase(base string) string { return strings.TrimPrefix(base, "origin/") }
 
 func writeBodyFile(body string) (string, error) {
 	f, err := os.CreateTemp("", "live-pr-body-*.md")

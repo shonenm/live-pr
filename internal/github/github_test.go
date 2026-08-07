@@ -9,13 +9,13 @@ import (
 
 func TestFindOpen(t *testing.T) {
 	c := Client{run: func(args ...string) ([]byte, error) {
-		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN"}]`), nil
+		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN","baseRefName":"release"}]`), nil
 	}}
 	pr, err := c.FindOpen("feature")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Number != 12 || pr.Body != "body" {
+	if pr.Number != 12 || pr.Body != "body" || pr.BaseRefName != "release" {
 		t.Fatalf("unexpected PR: %#v", pr)
 	}
 }
