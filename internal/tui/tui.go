@@ -2035,7 +2035,11 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	}
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	line := selectionBar(selected) + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
-	meta := "  " + indent + stateStyle.Render(state) + stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
+	meta := "  " + indent + stateStyle.Render(state)
+	if pr.Number > 0 {
+		meta += " · " + mergeSummary(pr) + " · " + checkSummary(pr.Checks)
+	}
+	meta += stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
 	return []string{ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), ""}
 }
 

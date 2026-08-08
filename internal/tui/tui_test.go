@@ -434,7 +434,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.navigator.PRs = []gh.PR{
-		{Number: 3, Title: "UI", BaseRefName: "stack/api", HeadRefName: "stack/ui", Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}},
+		{Number: 3, Title: "UI", BaseRefName: "stack/api", HeadRefName: "stack/ui", MergeStateStatus: "DIRTY", Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}},
 		{Number: 2, Title: "API", BaseRefName: "stack/model", HeadRefName: "stack/api", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}},
 		{Number: 1, Title: "Model", BaseRefName: "main", HeadRefName: "stack/model"},
 	}
@@ -447,7 +447,10 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 			t.Fatalf("stack render missing %q: %q", want, plain)
 		}
 	}
-	if strings.Contains(plain, "CI pending") || strings.Contains(plain, "blocked") {
+	if !strings.Contains(plain, "CI 1 pending") || !strings.Contains(plain, "conflicts") {
+		t.Fatalf("PR row state missing: %q", plain)
+	}
+	if strings.Contains(plain, "3 PRs ·") {
 		t.Fatalf("stack header leaked aggregate PR state: %q", plain)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
