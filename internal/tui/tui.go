@@ -34,21 +34,28 @@ import (
 
 type tab int
 
+type screen int
+
 const (
 	conversationTab tab = iota
 	commitsTab
 	tabCount
 )
 
+const (
+	detailScreen screen = iota
+	prListScreen
+)
+
 type keyMap struct {
-	Up, Down, Focus, FocusRight, FocusLeft, Commits, Select, Back, Browse, Refresh, Publish, Help, Quit key.Binding
+	Up, Down, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back}, {k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -60,6 +67,7 @@ var keys = keyMap{
 	Commits:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "choose commit")),
 	Select:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
 	Back:       key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
+	PRList:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
 	Browse:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
 	Refresh:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
 	Publish:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
@@ -67,7 +75,24 @@ var keys = keyMap{
 	Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
+type prListRefreshed struct {
+	prs []gh.PR
+	err error
+}
+
+type remoteLoaded struct {
+	generation    uint64
+	pr            gh.PR
+	headRef       string
+	comments      []gh.Comment
+	activities    []gh.Activity
+	refErr        error
+	commentsErr   error
+	activitiesErr error
+}
+
 type githubRefreshed struct {
+	generation    uint64
 	pr            gh.PR
 	comments      []gh.Comment
 	activities    []gh.Activity
@@ -77,8 +102,9 @@ type githubRefreshed struct {
 }
 
 type publishDone struct {
-	result publish.Result
-	err    error
+	generation uint64
+	result     publish.Result
+	err        error
 }
 
 type browserDone struct{ err error }
@@ -105,22 +131,34 @@ type conversationItem struct {
 
 // Model holds the living-PR view state.
 type Model struct {
-	title        string
-	root         string
-	base, head   string
-	events       []event.Event
-	files        []git.ChangedFile
-	commits      []git.Commit
-	active       tab
-	cursors      [tabCount]int
-	reviewSHA    string
-	status       string
-	githubStatus string
-	timelinePath string
-	cachePath    string
-	cache        gh.Cache
-	refreshing   bool
-	publishing   bool
+	screen           screen
+	title            string
+	root             string
+	currentBranch    string
+	defaultBranch    string
+	base, head       string
+	headRev          string
+	events           []event.Event
+	files            []git.ChangedFile
+	commits          []git.Commit
+	active           tab
+	cursors          [tabCount]int
+	reviewSHA        string
+	status           string
+	githubStatus     string
+	timelinePath     string
+	cachePath        string
+	cache            gh.Cache
+	navigator        gh.NavigatorCache
+	navigatorPath    string
+	openPRs          []gh.PR
+	prCursor         int
+	autoOpenCurrent  bool
+	refreshing       bool
+	listRefreshing   bool
+	publishing       bool
+	remote           bool
+	targetGeneration uint64
 
 	diffDisplay       string
 	diffCommand       string
@@ -139,66 +177,131 @@ type Model struct {
 	ready  bool
 }
 
-// New builds a model from the current branch's store.
+// New builds a navigator-aware model without creating branch state unless the
+// current checkout is routed to local detail.
 func New() (Model, error) {
-	st, err := store.Discover()
+	root, err := git.RepoRoot()
 	if err != nil {
 		return Model{}, err
 	}
+	branch, err := git.CurrentBranch()
+	if err != nil {
+		return Model{}, err
+	}
+	cfg := config.Load(root)
+	navigatorPath := store.NavigatorCache(root)
+	navigator, navErr := gh.LoadNavigatorCache(navigatorPath)
 	status := ""
-	cache, cacheErr := gh.LoadCache(st.GitHubCache(), st.Branch)
+	if navErr != nil {
+		navigator = gh.NewNavigatorCache()
+		status = "PR list cache ignored: " + navErr.Error()
+	}
+	st := store.ForBranch(root, branch)
+	cache, cacheErr := gh.LoadCache(st.GitHubCache(), branch)
 	if cacheErr != nil {
-		cache = gh.NewCache(st.Branch)
+		cache = gh.NewCache(branch)
 		status = "GitHub cache ignored: " + cacheErr.Error()
 	}
-	base := git.ResolveBase(cache.Base(git.DefaultBase()))
-	_, _ = timeline.SyncCommits(st.Timeline(), base)
+	defaultRef := git.DefaultBase()
+	base := git.ResolveBase(cache.Base(defaultRef))
+	files, _ := git.ChangedFiles(base)
+	currentPR := cache.PR
+	if currentPR != nil && !isCurrentPR(*currentPR, branch) {
+		currentPR = nil
+		cache = gh.NewCache(branch)
+	}
+	if currentPR == nil {
+		for i := range navigator.PRs {
+			if isCurrentPR(navigator.PRs[i], branch) {
+				currentPR = &navigator.PRs[i]
+				break
+			}
+		}
+	}
+	defaultBranch := strings.TrimPrefix(defaultRef, "origin/")
+	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), len(files) > 0)
 
-	events, err := event.Load(st.Timeline())
-	if err != nil {
-		return Model{}, err
-	}
-	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-
-	commits, commitErr := git.Commits(base)
-	files, fileErr := git.ChangedFiles(base)
-	if (commitErr != nil || fileErr != nil) && status == "" {
-		status = "local git data is incomplete"
-	}
-	githubStatus := "Local only · checking for PR…"
-	if cache.PR != nil {
-		githubStatus = "GitHub: cached · refreshing…"
-	}
-	cfg := config.Load(st.Root)
-	prURL := ""
-	if cache.PR != nil {
-		prURL = cache.PR.URL
-	}
-	diffTerminal := embeddedterm.New(cfg.Diff.Command, st.Root, embeddedterm.Environment(base, st.Branch, prURL, ""))
-
-	return Model{
-		title:             deriveTitle(st.Conclusion(), st.Branch),
-		root:              st.Root,
+	m := Model{
+		screen:            prListScreen,
+		root:              root,
+		currentBranch:     branch,
+		defaultBranch:     defaultBranch,
 		base:              base,
-		head:              st.Branch,
-		events:            events,
-		files:             files,
-		commits:           commits,
+		head:              branch,
+		headRev:           "HEAD",
 		status:            status,
-		githubStatus:      githubStatus,
-		timelinePath:      st.Timeline(),
-		cachePath:         st.GitHubCache(),
-		cache:             cache,
-		refreshing:        true,
+		navigator:         navigator,
+		navigatorPath:     navigatorPath,
+		openPRs:           navigator.PRs,
+		autoOpenCurrent:   branch != "HEAD" && branch != defaultBranch,
+		listRefreshing:    true,
 		diffDisplay:       cfg.Diff.Display,
 		diffCommand:       cfg.Diff.Command,
 		diffCommitCommand: cfg.CommitReviewCommand(),
-		diffTerminal:      diffTerminal,
 		diffCache:         map[string]string{},
 		diffPending:       map[string]bool{},
 		help:              help.New(),
 		keys:              keys,
-	}, nil
+	}
+	if localDetail {
+		if err := m.loadLocal(st, cache, currentPR); err != nil {
+			return Model{}, err
+		}
+	}
+	return m, nil
+}
+
+func isCurrentPR(pr gh.PR, branch string) bool {
+	return !pr.IsCrossRepository && (pr.HeadRefName == "" || pr.HeadRefName == branch)
+}
+
+func shouldOpenLocal(branch, defaultBranch string, hasPR, hasData, hasChanges bool) bool {
+	return branch != "HEAD" && branch != defaultBranch && (hasPR || hasData || hasChanges)
+}
+
+func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) error {
+	m.targetGeneration++
+	if err := st.Ensure(); err != nil {
+		return err
+	}
+	if cache.PR == nil && hintedPR != nil {
+		pr := *hintedPR
+		cache.PR = &pr
+	}
+	base := git.ResolveBase(cache.Base(git.DefaultBase()))
+	_, _ = timeline.SyncCommits(st.Timeline(), base)
+	events, err := event.Load(st.Timeline())
+	if err != nil {
+		return err
+	}
+	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
+	commits, commitErr := git.Commits(base)
+	files, fileErr := git.ChangedFiles(base)
+	if commitErr != nil || fileErr != nil {
+		m.status = "local git data is incomplete"
+	}
+	if m.diffTerminal != nil {
+		m.diffTerminal.Close()
+	}
+	prURL := ""
+	if cache.PR != nil {
+		prURL = cache.PR.URL
+	}
+	m.screen = detailScreen
+	m.remote = false
+	m.title = deriveTitle(st.Conclusion(), st.Branch)
+	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
+	m.events, m.files, m.commits = events, files, commits
+	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
+	m.githubStatus = "Local only · checking for PR…"
+	if cache.PR != nil {
+		m.githubStatus = "GitHub: cached · refreshing…"
+	}
+	m.refreshing, m.publishing = true, false
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(base, st.Branch, "HEAD", prURL, ""))
+	m.focusDiff, m.active, m.reviewSHA = false, conversationTab, ""
+	m.layout()
+	return nil
 }
 
 // Run launches the TUI.
@@ -217,9 +320,9 @@ func Run() error {
 }
 
 func (m Model) Init() tea.Cmd {
-	var cmds []tea.Cmd
-	if m.cachePath != "" {
-		cmds = append(cmds, fetchGitHub(m.head))
+	cmds := []tea.Cmd{fetchPRList()}
+	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
+		cmds = append(cmds, fetchGitHub(m.head, m.targetGeneration))
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
@@ -239,13 +342,15 @@ func (m *Model) useBase(base, prURL string) tea.Cmd {
 		return nil
 	}
 	m.base = base
-	_, _ = timeline.SyncCommits(m.timelinePath, base)
-	if events, err := event.Load(m.timelinePath); err == nil {
-		m.events = events
-		sort.SliceStable(m.events, func(i, j int) bool { return m.events[i].TS < m.events[j].TS })
+	if !m.remote {
+		_, _ = timeline.SyncCommits(m.timelinePath, base)
+		if events, err := event.Load(m.timelinePath); err == nil {
+			m.events = events
+			sort.SliceStable(m.events, func(i, j int) bool { return m.events[i].TS < m.events[j].TS })
+		}
 	}
-	m.commits, _ = git.Commits(base)
-	m.files, _ = git.ChangedFiles(base)
+	m.commits, _ = git.CommitsRange(base, m.headRev)
+	m.files, _ = git.ChangedFilesRange(base, m.headRev)
 	return m.restartReview(m.reviewSHA, prURL)
 }
 
@@ -258,7 +363,7 @@ func (m *Model) restartReview(sha, prURL string) tea.Cmd {
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
-	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.base, m.head, prURL, sha))
+	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.base, m.head, m.headRev, prURL, sha))
 	m.focusDiff = false
 	m.layout()
 	if m.diffTerminal != nil {
@@ -281,17 +386,62 @@ func renderDiff(key, command, raw string, width int) tea.Cmd {
 	}
 }
 
-func fetchGitHub(head string) tea.Cmd {
+func fetchPRList() tea.Cmd {
+	return func() tea.Msg {
+		prs, err := gh.New().ListOpen()
+		return prListRefreshed{prs: prs, err: err}
+	}
+}
+
+func fetchGitHub(head string, generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		client := gh.New()
 		pr, err := client.FindOpen(head)
 		if err != nil {
-			return githubRefreshed{err: err}
+			return githubRefreshed{generation: generation, err: err}
 		}
 		comments, commentsErr := client.IssueComments(pr.Number)
 		activities, activitiesErr := client.IssueActivities(pr.Number)
-		return githubRefreshed{pr: pr, comments: comments, activities: activities, commentsErr: commentsErr, activitiesErr: activitiesErr}
+		return githubRefreshed{generation: generation, pr: pr, comments: comments, activities: activities, commentsErr: commentsErr, activitiesErr: activitiesErr}
 	}
+}
+
+func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		headRef, refErr := git.FetchPull(pr.Number, pr.BaseRefName, pr.HeadRefOID)
+		client := gh.New()
+		comments, commentsErr := client.IssueComments(pr.Number)
+		activities, activitiesErr := client.IssueActivities(pr.Number)
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, refErr: refErr, commentsErr: commentsErr, activitiesErr: activitiesErr}
+	}
+}
+
+func (m *Model) openRemote(pr gh.PR) tea.Cmd {
+	m.targetGeneration++
+	if m.diffTerminal != nil {
+		m.diffTerminal.Close()
+	}
+	m.screen, m.remote = detailScreen, true
+	m.title = pr.Title
+	m.base = git.ResolveBase(pr.BaseRefName)
+	m.head = pr.HeadRefName
+	m.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
+	m.events, m.commits, m.files = nil, nil, nil
+	m.timelinePath, m.cachePath = "", ""
+	m.cache = gh.NewCache(pr.HeadRefName)
+	m.cache.PR = &pr
+	if snapshot, ok := m.navigator.Snapshot(pr.Number); ok {
+		m.cache.Comments = snapshot.Comments
+		m.cache.Activities = snapshot.Activities
+		m.cache.FetchedAt = snapshot.FetchedAt
+	}
+	m.reviewSHA, m.active, m.focusDiff = "", conversationTab, false
+	m.diffTerminal = nil
+	m.refreshing, m.publishing = true, false
+	m.status = "loading PR refs…"
+	m.githubStatus = "GitHub: cached · refreshing selected PR…"
+	m.layout()
+	return tea.Batch(fetchRemotePR(pr, m.targetGeneration), m.sync())
 }
 
 const (
@@ -302,6 +452,17 @@ const (
 )
 
 func (m *Model) layout() {
+	if m.screen == prListScreen {
+		bodyH := max(3, m.h-3)
+		if !m.ready {
+			m.list = viewport.New(max(20, m.w), bodyH)
+			m.detail = viewport.New(10, bodyH)
+			m.ready = true
+		} else {
+			m.list.Width, m.list.Height = max(20, m.w), bodyH
+		}
+		return
+	}
 	ratio := listRatio
 	if m.diffTerminal != nil && m.diffTerminal.Available() {
 		ratio = reviewListRatio
@@ -351,6 +512,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, m.sync()
 
+	case prListRefreshed:
+		m.listRefreshing = false
+		if msg.err != nil {
+			m.githubStatus = "Offline · showing cached PR list"
+			return m, m.sync()
+		}
+		selectedNumber := m.selectedPRNumber()
+		m.openPRs = msg.prs
+		m.navigator.PRs = msg.prs
+		m.navigator.FetchedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
+			m.status = "PR list cache: " + err.Error()
+		}
+		m.restorePRSelection(selectedNumber)
+		m.githubStatus = "GitHub: PR list updated"
+		if m.screen == prListScreen && m.autoOpenCurrent {
+			m.autoOpenCurrent = false
+			for i := range m.openPRs {
+				if isCurrentPR(m.openPRs[i], m.currentBranch) {
+					st := store.ForBranch(m.root, m.currentBranch)
+					cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
+					if err := m.loadLocal(st, cache, &m.openPRs[i]); err != nil {
+						m.status = err.Error()
+						break
+					}
+					var cmds []tea.Cmd
+					cmds = append(cmds, fetchGitHub(m.currentBranch, m.targetGeneration), m.sync())
+					if m.diffTerminal != nil {
+						cmds = append(cmds, m.diffTerminal.Init())
+					}
+					return m, tea.Batch(cmds...)
+				}
+			}
+		}
+		return m, m.sync()
+
 	case diffRendered:
 		delete(m.diffPending, msg.key)
 		if msg.err != nil {
@@ -378,6 +575,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case publishDone:
+		if msg.generation != m.targetGeneration {
+			return m, nil
+		}
 		m.publishing = false
 		if msg.err != nil {
 			m.status = "publish: " + msg.err.Error()
@@ -397,7 +597,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.restoreConversationSelection(selectedKey)
 		return m, m.sync()
 
+	case remoteLoaded:
+		if msg.generation != m.targetGeneration {
+			return m, nil
+		}
+		m.refreshing = false
+		selectedKey := m.selectedConversationKey()
+		now := time.Now().UTC().Format(time.RFC3339)
+		m.cache.PR = &msg.pr
+		if msg.commentsErr == nil {
+			m.cache.Comments = msg.comments
+		}
+		if msg.activitiesErr == nil {
+			m.cache.Activities = msg.activities
+		}
+		m.cache.FetchedAt = now
+		m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
+		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
+			m.status = "PR list cache: " + err.Error()
+		}
+		if msg.refErr != nil {
+			m.status = msg.refErr.Error()
+			m.githubStatus = "GitHub: Conversation updated · review ref unavailable"
+			m.restoreConversationSelection(selectedKey)
+			return m, m.sync()
+		}
+		m.headRev = msg.headRef
+		m.base = git.ResolveBase(msg.pr.BaseRefName)
+		m.commits, _ = git.CommitsRange(m.base, m.headRev)
+		m.files, _ = git.ChangedFilesRange(m.base, m.headRev)
+		m.status = ""
+		stale := []string{}
+		if msg.commentsErr != nil {
+			stale = append(stale, "comments")
+		}
+		if msg.activitiesErr != nil {
+			stale = append(stale, "activity")
+		}
+		m.githubStatus = "GitHub: selected PR updated"
+		if len(stale) > 0 {
+			m.githubStatus += " · " + strings.Join(stale, "/") + " stale"
+		}
+		m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.base, m.head, m.headRev, msg.pr.URL, ""))
+		m.layout()
+		m.restoreConversationSelection(selectedKey)
+		cmds := []tea.Cmd{m.sync()}
+		if m.diffTerminal != nil {
+			cmds = append(cmds, m.diffTerminal.Init())
+		}
+		return m, tea.Batch(cmds...)
+
 	case githubRefreshed:
+		if msg.generation != m.targetGeneration {
+			return m, nil
+		}
+		if msg.err == nil && !isCurrentPR(msg.pr, m.currentBranch) {
+			msg.err = gh.ErrPRNotFound
+		}
 		m.refreshing = false
 		selectedKey := m.selectedConversationKey()
 		now := time.Now().UTC().Format(time.RFC3339)
@@ -436,6 +692,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if strings.HasPrefix(m.status, "GitHub cache") {
 			m.status = ""
 		}
+		if errors.Is(msg.err, gh.ErrPRNotFound) && len(m.files) == 0 && !store.ForBranch(m.root, m.currentBranch).HasData() {
+			m.targetGeneration++
+			if m.diffTerminal != nil {
+				m.diffTerminal.Close()
+			}
+			m.diffTerminal = nil
+			m.screen = prListScreen
+			m.layout()
+			return m, m.sync()
+		}
 		m.layout()
 		m.restoreConversationSelection(selectedKey)
 		return m, tea.Batch(diffCmd, m.sync())
@@ -453,6 +719,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.screen == prListScreen {
+			switch {
+			case key.Matches(msg, m.keys.Quit):
+				return m, tea.Quit
+			case key.Matches(msg, m.keys.Refresh):
+				if m.listRefreshing {
+					return m, nil
+				}
+				m.listRefreshing = true
+				m.githubStatus = "GitHub: refreshing PR list…"
+				return m, fetchPRList()
+			case key.Matches(msg, m.keys.Down):
+				if m.prCursor < len(m.openPRs)-1 {
+					m.prCursor++
+					return m, m.sync()
+				}
+			case key.Matches(msg, m.keys.Up):
+				if m.prCursor > 0 {
+					m.prCursor--
+					return m, m.sync()
+				}
+			case key.Matches(msg, m.keys.Select):
+				pr := m.selectedPR()
+				if pr == nil {
+					return m, nil
+				}
+				if !isCurrentPR(*pr, m.currentBranch) {
+					return m, m.openRemote(*pr)
+				}
+				st := store.ForBranch(m.root, m.currentBranch)
+				cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
+				if err := m.loadLocal(st, cache, pr); err != nil {
+					m.status = err.Error()
+					return m, nil
+				}
+				cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.targetGeneration), m.sync()}
+				if m.diffTerminal != nil {
+					cmds = append(cmds, m.diffTerminal.Init())
+				}
+				return m, tea.Batch(cmds...)
+			}
+			return m, nil
+		}
 		if key.Matches(msg, m.keys.Focus) {
 			m.focusDiff = !m.focusDiff
 			return m, nil
@@ -479,13 +788,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 			return m, nil
+		case key.Matches(msg, m.keys.PRList):
+			m.targetGeneration++
+			if m.diffTerminal != nil {
+				m.diffTerminal.Close()
+			}
+			m.diffTerminal = nil
+			m.focusDiff = false
+			m.screen = prListScreen
+			m.refreshing, m.publishing = false, false
+			m.active = conversationTab
+			m.status = ""
+			m.layout()
+			return m, m.sync()
 		case key.Matches(msg, m.keys.Refresh):
 			if m.refreshing || m.publishing {
 				return m, nil
 			}
 			m.refreshing = true
 			m.githubStatus = "GitHub: refreshing…"
-			return m, fetchGitHub(m.head)
+			if m.remote && m.cache.PR != nil {
+				return m, fetchRemotePR(*m.cache.PR, m.targetGeneration)
+			}
+			return m, fetchGitHub(m.head, m.targetGeneration)
 		case key.Matches(msg, m.keys.Publish):
 			if m.publishing {
 				return m, nil
@@ -497,9 +822,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.publishing = true
 			m.status = "publishing PR…"
 			base := m.base
+			generation := m.targetGeneration
 			return m, func() tea.Msg {
 				result, err := publish.Run(publish.Options{Base: base})
-				return publishDone{result: result, err: err}
+				return publishDone{generation: generation, result: result, err: err}
 			}
 		case key.Matches(msg, m.keys.Browse):
 			url := m.selectedBrowseURL()
@@ -646,6 +972,36 @@ func (m Model) selectedBrowseURL() string {
 	return ""
 }
 
+func (m Model) selectedPR() *gh.PR {
+	if m.prCursor < 0 || m.prCursor >= len(m.openPRs) {
+		return nil
+	}
+	return &m.openPRs[m.prCursor]
+}
+
+func (m Model) selectedPRNumber() int {
+	if pr := m.selectedPR(); pr != nil {
+		return pr.Number
+	}
+	return 0
+}
+
+func (m *Model) restorePRSelection(number int) {
+	if number != 0 {
+		for i := range m.openPRs {
+			if m.openPRs[i].Number == number {
+				m.prCursor = i
+				return
+			}
+		}
+	}
+	if len(m.openPRs) == 0 {
+		m.prCursor = 0
+	} else if m.prCursor >= len(m.openPRs) {
+		m.prCursor = len(m.openPRs) - 1
+	}
+}
+
 func (m Model) selectedCommitSHA() string {
 	if i := m.cursors[commitsTab]; m.active == commitsTab && i >= 0 && i < len(m.commits) {
 		return m.commits[i].SHA
@@ -658,10 +1014,31 @@ func (m *Model) sync() tea.Cmd {
 	if !m.ready {
 		return nil
 	}
-	m.keys.Commits.SetEnabled(m.active == conversationTab)
+	if m.screen == prListScreen {
+		m.keys.Select.SetEnabled(true)
+		m.keys.Focus.SetEnabled(false)
+		m.keys.FocusRight.SetEnabled(false)
+		m.keys.Commits.SetEnabled(false)
+		m.keys.Back.SetEnabled(false)
+		m.keys.PRList.SetEnabled(false)
+		m.keys.Browse.SetEnabled(false)
+		m.keys.Publish.SetEnabled(false)
+		m.list.SetContent(m.buildPRList())
+		if off := m.prCursor*3 - 1; off > 0 {
+			m.list.SetYOffset(off)
+		} else {
+			m.list.GotoTop()
+		}
+		return nil
+	}
+	m.keys.Focus.SetEnabled(true)
+	m.keys.FocusRight.SetEnabled(true)
+	m.keys.Commits.SetEnabled(!m.remote && m.active == conversationTab)
+	m.keys.PRList.SetEnabled(true)
 	m.keys.Select.SetEnabled(m.active == commitsTab)
 	m.keys.Back.SetEnabled(m.active == commitsTab)
 	m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
+	m.keys.Publish.SetEnabled(!m.remote)
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
 	if off := selectedLine - 1; off > 0 {
@@ -718,6 +1095,9 @@ func (m Model) View() string {
 	if !m.ready {
 		return "loading…"
 	}
+	if m.screen == prListScreen {
+		return lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), m.list.View(), m.renderFooter())
+	}
 	detailContent := m.detail.View()
 	borderColor := cBorder
 	if m.diffTerminal != nil && m.diffTerminal.Available() {
@@ -734,7 +1114,17 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 }
 
+func (m Model) renderPRListHeader() string {
+	title := stBold.Render("Open pull requests")
+	meta := stMuted.Render(fmt.Sprintf("%d open · current %s", len(m.openPRs), m.currentBranch))
+	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).Render(strings.Repeat("─", max(0, m.w)))
+	return lipgloss.JoinVertical(lipgloss.Left, title+"  "+meta, rule)
+}
+
 func (m Model) headerHeight() int {
+	if m.screen == prListScreen {
+		return 2
+	}
 	if m.cache.PR != nil {
 		return headerBaseLines + 1
 	}
@@ -822,6 +1212,26 @@ func relativeLuminance(rgb uint64) float64 {
 	g := channel((rgb >> 8) & 0xff)
 	b := channel(rgb & 0xff)
 	return 0.2126*r + 0.7152*g + 0.0722*b
+}
+
+func (m Model) buildPRList() string {
+	if len(m.openPRs) == 0 {
+		if m.listRefreshing {
+			return stMuted.Render("fetching open pull requests…")
+		}
+		return stMuted.Render("(no open pull requests)")
+	}
+	lines := make([]string, 0, len(m.openPRs)*2)
+	for i, pr := range m.openPRs {
+		state := "open"
+		if pr.IsDraft {
+			state = "draft"
+		}
+		line := selectionBar(i == m.prCursor) + stGreenF.Render(fmt.Sprintf("#%d", pr.Number)) + " " + stBold.Render(pr.Title)
+		meta := "  " + stMuted.Render(fmt.Sprintf("%s · %s ← %s · @%s", state, pr.BaseRefName, pr.HeadRefName, pr.Author.Login))
+		lines = append(lines, ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) buildList() (string, int) {
@@ -954,10 +1364,10 @@ func (m Model) buildDetail() detailContent {
 	if m.reviewSHA != "" {
 		return m.commitDetail(m.reviewSHA)
 	}
-	if d := git.FileDiff(m.base); d != "" {
-		return detailContent{key: "range:" + m.base, raw: d, renderable: true}
+	if d := git.FileDiffRange(m.base, m.headRev); d != "" {
+		return detailContent{key: "range:" + m.base + "..." + m.headRev, raw: d, renderable: true}
 	}
-	return detailContent{raw: stMuted.Render("(no changes in " + m.base + "...HEAD)")}
+	return detailContent{raw: stMuted.Render("(no changes in " + m.base + "..." + m.headRev + ")")}
 }
 
 func (m Model) commitDetail(sha string) detailContent {

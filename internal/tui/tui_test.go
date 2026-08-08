@@ -2,6 +2,8 @@ package tui
 
 import (
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,6 +70,241 @@ func TestLabelForegroundChoosesHigherContrast(t *testing.T) {
 	}
 	if got := contrastingLabelForeground(0x000080); got != "#ffffff" {
 		t.Fatalf("navy foreground = %s", got)
+	}
+}
+
+func TestMainStartupShowsListWithoutCreatingBranchStore(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "file"), []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "file")
+	run("commit", "-m", "main")
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(old) }()
+	m, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.close()
+	if m.screen != prListScreen {
+		t.Fatalf("main startup screen = %v", m.screen)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".live-pr", "main")); !os.IsNotExist(err) {
+		t.Fatalf("main branch store was created: err=%v", err)
+	}
+}
+
+func TestCurrentPRIdentityRejectsSameNamedFork(t *testing.T) {
+	if !isCurrentPR(gh.PR{HeadRefName: "feature"}, "feature") {
+		t.Fatal("same-repository head should be current")
+	}
+	if isCurrentPR(gh.PR{HeadRefName: "feature", IsCrossRepository: true}, "feature") {
+		t.Fatal("same-named fork must be remote")
+	}
+}
+
+func TestStartupRouting(t *testing.T) {
+	for _, tc := range []struct {
+		name                               string
+		branch, defaultBranch              string
+		hasPR, hasData, hasChanges, detail bool
+	}{
+		{name: "open PR", branch: "feature", defaultBranch: "main", hasPR: true, detail: true},
+		{name: "local timeline", branch: "feature", defaultBranch: "main", hasData: true, detail: true},
+		{name: "local commits", branch: "feature", defaultBranch: "main", hasChanges: true, detail: true},
+		{name: "main", branch: "main", defaultBranch: "main", hasPR: true},
+		{name: "empty feature", branch: "feature", defaultBranch: "main"},
+		{name: "detached", branch: "HEAD", defaultBranch: "main", hasChanges: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldOpenLocal(tc.branch, tc.defaultBranch, tc.hasPR, tc.hasData, tc.hasChanges); got != tc.detail {
+				t.Fatalf("shouldOpenLocal = %v, want %v", got, tc.detail)
+			}
+		})
+	}
+}
+
+func TestPRListNavigationAndRefresh(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.currentBranch = "main"
+	m.openPRs = []gh.PR{{Number: 1, Title: "first"}, {Number: 2, Title: "second"}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "Open pull requests") || !strings.Contains(out, "#1") {
+		t.Fatalf("PR list missing content: %q", out)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	if m.prCursor != 1 {
+		t.Fatalf("PR cursor = %d", m.prCursor)
+	}
+	m.listRefreshing = false
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = u.(Model)
+	if cmd == nil || !m.listRefreshing {
+		t.Fatal("r should explicitly refresh the PR list")
+	}
+	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}); cmd == nil {
+		t.Fatal("q should quit the PR list")
+	}
+}
+
+func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.currentBranch = "main"
+	m.defaultBranch = "main"
+	m.navigatorPath = filepath.Join(t.TempDir(), "github-prs.json")
+	m.navigator = gh.NewNavigatorCache()
+	m.openPRs = []gh.PR{{Number: 1}, {Number: 2}}
+	m.prCursor = 1
+	u, _ := m.Update(prListRefreshed{err: errors.New("offline")})
+	m = u.(Model)
+	if len(m.openPRs) != 2 || m.prCursor != 1 {
+		t.Fatalf("failed refresh lost cache/selection: prs=%v cursor=%d", m.openPRs, m.prCursor)
+	}
+	u, _ = m.Update(prListRefreshed{prs: []gh.PR{{Number: 2}, {Number: 3}}})
+	m = u.(Model)
+	if len(m.openPRs) != 2 || m.openPRs[m.prCursor].Number != 2 {
+		t.Fatalf("successful refresh lost selection: prs=%v cursor=%d", m.openPRs, m.prCursor)
+	}
+	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
+	if err != nil || len(cached.PRs) != 2 {
+		t.Fatalf("navigator cache not saved: %#v err=%v", cached, err)
+	}
+}
+
+func TestPRListEnterOpensRemoteWithoutChangingCheckout(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.currentBranch = "main"
+	m.openPRs = []gh.PR{{Number: 14, Title: "remote", HeadRefName: "feature", BaseRefName: "main", HeadRefOID: "abc"}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if cmd == nil || m.screen != detailScreen || !m.remote || m.head != "feature" || m.headRev != "refs/live-pr/pulls/14/head" || m.diffTerminal != nil {
+		t.Fatalf("remote target not opened: screen=%v remote=%v head=%q rev=%q terminal=%v", m.screen, m.remote, m.head, m.headRev, m.diffTerminal)
+	}
+}
+
+func TestStaleLocalAndPublishResultsCannotReplaceTarget(t *testing.T) {
+	m := testModel()
+	m.targetGeneration = 2
+	m.currentBranch = "feature"
+	m.cache.PR = &gh.PR{Number: 2, HeadRefName: "feature"}
+	u, _ := m.Update(githubRefreshed{generation: 1, pr: gh.PR{Number: 1, HeadRefName: "feature"}})
+	m = u.(Model)
+	if m.cache.PR == nil || m.cache.PR.Number != 2 {
+		t.Fatalf("stale local refresh replaced target: %#v", m.cache.PR)
+	}
+	m.publishing = true
+	u, _ = m.Update(publishDone{generation: 1, result: publish.Result{PR: gh.PR{Number: 1}}})
+	m = u.(Model)
+	if m.cache.PR == nil || m.cache.PR.Number != 2 {
+		t.Fatalf("stale publish replaced target: %#v", m.cache.PR)
+	}
+}
+
+func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.currentBranch = "main"
+	m.openPRs = []gh.PR{
+		{Number: 1, Title: "A", HeadRefName: "a", BaseRefName: "main"},
+		{Number: 2, Title: "B", HeadRefName: "b", BaseRefName: "main"},
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	generationA := m.targetGeneration
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m = u.(Model)
+	m.prCursor = 1
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if m.cache.PR == nil || m.cache.PR.Number != 2 {
+		t.Fatalf("target B not opened: %#v", m.cache.PR)
+	}
+	u, _ = m.Update(remoteLoaded{generation: generationA, pr: gh.PR{Number: 1}, headRef: "HEAD"})
+	m = u.(Model)
+	if m.cache.PR == nil || m.cache.PR.Number != 2 || m.diffTerminal != nil {
+		t.Fatalf("stale A replaced B: %#v terminal=%v", m.cache.PR, m.diffTerminal)
+	}
+}
+
+func TestPRListScrollTracksRenderedRows(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	for i := 1; i <= 20; i++ {
+		m.openPRs = append(m.openPRs, gh.PR{Number: i, Title: "PR"})
+	}
+	m.prCursor = 10
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	m = u.(Model)
+	if m.list.YOffset < 20 {
+		t.Fatalf("list offset did not follow rendered rows: %d", m.list.YOffset)
+	}
+}
+
+func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
+	m := testModel()
+	m.root = t.TempDir()
+	m.currentBranch = "main"
+	m.remote = true
+	m.screen = detailScreen
+	m.diffCommand = "cat"
+	m.navigator = gh.NewNavigatorCache()
+	m.navigatorPath = filepath.Join(t.TempDir(), "github-prs.json")
+	pr := gh.PR{Number: 14, URL: "https://example/pr/14", Title: "remote", HeadRefName: "feature", BaseRefName: "main"}
+	m.cache = gh.NewCache("feature")
+	m.cache.PR = &pr
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	u, cmd := m.Update(remoteLoaded{pr: pr, headRef: "HEAD", comments: []gh.Comment{{ID: 1, Body: "cached"}}})
+	m = u.(Model)
+	defer m.close()
+	if cmd == nil || m.diffTerminal == nil || m.refreshing || len(m.cache.Comments) != 1 {
+		t.Fatalf("remote load incomplete: terminal=%v refreshing=%v cache=%#v", m.diffTerminal, m.refreshing, m.cache)
+	}
+	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, ok := cached.Snapshot(14); !ok || len(snapshot.Comments) != 1 {
+		t.Fatalf("remote snapshot = %#v ok=%v", snapshot, ok)
+	}
+}
+
+func TestDetailBReturnsToPRList(t *testing.T) {
+	m := testModel()
+	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m = u.(Model)
+	if m.screen != prListScreen || m.diffTerminal != nil {
+		t.Fatalf("b did not return to list: screen=%v terminal=%v", m.screen, m.diffTerminal)
 	}
 }
 
@@ -191,6 +428,17 @@ func TestPRRefreshAddsMetadataHeaderRow(t *testing.T) {
 	m = u.(Model)
 	if m.detail.Height != before-1 || m.headerHeight() != headerBaseLines+1 {
 		t.Fatalf("metadata row not reflected in layout: before=%d after=%d header=%d", before, m.detail.Height, m.headerHeight())
+	}
+}
+
+func TestLocalRefreshRejectsSameNamedFork(t *testing.T) {
+	m := testModel()
+	m.currentBranch = "feature"
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 9, HeadRefName: "feature", IsCrossRepository: true}})
+	m = u.(Model)
+	if m.cache.PR != nil || !strings.Contains(m.githubStatus, "Local only") {
+		t.Fatalf("same-named fork bound as local PR: cache=%#v status=%q", m.cache.PR, m.githubStatus)
 	}
 }
 
