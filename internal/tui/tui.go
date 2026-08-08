@@ -214,6 +214,7 @@ type Model struct {
 	filterEditing             bool
 	prStacks                  []prStack
 	collapsedStacks           map[string]bool
+	stackRepresentatives      map[string]int
 	prCursor                  int
 	localAvailable            bool
 	localTitle                string
@@ -293,29 +294,30 @@ func New() (Model, error) {
 	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), len(files) > 0)
 
 	m := Model{
-		screen:            prListScreen,
-		root:              root,
-		currentBranch:     branch,
-		defaultBranch:     defaultBranch,
-		base:              base,
-		head:              branch,
-		headRev:           "HEAD",
-		status:            status,
-		navigator:         navigator,
-		navigatorPath:     navigatorPath,
-		openPRs:           navigator.PRs,
-		viewerLogin:       navigator.ViewerLogin,
-		autoOpenCurrent:   branch != "HEAD" && branch != defaultBranch,
-		listRefreshing:    true,
-		prListGeneration:  1,
-		diffDisplay:       cfg.Diff.Display,
-		diffCommand:       cfg.Diff.Command,
-		diffCommitCommand: cfg.CommitReviewCommand(),
-		diffCache:         map[string]string{},
-		diffPending:       map[string]bool{},
-		collapsedStacks:   map[string]bool{},
-		help:              newHelp(),
-		keys:              keys,
+		screen:               prListScreen,
+		root:                 root,
+		currentBranch:        branch,
+		defaultBranch:        defaultBranch,
+		base:                 base,
+		head:                 branch,
+		headRev:              "HEAD",
+		status:               status,
+		navigator:            navigator,
+		navigatorPath:        navigatorPath,
+		openPRs:              navigator.PRs,
+		viewerLogin:          navigator.ViewerLogin,
+		autoOpenCurrent:      branch != "HEAD" && branch != defaultBranch,
+		listRefreshing:       true,
+		prListGeneration:     1,
+		diffDisplay:          cfg.Diff.Display,
+		diffCommand:          cfg.Diff.Command,
+		diffCommitCommand:    cfg.CommitReviewCommand(),
+		diffCache:            map[string]string{},
+		diffPending:          map[string]bool{},
+		collapsedStacks:      map[string]bool{},
+		stackRepresentatives: map[string]int{},
+		help:                 newHelp(),
+		keys:                 keys,
 	}
 	if localDetail {
 		if err := m.loadLocal(st, cache, currentPR); err != nil {
@@ -984,11 +986,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case key.Matches(msg, m.keys.ToggleStack):
 				if stack, ok := m.stackForPR(m.selectedPRNumber()); ok {
+					selected := m.selectedPRNumber()
 					collapsing := !m.collapsedStacks[stack.id]
 					m.collapsedStacks[stack.id] = collapsing
-					selected := m.selectedPRNumber()
 					if collapsing {
-						selected = stack.entries[0].pr.Number
+						m.stackRepresentatives[stack.id] = selected
+					} else {
+						delete(m.stackRepresentatives, stack.id)
 					}
 					m.applyPRFilters(selected)
 					return m, m.sync()
@@ -1308,6 +1312,9 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 	if m.collapsedStacks == nil {
 		m.collapsedStacks = map[string]bool{}
 	}
+	if m.stackRepresentatives == nil {
+		m.stackRepresentatives = map[string]int{}
+	}
 	m.allPRs = m.withLocalPR(m.navigator.PRs)
 	m.filteredPRs = make([]gh.PR, 0, len(m.allPRs))
 	for _, pr := range m.allPRs {
@@ -1318,10 +1325,7 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 	m.prStacks = buildPRStacks(m.filteredPRs)
 	m.openPRs = make([]gh.PR, 0, len(m.filteredPRs))
 	for _, stack := range m.prStacks {
-		entries := stack.entries
-		if len(entries) > 1 && m.collapsedStacks[stack.id] {
-			entries = entries[:1]
-		}
+		entries := m.visibleStackEntries(stack)
 		for _, entry := range entries {
 			m.openPRs = append(m.openPRs, entry.pr)
 		}
@@ -1397,6 +1401,18 @@ func buildPRStacks(prs []gh.PR) []prStack {
 	}
 	sort.SliceStable(stacks, func(i, j int) bool { return stacks[i].order < stacks[j].order })
 	return stacks
+}
+
+func (m Model) visibleStackEntries(stack prStack) []stackEntry {
+	if len(stack.entries) < 2 || !m.collapsedStacks[stack.id] {
+		return stack.entries
+	}
+	for _, entry := range stack.entries {
+		if entry.pr.Number == m.stackRepresentatives[stack.id] {
+			return []stackEntry{entry}
+		}
+	}
+	return stack.entries[:1]
 }
 
 func (m Model) stackForPR(number int) (prStack, bool) {
@@ -1988,13 +2004,13 @@ func (m Model) buildPRListRows() (string, int) {
 	lines := make([]string, 0, len(m.openPRs)*3+len(stacks))
 	selectedLine, openIndex := 0, 0
 	for _, stack := range stacks {
-		entries := stack.entries
-		grouped := len(entries) > 1
+		grouped := len(stack.entries) > 1
+		collapsed := grouped && m.collapsedStacks[stack.id]
+		entries := m.visibleStackEntries(stack)
 		if grouped {
-			collapsed := m.collapsedStacks[stack.id]
 			arrow := "▾"
 			if collapsed {
-				arrow, entries = "▸", entries[:1]
+				arrow = "▸"
 			}
 			header := stMuted.Render(arrow+" ") + stBold.Render(stack.title) + stMuted.Render(fmt.Sprintf(" · %d PRs · ", len(stack.entries))) + stackHealth(stack)
 			lines = append(lines, ansi.Truncate(header, max(10, m.list.Width), "…"))
@@ -2007,6 +2023,9 @@ func (m Model) buildPRListRows() (string, int) {
 					marker = "└ "
 				}
 				prefix = strings.Repeat("  ", entry.depth) + marker
+				if collapsed {
+					prefix = "└ "
+				}
 			}
 			selected := openIndex == m.prCursor
 			if selected {

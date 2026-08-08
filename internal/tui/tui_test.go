@@ -449,11 +449,12 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = u.(Model)
-	if len(m.openPRs) != 1 || m.openPRs[0].Number != 1 || !m.collapsedStacks[m.prStacks[0].id] {
+	if len(m.openPRs) != 1 || m.openPRs[0].Number != 3 || !m.collapsedStacks[m.prStacks[0].id] {
 		t.Fatalf("collapsed stack = prs:%#v collapsed:%#v", m.openPRs, m.collapsedStacks)
 	}
-	if !strings.Contains(ansi.Strip(m.buildPRList()), "▸ stack/model") {
-		t.Fatalf("collapsed header = %q", ansi.Strip(m.buildPRList()))
+	collapsed := ansi.Strip(m.buildPRList())
+	if !strings.Contains(collapsed, "▸ stack/model") || !strings.Contains(collapsed, "#3 UI") || strings.Contains(collapsed, "#1 Model") {
+		t.Fatalf("collapsed stack did not preserve selected PR: %q", collapsed)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = u.(Model)
