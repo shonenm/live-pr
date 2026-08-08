@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -31,7 +30,7 @@ func testModel() Model {
 		},
 		files:   []git.ChangedFile{{Status: "M", Path: "internal/tui/tui.go"}},
 		commits: []git.Commit{{SHA: "abc1234", Subject: "feat: x", Date: "2026-07-21T11:00"}},
-		help:    help.New(),
+		help:    newHelp(),
 		keys:    keys,
 	}
 }
@@ -70,6 +69,48 @@ func TestLabelForegroundChoosesHigherContrast(t *testing.T) {
 	}
 	if got := contrastingLabelForeground(0x000080); got != "#ffffff" {
 		t.Fatalf("navy foreground = %s", got)
+	}
+}
+
+func TestPaletteMatchesPrimerDarkSemantics(t *testing.T) {
+	got := []string{cFg, cMuted, cBorder, cCloudBorder, cAccent, cGreenF, cAttention, cRedF}
+	want := []string{"#f0f6fc", "#9198a1", "#3d444d", "#656c76", "#4493f8", "#3fb950", "#d29922", "#f85149"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("palette[%d] = %s, want %s", i, got[i], want[i])
+		}
+	}
+}
+
+func TestEventKindsUseMutedTextInsteadOfInventedColors(t *testing.T) {
+	for _, kind := range []event.Kind{event.Note, event.Decision, event.Pivot, event.Summary, event.Commit} {
+		if got, want := kindLabel(kind), stMuted.Bold(true).Render(string(kind)); got != want {
+			t.Fatalf("kind %s = %q, want muted %q", kind, got, want)
+		}
+	}
+}
+
+func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
+	if got := reviewSummary("APPROVED"); got != stGreenF.Render("review approved") {
+		t.Fatalf("approved review = %q", got)
+	}
+	if got := reviewSummary("CHANGES_REQUESTED"); got != stRedF.Render("review changes requested") {
+		t.Fatalf("changes-requested review = %q", got)
+	}
+	if got := mergeSummary(gh.PR{Number: 1, MergeStateStatus: "BLOCKED"}); got != stRedF.Render("blocked") {
+		t.Fatalf("blocked merge = %q", got)
+	}
+	if got := mergeSummary(gh.PR{Number: 1, Mergeable: "MERGEABLE", MergeStateStatus: "UNSTABLE"}); got != stGreenF.Render("mergeable") {
+		t.Fatalf("unstable merge = %q", got)
+	}
+	if got := checkSummary([]gh.PRCheck{{Status: "IN_PROGRESS"}}); got != stAttention.Render("CI 1 pending") {
+		t.Fatalf("pending CI = %q", got)
+	}
+	if cDoneEmphasis != "#8957e5" {
+		t.Fatalf("merged palette = %s", cDoneEmphasis)
+	}
+	if got := prStateBadgeColor("MERGED"); got != cDoneEmphasis {
+		t.Fatalf("merged badge = %s", got)
 	}
 }
 
