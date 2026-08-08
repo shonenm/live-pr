@@ -79,8 +79,8 @@ CLI 一覧（Cobra）:
 2. **timelineの扱い**: `.live-pr/`はgitignoreし、ローカルruntimeとして保持。PR export時に読み込む。
 3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
 4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
-5. **TUI**: default branch/対象なしはPR一覧、current/local PRはdetailへ自動routing。一覧右paneは冒頭のdescription/commentをカード表示し、metadata、CI/conflict、規模をpreview。detailは固定2paneで、`b`でlocal PRを含む一覧、他PRはcheckoutなしで開く。
-6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
+5. **TUI**: default branch/対象なしはPR一覧、current/local PRはdetailへ自動routing。一覧右paneは冒頭のdescription/commentをカード表示し、metadata、CI/conflict、規模をpreview。detailは固定2paneで、`b`でlocal PRを含む一覧、他PRは通常checkoutなしで開き、`x`/`m`のみ確認付きでcheckout/mergeする。
+6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`またはmerge成功後のみrefresh。timer/daemonは持たない。
 7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
 8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
 9. **GitHub表示**: PR opening description、top-level comments、issue activityをlocal eventと時系列統合。description/commentsとlocal eventは枠の濃さで区別し、activityは枠なしrow、commitは専用pickerにのみ表示。画像・動画はURLのまま、`o`でdescription/commentをGitHub表示。PR assignees/labelsはcacheし、headerへcompact表示。
