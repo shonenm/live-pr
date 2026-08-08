@@ -442,10 +442,13 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	plain := ansi.Strip(m.buildPRList())
-	for _, want := range []string{"stack/model · 3 PRs · CI pending", "├ #1", "├ #2", "└ #3"} {
+	for _, want := range []string{"stack/model · 3 PRs", "├ #1", "├ #2", "└ #3"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("stack render missing %q: %q", want, plain)
 		}
+	}
+	if strings.Contains(plain, "CI pending") || strings.Contains(plain, "blocked") {
+		t.Fatalf("stack header leaked aggregate PR state: %q", plain)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = u.(Model)
@@ -459,19 +462,6 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	m = u.(Model)
 	if len(m.openPRs) != 3 || m.collapsedStacks[m.prStacks[0].id] {
 		t.Fatalf("expanded stack = prs:%#v collapsed:%#v", m.openPRs, m.collapsedStacks)
-	}
-}
-
-func TestStackHealthUsesWorstGitHubState(t *testing.T) {
-	stack := prStack{entries: []stackEntry{{pr: gh.PR{Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}}, {pr: gh.PR{Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "FAILURE"}}}}}}
-	if got := stackHealth(stack); got != stRedF.Render("CI failed") {
-		t.Fatalf("failed health = %q", got)
-	}
-	stack.entries[0].pr.Checks = []gh.PRCheck{{Status: "COMPLETED", Conclusion: "FAILURE"}}
-	stack.entries[1].pr.Checks = nil
-	stack.entries[1].pr.MergeStateStatus = "DIRTY"
-	if got := stackHealth(stack); got != stRedF.Render("blocked") {
-		t.Fatalf("blocked health = %q", got)
 	}
 }
 

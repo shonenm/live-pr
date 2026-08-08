@@ -1996,7 +1996,7 @@ func (m Model) buildPRListRows() (string, int) {
 			if collapsed {
 				arrow, entries = "▸", entries[:1]
 			}
-			header := stMuted.Render(arrow+" ") + stBold.Render(stack.title) + stMuted.Render(fmt.Sprintf(" · %d PRs · ", len(stack.entries))) + stackHealth(stack)
+			header := stMuted.Render(arrow+" ") + stBold.Render(stack.title) + stMuted.Render(fmt.Sprintf(" · %d PRs", len(stack.entries)))
 			lines = append(lines, ansi.Truncate(header, max(10, m.list.Width), "…"))
 		}
 		for i, entry := range entries {
@@ -2037,31 +2037,6 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	line := selectionBar(selected) + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
 	meta := "  " + indent + stateStyle.Render(state) + stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
 	return []string{ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), ""}
-}
-
-func stackHealth(stack prStack) string {
-	hasBlocked, hasFailed, hasPassed, hasPending := false, false, false, false
-	for _, entry := range stack.entries {
-		pr := entry.pr
-		hasBlocked = hasBlocked || pr.Mergeable == "CONFLICTING" || pr.MergeStateStatus == "DIRTY" || pr.MergeStateStatus == "BLOCKED"
-		health, _ := checkHealth(pr.Checks)
-		hasFailed = hasFailed || health == "failed"
-		hasPending = hasPending || health == "pending"
-		hasPassed = hasPassed || health == "passed"
-	}
-	if hasBlocked {
-		return stRedF.Render("blocked")
-	}
-	if hasFailed {
-		return stRedF.Render("CI failed")
-	}
-	if hasPending {
-		return stAttention.Render("CI pending")
-	}
-	if hasPassed {
-		return stGreenF.Render("CI passed")
-	}
-	return stMuted.Render("no checks")
 }
 
 func (m Model) buildList() (string, int) {
