@@ -19,10 +19,11 @@ type PRSnapshot struct {
 // NavigatorCache is repository-wide browse state. Publish conflict state remains
 // in the branch-local Cache and is intentionally absent here.
 type NavigatorCache struct {
-	Version   int                   `json:"version"`
-	PRs       []PR                  `json:"prs,omitempty"`
-	Snapshots map[string]PRSnapshot `json:"snapshots,omitempty"`
-	FetchedAt string                `json:"fetched_at,omitempty"`
+	Version     int                   `json:"version"`
+	ViewerLogin string                `json:"viewer_login,omitempty"`
+	PRs         []PR                  `json:"prs,omitempty"`
+	Snapshots   map[string]PRSnapshot `json:"snapshots,omitempty"`
+	FetchedAt   string                `json:"fetched_at,omitempty"`
 }
 
 func NewNavigatorCache() NavigatorCache {
