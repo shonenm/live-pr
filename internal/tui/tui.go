@@ -153,6 +153,8 @@ type Model struct {
 	navigatorPath    string
 	openPRs          []gh.PR
 	prCursor         int
+	localAvailable   bool
+	localTitle       string
 	autoOpenCurrent  bool
 	refreshing       bool
 	listRefreshing   bool
@@ -248,6 +250,7 @@ func New() (Model, error) {
 			return Model{}, err
 		}
 	}
+	m.openPRs = m.withLocalPR(navigator.PRs)
 	return m, nil
 }
 
@@ -264,7 +267,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	if err := st.Ensure(); err != nil {
 		return err
 	}
-	if cache.PR == nil && hintedPR != nil {
+	if cache.PR == nil && hintedPR != nil && hintedPR.Number > 0 {
 		pr := *hintedPR
 		cache.PR = &pr
 	}
@@ -290,6 +293,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.screen = detailScreen
 	m.remote = false
 	m.title = deriveTitle(st.Conclusion(), st.Branch)
+	m.localAvailable, m.localTitle = true, m.title
 	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
@@ -519,8 +523,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.sync()
 		}
 		selectedNumber := m.selectedPRNumber()
-		m.openPRs = msg.prs
 		m.navigator.PRs = msg.prs
+		m.openPRs = m.withLocalPR(msg.prs)
 		m.navigator.FetchedAt = time.Now().UTC().Format(time.RFC3339)
 		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
 			m.status = "PR list cache: " + err.Error()
@@ -973,6 +977,24 @@ func (m Model) selectedBrowseURL() string {
 	return ""
 }
 
+func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
+	items := append([]gh.PR(nil), prs...)
+	if !m.localAvailable {
+		return items
+	}
+	for _, pr := range items {
+		if isCurrentPR(pr, m.currentBranch) {
+			return items
+		}
+	}
+	title := m.localTitle
+	if title == "" {
+		title = m.currentBranch
+	}
+	local := gh.PR{Title: title, State: "LOCAL", BaseRefName: m.defaultBranch, HeadRefName: m.currentBranch}
+	return append([]gh.PR{local}, items...)
+}
+
 func (m Model) selectedPR() *gh.PR {
 	if m.prCursor < 0 || m.prCursor >= len(m.openPRs) {
 		return nil
@@ -1116,8 +1138,8 @@ func (m Model) View() string {
 }
 
 func (m Model) renderPRListHeader() string {
-	title := stBold.Render("Open pull requests")
-	meta := stMuted.Render(fmt.Sprintf("%d open · current %s", len(m.openPRs), m.currentBranch))
+	title := stBold.Render("Pull requests")
+	meta := stMuted.Render(fmt.Sprintf("%d listed · current %s", len(m.openPRs), m.currentBranch))
 	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).Render(strings.Repeat("─", max(0, m.w)))
 	return lipgloss.JoinVertical(lipgloss.Left, title+"  "+meta, rule)
 }
@@ -1225,11 +1247,16 @@ func (m Model) buildPRList() string {
 	lines := make([]string, 0, len(m.openPRs)*2)
 	for i, pr := range m.openPRs {
 		state := "open"
+		identifier := fmt.Sprintf("#%d", pr.Number)
+		owner := " · @" + pr.Author.Login
 		if pr.IsDraft {
 			state = "draft"
 		}
-		line := selectionBar(i == m.prCursor) + stGreenF.Render(fmt.Sprintf("#%d", pr.Number)) + " " + stBold.Render(pr.Title)
-		meta := "  " + stMuted.Render(fmt.Sprintf("%s · %s ← %s · @%s", state, pr.BaseRefName, pr.HeadRefName, pr.Author.Login))
+		if pr.Number == 0 {
+			state, identifier, owner = "local", "Local PR", ""
+		}
+		line := selectionBar(i == m.prCursor) + stGreenF.Render(identifier) + " " + stBold.Render(pr.Title)
+		meta := "  " + stMuted.Render(fmt.Sprintf("%s · %s ← %s%s", state, pr.BaseRefName, pr.HeadRefName, owner))
 		lines = append(lines, ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), "")
 	}
 	return strings.Join(lines, "\n")

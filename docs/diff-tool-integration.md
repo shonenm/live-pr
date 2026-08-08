@@ -37,7 +37,7 @@ The explicit `base...head` range matches GitHub PR semantics for both the checko
 
 ## Interaction
 
-An open/current local PR starts in detail. The default branch, detached HEAD, or a branch without local PR context starts in the cached open-PR list.
+An open/current local PR starts in detail. The default branch, detached HEAD, or a branch without local PR context starts in the cached PR list. Returning from local detail adds a `Local PR` entry even before publication.
 
 - list: `j`/`k` selects, `Enter` opens without checkout, `r` refreshes, and `q` exits;
 - detail: reserved `b` returns to the list from either pane;

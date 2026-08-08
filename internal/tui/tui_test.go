@@ -149,7 +149,7 @@ func TestPRListNavigationAndRefresh(t *testing.T) {
 	m.openPRs = []gh.PR{{Number: 1, Title: "first"}, {Number: 2, Title: "second"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
-	if out := ansi.Strip(m.View()); !strings.Contains(out, "Open pull requests") || !strings.Contains(out, "#1") {
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "Pull requests") || !strings.Contains(out, "#1") {
 		t.Fatalf("PR list missing content: %q", out)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -299,13 +299,16 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 func TestDetailBReturnsToPRList(t *testing.T) {
 	m := testModel()
 	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
+	m.currentBranch, m.defaultBranch = "feature", "main"
+	m.localAvailable, m.localTitle = true, "local work"
+	m.openPRs = m.withLocalPR(nil)
 	m.focusDiff = true
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
 	m = u.(Model)
-	if m.screen != prListScreen || m.diffTerminal != nil {
-		t.Fatalf("b did not return to list: screen=%v terminal=%v", m.screen, m.diffTerminal)
+	if m.screen != prListScreen || m.diffTerminal != nil || !strings.Contains(ansi.Strip(m.View()), "Local PR") {
+		t.Fatalf("b did not return to local PR list: screen=%v terminal=%v view=%q", m.screen, m.diffTerminal, ansi.Strip(m.View()))
 	}
 }
 
