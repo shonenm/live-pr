@@ -1,50 +1,52 @@
 package tui
 
 import (
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shonenm/live-pr/internal/event"
+	"github.com/shonenm/live-pr/internal/theme"
 )
 
-// GitHub Primer (dark) palette + per-kind label colors.
+// GitHub Primer dark semantic colors. Like gh-dash, ordinary content stays
+// primary/muted; semantic colors are reserved for GitHub-colored states.
 const (
-	cFg          = "#e6edf3"
-	cMuted       = "#7d8590"
-	cBorder      = "#30363d"
-	cCloudBorder = "#6e7681"
-	cAccent      = "#2f81f7"
-	cOpen        = "#238636"
-	cGreenF      = "#3fb950"
-	cRedF        = "#f85149"
-
-	cDecision = "#4493f8"
-	cPivot    = "#db6d28"
-	cSummary  = "#a371f7"
-	cCommit   = "#3fb950"
-	cNote     = "#7d8590"
+	cFg             = theme.Foreground
+	cMuted          = theme.Muted
+	cBorder         = theme.Border
+	cCloudBorder    = theme.BorderEmphasis
+	cAccent         = theme.Accent
+	cOpen           = theme.OpenEmphasis
+	cGreenF         = theme.Success
+	cAttention      = theme.Attention
+	cRedF           = theme.Danger
+	cClosed         = theme.BorderEmphasis
+	cDangerEmphasis = theme.DangerEmphasis
+	cDoneEmphasis   = theme.DoneEmphasis
 )
 
 var (
-	stFg     = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg))
-	stMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted))
-	stBold   = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Bold(true)
-	stGreenF = lipgloss.NewStyle().Foreground(lipgloss.Color(cGreenF))
-	stRedF   = lipgloss.NewStyle().Foreground(lipgloss.Color(cRedF))
-	stAccent = lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent))
+	stFg        = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg))
+	stMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted))
+	stBold      = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Bold(true)
+	stGreenF    = lipgloss.NewStyle().Foreground(lipgloss.Color(cGreenF))
+	stAttention = lipgloss.NewStyle().Foreground(lipgloss.Color(cAttention))
+	stRedF      = lipgloss.NewStyle().Foreground(lipgloss.Color(cRedF))
+	stAccent    = lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent))
 )
 
-// kindLabel renders an event kind as a small colored label.
+func newHelp() help.Model {
+	h := help.New()
+	h.Styles.ShortKey = stFg
+	h.Styles.FullKey = stFg
+	h.Styles.ShortDesc = stMuted
+	h.Styles.FullDesc = stMuted
+	h.Styles.ShortSeparator = stMuted
+	h.Styles.FullSeparator = stMuted
+	h.Styles.Ellipsis = stMuted
+	return h
+}
+
 func kindLabel(k event.Kind) string {
-	name, col := "note", cNote
-	switch k {
-	case event.Decision:
-		name, col = "decision", cDecision
-	case event.Pivot:
-		name, col = "pivot", cPivot
-	case event.Summary:
-		name, col = "summary", cSummary
-	case event.Commit:
-		name, col = "commit", cCommit
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(col)).Bold(true).Render(name)
+	return stMuted.Bold(true).Render(string(k))
 }
