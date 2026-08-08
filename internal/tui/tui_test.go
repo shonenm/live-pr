@@ -319,12 +319,19 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 		t.Fatalf("merge confirmation not cancelled: %v", m.pendingPRAction)
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
 	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m = u.(Model)
 	if cmd == nil || m.pendingPRAction != noPRAction || m.prActionRunning != checkoutPR || m.prActionNumber != 14 {
 		t.Fatalf("checkout not confirmed: pending=%v running=%v number=%d cmd=%v", m.pendingPRAction, m.prActionRunning, m.prActionNumber, cmd)
+	}
+
+	m.prActionRunning = noPRAction
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = u.(Model)
+	if m.pendingPRAction != closePR || !strings.Contains(ansi.Strip(m.renderFooter()), "close without merging") {
+		t.Fatalf("close confirmation not shown: pending=%v footer=%q", m.pendingPRAction, ansi.Strip(m.renderFooter()))
 	}
 }
 
@@ -342,6 +349,16 @@ func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
 	m = u.(Model)
 	if cmd != nil || !strings.Contains(m.status, "PR #15") || !strings.Contains(m.status, "blocked") {
 		t.Fatalf("merge error = status:%q cmd:%v", m.status, cmd)
+	}
+}
+
+func TestPRListCloseCompletionRefreshes(t *testing.T) {
+	m := testModel()
+	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, closePR, 14
+	u, cmd := m.Update(prActionDone{action: closePR, number: 14})
+	m = u.(Model)
+	if cmd == nil || !m.listRefreshing || m.notice != "Closed PR #14" || m.prActionRunning != noPRAction {
+		t.Fatalf("close completion = refreshing:%v notice:%q running:%v cmd:%v", m.listRefreshing, m.notice, m.prActionRunning, cmd)
 	}
 }
 
@@ -398,7 +415,7 @@ func TestPRListActionsAreDisabledForLocalEntry(t *testing.T) {
 	m.openPRs = []gh.PR{{Title: "Local PR"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
-	for _, action := range []rune{'m', 'x'} {
+	for _, action := range []rune{'m', 'c', 'x'} {
 		u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{action}})
 		m = u.(Model)
 		if cmd != nil || m.pendingPRAction != noPRAction {

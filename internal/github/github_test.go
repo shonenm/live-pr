@@ -99,7 +99,10 @@ func TestPRActionsUseExplicitNonInteractiveCommands(t *testing.T) {
 	if err := client.Checkout(34); err != nil {
 		t.Fatal(err)
 	}
-	want := [][]string{{"pr", "merge", "12", "--merge", "--match-head-commit", "abc123"}, {"pr", "checkout", "34"}}
+	if err := client.Close(56); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"pr", "merge", "12", "--merge", "--match-head-commit", "abc123"}, {"pr", "checkout", "34"}, {"pr", "close", "56"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands = %#v, want %#v", got, want)
 	}
@@ -114,6 +117,9 @@ func TestPRActionsReturnCommandOutput(t *testing.T) {
 	}
 	if err := client.Checkout(12); err == nil || !strings.Contains(err.Error(), "merge blocked") {
 		t.Fatalf("Checkout error = %v", err)
+	}
+	if err := client.Close(12); err == nil || !strings.Contains(err.Error(), "merge blocked") {
+		t.Fatalf("Close error = %v", err)
 	}
 	if err := client.Merge(12, ""); err == nil || !strings.Contains(err.Error(), "reviewed head") {
 		t.Fatalf("empty-head Merge error = %v", err)

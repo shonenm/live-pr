@@ -48,14 +48,14 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -74,7 +74,8 @@ var keys = keyMap{
 	Refresh:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
 	Publish:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
 	Merge:       key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge PR")),
-	Checkout:    key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "checkout PR")),
+	Checkout:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
+	Close:       key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
 	Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
@@ -120,6 +121,7 @@ const (
 	noPRAction prAction = iota
 	mergePR
 	checkoutPR
+	closePR
 )
 
 type prActionDone struct {
@@ -454,6 +456,8 @@ func runPRAction(action prAction, pr gh.PR) tea.Cmd {
 			err = client.Merge(pr.Number, pr.HeadRefOID)
 		case checkoutPR:
 			err = client.Checkout(pr.Number)
+		case closePR:
+			err = client.Close(pr.Number)
 		}
 		return prActionDone{action: action, pr: pr, number: pr.Number, err: err}
 	}
@@ -657,8 +661,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("PR #%d: %v", msg.number, msg.err)
 			return m, nil
 		}
-		if msg.action == mergePR {
-			m.notice = fmt.Sprintf("Merge submitted for PR #%d", msg.number)
+		if msg.action == mergePR || msg.action == closePR {
+			if msg.action == mergePR {
+				m.notice = fmt.Sprintf("Merge submitted for PR #%d", msg.number)
+			} else {
+				m.notice = fmt.Sprintf("Closed PR #%d", msg.number)
+			}
 			m.listRefreshing = true
 			m.prListGeneration++
 			m.githubStatus = "GitHub: refreshing PR list…"
@@ -877,6 +885,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, m.keys.Checkout):
 				if pr := m.selectedPR(); pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
 					m.pendingPRAction, m.prActionNumber, m.prActionPR = checkoutPR, pr.Number, *pr
+					m.status, m.notice = "", ""
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Close):
+				if pr := m.selectedPR(); pr != nil && pr.Number > 0 {
+					m.pendingPRAction, m.prActionNumber, m.prActionPR = closePR, pr.Number, *pr
 					m.status, m.notice = "", ""
 				}
 				return m, nil
@@ -1212,6 +1226,7 @@ func (m *Model) sync() tea.Cmd {
 		pr := m.selectedPR()
 		m.keys.Merge.SetEnabled(pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && m.prActionRunning == noPRAction)
 		m.keys.Checkout.SetEnabled(pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && m.prActionRunning == noPRAction)
+		m.keys.Close.SetEnabled(pr != nil && pr.Number > 0 && m.prActionRunning == noPRAction)
 		m.list.SetContent(m.buildPRList())
 		m.detail.SetContent(m.buildPRPreview())
 		m.detail.GotoTop()
@@ -1234,6 +1249,7 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.Publish.SetEnabled(!m.remote)
 	m.keys.Merge.SetEnabled(false)
 	m.keys.Checkout.SetEnabled(false)
+	m.keys.Close.SetEnabled(false)
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
 	if off := selectedLine - 1; off > 0 {
@@ -1721,15 +1737,21 @@ func (m Model) renderFooter() string {
 	}
 	if m.pendingPRAction != noPRAction {
 		action := "merge with a merge commit"
-		if m.pendingPRAction == checkoutPR {
+		switch m.pendingPRAction {
+		case checkoutPR:
 			action = "checkout its branch"
+		case closePR:
+			action = "close without merging"
 		}
 		return stAccent.Render(fmt.Sprintf("PR #%d: %s?", m.prActionNumber, action)) + stMuted.Render("  y confirm · n cancel")
 	}
 	if m.prActionRunning != noPRAction {
 		action := "Merging"
-		if m.prActionRunning == checkoutPR {
+		switch m.prActionRunning {
+		case checkoutPR:
 			action = "Checking out"
+		case closePR:
+			action = "Closing"
 		}
 		return stMuted.Render(fmt.Sprintf("%s PR #%d…", action, m.prActionNumber))
 	}

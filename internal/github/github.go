@@ -273,6 +273,15 @@ func (c Client) Merge(number int, headOID string) error {
 	return nil
 }
 
+// Close closes a pull request without merging it.
+func (c Client) Close(number int) error {
+	out, err := c.run("pr", "close", strconv.Itoa(number))
+	if err != nil {
+		return commandError("gh pr close", out, err)
+	}
+	return nil
+}
+
 // Checkout checks out a pull request using GitHub CLI's native branch handling.
 func (c Client) Checkout(number int) error {
 	out, err := c.run("pr", "checkout", strconv.Itoa(number))
