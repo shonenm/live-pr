@@ -58,6 +58,7 @@
 - **Done**: GitHubのPR opening description、top-level comments、issue activityをcacheし、Conversationへ時系列統合。opening descriptionとcommentsはcloud card、local eventsは濃さの異なるcard、GitHub activityは枠なしtimeline row、Git commitsは専用pickerにのみ表示。画像・動画はURL表示し、`o`で選択したdescription/commentをGitHubで開く。
 - **Done**: PR assigneesとlabelsを同じcache-first refreshで取得し、headerへassignee名とGitHub色のlabel pillを表示。
 - **Done**: built-inのbranch three-dot `CodeDiff` / commit `CodeReview`をPTY/VTで右paneへ埋め込み、設定overrideと明示無効化、`l`/`q`/`Shift+Tab`/click focus、resize/input/lifecycle、raw Git・`[diff].display` fallbackに対応。
+- **Done**: GitHub Primer darkとgh-dashのsemantic color運用へ統一し、独自event-kind色を廃止。
 - **Done**: default branch/対象なしではcache-firstのPR一覧、current/local PRではdetailを自動表示。`b`でlocal PRを含む一覧へ戻り、右previewへ冒頭のdescription/commentカード、metadata、CI/conflict/review、comments、files/lines/commitsを表示。他PRは通常checkoutせずnumeric pull refをfetchしてConversationとCodeReviewを表示し、一覧で`c`によるcheckout、`x`によるclose、`m`によるmergeを確認後に実行可能。
 - **Next**: reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
 
