@@ -48,31 +48,33 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
-	Up:         key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
-	Down:       key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	Focus:      key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
-	FocusRight: key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
-	FocusLeft:  key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
-	Commits:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "choose commit")),
-	Select:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
-	Back:       key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
-	PRList:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
-	Browse:     key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
-	Refresh:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
-	Publish:    key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
-	Help:       key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Up:          key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
+	Down:        key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
+	PreviewUp:   key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "preview up")),
+	PreviewDown: key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "preview down")),
+	Focus:       key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
+	FocusRight:  key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
+	FocusLeft:   key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
+	Commits:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "choose commit")),
+	Select:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
+	Back:        key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
+	PRList:      key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
+	Browse:      key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
+	Refresh:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
+	Publish:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
+	Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
 type prListRefreshed struct {
@@ -155,6 +157,8 @@ type Model struct {
 	prCursor         int
 	localAvailable   bool
 	localTitle       string
+	localStats       git.ChangeStats
+	localCommitCount int
 	autoOpenCurrent  bool
 	refreshing       bool
 	listRefreshing   bool
@@ -280,6 +284,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	commits, commitErr := git.Commits(base)
 	files, fileErr := git.ChangedFiles(base)
+	stats, _ := git.DiffStats(base, "HEAD")
 	if commitErr != nil || fileErr != nil {
 		m.status = "local git data is incomplete"
 	}
@@ -294,6 +299,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.remote = false
 	m.title = deriveTitle(st.Conclusion(), st.Branch)
 	m.localAvailable, m.localTitle = true, m.title
+	m.localStats, m.localCommitCount = stats, len(commits)
 	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
@@ -458,12 +464,19 @@ const (
 func (m *Model) layout() {
 	if m.screen == prListScreen {
 		bodyH := max(3, m.h-3)
+		available := max(2, m.w-3)
+		listW := max(10, available*reviewListRatio/100)
+		if available-listW < 10 {
+			listW = max(1, available-10)
+		}
+		detailW := max(1, available-listW)
 		if !m.ready {
-			m.list = viewport.New(max(20, m.w), bodyH)
-			m.detail = viewport.New(10, bodyH)
+			m.list = viewport.New(listW, bodyH)
+			m.detail = viewport.New(detailW, bodyH)
 			m.ready = true
 		} else {
-			m.list.Width, m.list.Height = max(20, m.w), bodyH
+			m.list.Width, m.list.Height = listW, bodyH
+			m.detail.Width, m.detail.Height = detailW, bodyH
 		}
 		return
 	}
@@ -734,6 +747,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.listRefreshing = true
 				m.githubStatus = "GitHub: refreshing PR list…"
 				return m, fetchPRList()
+			case key.Matches(msg, m.keys.PreviewDown):
+				m.detail.HalfPageDown()
+				return m, nil
+			case key.Matches(msg, m.keys.PreviewUp):
+				m.detail.HalfPageUp()
+				return m, nil
 			case key.Matches(msg, m.keys.Down):
 				if m.prCursor < len(m.openPRs)-1 {
 					m.prCursor++
@@ -991,7 +1010,7 @@ func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
 	if title == "" {
 		title = m.currentBranch
 	}
-	local := gh.PR{Title: title, State: "LOCAL", BaseRefName: m.defaultBranch, HeadRefName: m.currentBranch}
+	local := gh.PR{Title: title, State: "LOCAL", BaseRefName: m.defaultBranch, HeadRefName: m.currentBranch, ChangedFiles: m.localStats.Files, Additions: m.localStats.Additions, Deletions: m.localStats.Deletions, CommitCount: m.localCommitCount}
 	return append([]gh.PR{local}, items...)
 }
 
@@ -1039,6 +1058,8 @@ func (m *Model) sync() tea.Cmd {
 	}
 	if m.screen == prListScreen {
 		m.keys.Select.SetEnabled(true)
+		m.keys.PreviewUp.SetEnabled(true)
+		m.keys.PreviewDown.SetEnabled(true)
 		m.keys.Focus.SetEnabled(false)
 		m.keys.FocusRight.SetEnabled(false)
 		m.keys.Commits.SetEnabled(false)
@@ -1047,6 +1068,8 @@ func (m *Model) sync() tea.Cmd {
 		m.keys.Browse.SetEnabled(false)
 		m.keys.Publish.SetEnabled(false)
 		m.list.SetContent(m.buildPRList())
+		m.detail.SetContent(m.buildPRPreview())
+		m.detail.GotoTop()
 		if off := m.prCursor*3 - 1; off > 0 {
 			m.list.SetYOffset(off)
 		} else {
@@ -1054,6 +1077,8 @@ func (m *Model) sync() tea.Cmd {
 		}
 		return nil
 	}
+	m.keys.PreviewUp.SetEnabled(false)
+	m.keys.PreviewDown.SetEnabled(false)
 	m.keys.Focus.SetEnabled(true)
 	m.keys.FocusRight.SetEnabled(true)
 	m.keys.Commits.SetEnabled(!m.remote && m.active == conversationTab)
@@ -1119,7 +1144,12 @@ func (m Model) View() string {
 		return "loading…"
 	}
 	if m.screen == prListScreen {
-		return lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), m.list.View(), m.renderFooter())
+		preview := lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
+			BorderForeground(lipgloss.Color(cBorder)).PaddingLeft(1).
+			Render(m.detail.View())
+		body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), preview)
+		return lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
 	}
 	detailContent := m.detail.View()
 	borderColor := cBorder
@@ -1235,6 +1265,133 @@ func relativeLuminance(rgb uint64) float64 {
 	g := channel((rgb >> 8) & 0xff)
 	b := channel(rgb & 0xff)
 	return 0.2126*r + 0.7152*g + 0.0722*b
+}
+
+func (m Model) buildPRPreview() string {
+	pr := m.selectedPR()
+	if pr == nil {
+		return stMuted.Render("Select a pull request to preview it.")
+	}
+	width := max(20, m.detail.Width-2)
+	identifier := "Local PR"
+	if pr.Number > 0 {
+		identifier = fmt.Sprintf("#%d", pr.Number)
+	}
+	lines := []string{
+		stGreenF.Render(identifier) + "  " + stBold.Render(pr.Title),
+		stMuted.Render(pr.BaseRefName + " ← " + pr.HeadRefName),
+		"",
+		stBold.Render("Status"),
+		"  " + mergeSummary(*pr) + "   " + checkSummary(pr.Checks),
+	}
+	if pr.ReviewDecision != "" {
+		lines = append(lines, "  "+stMuted.Render("review ")+stFg.Render(strings.ToLower(strings.ReplaceAll(pr.ReviewDecision, "_", " "))))
+	}
+	lines = append(lines,
+		"",
+		stBold.Render("Size"),
+		fmt.Sprintf("  %d files   %s   %s   %d commits", pr.ChangedFiles, stGreenF.Render(fmt.Sprintf("+%d", pr.Additions)), stRedF.Render(fmt.Sprintf("-%d", pr.Deletions)), pr.CommitCount),
+		fmt.Sprintf("  %d comments", pr.CommentCount),
+		"",
+		stBold.Render("Metadata"),
+		"  "+previewPeople(*pr),
+	)
+	if len(pr.Labels) > 0 {
+		pills := make([]string, 0, len(pr.Labels))
+		for _, label := range pr.Labels {
+			pills = append(pills, labelPill(label))
+		}
+		lines = append(lines, "  "+strings.Join(pills, " "))
+	}
+	if pr.UpdatedAt != "" {
+		lines = append(lines, "  "+stMuted.Render("updated "+shortTS(pr.UpdatedAt)))
+	}
+	lines = append(lines, "", stBold.Render("Conversation top"))
+	if pr.Number == 0 {
+		lines = append(lines, "  "+stMuted.Render("(local PR has no GitHub conversation yet)"))
+	} else {
+		body := pr.Body
+		if strings.TrimSpace(body) == "" {
+			body = "(no description provided)"
+		}
+		lines = append(lines, previewMarkdown(body, width, 10))
+		if len(pr.Conversation) > 0 {
+			comment := pr.Conversation[0]
+			lines = append(lines, "", stMuted.Render("@"+comment.Author.Login+" · "+shortTS(comment.CreatedAt)), previewMarkdown(comment.Body, width, 5))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func previewPeople(pr gh.PR) string {
+	parts := []string{}
+	if pr.Author.Login != "" {
+		parts = append(parts, "author @"+pr.Author.Login)
+	}
+	if len(pr.Assignees) > 0 {
+		users := make([]string, 0, len(pr.Assignees))
+		for _, user := range pr.Assignees {
+			users = append(users, "@"+user.Login)
+		}
+		parts = append(parts, "assigned "+strings.Join(users, " "))
+	}
+	if len(parts) == 0 {
+		return stMuted.Render("unassigned")
+	}
+	return stFg.Render(strings.Join(parts, " · "))
+}
+
+func mergeSummary(pr gh.PR) string {
+	if pr.Number == 0 {
+		return stMuted.Render("local")
+	}
+	state := strings.ToLower(strings.ReplaceAll(pr.MergeStateStatus, "_", " "))
+	if pr.Mergeable == "CONFLICTING" || pr.MergeStateStatus == "DIRTY" {
+		return stRedF.Render("conflicts")
+	}
+	if state == "" {
+		state = strings.ToLower(pr.Mergeable)
+	}
+	if state == "" {
+		state = "merge unknown"
+	}
+	if pr.Mergeable == "MERGEABLE" && pr.MergeStateStatus == "CLEAN" {
+		return stGreenF.Render("mergeable")
+	}
+	return stMuted.Render(state)
+}
+
+func checkSummary(checks []gh.PRCheck) string {
+	if len(checks) == 0 {
+		return stMuted.Render("CI no checks")
+	}
+	failed, pending := 0, 0
+	for _, check := range checks {
+		conclusion := strings.ToUpper(check.Conclusion)
+		state := strings.ToUpper(check.State)
+		status := strings.ToUpper(check.Status)
+		switch {
+		case conclusion == "FAILURE" || conclusion == "CANCELLED" || conclusion == "TIMED_OUT" || conclusion == "ACTION_REQUIRED" || conclusion == "STARTUP_FAILURE" || conclusion == "STALE" || state == "FAILURE" || state == "ERROR":
+			failed++
+		case status != "COMPLETED" && conclusion == "" && state != "SUCCESS":
+			pending++
+		}
+	}
+	if failed > 0 {
+		return stRedF.Render(fmt.Sprintf("CI %d failed", failed))
+	}
+	if pending > 0 {
+		return stMuted.Render(fmt.Sprintf("CI %d pending", pending))
+	}
+	return stGreenF.Render(fmt.Sprintf("CI %d passed", len(checks)))
+}
+
+func previewMarkdown(text string, width, maxLines int) string {
+	lines := strings.Split(md.Render(text, width), "\n")
+	if len(lines) > maxLines {
+		lines = append(lines[:maxLines], stMuted.Render("…"))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) buildPRList() string {

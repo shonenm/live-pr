@@ -168,6 +168,83 @@ func TestPRListNavigationAndRefresh(t *testing.T) {
 	}
 }
 
+func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.openPRs = []gh.PR{{
+		Number: 15, Title: "navigator", Body: "## Summary\n\nPreview body", BaseRefName: "main", HeadRefName: "feature",
+		Mergeable: "MERGEABLE", MergeStateStatus: "CLEAN", ReviewDecision: "APPROVED",
+		ChangedFiles: 18, Additions: 1123, Deletions: 128, CommitCount: 5,
+		Conversation: []gh.PRConversationComment{{Author: gh.PRUser{Login: "alice"}, Body: "Looks good", CreatedAt: "2026-08-08T00:00:00Z"}}, CommentCount: 1,
+		Checks: []gh.PRCheck{{Name: "test", Status: "COMPLETED", Conclusion: "SUCCESS"}},
+		Author: gh.PRUser{Login: "bob"}, Assignees: []gh.PRUser{{Login: "carol"}}, Labels: []gh.PRLabel{{Name: "feature", Color: "238636"}},
+	}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 35})
+	m = u.(Model)
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"Conversation top", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author @bob", "assigned @carol", "feature"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("preview missing %q: %q", want, out)
+		}
+	}
+	if m.list.Width >= m.w || m.detail.Width <= m.list.Width {
+		t.Fatalf("list preview layout = %d/%d total=%d", m.list.Width, m.detail.Width, m.w)
+	}
+}
+
+func TestPRListPreviewScrollAndNarrowLayout(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.openPRs = []gh.PR{{Number: 1, Title: "preview", Body: strings.Repeat("line\n\n", 20)}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 30, Height: 12})
+	m = u.(Model)
+	if m.list.Width+m.detail.Width+3 > m.w {
+		t.Fatalf("narrow layout overflow: list=%d detail=%d width=%d", m.list.Width, m.detail.Width, m.w)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = u.(Model)
+	if m.detail.YOffset == 0 {
+		t.Fatal("Ctrl+D did not scroll PR preview")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = u.(Model)
+	if m.detail.YOffset != 0 {
+		t.Fatalf("Ctrl+U did not restore preview top: %d", m.detail.YOffset)
+	}
+}
+
+func TestPRListPreviewShowsConflictAndFailedCI(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.openPRs = []gh.PR{{Number: 1, Mergeable: "CONFLICTING", MergeStateStatus: "DIRTY", Checks: []gh.PRCheck{{Conclusion: "FAILURE"}}}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "conflicts") || !strings.Contains(out, "CI 1 failed") {
+		t.Fatalf("health preview = %q", out)
+	}
+}
+
+func TestCheckSummaryTreatsTerminalFailuresAsFailed(t *testing.T) {
+	for _, conclusion := range []string{"STARTUP_FAILURE", "STALE"} {
+		if got := ansi.Strip(checkSummary([]gh.PRCheck{{Status: "COMPLETED", Conclusion: conclusion}})); !strings.Contains(got, "failed") {
+			t.Fatalf("%s summary = %q", conclusion, got)
+		}
+	}
+}
+
+func TestLocalPRListEntryCarriesDiffStats(t *testing.T) {
+	m := testModel()
+	m.localAvailable, m.localTitle = true, "local"
+	m.currentBranch, m.defaultBranch = "feature", "main"
+	m.localStats = git.ChangeStats{Files: 3, Additions: 20, Deletions: 4}
+	m.localCommitCount = 2
+	items := m.withLocalPR(nil)
+	if len(items) != 1 || items[0].ChangedFiles != 3 || items[0].Additions != 20 || items[0].Deletions != 4 || items[0].CommitCount != 2 {
+		t.Fatalf("local PR metadata = %#v", items)
+	}
+}
+
 func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
