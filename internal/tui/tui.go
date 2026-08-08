@@ -274,7 +274,7 @@ func New() (Model, error) {
 		diffCommitCommand: cfg.CommitReviewCommand(),
 		diffCache:         map[string]string{},
 		diffPending:       map[string]bool{},
-		help:              help.New(),
+		help:              newHelp(),
 		keys:              keys,
 	}
 	if localDetail {
@@ -1348,9 +1348,9 @@ func (m Model) headerHeight() int {
 }
 
 func (m Model) renderHeader() string {
-	badgeText, badgeColor := "Local", cMuted
+	badgeText, badgeColor := "Local", cBorder
 	if m.cache.PR != nil {
-		badgeText, badgeColor = fmt.Sprintf("⇄ #%d %s", m.cache.PR.Number, strings.ToLower(m.cache.PR.State)), cOpen
+		badgeText, badgeColor = fmt.Sprintf("⇄ #%d %s", m.cache.PR.Number, strings.ToLower(m.cache.PR.State)), prStateBadgeColor(m.cache.PR.State)
 	}
 	badge := lipgloss.NewStyle().
 		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color("#ffffff")).
@@ -1392,6 +1392,19 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		return ansi.Truncate(line, m.w, "…")
 	}
 	return line
+}
+
+func prStateBadgeColor(state string) string {
+	switch strings.ToUpper(state) {
+	case "OPEN":
+		return cOpen
+	case "MERGED":
+		return cDoneEmphasis
+	case "CLOSED":
+		return cDangerEmphasis
+	default:
+		return cClosed
+	}
 }
 
 func labelPill(label gh.PRLabel) string {
@@ -1441,20 +1454,20 @@ func (m Model) buildPRPreview() string {
 		identifier = fmt.Sprintf("#%d", pr.Number)
 	}
 	lines := []string{
-		stGreenF.Render(identifier) + "  " + stBold.Render(pr.Title),
+		stMuted.Render(identifier) + "  " + stBold.Render(pr.Title),
 		stMuted.Render(pr.BaseRefName + " ← " + pr.HeadRefName),
 		"",
 		stBold.Render("Status"),
 		"  " + mergeSummary(*pr) + "   " + checkSummary(pr.Checks),
 	}
 	if pr.ReviewDecision != "" {
-		lines = append(lines, "  "+stMuted.Render("review ")+stFg.Render(strings.ToLower(strings.ReplaceAll(pr.ReviewDecision, "_", " "))))
+		lines = append(lines, "  "+reviewSummary(pr.ReviewDecision))
 	}
 	lines = append(lines,
 		"",
 		stBold.Render("Size"),
-		fmt.Sprintf("  %d files   %s   %s   %d commits", pr.ChangedFiles, stGreenF.Render(fmt.Sprintf("+%d", pr.Additions)), stRedF.Render(fmt.Sprintf("-%d", pr.Deletions)), pr.CommitCount),
-		fmt.Sprintf("  %d comments", pr.CommentCount),
+		stFg.Render(fmt.Sprintf("  %d files   ", pr.ChangedFiles))+stGreenF.Render(fmt.Sprintf("+%d", pr.Additions))+stFg.Render("   ")+stRedF.Render(fmt.Sprintf("-%d", pr.Deletions))+stFg.Render(fmt.Sprintf("   %d commits", pr.CommitCount)),
+		stFg.Render(fmt.Sprintf("  %d comments", pr.CommentCount)),
 		"",
 		stBold.Render("Metadata"),
 		"  "+previewPeople(*pr),
@@ -1507,6 +1520,20 @@ func previewPeople(pr gh.PR) string {
 	return stFg.Render(strings.Join(parts, " · "))
 }
 
+func reviewSummary(decision string) string {
+	label := "review " + strings.ToLower(strings.ReplaceAll(decision, "_", " "))
+	switch strings.ToUpper(decision) {
+	case "APPROVED":
+		return stGreenF.Render(label)
+	case "CHANGES_REQUESTED":
+		return stRedF.Render(label)
+	case "REVIEW_REQUIRED":
+		return stAttention.Render(label)
+	default:
+		return stMuted.Render(label)
+	}
+}
+
 func mergeSummary(pr gh.PR) string {
 	if pr.Number == 0 {
 		return stMuted.Render("local")
@@ -1521,10 +1548,17 @@ func mergeSummary(pr gh.PR) string {
 	if state == "" {
 		state = "merge unknown"
 	}
-	if pr.Mergeable == "MERGEABLE" && pr.MergeStateStatus == "CLEAN" {
+	if pr.Mergeable == "MERGEABLE" && (pr.MergeStateStatus == "CLEAN" || pr.MergeStateStatus == "UNSTABLE") {
 		return stGreenF.Render("mergeable")
 	}
-	return stMuted.Render(state)
+	switch pr.MergeStateStatus {
+	case "BLOCKED":
+		return stRedF.Render(state)
+	case "BEHIND", "HAS_HOOKS":
+		return stAttention.Render(state)
+	default:
+		return stMuted.Render(state)
+	}
 }
 
 func checkSummary(checks []gh.PRCheck) string {
@@ -1547,7 +1581,7 @@ func checkSummary(checks []gh.PRCheck) string {
 		return stRedF.Render(fmt.Sprintf("CI %d failed", failed))
 	}
 	if pending > 0 {
-		return stMuted.Render(fmt.Sprintf("CI %d pending", pending))
+		return stAttention.Render(fmt.Sprintf("CI %d pending", pending))
 	}
 	return stGreenF.Render(fmt.Sprintf("CI %d passed", len(checks)))
 }
@@ -1578,8 +1612,12 @@ func (m Model) buildPRList() string {
 		if pr.Number == 0 {
 			state, identifier, owner = "local", "Local PR", ""
 		}
-		line := selectionBar(i == m.prCursor) + stGreenF.Render(identifier) + " " + stBold.Render(pr.Title)
-		meta := "  " + stMuted.Render(fmt.Sprintf("%s · %s ← %s%s", state, pr.BaseRefName, pr.HeadRefName, owner))
+		stateStyle := stGreenF
+		if state != "open" {
+			stateStyle = stMuted
+		}
+		line := selectionBar(i == m.prCursor) + stMuted.Render(identifier) + " " + stBold.Render(pr.Title)
+		meta := "  " + stateStyle.Render(state) + stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
 		lines = append(lines, ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), "")
 	}
 	return strings.Join(lines, "\n")
@@ -1664,7 +1702,7 @@ func cardLines(header, body string, selected bool, width int, border string) []s
 }
 
 func (m Model) activityLines(activity gh.Activity, selected bool) []string {
-	line := stMuted.Render("● @"+activity.Actor.Login+" ") + activitySummary(activity) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
+	line := stMuted.Render("● @"+activity.Actor.Login+" ") + stFg.Render(activitySummary(activity)) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
 	return []string{selectionBar(selected) + line}
 }
 
@@ -1705,7 +1743,7 @@ func (m Model) buildCommits() (string, int) {
 	}
 	lines := make([]string, 0, len(m.commits))
 	for i, c := range m.commits {
-		line := selectionBar(i == m.cursors[commitsTab]) + stGreenF.Render(c.SHA) + " " + c.Subject + stMuted.Render(" · "+shortTS(c.Date))
+		line := selectionBar(i == m.cursors[commitsTab]) + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+shortTS(c.Date))
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), m.cursors[commitsTab]
@@ -1733,7 +1771,7 @@ func (m Model) commitDetail(sha string) detailContent {
 
 func (m Model) renderFooter() string {
 	if m.status != "" {
-		return stRedF.Render(m.status)
+		return renderStatus(m.status)
 	}
 	if m.pendingPRAction != noPRAction {
 		action := "merge with a merge commit"
@@ -1769,6 +1807,15 @@ func (m Model) renderFooter() string {
 		return stMuted.Render(m.githubStatus) + "  " + m.help.View(m.keys)
 	}
 	return m.help.View(m.keys)
+}
+
+func renderStatus(status string) string {
+	for _, prefix := range []string{"loading ", "publishing ", "wait ", "select ", "local git data"} {
+		if strings.HasPrefix(status, prefix) {
+			return stAttention.Render(status)
+		}
+	}
+	return stRedF.Render(status)
 }
 
 func selectionBar(selected bool) string {
