@@ -15,6 +15,7 @@ import (
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/publish"
 )
 
 func testModel() Model {
@@ -76,60 +77,107 @@ func TestViewRendersHeaderAndTimeline(t *testing.T) {
 	m = updated.(Model)
 
 	out := m.View()
-	for _, want := range []string{"Local", "main", "feature/x", "decision", "chose Go", "Conversation"} {
+	for _, want := range []string{"Local", "main", "feature/x", "1 files changed", "decision", "chose Go"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q", want)
 		}
 	}
 }
 
-func TestCursorMovesAndPreviewSwitches(t *testing.T) {
+func TestConversationExcludesCommits(t *testing.T) {
 	m := testModel()
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = updated.(Model)
+	if items := m.conversationItems(); len(items) != 1 || items[0].event.Kind == event.Commit {
+		t.Fatalf("conversation items = %#v", items)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated.(Model)
 	if m.cursors[conversationTab] != 0 {
-		t.Fatalf("cursor should start at 0, got %d", m.cursors[conversationTab])
-	}
-	// j → move to the commit event; must not panic and cursor advances.
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = updated.(Model)
-	if m.cursors[conversationTab] != 1 {
-		t.Fatalf("cursor should be 1 after j, got %d", m.cursors[conversationTab])
-	}
-	if !strings.Contains(m.View(), "commit") {
-		t.Errorf("timeline should show the commit event after moving down")
-	}
-	// cannot move past the end
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = updated.(Model)
-	if m.cursors[conversationTab] != 1 {
-		t.Errorf("cursor should clamp at last event, got %d", m.cursors[conversationTab])
+		t.Fatalf("cursor moved into hidden commits: %d", m.cursors[conversationTab])
 	}
 }
 
-func TestTabsSwitchAndKeepIndependentCursors(t *testing.T) {
+func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: hidden"}}
+	m.cache.PR = &gh.PR{
+		URL:       "https://github.com/acme/repo/pull/14",
+		Body:      "**opening** ![image](https://example.com/image.png)",
+		Author:    gh.PRUser{Login: "shonenm"},
+		CreatedAt: "2026-08-07T14:49:25Z",
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+
+	items := m.conversationItems()
+	if len(items) != 1 || items[0].pr == nil || items[0].event != nil {
+		t.Fatalf("conversation items = %#v", items)
+	}
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"@shonenm", "description", "opening", "https://example.com/image.png"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("description view missing %q: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "**opening**") || strings.Contains(out, "![image]") || strings.Contains(out, "feat: hidden") {
+		t.Fatalf("description Markdown or hidden commit rendered incorrectly: %q", out)
+	}
+	if got := m.selectedBrowseURL(); got != m.cache.PR.URL {
+		t.Fatalf("description browse URL = %q", got)
+	}
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}); cmd == nil {
+		t.Fatal("o should open the selected PR description")
+	}
+}
+
+func TestEmptyPRDescriptionHasPlaceholder(t *testing.T) {
+	m := testModel()
+	m.events = nil
+	m.cache.PR = &gh.PR{URL: "https://example/pr/1"}
+	lines := ansi.Strip(strings.Join(m.descriptionLines(*m.cache.PR, false, 60), "\n"))
+	if !strings.Contains(lines, "(no description provided)") {
+		t.Fatalf("empty description = %q", lines)
+	}
+}
+
+func TestCommitPickerSelectsCommitAndEscRestoresBranchReview(t *testing.T) {
 	m := testModel()
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m = u.(Model)
-	if m.active != filesTab || !strings.Contains(m.View(), "internal/tui/tui.go") {
-		t.Fatalf("tab should switch to changed files")
-	}
-
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
 	if m.active != commitsTab || !strings.Contains(m.View(), "feat: x") {
-		t.Fatalf("3 should switch to commits")
+		t.Fatalf("c should replace Conversation with the commit picker")
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if m.active != conversationTab || m.cursors[conversationTab] != 1 {
-		t.Fatalf("conversation cursor should be preserved")
+	if m.reviewSHA != "abc1234" || !strings.Contains(ansi.Strip(m.renderHeader()), "commit abc1234") {
+		t.Fatalf("Enter did not select commit review: sha=%q", m.reviewSHA)
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	if m.active != conversationTab || m.reviewSHA != "" || m.cursors[conversationTab] != 0 {
+		t.Fatalf("Esc should restore branch review and the Conversation cursor")
+	}
+}
+
+func TestCommitPickerCancelKeepsBranchTerminal(t *testing.T) {
+	m := testModel()
+	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
+	branchTerminal := m.diffTerminal
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	defer m.close()
+	if m.active != conversationTab || m.diffTerminal != branchTerminal || m.reviewSHA != "" {
+		t.Fatal("canceling an unselected picker restarted branch review")
 	}
 }
 
@@ -221,13 +269,73 @@ func TestCommentSelectionSurvivesRefresh(t *testing.T) {
 	comment := gh.Comment{ID: 42, NodeID: "IC_42", Body: "selected", CreatedAt: "2026-08-01T10:00:00Z"}
 	m.cache.Comments = []gh.Comment{comment}
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
-	m.cursors[conversationTab] = 2
+	m.cursors[conversationTab] = 1
 
 	newer := gh.Comment{ID: 43, NodeID: "IC_43", Body: "new", CreatedAt: "2026-08-02T10:00:00Z"}
 	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 1}, comments: []gh.Comment{comment, newer}})
 	m = u.(Model)
-	if selected := m.selectedComment(); selected == nil || selected.NodeID != "IC_42" {
+	if selected := m.selectedConversationItem(); selected == nil || selected.comment == nil || selected.comment.NodeID != "IC_42" {
 		t.Fatalf("selection moved after refresh: %#v", selected)
+	}
+}
+
+func TestDescriptionOrderAndSelectionSurviveRefresh(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "local"}}
+	m.cache.PR = &gh.PR{URL: "https://example/pr/1", Body: "old", CreatedAt: "2026-08-01T10:00:00Z"}
+	m.cache.Comments = []gh.Comment{{ID: 2, CreatedAt: "2026-08-01T10:02:00Z"}}
+	m.cache.Activities = []gh.Activity{{ID: 3, CreatedAt: "2026-08-01T10:03:00Z"}}
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+
+	items := m.conversationItems()
+	if len(items) != 4 || items[0].pr == nil || items[1].event == nil || items[2].comment == nil || items[3].activity == nil {
+		t.Fatalf("conversation order = %#v", items)
+	}
+	m.cursors[conversationTab] = 0
+	u, _ := m.Update(githubRefreshed{
+		pr:         gh.PR{URL: "https://example/pr/1", Body: "edited", CreatedAt: "2026-08-01T10:00:00Z"},
+		comments:   m.cache.Comments,
+		activities: m.cache.Activities,
+	})
+	m = u.(Model)
+	selected := m.selectedConversationItem()
+	if selected == nil || selected.pr == nil || selected.pr.Body != "edited" || m.cursors[conversationTab] != 0 {
+		t.Fatalf("description selection after refresh = %#v cursor=%d", selected, m.cursors[conversationTab])
+	}
+}
+
+func TestLocalEventSelectionSurvivesCommitInsertion(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{
+		{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "first"},
+		{TS: "2026-08-01T10:02:00Z", Kind: event.Decision, Title: "selected", Body: "keep me"},
+	}
+	m.cursors[conversationTab] = 1
+	selectedKey := m.selectedConversationKey()
+	m.events = append([]event.Event{{TS: "2026-08-01T10:00:00Z", Kind: event.Commit, Title: "inserted", SHA: "abc"}}, m.events...)
+	m.restoreConversationSelection(selectedKey)
+
+	selected := m.selectedConversationItem()
+	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.cursors[conversationTab] != 1 {
+		t.Fatalf("selection after commit insertion = %#v cursor=%d", selected, m.cursors[conversationTab])
+	}
+}
+
+func TestPublishInsertionPreservesConversationSelection(t *testing.T) {
+	m := testModel()
+	m.events = []event.Event{{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "selected"}}
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	cache := gh.NewCache(m.head)
+	cache.PR = &gh.PR{URL: "https://example/pr/1", Body: "new", CreatedAt: "2026-08-01T10:00:00Z"}
+	if err := gh.SaveCache(m.cachePath, cache); err != nil {
+		t.Fatal(err)
+	}
+
+	u, _ := m.Update(publishDone{result: publish.Result{PR: *cache.PR, Created: true}})
+	m = u.(Model)
+	selected := m.selectedConversationItem()
+	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.cursors[conversationTab] != 1 {
+		t.Fatalf("selection after publish = %#v cursor=%d", selected, m.cursors[conversationTab])
 	}
 }
 
@@ -254,15 +362,11 @@ func TestGitHubCommentsAreBoxedAndActivityIsUnboxed(t *testing.T) {
 	}
 }
 
-func TestLocalCommentsMatchCloudCardsAndGitCommitsStayUnboxed(t *testing.T) {
+func TestLocalEventsUseSourceFreeCards(t *testing.T) {
 	m := testModel()
 	local := strings.Join(m.eventLines(m.events[0], false, 60), "\n")
-	commit := strings.Join(m.eventLines(m.events[1], false, 60), "\n")
 	if !strings.Contains(local, "╭") || strings.Contains(local, "local ·") || !strings.Contains(local, "claude-agent") {
 		t.Fatalf("local event should be a source-free card: %q", local)
-	}
-	if strings.Contains(commit, "╭") || !strings.Contains(commit, "git") || !strings.Contains(commit, "committed") {
-		t.Fatalf("git commit should be an unboxed sourced row: %q", commit)
 	}
 }
 
@@ -326,33 +430,64 @@ func TestTranslateDiffMouseUsesContentBounds(t *testing.T) {
 	}
 }
 
-func TestShiftTabRoutesKeysToEmbeddedCodeReview(t *testing.T) {
+func TestReviewFocusKeys(t *testing.T) {
 	m := testModel()
 	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	m = u.(Model)
 	if !m.focusDiff {
-		t.Fatal("Shift+Tab should focus CodeReview")
+		t.Fatal("l should focus review")
+	}
+	footer := ansi.Strip(m.renderFooter())
+	if !strings.Contains(footer, "q / Shift+Tab: left pane") || strings.Contains(footer, "branch review") {
+		t.Fatalf("focused footer is misleading: %q", footer)
 	}
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	m = u.(Model)
-	if cmd != nil {
-		t.Fatal("focused q should be forwarded, not quit live-pr")
+	if cmd != nil || m.focusDiff {
+		t.Fatal("q should return focus to the left pane")
+	}
+	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
+		t.Fatal("q on the left pane should quit")
+	} else if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("left-pane q returned %T", cmd())
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if !m.focusDiff {
+		t.Fatal("Shift+Tab should focus review")
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
 	if m.focusDiff {
-		t.Fatal("second Shift+Tab should return focus to local PR")
+		t.Fatal("second Shift+Tab should return focus to the left pane")
 	}
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
-		t.Fatal("local PR q should quit")
+		t.Fatal("Ctrl+C should quit from the left pane")
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Fatalf("quit command returned %T", cmd())
+	}
+}
+
+func TestStaticReviewFocusKeys(t *testing.T) {
+	m := testModel()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = u.(Model)
+	if !m.focusDiff {
+		t.Fatal("l should focus the static review fallback")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(Model)
+	if m.focusDiff {
+		t.Fatal("q should return from the static review fallback")
 	}
 }
 
@@ -426,32 +561,18 @@ func TestPublishIsExplicitAndSingleFlight(t *testing.T) {
 	}
 }
 
-func TestEnterLaunchesReviewerOnCommitOnly(t *testing.T) {
+func TestCommitSelectionStartsEmbeddedCommitCommandAndFocusesReview(t *testing.T) {
 	m := testModel()
+	m.root = t.TempDir()
+	m.diffCommitCommand = "cat"
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-
-	// cursor 0 = decision (non-commit): no reviewer, a status hint instead.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = u.(Model)
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if cmd != nil {
-		t.Errorf("enter on a non-commit event must not launch the reviewer")
-	}
-	if m.status == "" {
-		t.Errorf("expected a status hint when entering on a non-commit event")
-	}
-
-	// move to the commit event, enter → a reviewer command is returned.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = u.(Model)
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
-		t.Errorf("enter on a commit event must return a reviewer command")
-	}
-
-	// The Commits tab reuses the same reviewer action.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
-	m = u.(Model)
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
-		t.Errorf("enter in the Commits tab must return a reviewer command")
+	defer m.close()
+	if cmd == nil || m.reviewSHA != "abc1234" || !m.focusDiff || m.diffTerminal == nil {
+		t.Fatalf("commit selection did not start/focus embedded review: sha=%q focus=%v terminal=%v", m.reviewSHA, m.focusDiff, m.diffTerminal != nil)
 	}
 }

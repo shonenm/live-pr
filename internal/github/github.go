@@ -22,6 +22,8 @@ type PR struct {
 	Body        string    `json:"body"`
 	State       string    `json:"state"`
 	BaseRefName string    `json:"baseRefName,omitempty"`
+	Author      PRUser    `json:"author,omitempty"`
+	CreatedAt   string    `json:"createdAt,omitempty"`
 	Assignees   []PRUser  `json:"assignees,omitempty"`
 	Labels      []PRLabel `json:"labels,omitempty"`
 }
@@ -92,7 +94,7 @@ func New() Client {
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
 // only a successful empty list becomes ErrPRNotFound.
 func (c Client) FindOpen(head string) (PR, error) {
-	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", "number,url,title,body,state,baseRefName,assignees,labels")
+	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", "number,url,title,body,state,baseRefName,author,createdAt,assignees,labels")
 	if err != nil {
 		return PR{}, commandError("gh pr list", out, err)
 	}

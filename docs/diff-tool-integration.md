@@ -14,40 +14,49 @@ The right pane is not merely a prettier `git diff`. It is an interactive local c
 
 ## Configuration
 
+Equivalent behavior is built in; use the same keys in the global or per-repository config to override it:
+
 ```toml
 [diff]
 command = 'nvim -c "CodeReviewBranch $LIVE_PR_BASE"'
+commit_command = 'nvim -c "CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
 ```
 
-The command runs in a real embedded pseudoterminal (PTY), so full-screen tools such as Neovim work without suspending live-pr or opening another tmux pane.
+The command runs in a real embedded pseudoterminal (PTY), so full-screen tools such as Neovim work without suspending live-pr or opening another tmux pane. `command = ""` explicitly disables the built-in branch reviewer. The built-in commit behavior is deliberately supplied through the legacy top-level `reviewer` fallback, so an explicit `commit_command` takes precedence and existing `reviewer` overrides remain compatible.
 
 It starts in the repository root with:
 
 - `LIVE_PR_BASE`: PR base branch;
 - `LIVE_PR_HEAD`: current branch;
 - `LIVE_PR_PR_URL`: cached GitHub PR URL, or empty before a PR exists;
+- `LIVE_PR_SHA`: selected commit in commit review, otherwise empty;
 - `TERM=xterm-256color` from the embedded terminal.
 
 `CodeReviewBranch` compares the merge base with `HEAD`, matching the branch-only three-dot range used for a PR. live-pr takes the base from the cached/fetched GitHub PR (`baseRefName`); `live-pr pr --base …` also persists it. For local comparison it prefers the matching `origin/<base>` remote-tracking ref over a possibly stale local branch. The repository default branch is used only before a PR-specific base is known.
 
 ## Interaction
 
-- local PR has focus at startup;
-- `Shift+Tab` switches focus between local PR and CodeReview;
-- clicking either pane also changes focus;
-- while CodeReview has focus, keys are sent directly to Neovim;
-- `Shift+Tab` is reserved by live-pr and is not sent to Neovim;
-- the active CodeReview border uses the accent color;
-- switch back to local PR before pressing `q` to exit live-pr.
+The default screen has no tabs: Conversation is always on the left and branch-wide Files changed / CodeReview is always on the right.
 
-The PTY is resized with the right pane, preserving Neovim's full-screen behavior. Closing live-pr closes and reaps the embedded reviewer process.
+- `c` while the left pane is focused replaces Conversation with the commit picker;
+- `j`/`k` selects a commit;
+- `Enter` restarts the right pane with `commit_command` and `LIVE_PR_SHA`, then focuses it;
+- `l` focuses the right review pane; `q` returns to the left from review, and exits live-pr when already on the left;
+- `Shift+Tab` remains the shared focus toggle;
+- `Esc` from the commit picker restores Conversation and branch-wide `command` review;
+- clicking either pane also changes focus;
+- while CodeReview has focus, keys other than reserved `q` and `Shift+Tab` are sent directly to Neovim;
+- the active CodeReview border uses the accent color.
+
+The PTY is resized with the right pane. Each branch/commit switch closes and reaps the previous process, and generation-specific IDs discard its late messages.
 
 ## Fallback display
 
-Without `command`, live-pr keeps its built-in selected-file/commit Git output:
+When the command for the current scope is disabled, unsupported, exits, or fails, live-pr keeps a matching built-in view:
 
 ```text
-Git diff/show → right pane
+branch scope → git diff base...HEAD
+commit scope → git show SHA
 ```
 
 An optional non-interactive formatter remains available as a fallback:
@@ -57,7 +66,7 @@ An optional non-interactive formatter remains available as a fallback:
 display = "delta --color-only"
 ```
 
-`display` receives raw Git diff on stdin and writes terminal text to stdout. If both are configured, `command` owns the pane while it is running; `display` is used only after the embedded reviewer exits or fails.
+`display` receives raw Git diff on stdin and writes terminal text to stdout. The active embedded command owns the pane while running; `display` is used only when that command is absent, exits, or fails.
 
 Static formatter behavior remains:
 
@@ -67,24 +76,13 @@ Static formatter behavior remains:
 - results are cached by command, width, and diff identity;
 - failure or timeout retains raw Git.
 
-## Existing commit reviewer
-
-The legacy commit-scoped setting remains for configurations without an embedded reviewer:
-
-```toml
-reviewer = 'nvim -c "CodeReview {sha}~1 {sha}"'
-```
-
-When no embedded `diff.command` is active, Enter launches it using the old suspend/resume path. It is disabled while embedded CodeReview owns the right pane.
-
 ## Architecture
 
 - `internal/git`: raw file/commit fallback diffs;
-- `internal/config`: `[diff].command` and `[diff].display`;
+- `internal/config`: branch `command`, `commit_command`, and static `display`;
 - `internal/embeddedterm`: PTY/VT lifecycle around Portalis;
 - `internal/diffview`: bounded non-interactive fallback formatter;
-- `internal/tui`: layout, focus, event routing, and fallback selection;
-- `internal/review`: legacy commit-scoped external launch.
+- `internal/tui`: fixed two-pane layout, commit picker, scope/focus routing, and fallback selection.
 
 The embedded terminal supplies PTY process I/O, xterm key encoding, ANSI/VT parsing, alternate-screen support, Unicode cell widths, mouse events, and resize propagation. live-pr remains responsible for pane allocation and which events are forwarded. Portalis is pinned to a commit through a temporary module-path replacement until its repository/module names align.
 
