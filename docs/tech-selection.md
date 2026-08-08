@@ -47,7 +47,7 @@
   要約生成       → claude -p headless（初手）。将来 API / 他エージェント差し替え
 
 [ 表示: TUI (Bubble Tea) ]
-  live-pr        # 左Conversation / commit picker、右branch / commit CodeReview
+  live-pr        # current/local detailまたはopen PR一覧。remote PRもcheckoutなしで表示
   local git      # file/commit一覧とdiff。GitHub待ちなし
   GitHub state   # PR description + top-level comments + issue activityをcache即表示→起動時1回refresh。以後はrのみ
   Markdown       # comment本文をglamourで枠付き描画。activityは枠なし。mediaはURL表示
@@ -79,13 +79,13 @@ CLI 一覧（Cobra）:
 2. **timelineの扱い**: `.live-pr/`はgitignoreし、ローカルruntimeとして保持。PR export時に読み込む。
 3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
 4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
-5. **TUI**: tabなしの固定2pane。左はConversation（`c`でcommit picker）、右はbranch Files changed（commit選択後はcommit review）。
+5. **TUI**: default branch/対象なしはPR一覧、current/local PRはdetailへ自動routing。一覧右paneは冒頭のdescription/commentをカード表示し、metadata、CI/conflict、規模をpreview。detailは固定2paneで、`b`でlocal PRを含む一覧、他PRはcheckoutなしで開く。
 6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
 7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
 8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
 9. **GitHub表示**: PR opening description、top-level comments、issue activityをlocal eventと時系列統合。description/commentsとlocal eventは枠の濃さで区別し、activityは枠なしrow、commitは専用pickerにのみ表示。画像・動画はURLのまま、`o`でdescription/commentをGitHub表示。PR assignees/labelsはcacheし、headerへcompact表示。
-10. **Diff表示**: built-in defaultはbranch `CodeReviewBranch`、commit `CodeReview`をembedded PTYで表示し、設定でoverrideまたは明示無効化できる。`l`で右、右の`q`で左、左の`q`で終了、`Shift+Tab`/clickでfocus切替。未設定・unsupported・終了・失敗時は対応scopeのraw Git、任意で`[diff].display`をfallback適用。
+10. **Diff表示**: built-in defaultは明示的な`base...head revision`の`CodeDiff`、commitは`CodeReview`をembedded PTYで表示。他PRはnumeric pull refをnamespaced fetchし、working treeを変更しない。設定でoverrideまたは明示無効化できる。`l`で右、右の`q`で左、左の`q`で終了、`Shift+Tab`/clickでfocus切替。未設定・unsupported・終了・失敗時は対応scopeのraw Git、任意で`[diff].display`をfallback適用。
 
 ## 現在地
 
-固定2pane、branch/commit review切替、GitHub同期基盤、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review commentsの同期と通常コメント投稿を行い、全体確認後に配布へ進む。
+PR navigator、固定2pane、local/remote/commit review切替、GitHub同期基盤、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review commentsの同期と通常コメント投稿を行い、全体確認後に配布へ進む。

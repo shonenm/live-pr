@@ -11,8 +11,8 @@ import (
 )
 
 func TestEnvironment(t *testing.T) {
-	env := Environment("main", "feature/x", "https://example.test/pr/1", "abc123")
-	want := []string{"LIVE_PR_BASE=main", "LIVE_PR_HEAD=feature/x", "LIVE_PR_PR_URL=https://example.test/pr/1", "LIVE_PR_SHA=abc123"}
+	env := Environment("main", "feature/x", "refs/live-pr/pulls/1/head", "https://example.test/pr/1", "abc123")
+	want := []string{"LIVE_PR_BASE=main", "LIVE_PR_HEAD=feature/x", "LIVE_PR_HEAD_REV=refs/live-pr/pulls/1/head", "LIVE_PR_PR_URL=https://example.test/pr/1", "LIVE_PR_SHA=abc123"}
 	if strings.Join(env, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("env = %#v", env)
 	}
@@ -26,7 +26,7 @@ func TestEmptyCommandIsDisabled(t *testing.T) {
 
 func TestTerminalStartsInRepoWithContextAndRendersOutput(t *testing.T) {
 	dir := t.TempDir()
-	terminal := New(`printf '%s|%s' "$PWD" "$LIVE_PR_BASE"; sleep 1`, dir, Environment("main", "feature", "", ""))
+	terminal := New(`printf '%s|%s' "$PWD" "$LIVE_PR_BASE"; sleep 1`, dir, Environment("main", "feature", "HEAD", "", ""))
 	terminal.Resize(80, 10)
 	defer terminal.Close()
 
