@@ -40,7 +40,7 @@ The explicit `base...head` range matches GitHub PR semantics for both the checko
 An open/current local PR starts in detail. The default branch, detached HEAD, or a branch without local PR context starts in the cached open-PR list.
 
 - list: `j`/`k` selects, `Enter` opens without checkout, `r` refreshes, and `q` exits;
-- detail: `b` returns to the list;
+- detail: reserved `b` returns to the list from either pane;
 - `c` while the left pane is focused replaces Conversation with the local commit picker;
 - `j`/`k` selects a commit;
 - `Enter` restarts the right pane with `commit_command` and `LIVE_PR_SHA`, then focuses it;

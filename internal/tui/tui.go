@@ -762,6 +762,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if key.Matches(msg, m.keys.PRList) {
+			m.targetGeneration++
+			if m.diffTerminal != nil {
+				m.diffTerminal.Close()
+			}
+			m.diffTerminal = nil
+			m.focusDiff = false
+			m.screen = prListScreen
+			m.refreshing, m.publishing = false, false
+			m.active = conversationTab
+			m.status = ""
+			m.layout()
+			return m, m.sync()
+		}
 		if key.Matches(msg, m.keys.Focus) {
 			m.focusDiff = !m.focusDiff
 			return m, nil
@@ -788,19 +802,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 			return m, nil
-		case key.Matches(msg, m.keys.PRList):
-			m.targetGeneration++
-			if m.diffTerminal != nil {
-				m.diffTerminal.Close()
-			}
-			m.diffTerminal = nil
-			m.focusDiff = false
-			m.screen = prListScreen
-			m.refreshing, m.publishing = false, false
-			m.active = conversationTab
-			m.status = ""
-			m.layout()
-			return m, m.sync()
 		case key.Matches(msg, m.keys.Refresh):
 			if m.refreshing || m.publishing {
 				return m, nil

@@ -299,6 +299,7 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 func TestDetailBReturnsToPRList(t *testing.T) {
 	m := testModel()
 	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
+	m.focusDiff = true
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
