@@ -16,16 +16,20 @@ var ErrPRNotFound = errors.New("pull request not found")
 
 // PR is the remote pull-request state needed by live-pr.
 type PR struct {
-	Number      int       `json:"number"`
-	URL         string    `json:"url"`
-	Title       string    `json:"title"`
-	Body        string    `json:"body"`
-	State       string    `json:"state"`
-	BaseRefName string    `json:"baseRefName,omitempty"`
-	Author      PRUser    `json:"author,omitempty"`
-	CreatedAt   string    `json:"createdAt,omitempty"`
-	Assignees   []PRUser  `json:"assignees,omitempty"`
-	Labels      []PRLabel `json:"labels,omitempty"`
+	Number            int       `json:"number"`
+	URL               string    `json:"url"`
+	Title             string    `json:"title"`
+	Body              string    `json:"body"`
+	State             string    `json:"state"`
+	BaseRefName       string    `json:"baseRefName,omitempty"`
+	HeadRefName       string    `json:"headRefName,omitempty"`
+	HeadRefOID        string    `json:"headRefOid,omitempty"`
+	IsDraft           bool      `json:"isDraft,omitempty"`
+	IsCrossRepository bool      `json:"isCrossRepository,omitempty"`
+	Author            PRUser    `json:"author,omitempty"`
+	CreatedAt         string    `json:"createdAt,omitempty"`
+	Assignees         []PRUser  `json:"assignees,omitempty"`
+	Labels            []PRLabel `json:"labels,omitempty"`
 }
 
 // PRUser is a GitHub account attached to PR metadata.
@@ -93,8 +97,10 @@ func New() Client {
 
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
 // only a successful empty list becomes ErrPRNotFound.
+const prFields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,author,createdAt,assignees,labels"
+
 func (c Client) FindOpen(head string) (PR, error) {
-	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", "number,url,title,body,state,baseRefName,author,createdAt,assignees,labels")
+	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", prFields)
 	if err != nil {
 		return PR{}, commandError("gh pr list", out, err)
 	}
@@ -106,6 +112,19 @@ func (c Client) FindOpen(head string) (PR, error) {
 		return PR{}, ErrPRNotFound
 	}
 	return prs[0], nil
+}
+
+// ListOpen returns open pull requests ordered by GitHub's default ordering.
+func (c Client) ListOpen() ([]PR, error) {
+	out, err := c.run("pr", "list", "--state", "open", "--limit", "100", "--json", prFields)
+	if err != nil {
+		return nil, commandError("gh pr list", out, err)
+	}
+	var prs []PR
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return nil, fmt.Errorf("decode gh pr list: %w", err)
+	}
+	return prs, nil
 }
 
 // IssueComments returns every top-level Conversation comment for a PR.

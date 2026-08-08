@@ -67,14 +67,16 @@ type Commit struct {
 	Body    string
 }
 
-// Commits returns the commits in base..HEAD, oldest first. An empty range yields
-// no commits; an unresolvable base returns an error.
-func Commits(base string) ([]Commit, error) {
+// Commits returns the commits in base..HEAD, oldest first.
+func Commits(base string) ([]Commit, error) { return CommitsRange(base, "HEAD") }
+
+// CommitsRange returns commits in base..head, oldest first.
+func CommitsRange(base, head string) ([]Commit, error) {
 	// \x1f separates fields, \x1e separates records (so bodies may contain \n).
 	out, err := run("log", "--reverse",
 		"--date=format:%Y-%m-%dT%H:%M",
 		"--format=%h%x1f%ad%x1f%s%x1f%b%x1e",
-		base+"..HEAD")
+		base+".."+head)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +107,11 @@ type ChangedFile struct {
 }
 
 // ChangedFiles returns changed paths in base...HEAD order.
-func ChangedFiles(base string) ([]ChangedFile, error) {
-	out, err := exec.Command("git", "diff", "--name-status", "-z", base+"...HEAD").Output()
+func ChangedFiles(base string) ([]ChangedFile, error) { return ChangedFilesRange(base, "HEAD") }
+
+// ChangedFilesRange returns changed paths in base...head order.
+func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
+	out, err := exec.Command("git", "diff", "--name-status", "-z", base+"..."+head).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git diff --name-status: %w", err)
 	}
@@ -133,8 +138,11 @@ func ChangedFiles(base string) ([]ChangedFile, error) {
 }
 
 // FileDiff returns the colorized base...HEAD patch for the selected paths.
-func FileDiff(base string, paths ...string) string {
-	args := []string{"diff", "--color=always", base + "...HEAD", "--"}
+func FileDiff(base string, paths ...string) string { return FileDiffRange(base, "HEAD", paths...) }
+
+// FileDiffRange returns the colorized base...head patch for selected paths.
+func FileDiffRange(base, head string, paths ...string) string {
+	args := []string{"diff", "--color=always", base + "..." + head, "--"}
 	args = append(args, paths...)
 	out, err := run(args...)
 	if err != nil {
@@ -163,6 +171,32 @@ func truncate(s string, maxLines int) string {
 
 // ShowStat returns `git show --stat` for a commit, colorized, with a compact
 // author/date header. Empty string if the sha cannot be resolved.
+// FetchPull fetches a GitHub pull ref and its base without changing HEAD,
+// the index, or the worktree. It returns the namespaced local head ref.
+func FetchPull(number int, base, expectedOID string) (string, error) {
+	if number <= 0 {
+		return "", fmt.Errorf("invalid pull request number %d", number)
+	}
+	if _, err := run("check-ref-format", "--branch", base); err != nil {
+		return "", fmt.Errorf("invalid pull request base %q", base)
+	}
+	headRef := fmt.Sprintf("refs/live-pr/pulls/%d/head", number)
+	baseSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", base, base)
+	headSpec := fmt.Sprintf("+refs/pull/%d/head:%s", number, headRef)
+	cmd := exec.Command("git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("git fetch PR #%d: %w: %s", number, err, strings.TrimSpace(string(out)))
+	}
+	oid, err := run("rev-parse", headRef)
+	if err != nil {
+		return "", fmt.Errorf("resolve fetched PR #%d: %w", number, err)
+	}
+	if expectedOID != "" && oid != expectedOID {
+		return "", fmt.Errorf("PR #%d moved during fetch (expected %s, got %s)", number, expectedOID, oid)
+	}
+	return headRef, nil
+}
+
 func ShowStat(sha string) string {
 	out, err := run("show", "--stat", "--color=always",
 		"--format=%C(dim)%an committed · %ad%C(reset)", "--date=short", sha)

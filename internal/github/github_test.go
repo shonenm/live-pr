@@ -25,6 +25,34 @@ func TestFindOpen(t *testing.T) {
 	}
 }
 
+func TestListOpen(t *testing.T) {
+	var got []string
+	c := Client{run: func(args ...string) ([]byte, error) {
+		got = append([]string(nil), args...)
+		return []byte(`[{"number":12,"headRefName":"feature/x","headRefOid":"abc123","baseRefName":"main","isDraft":true,"isCrossRepository":true}]`), nil
+	}}
+	prs, err := c.ListOpen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 || prs[0].HeadRefName != "feature/x" || prs[0].HeadRefOID != "abc123" || !prs[0].IsDraft || !prs[0].IsCrossRepository {
+		t.Fatalf("open PRs = %#v", prs)
+	}
+	args := strings.Join(got, " ")
+	for _, field := range []string{"--state open", "headRefName", "headRefOid", "isDraft", "isCrossRepository"} {
+		if !strings.Contains(args, field) {
+			t.Fatalf("list args missing %q: %s", field, args)
+		}
+	}
+}
+
+func TestListOpenFailure(t *testing.T) {
+	c := Client{run: func(args ...string) ([]byte, error) { return []byte("offline"), errors.New("exit 1") }}
+	if _, err := c.ListOpen(); err == nil || !strings.Contains(err.Error(), "offline") {
+		t.Fatalf("ListOpen error = %v", err)
+	}
+}
+
 func TestFindOpenDistinguishesMissingAndFailure(t *testing.T) {
 	missing := Client{run: func(args ...string) ([]byte, error) { return []byte("[]"), nil }}
 	if _, err := missing.FindOpen("feature"); !errors.Is(err, ErrPRNotFound) {

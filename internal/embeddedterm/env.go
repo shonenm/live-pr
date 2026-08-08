@@ -15,10 +15,11 @@ func nextSessionID() string {
 type StateMsg struct{ SessionID string }
 
 // Environment builds the context exposed to an embedded diff command.
-func Environment(base, head, prURL, sha string) []string {
+func Environment(base, head, headRev, prURL, sha string) []string {
 	return []string{
 		"LIVE_PR_BASE=" + base,
 		"LIVE_PR_HEAD=" + head,
+		"LIVE_PR_HEAD_REV=" + headRev,
 		"LIVE_PR_PR_URL=" + prURL,
 		"LIVE_PR_SHA=" + sha,
 	}
