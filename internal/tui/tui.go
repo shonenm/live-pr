@@ -48,14 +48,14 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -73,13 +73,17 @@ var keys = keyMap{
 	Browse:      key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
 	Refresh:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
 	Publish:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
+	Merge:       key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge PR")),
+	Checkout:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
+	Close:       key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
 	Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
 type prListRefreshed struct {
-	prs []gh.PR
-	err error
+	generation uint64
+	prs        []gh.PR
+	err        error
 }
 
 type remoteLoaded struct {
@@ -111,7 +115,24 @@ type publishDone struct {
 
 type browserDone struct{ err error }
 
+type prAction uint8
+
+const (
+	noPRAction prAction = iota
+	mergePR
+	checkoutPR
+	closePR
+)
+
+type prActionDone struct {
+	action prAction
+	pr     gh.PR
+	number int
+	err    error
+}
+
 type diffRendered struct {
+	generation       uint64
 	key, output, raw string
 	err              error
 }
@@ -147,6 +168,7 @@ type Model struct {
 	cursors          [tabCount]int
 	reviewSHA        string
 	status           string
+	notice           string
 	githubStatus     string
 	timelinePath     string
 	cachePath        string
@@ -163,6 +185,11 @@ type Model struct {
 	refreshing       bool
 	listRefreshing   bool
 	publishing       bool
+	pendingPRAction  prAction
+	prActionRunning  prAction
+	prActionNumber   int
+	prActionPR       gh.PR
+	prListGeneration uint64
 	remote           bool
 	targetGeneration uint64
 
@@ -212,7 +239,7 @@ func New() (Model, error) {
 	base := git.ResolveBase(cache.Base(defaultRef))
 	files, _ := git.ChangedFiles(base)
 	currentPR := cache.PR
-	if currentPR != nil && !isCurrentPR(*currentPR, branch) {
+	if currentPR != nil && !isCurrentPR(*currentPR, branch) && !cache.ExplicitCheckout {
 		currentPR = nil
 		cache = gh.NewCache(branch)
 	}
@@ -241,6 +268,7 @@ func New() (Model, error) {
 		openPRs:           navigator.PRs,
 		autoOpenCurrent:   branch != "HEAD" && branch != defaultBranch,
 		listRefreshing:    true,
+		prListGeneration:  1,
 		diffDisplay:       cfg.Diff.Display,
 		diffCommand:       cfg.Diff.Command,
 		diffCommitCommand: cfg.CommitReviewCommand(),
@@ -260,6 +288,17 @@ func New() (Model, error) {
 
 func isCurrentPR(pr gh.PR, branch string) bool {
 	return !pr.IsCrossRepository && (pr.HeadRefName == "" || pr.HeadRefName == branch)
+}
+
+func (m Model) isCurrentTargetPR(pr gh.PR) bool {
+	return isCurrentPR(pr, m.currentBranch) || (!m.remote && m.cache.ExplicitCheckout && m.cache.PR != nil && m.cache.PR.Number == pr.Number)
+}
+
+func (m Model) explicitPRNumber() int {
+	if m.cache.ExplicitCheckout && m.cache.PR != nil {
+		return m.cache.PR.Number
+	}
+	return 0
 }
 
 func shouldOpenLocal(branch, defaultBranch string, hasPR, hasData, hasChanges bool) bool {
@@ -330,9 +369,9 @@ func Run() error {
 }
 
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{fetchPRList()}
+	cmds := []tea.Cmd{fetchPRList(m.prListGeneration)}
 	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
-		cmds = append(cmds, fetchGitHub(m.head, m.targetGeneration))
+		cmds = append(cmds, fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration))
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
@@ -344,6 +383,11 @@ func (m *Model) close() {
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
+}
+
+func (m *Model) advanceAsyncGenerations(previous Model) {
+	m.targetGeneration = previous.targetGeneration + 1
+	m.prListGeneration = previous.prListGeneration + 1
 }
 
 func (m *Model) useBase(base, prURL string) tea.Cmd {
@@ -389,24 +433,46 @@ func (m Model) prURL() string {
 	return ""
 }
 
-func renderDiff(key, command, raw string, width int) tea.Cmd {
+func renderDiff(generation uint64, key, command, raw string, width int) tea.Cmd {
 	return func() tea.Msg {
 		out, err := diffview.Render(command, raw, width)
-		return diffRendered{key: key, output: out, raw: raw, err: err}
+		return diffRendered{generation: generation, key: key, output: out, raw: raw, err: err}
 	}
 }
 
-func fetchPRList() tea.Cmd {
+func fetchPRList(generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		prs, err := gh.New().ListOpen()
-		return prListRefreshed{prs: prs, err: err}
+		return prListRefreshed{generation: generation, prs: prs, err: err}
 	}
 }
 
-func fetchGitHub(head string, generation uint64) tea.Cmd {
+func runPRAction(action prAction, pr gh.PR) tea.Cmd {
 	return func() tea.Msg {
 		client := gh.New()
-		pr, err := client.FindOpen(head)
+		var err error
+		switch action {
+		case mergePR:
+			err = client.Merge(pr.Number, pr.HeadRefOID)
+		case checkoutPR:
+			err = client.Checkout(pr.Number)
+		case closePR:
+			err = client.Close(pr.Number)
+		}
+		return prActionDone{action: action, pr: pr, number: pr.Number, err: err}
+	}
+}
+
+func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		client := gh.New()
+		var pr gh.PR
+		var err error
+		if number > 0 {
+			pr, err = client.Find(number)
+		} else {
+			pr, err = client.FindOpen(head)
+		}
 		if err != nil {
 			return githubRefreshed{generation: generation, err: err}
 		}
@@ -530,6 +596,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.sync()
 
 	case prListRefreshed:
+		if msg.generation != m.prListGeneration {
+			return m, nil
+		}
 		m.listRefreshing = false
 		if msg.err != nil {
 			m.githubStatus = "Offline · showing cached PR list"
@@ -547,7 +616,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == prListScreen && m.autoOpenCurrent {
 			m.autoOpenCurrent = false
 			for i := range m.openPRs {
-				if isCurrentPR(m.openPRs[i], m.currentBranch) {
+				if m.isCurrentTargetPR(m.openPRs[i]) {
 					st := store.ForBranch(m.root, m.currentBranch)
 					cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
 					if err := m.loadLocal(st, cache, &m.openPRs[i]); err != nil {
@@ -555,7 +624,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					var cmds []tea.Cmd
-					cmds = append(cmds, fetchGitHub(m.currentBranch, m.targetGeneration), m.sync())
+					cmds = append(cmds, fetchGitHub(m.currentBranch, m.explicitPRNumber(), m.targetGeneration), m.sync())
 					if m.diffTerminal != nil {
 						cmds = append(cmds, m.diffTerminal.Init())
 					}
@@ -566,6 +635,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.sync()
 
 	case diffRendered:
+		if msg.generation != m.targetGeneration {
+			return m, nil
+		}
 		delete(m.diffPending, msg.key)
 		if msg.err != nil {
 			m.diffCache[msg.key] = msg.raw
@@ -582,6 +654,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detail.GotoTop()
 		}
 		return m, nil
+
+	case prActionDone:
+		m.prActionRunning = noPRAction
+		if msg.err != nil {
+			m.status = fmt.Sprintf("PR #%d: %v", msg.number, msg.err)
+			return m, nil
+		}
+		if msg.action == mergePR || msg.action == closePR {
+			if msg.action == mergePR {
+				m.notice = fmt.Sprintf("Merge submitted for PR #%d", msg.number)
+			} else {
+				m.notice = fmt.Sprintf("Closed PR #%d", msg.number)
+			}
+			m.listRefreshing = true
+			m.prListGeneration++
+			m.githubStatus = "GitHub: refreshing PR list…"
+			return m, fetchPRList(m.prListGeneration)
+		}
+		m.close()
+		next, err := New()
+		if err != nil {
+			m.status = "checkout reload: " + err.Error()
+			return m, nil
+		}
+		if msg.pr.Number > 0 {
+			cache := gh.NewCache(next.currentBranch)
+			cache.PR, cache.ExplicitCheckout = &msg.pr, true
+			if err := next.loadLocal(store.ForBranch(next.root, next.currentBranch), cache, &msg.pr); err != nil {
+				m.status = "checkout reload: " + err.Error()
+				return m, nil
+			}
+			if err := gh.SaveCache(next.cachePath, next.cache); err != nil {
+				m.status = "checkout cache: " + err.Error()
+				return m, nil
+			}
+		}
+		next.w, next.h = m.w, m.h
+		next.advanceAsyncGenerations(m)
+		next.notice = fmt.Sprintf("Checked out PR #%d", msg.number)
+		next.layout()
+		return next, tea.Batch(next.Init(), next.sync())
 
 	case browserDone:
 		if msg.err != nil {
@@ -668,7 +781,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation != m.targetGeneration {
 			return m, nil
 		}
-		if msg.err == nil && !isCurrentPR(msg.pr, m.currentBranch) {
+		if msg.err == nil && !m.isCurrentTargetPR(msg.pr) {
 			msg.err = gh.ErrPRNotFound
 		}
 		m.refreshing = false
@@ -737,16 +850,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if m.screen == prListScreen {
+			if m.pendingPRAction != noPRAction {
+				switch msg.String() {
+				case "y":
+					action, pr := m.pendingPRAction, m.prActionPR
+					m.pendingPRAction = noPRAction
+					m.prActionRunning = action
+					m.notice = ""
+					return m, runPRAction(action, pr)
+				case "n", "q", "esc":
+					m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
+					return m, nil
+				case "ctrl+c":
+					return m, tea.Quit
+				default:
+					return m, nil
+				}
+			}
+			if m.prActionRunning != noPRAction {
+				if msg.String() == "ctrl+c" {
+					return m, tea.Quit
+				}
+				return m, nil
+			}
 			switch {
 			case key.Matches(msg, m.keys.Quit):
 				return m, tea.Quit
+			case key.Matches(msg, m.keys.Merge):
+				if pr := m.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
+					m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, pr.Number, *pr
+					m.status, m.notice = "", ""
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Checkout):
+				if pr := m.selectedPR(); pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
+					m.pendingPRAction, m.prActionNumber, m.prActionPR = checkoutPR, pr.Number, *pr
+					m.status, m.notice = "", ""
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Close):
+				if pr := m.selectedPR(); pr != nil && pr.Number > 0 {
+					m.pendingPRAction, m.prActionNumber, m.prActionPR = closePR, pr.Number, *pr
+					m.status, m.notice = "", ""
+				}
+				return m, nil
 			case key.Matches(msg, m.keys.Refresh):
 				if m.listRefreshing {
 					return m, nil
 				}
 				m.listRefreshing = true
+				m.prListGeneration++
 				m.githubStatus = "GitHub: refreshing PR list…"
-				return m, fetchPRList()
+				return m, fetchPRList(m.prListGeneration)
 			case key.Matches(msg, m.keys.PreviewDown):
 				m.detail.HalfPageDown()
 				return m, nil
@@ -768,7 +923,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if pr == nil {
 					return m, nil
 				}
-				if !isCurrentPR(*pr, m.currentBranch) {
+				if !m.isCurrentTargetPR(*pr) {
 					return m, m.openRemote(*pr)
 				}
 				st := store.ForBranch(m.root, m.currentBranch)
@@ -777,7 +932,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.status = err.Error()
 					return m, nil
 				}
-				cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.targetGeneration), m.sync()}
+				cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.explicitPRNumber(), m.targetGeneration), m.sync()}
 				if m.diffTerminal != nil {
 					cmds = append(cmds, m.diffTerminal.Init())
 				}
@@ -793,6 +948,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.diffTerminal = nil
 			m.focusDiff = false
 			m.screen = prListScreen
+			m.autoOpenCurrent = false
 			m.refreshing, m.publishing = false, false
 			m.active = conversationTab
 			m.status = ""
@@ -834,7 +990,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.remote && m.cache.PR != nil {
 				return m, fetchRemotePR(*m.cache.PR, m.targetGeneration)
 			}
-			return m, fetchGitHub(m.head, m.targetGeneration)
+			return m, fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration)
 		case key.Matches(msg, m.keys.Publish):
 			if m.publishing {
 				return m, nil
@@ -1002,7 +1158,7 @@ func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
 		return items
 	}
 	for _, pr := range items {
-		if isCurrentPR(pr, m.currentBranch) {
+		if m.isCurrentTargetPR(pr) {
 			return items
 		}
 	}
@@ -1067,6 +1223,10 @@ func (m *Model) sync() tea.Cmd {
 		m.keys.PRList.SetEnabled(false)
 		m.keys.Browse.SetEnabled(false)
 		m.keys.Publish.SetEnabled(false)
+		pr := m.selectedPR()
+		m.keys.Merge.SetEnabled(pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && m.prActionRunning == noPRAction)
+		m.keys.Checkout.SetEnabled(pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && m.prActionRunning == noPRAction)
+		m.keys.Close.SetEnabled(pr != nil && pr.Number > 0 && m.prActionRunning == noPRAction)
 		m.list.SetContent(m.buildPRList())
 		m.detail.SetContent(m.buildPRPreview())
 		m.detail.GotoTop()
@@ -1087,6 +1247,9 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.Back.SetEnabled(m.active == commitsTab)
 	m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
 	m.keys.Publish.SetEnabled(!m.remote)
+	m.keys.Merge.SetEnabled(false)
+	m.keys.Checkout.SetEnabled(false)
+	m.keys.Close.SetEnabled(false)
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
 	if off := selectedLine - 1; off > 0 {
@@ -1120,7 +1283,7 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 			m.diffPending[key] = true
 			m.detail.SetContent(output)
 			m.detail.GotoTop()
-			return renderDiff(key, m.diffDisplay, detail.raw, m.detail.Width)
+			return renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width)
 		}
 	}
 	m.detail.SetContent(output)
@@ -1571,6 +1734,29 @@ func (m Model) commitDetail(sha string) detailContent {
 func (m Model) renderFooter() string {
 	if m.status != "" {
 		return stRedF.Render(m.status)
+	}
+	if m.pendingPRAction != noPRAction {
+		action := "merge with a merge commit"
+		switch m.pendingPRAction {
+		case checkoutPR:
+			action = "checkout its branch"
+		case closePR:
+			action = "close without merging"
+		}
+		return stAccent.Render(fmt.Sprintf("PR #%d: %s?", m.prActionNumber, action)) + stMuted.Render("  y confirm · n cancel")
+	}
+	if m.prActionRunning != noPRAction {
+		action := "Merging"
+		switch m.prActionRunning {
+		case checkoutPR:
+			action = "Checking out"
+		case closePR:
+			action = "Closing"
+		}
+		return stMuted.Render(fmt.Sprintf("%s PR #%d…", action, m.prActionNumber))
+	}
+	if m.notice != "" {
+		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}
 	if m.focusDiff {
 		hint := stMuted.Render("Review focused · q / Shift+Tab: left pane")
