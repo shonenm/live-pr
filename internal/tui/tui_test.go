@@ -273,6 +273,19 @@ func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 	}
 }
 
+func TestStalePRListRefreshCannotRestoreMergedPR(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.prListGeneration = 2
+	m.listRefreshing = true
+	m.openPRs = []gh.PR{{Number: 2}}
+	u, cmd := m.Update(prListRefreshed{generation: 1, prs: []gh.PR{{Number: 1}}})
+	m = u.(Model)
+	if cmd != nil || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 || !m.listRefreshing {
+		t.Fatalf("stale PR list applied: prs=%v refreshing=%v cmd=%v", m.openPRs, m.listRefreshing, cmd)
+	}
+}
+
 func TestPRListEnterOpensRemoteWithoutChangingCheckout(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
@@ -284,6 +297,113 @@ func TestPRListEnterOpensRemoteWithoutChangingCheckout(t *testing.T) {
 	m = u.(Model)
 	if cmd == nil || m.screen != detailScreen || !m.remote || m.head != "feature" || m.headRev != "refs/live-pr/pulls/14/head" || m.diffTerminal != nil {
 		t.Fatalf("remote target not opened: screen=%v remote=%v head=%q rev=%q terminal=%v", m.screen, m.remote, m.head, m.headRev, m.diffTerminal)
+	}
+}
+
+func TestPRListActionsRequireConfirmation(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.currentBranch = "main"
+	m.openPRs = []gh.PR{{Number: 14, HeadRefName: "feature", HeadRefOID: "abc123"}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = u.(Model)
+	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderFooter()), "merge with a merge commit") {
+		t.Fatalf("merge confirmation not shown: pending=%v footer=%q", m.pendingPRAction, ansi.Strip(m.renderFooter()))
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = u.(Model)
+	if m.pendingPRAction != noPRAction {
+		t.Fatalf("merge confirmation not cancelled: %v", m.pendingPRAction)
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = u.(Model)
+	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = u.(Model)
+	if cmd == nil || m.pendingPRAction != noPRAction || m.prActionRunning != checkoutPR || m.prActionNumber != 14 {
+		t.Fatalf("checkout not confirmed: pending=%v running=%v number=%d cmd=%v", m.pendingPRAction, m.prActionRunning, m.prActionNumber, cmd)
+	}
+}
+
+func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
+	m := testModel()
+	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, mergePR, 14
+	u, cmd := m.Update(prActionDone{action: mergePR, number: 14})
+	m = u.(Model)
+	if cmd == nil || !m.listRefreshing || m.notice != "Merge submitted for PR #14" || m.prActionRunning != noPRAction {
+		t.Fatalf("merge completion = refreshing:%v notice:%q running:%v cmd:%v", m.listRefreshing, m.notice, m.prActionRunning, cmd)
+	}
+
+	m.prActionRunning = mergePR
+	u, cmd = m.Update(prActionDone{action: mergePR, number: 15, err: errors.New("blocked")})
+	m = u.(Model)
+	if cmd != nil || !strings.Contains(m.status, "PR #15") || !strings.Contains(m.status, "blocked") {
+		t.Fatalf("merge error = status:%q cmd:%v", m.status, cmd)
+	}
+}
+
+func TestCheckoutReloadEpochRejectsPreCheckoutMessages(t *testing.T) {
+	old := testModel()
+	old.targetGeneration = 7
+	old.prListGeneration = 5
+	next := testModel()
+	next.advanceAsyncGenerations(old)
+	next.cache.PR = &gh.PR{Number: 2}
+	next.openPRs = []gh.PR{{Number: 2}}
+	u, _ := next.Update(remoteLoaded{generation: 7, pr: gh.PR{Number: 1}})
+	next = u.(Model)
+	if next.cache.PR == nil || next.cache.PR.Number != 2 {
+		t.Fatalf("pre-checkout remote result replaced target: %#v", next.cache.PR)
+	}
+	u, _ = next.Update(prListRefreshed{generation: 5, prs: []gh.PR{{Number: 1}}})
+	next = u.(Model)
+	if len(next.openPRs) != 1 || next.openPRs[0].Number != 2 {
+		t.Fatalf("pre-checkout PR list result replaced list: %#v", next.openPRs)
+	}
+	next.diffCache = map[string]string{"same-range": "new branch"}
+	u, _ = next.Update(diffRendered{generation: 7, key: "same-range", output: "old branch"})
+	next = u.(Model)
+	if next.diffCache["same-range"] != "new branch" {
+		t.Fatalf("pre-checkout diff replaced new branch: %#v", next.diffCache)
+	}
+}
+
+func TestExplicitForkCheckoutRemainsCurrentTarget(t *testing.T) {
+	m := testModel()
+	m.currentBranch = "fork-local"
+	pr := gh.PR{Number: 12, HeadRefName: "fork-head", IsCrossRepository: true}
+	m.cache.PR, m.cache.ExplicitCheckout = &pr, true
+	m.localAvailable = true
+	if !m.isCurrentTargetPR(pr) {
+		t.Fatal("explicitly checked-out fork is not the current target")
+	}
+	items := m.withLocalPR([]gh.PR{pr})
+	if len(items) != 1 || items[0].Number != 12 {
+		t.Fatalf("explicit fork duplicated as local PR: %#v", items)
+	}
+	m.screen, m.openPRs = prListScreen, items
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	if m.keys.Checkout.Enabled() {
+		t.Fatal("checkout remained enabled for explicit fork target")
+	}
+}
+
+func TestPRListActionsAreDisabledForLocalEntry(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.openPRs = []gh.PR{{Title: "Local PR"}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	for _, action := range []rune{'m', 'x'} {
+		u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{action}})
+		m = u.(Model)
+		if cmd != nil || m.pendingPRAction != noPRAction {
+			t.Fatalf("local action %q was enabled", action)
+		}
 	}
 }
 
@@ -318,8 +438,12 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	generationA := m.targetGeneration
+	m.autoOpenCurrent = true
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
 	m = u.(Model)
+	if m.autoOpenCurrent {
+		t.Fatal("explicit PR-list navigation must disable startup auto-open")
+	}
 	m.prCursor = 1
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
