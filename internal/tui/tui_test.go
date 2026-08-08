@@ -182,10 +182,13 @@ func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 35})
 	m = u.(Model)
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"Conversation top", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author @bob", "assigned @carol", "feature"} {
+	for _, want := range []string{"description", "comment", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author @bob", "assigned @carol", "feature", "╭", "╰"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("preview missing %q: %q", want, out)
 		}
+	}
+	if strings.Contains(out, "Conversation top") {
+		t.Fatalf("preview should use cards instead of a Conversation top heading: %q", out)
 	}
 	if m.list.Width >= m.w || m.detail.Width <= m.list.Width {
 		t.Fatalf("list preview layout = %d/%d total=%d", m.list.Width, m.detail.Width, m.w)

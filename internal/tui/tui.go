@@ -1306,7 +1306,7 @@ func (m Model) buildPRPreview() string {
 	if pr.UpdatedAt != "" {
 		lines = append(lines, "  "+stMuted.Render("updated "+shortTS(pr.UpdatedAt)))
 	}
-	lines = append(lines, "", stBold.Render("Conversation top"))
+	lines = append(lines, "")
 	if pr.Number == 0 {
 		lines = append(lines, "  "+stMuted.Render("(local PR has no GitHub conversation yet)"))
 	} else {
@@ -1314,10 +1314,13 @@ func (m Model) buildPRPreview() string {
 		if strings.TrimSpace(body) == "" {
 			body = "(no description provided)"
 		}
-		lines = append(lines, previewMarkdown(body, width, 10))
+		header := stMuted.Render("💬 @" + pr.Author.Login + " · description · " + shortTS(pr.CreatedAt))
+		lines = append(lines, cardLines(header, previewMarkdown(body, width-7, 10), false, width, cCloudBorder)...)
 		if len(pr.Conversation) > 0 {
 			comment := pr.Conversation[0]
-			lines = append(lines, "", stMuted.Render("@"+comment.Author.Login+" · "+shortTS(comment.CreatedAt)), previewMarkdown(comment.Body, width, 5))
+			header = stMuted.Render("💬 @" + comment.Author.Login + " · comment · " + shortTS(comment.CreatedAt))
+			lines = append(lines, "")
+			lines = append(lines, cardLines(header, previewMarkdown(comment.Body, width-7, 5), false, width, cCloudBorder)...)
 		}
 	}
 	return strings.Join(lines, "\n")
