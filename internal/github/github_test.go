@@ -25,6 +25,41 @@ func TestFindOpen(t *testing.T) {
 	}
 }
 
+func TestListOpen(t *testing.T) {
+	var got []string
+	c := Client{run: func(args ...string) ([]byte, error) {
+		got = append(got, strings.Join(args, " "))
+		switch args[0] {
+		case "repo":
+			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
+		case "api":
+			return []byte(`{"data":{"repository":{"pullRequests":{"nodes":[{"number":12,"headRefName":"feature/x","headRefOid":"abc123","baseRefName":"main","isDraft":true,"isCrossRepository":true,"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"CHANGES_REQUESTED","additions":42,"deletions":7,"changedFiles":3,"assignees":{"nodes":[{"login":"bob"}]},"labels":{"nodes":[{"name":"bug","color":"d73a4a"}]},"comments":{"totalCount":9,"nodes":[{"author":{"login":"alice"},"body":"review"}]},"commits":{"totalCount":5},"statusCheckRollup":{"contexts":{"nodes":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}}}]}}}}`), nil
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}}
+	prs, err := c.ListOpen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 || prs[0].HeadRefName != "feature/x" || prs[0].HeadRefOID != "abc123" || !prs[0].IsDraft || !prs[0].IsCrossRepository || prs[0].Mergeable != "CONFLICTING" || prs[0].Additions != 42 || prs[0].Deletions != 7 || prs[0].ChangedFiles != 3 || len(prs[0].Conversation) != 1 || prs[0].CommentCount != 9 || prs[0].CommitCount != 5 || len(prs[0].Checks) != 1 || len(prs[0].Assignees) != 1 || len(prs[0].Labels) != 1 {
+		t.Fatalf("open PRs = %#v", prs)
+	}
+	args := strings.Join(got, " ")
+	for _, field := range []string{"pullRequests(first:100", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "additions", "deletions", "changedFiles", "comments(first:1)", "statusCheckRollup", "commits{totalCount}"} {
+		if !strings.Contains(args, field) {
+			t.Fatalf("list args missing %q: %s", field, args)
+		}
+	}
+}
+
+func TestListOpenFailure(t *testing.T) {
+	c := Client{run: func(args ...string) ([]byte, error) { return []byte("offline"), errors.New("exit 1") }}
+	if _, err := c.ListOpen(); err == nil || !strings.Contains(err.Error(), "offline") {
+		t.Fatalf("ListOpen error = %v", err)
+	}
+}
+
 func TestFindOpenDistinguishesMissingAndFailure(t *testing.T) {
 	missing := Client{run: func(args ...string) ([]byte, error) { return []byte("[]"), nil }}
 	if _, err := missing.FindOpen("feature"); !errors.Is(err, ErrPRNotFound) {

@@ -38,11 +38,29 @@ func Discover() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(root, ".live-pr", slug(branch))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	st := ForBranch(root, branch)
+	if err := os.MkdirAll(st.Dir, 0o755); err != nil {
 		return nil, err
 	}
-	return &Store{Root: root, Branch: branch, Dir: dir}, nil
+	return st, nil
+}
+
+// ForBranch resolves branch paths without creating files or directories.
+func ForBranch(root, branch string) *Store {
+	return &Store{Root: root, Branch: branch, Dir: filepath.Join(root, ".live-pr", slug(branch))}
+}
+
+// Ensure creates the branch data directory.
+func (s *Store) Ensure() error { return os.MkdirAll(s.Dir, 0o755) }
+
+// HasData reports whether a branch has meaningful local PR content.
+func (s *Store) HasData() bool {
+	for _, path := range []string{s.Timeline(), s.Conclusion()} {
+		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Timeline is the path to the append-only event log.
@@ -53,3 +71,6 @@ func (s *Store) Conclusion() string { return filepath.Join(s.Dir, "conclusion.md
 
 // GitHubCache is the path to mutable remote state kept separate from timeline.jsonl.
 func (s *Store) GitHubCache() string { return filepath.Join(s.Dir, "github.json") }
+
+// NavigatorCache is the repository-wide PR list and remote snapshot cache.
+func NavigatorCache(root string) string { return filepath.Join(root, ".live-pr", "github-prs.json") }

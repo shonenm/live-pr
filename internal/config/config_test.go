@@ -8,7 +8,7 @@ import (
 
 func TestDefaultStartsBranchAndCommitCodeReview(t *testing.T) {
 	cfg := Default()
-	if cfg.Diff.Command != `nvim -c "CodeReviewBranch $LIVE_PR_BASE"` {
+	if cfg.Diff.Command != `nvim -c "CodeDiff $LIVE_PR_BASE...$LIVE_PR_HEAD_REV"` {
 		t.Fatalf("branch command = %q", cfg.Diff.Command)
 	}
 	if cfg.Diff.CommitCommand != "" {

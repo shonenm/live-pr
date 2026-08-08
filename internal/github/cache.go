@@ -60,10 +60,14 @@ func LoadCache(path, head string) (Cache, error) {
 // SaveCache atomically replaces path with c.
 func SaveCache(path string, c Cache) error {
 	c.Version = CacheVersion
+	return saveJSON(path, c)
+}
+
+func saveJSON(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(c, "", "  ")
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}

@@ -18,7 +18,7 @@ Equivalent behavior is built in; use the same keys in the global or per-reposito
 
 ```toml
 [diff]
-command = 'nvim -c "CodeReviewBranch $LIVE_PR_BASE"'
+command = 'nvim -c "CodeDiff $LIVE_PR_BASE...$LIVE_PR_HEAD_REV"'
 commit_command = 'nvim -c "CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
 ```
 
@@ -27,18 +27,22 @@ The command runs in a real embedded pseudoterminal (PTY), so full-screen tools s
 It starts in the repository root with:
 
 - `LIVE_PR_BASE`: PR base branch;
-- `LIVE_PR_HEAD`: current branch;
+- `LIVE_PR_HEAD`: logical local or remote head branch;
+- `LIVE_PR_HEAD_REV`: explicit review revision (`HEAD` locally or a namespaced fetched PR ref);
 - `LIVE_PR_PR_URL`: cached GitHub PR URL, or empty before a PR exists;
 - `LIVE_PR_SHA`: selected commit in commit review, otherwise empty;
 - `TERM=xterm-256color` from the embedded terminal.
 
-`CodeReviewBranch` compares the merge base with `HEAD`, matching the branch-only three-dot range used for a PR. live-pr takes the base from the cached/fetched GitHub PR (`baseRefName`); `live-pr pr --base …` also persists it. For local comparison it prefers the matching `origin/<base>` remote-tracking ref over a possibly stale local branch. The repository default branch is used only before a PR-specific base is known.
+The explicit `base...head` range matches GitHub PR semantics for both the checkout and browsed PRs. live-pr takes the base from GitHub, prefers `origin/<base>`, and uses `HEAD` only for local detail. For another PR it fetches numeric `refs/pull/<N>/head` into `refs/live-pr/pulls/<N>/head`, verifies the advertised OID, and never checks out or resets the worktree.
 
 ## Interaction
 
-The default screen has no tabs: Conversation is always on the left and branch-wide Files changed / CodeReview is always on the right.
+An open/current local PR starts in detail. The default branch, detached HEAD, or a branch without local PR context starts in the cached PR list. Returning from local detail adds a `Local PR` entry even before publication.
 
-- `c` while the left pane is focused replaces Conversation with the commit picker;
+- list: `j`/`k` selects and updates the right metadata/Conversation preview; `Ctrl+U`/`Ctrl+D` scrolls it; `Enter` opens without checkout, `r` refreshes, and `q` exits;
+- preview: bordered opening-description/top-comment cards, ownership/labels, CI, merge/conflict/review state, comments, files/additions/deletions, and commit count;
+- detail: reserved `b` returns to the list from either pane;
+- `c` while the left pane is focused replaces Conversation with the local commit picker;
 - `j`/`k` selects a commit;
 - `Enter` restarts the right pane with `commit_command` and `LIVE_PR_SHA`, then focuses it;
 - `l` focuses the right review pane; `q` returns to the left from review, and exits live-pr when already on the left;
@@ -55,7 +59,7 @@ The PTY is resized with the right pane. Each branch/commit switch closes and rea
 When the command for the current scope is disabled, unsupported, exits, or fails, live-pr keeps a matching built-in view:
 
 ```text
-branch scope → git diff base...HEAD
+branch scope → git diff base...head revision
 commit scope → git show SHA
 ```
 
@@ -78,7 +82,8 @@ Static formatter behavior remains:
 
 ## Architecture
 
-- `internal/git`: raw file/commit fallback diffs;
+- `internal/git`: explicit local/remote ranges and namespaced pull-ref fetches;
+- `internal/github`: repository PR-list/snapshot cache separate from branch publish state;
 - `internal/config`: branch `command`, `commit_command`, and static `display`;
 - `internal/embeddedterm`: PTY/VT lifecycle around Portalis;
 - `internal/diffview`: bounded non-interactive fallback formatter;
