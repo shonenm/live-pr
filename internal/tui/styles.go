@@ -13,6 +13,7 @@ import (
 const (
 	cFg             = theme.Foreground
 	cMuted          = theme.Muted
+	cSelectedBg     = theme.Selected
 	cBorder         = theme.Border
 	cCloudBorder    = theme.BorderEmphasis
 	cAccent         = theme.Accent
