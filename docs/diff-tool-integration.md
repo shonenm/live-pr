@@ -39,7 +39,8 @@ The explicit `base...head` range matches GitHub PR semantics for both the checko
 
 An open/current local PR starts in detail. The default branch, detached HEAD, or a branch without local PR context starts in the cached PR list. Returning from local detail adds a `Local PR` entry even before publication.
 
-- list: `j`/`k` selects, `Enter` opens without checkout, `r` refreshes, and `q` exits;
+- list: `j`/`k` selects and updates the right metadata/Conversation preview; `Ctrl+U`/`Ctrl+D` scrolls it; `Enter` opens without checkout, `r` refreshes, and `q` exits;
+- preview: opening description/top comment, ownership/labels, CI, merge/conflict/review state, comments, files/additions/deletions, and commit count;
 - detail: reserved `b` returns to the list from either pane;
 - `c` while the left pane is focused replaces Conversation with the local commit picker;
 - `j`/`k` selects a commit;
