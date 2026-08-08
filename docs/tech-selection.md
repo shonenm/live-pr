@@ -47,13 +47,13 @@
   要約生成       → claude -p headless（初手）。将来 API / 他エージェント差し替え
 
 [ 表示: TUI (Bubble Tea) ]
-  live-pr        # Conversation / Files changed / Commits
+  live-pr        # 左Conversation / commit picker、右branch / commit CodeReview
   local git      # file/commit一覧とdiff。GitHub待ちなし
-  GitHub state   # PR + top-level comments + issue activityをcache即表示→起動時1回refresh。以後はrのみ
+  GitHub state   # PR description + top-level comments + issue activityをcache即表示→起動時1回refresh。以後はrのみ
   Markdown       # comment本文をglamourで枠付き描画。activityは枠なし。mediaはURL表示
-  embedded review # [diff].commandをPTY/VT内で起動。local PRとbase...HEAD CodeReviewを常時並列表示
-  diff fallback   # command未設定/終了時はraw Git、任意で[diff].displayをstdin/stdout整形
-  legacy reviewer # embedded review未使用時のみEnter→tea.ExecProcess
+  embedded review # branch command / commit_commandをPTY/VT内でscope切替
+  diff fallback   # scope command未設定/終了時は対応raw Git、任意で[diff].displayをstdin/stdout整形
+  legacy reviewer # reviewer templateはcommit_command未設定時の互換fallback
 
 [ 出力: PR export ]
   live-pr pr     # managed bodyだけを安全にgh pr create/edit
@@ -79,13 +79,13 @@ CLI 一覧（Cobra）:
 2. **timelineの扱い**: `.live-pr/`はgitignoreし、ローカルruntimeとして保持。PR export時に読み込む。
 3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
 4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
-5. **TUI**: Conversation / Files changed / Commitsの3タブ。各タブの選択位置を保持し、詳細ペインへlocal diffを表示。
+5. **TUI**: tabなしの固定2pane。左はConversation（`c`でcommit picker）、右はbranch Files changed（commit選択後はcommit review）。
 6. **GitHub refresh**: cache-first。起動時に1回だけbackground取得し、起動後は`r`による明示refreshのみ。timer/daemonは持たない。
 7. **PR body ownership**: `<!-- live-pr:managed:* -->`内だけlive-prが所有。外側を保持し、publish baselineとremoteが異なる場合は停止。
 8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
-9. **GitHub表示**: top-level commentsとissue activityをlocal eventと時系列統合。local/cloudのcomment系は枠の濃さで区別し、activity/commit系は枠なしrow。source文字列は表示せず、画像・動画はURLのまま、`o`でcomment permalinkをbrowser表示。PR assignees/labelsはcacheし、headerへcompact表示。
-10. **Diff表示**: `[diff].command`があれば右paneのembedded PTYで起動時から対話型CodeReviewを表示し、`Shift+Tab`/clickでlocal PRとのfocusを切替。rangeは`base...HEAD`。未設定・終了・失敗時はraw Git、任意で`[diff].display`をfallback適用。
+9. **GitHub表示**: PR opening description、top-level comments、issue activityをlocal eventと時系列統合。description/commentsとlocal eventは枠の濃さで区別し、activityは枠なしrow、commitは専用pickerにのみ表示。画像・動画はURLのまま、`o`でdescription/commentをGitHub表示。PR assignees/labelsはcacheし、headerへcompact表示。
+10. **Diff表示**: built-in defaultはbranch `CodeReviewBranch`、commit `CodeReview`をembedded PTYで表示し、設定でoverrideまたは明示無効化できる。`l`で右、右の`q`で左、左の`q`で終了、`Shift+Tab`/clickでfocus切替。未設定・unsupported・終了・失敗時は対応scopeのraw Git、任意で`[diff].display`をfallback適用。
 
 ## 現在地
 
-3タブ、GitHub同期基盤、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review commentsの同期と通常コメント投稿を行い、全体確認後に配布へ進む。
+固定2pane、branch/commit review切替、GitHub同期基盤、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review commentsの同期と通常コメント投稿を行い、全体確認後に配布へ進む。
