@@ -5,6 +5,7 @@ const (
 	Foreground      = "#f0f6fc"
 	Muted           = "#9198a1"
 	BackgroundMuted = "#151b23"
+	Selected        = "#212830"
 	Border          = "#3d444d"
 	BorderEmphasis  = "#656c76"
 	Accent          = "#4493f8"

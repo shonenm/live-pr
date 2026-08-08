@@ -17,31 +17,39 @@ var ErrPRNotFound = errors.New("pull request not found")
 
 // PR is the remote pull-request state needed by live-pr.
 type PR struct {
-	Number            int                     `json:"number"`
-	URL               string                  `json:"url"`
-	Title             string                  `json:"title"`
-	Body              string                  `json:"body"`
-	State             string                  `json:"state"`
-	BaseRefName       string                  `json:"baseRefName,omitempty"`
-	HeadRefName       string                  `json:"headRefName,omitempty"`
-	HeadRefOID        string                  `json:"headRefOid,omitempty"`
-	IsDraft           bool                    `json:"isDraft,omitempty"`
-	IsCrossRepository bool                    `json:"isCrossRepository,omitempty"`
-	Mergeable         string                  `json:"mergeable,omitempty"`
-	MergeStateStatus  string                  `json:"mergeStateStatus,omitempty"`
-	ReviewDecision    string                  `json:"reviewDecision,omitempty"`
-	Additions         int                     `json:"additions,omitempty"`
-	Deletions         int                     `json:"deletions,omitempty"`
-	ChangedFiles      int                     `json:"changedFiles,omitempty"`
-	UpdatedAt         string                  `json:"updatedAt,omitempty"`
-	Conversation      []PRConversationComment `json:"comments,omitempty"`
-	CommentCount      int                     `json:"commentCount,omitempty"`
-	CommitCount       int                     `json:"commitCount,omitempty"`
-	Checks            []PRCheck               `json:"statusCheckRollup,omitempty"`
-	Author            PRUser                  `json:"author,omitempty"`
-	CreatedAt         string                  `json:"createdAt,omitempty"`
-	Assignees         []PRUser                `json:"assignees,omitempty"`
-	Labels            []PRLabel               `json:"labels,omitempty"`
+	Number                int                     `json:"number"`
+	URL                   string                  `json:"url"`
+	Title                 string                  `json:"title"`
+	Body                  string                  `json:"body"`
+	State                 string                  `json:"state"`
+	BaseRefName           string                  `json:"baseRefName,omitempty"`
+	HeadRefName           string                  `json:"headRefName,omitempty"`
+	HeadRefOID            string                  `json:"headRefOid,omitempty"`
+	IsDraft               bool                    `json:"isDraft,omitempty"`
+	IsCrossRepository     bool                    `json:"isCrossRepository,omitempty"`
+	Mergeable             string                  `json:"mergeable,omitempty"`
+	MergeStateStatus      string                  `json:"mergeStateStatus,omitempty"`
+	ReviewDecision        string                  `json:"reviewDecision,omitempty"`
+	Additions             int                     `json:"additions,omitempty"`
+	Deletions             int                     `json:"deletions,omitempty"`
+	ChangedFiles          int                     `json:"changedFiles,omitempty"`
+	UpdatedAt             string                  `json:"updatedAt,omitempty"`
+	Conversation          []PRConversationComment `json:"comments,omitempty"`
+	CommentCount          int                     `json:"commentCount,omitempty"`
+	CommitCount           int                     `json:"commitCount,omitempty"`
+	Checks                []PRCheck               `json:"statusCheckRollup,omitempty"`
+	Author                PRUser                  `json:"author,omitempty"`
+	CreatedAt             string                  `json:"createdAt,omitempty"`
+	Assignees             []PRUser                `json:"assignees,omitempty"`
+	Labels                []PRLabel               `json:"labels,omitempty"`
+	ReviewRequests        []PRUser                `json:"reviewRequests,omitempty"`
+	ViewerReviewRequested bool                    `json:"viewerReviewRequested,omitempty"`
+}
+
+// OpenPRs is one repository PR-list snapshot and its authenticated viewer.
+type OpenPRs struct {
+	ViewerLogin string `json:"viewerLogin,omitempty"`
+	PRs         []PR   `json:"prs,omitempty"`
 }
 
 // PRConversationComment is compact list-preview conversation metadata.
@@ -158,25 +166,25 @@ func (c Client) FindOpen(head string) (PR, error) {
 
 // ListOpen returns the newest 100 open pull requests with bounded preview
 // metadata: one top comment, exact comment/commit totals, and up to 100 checks.
-func (c Client) ListOpen() ([]PR, error) {
+func (c Client) ListOpen() (OpenPRs, error) {
 	out, err := c.run("repo", "view", "--json", "nameWithOwner")
 	if err != nil {
-		return nil, commandError("gh repo view", out, err)
+		return OpenPRs{}, commandError("gh repo view", out, err)
 	}
 	var repo struct {
 		NameWithOwner string `json:"nameWithOwner"`
 	}
 	if err := json.Unmarshal(out, &repo); err != nil {
-		return nil, fmt.Errorf("decode gh repo view: %w", err)
+		return OpenPRs{}, fmt.Errorf("decode gh repo view: %w", err)
 	}
 	owner, name, ok := strings.Cut(repo.NameWithOwner, "/")
 	if !ok {
-		return nil, fmt.Errorf("invalid repository %q", repo.NameWithOwner)
+		return OpenPRs{}, fmt.Errorf("invalid repository %q", repo.NameWithOwner)
 	}
-	const query = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(first:100,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title body state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision additions deletions changedFiles updatedAt createdAt author{login} assignees(first:10){nodes{login}} labels(first:20){nodes{name color}} comments(first:1){totalCount nodes{author{login} body createdAt url}} commits{totalCount} statusCheckRollup{contexts(first:100){nodes{... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}}}}}`
-	out, err = c.run("api", "graphql", "-F", "owner="+owner, "-F", "name="+name, "-f", "query="+query)
+	const query = `query($owner:String!,$name:String!,$reviewQuery:String!){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:100){nodes{... on PullRequest{number}}} repository(owner:$owner,name:$name){pullRequests(first:100,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title body state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision additions deletions changedFiles updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} comments(first:1){totalCount nodes{author{login} body createdAt url}} commits{totalCount} statusCheckRollup{contexts(first:100){nodes{... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}}}}}`
+	out, err = c.run("api", "graphql", "-F", "owner="+owner, "-F", "name="+name, "-F", "reviewQuery=repo:"+repo.NameWithOwner+" is:pr is:open review-requested:@me", "-f", "query="+query)
 	if err != nil {
-		return nil, commandError("gh api graphql", out, err)
+		return OpenPRs{}, commandError("gh api graphql", out, err)
 	}
 	type listNode struct {
 		PR
@@ -186,6 +194,11 @@ func (c Client) ListOpen() ([]PR, error) {
 		Labels struct {
 			Nodes []PRLabel `json:"nodes"`
 		} `json:"labels"`
+		ReviewRequests struct {
+			Nodes []struct {
+				RequestedReviewer PRUser `json:"requestedReviewer"`
+			} `json:"nodes"`
+		} `json:"reviewRequests"`
 		Comments struct {
 			TotalCount int                     `json:"totalCount"`
 			Nodes      []PRConversationComment `json:"nodes"`
@@ -201,6 +214,12 @@ func (c Client) ListOpen() ([]PR, error) {
 	}
 	var result struct {
 		Data struct {
+			Viewer          PRUser `json:"viewer"`
+			ReviewRequested struct {
+				Nodes []struct {
+					Number int `json:"number"`
+				} `json:"nodes"`
+			} `json:"reviewRequested"`
 			Repository struct {
 				PullRequests struct {
 					Nodes []listNode `json:"nodes"`
@@ -209,20 +228,30 @@ func (c Client) ListOpen() ([]PR, error) {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
-		return nil, fmt.Errorf("decode PR list: %w", err)
+		return OpenPRs{}, fmt.Errorf("decode PR list: %w", err)
+	}
+	requested := make(map[int]bool, len(result.Data.ReviewRequested.Nodes))
+	for _, node := range result.Data.ReviewRequested.Nodes {
+		requested[node.Number] = true
 	}
 	prs := make([]PR, 0, len(result.Data.Repository.PullRequests.Nodes))
 	for _, node := range result.Data.Repository.PullRequests.Nodes {
 		pr := node.PR
 		pr.Assignees = node.Assignees.Nodes
+		pr.ViewerReviewRequested = requested[pr.Number]
 		pr.Labels = node.Labels.Nodes
+		for _, request := range node.ReviewRequests.Nodes {
+			if request.RequestedReviewer.Login != "" {
+				pr.ReviewRequests = append(pr.ReviewRequests, request.RequestedReviewer)
+			}
+		}
 		pr.Conversation = node.Comments.Nodes
 		pr.CommentCount = node.Comments.TotalCount
 		pr.CommitCount = node.Commits.TotalCount
 		pr.Checks = node.StatusCheckRollup.Contexts.Nodes
 		prs = append(prs, pr)
 	}
-	return prs, nil
+	return OpenPRs{ViewerLogin: result.Data.Viewer.Login, PRs: prs}, nil
 }
 
 // IssueComments returns every top-level Conversation comment for a PR.
