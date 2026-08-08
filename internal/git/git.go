@@ -99,6 +99,42 @@ func CommitsRange(base, head string) ([]Commit, error) {
 	return commits, nil
 }
 
+// ChangeStats summarizes a diff range for PR list metadata.
+type ChangeStats struct {
+	Files, Additions, Deletions int
+}
+
+// DiffStats returns file and line counts for base...head. Binary files count
+// toward Files but not line totals.
+func DiffStats(base, head string) (ChangeStats, error) {
+	out, err := run("diff", "--numstat", base+"..."+head)
+	if err != nil {
+		return ChangeStats{}, err
+	}
+	var stats ChangeStats
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		var added, deleted string
+		if _, err := fmt.Sscanf(line, "%s\t%s", &added, &deleted); err != nil {
+			continue
+		}
+		stats.Files++
+		if added != "-" {
+			var n int
+			_, _ = fmt.Sscanf(added, "%d", &n)
+			stats.Additions += n
+		}
+		if deleted != "-" {
+			var n int
+			_, _ = fmt.Sscanf(deleted, "%d", &n)
+			stats.Deletions += n
+		}
+	}
+	return stats, nil
+}
+
 // ChangedFile is one entry in base...HEAD.
 type ChangedFile struct {
 	Status  string

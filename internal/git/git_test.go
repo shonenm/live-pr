@@ -114,6 +114,10 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	stats, err := DiffStats("main", "HEAD")
+	if err != nil || stats.Files != 2 || stats.Additions != 1 || stats.Deletions != 1 {
+		t.Fatalf("diff stats = %#v, err=%v", stats, err)
+	}
 	if len(files) != 2 {
 		t.Fatalf("unexpected files: %#v", files)
 	}
