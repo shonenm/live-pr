@@ -57,7 +57,8 @@
 - **Done**: TUIの`p`から明示的にPRを作成・更新。CLIと同じpublish service、managed-body競合保護、cache更新を利用。
 - **Done**: GitHubのPR opening description、top-level comments、issue activityをcacheし、Conversationへ時系列統合。opening descriptionとcommentsはcloud card、local eventsは濃さの異なるcard、GitHub activityは枠なしtimeline row、Git commitsは専用pickerにのみ表示。画像・動画はURL表示し、`o`で選択したdescription/commentをGitHubで開く。
 - **Done**: PR assigneesとlabelsを同じcache-first refreshで取得し、headerへassignee名とGitHub色のlabel pillを表示。
-- **Done**: built-inのbranch `CodeReviewBranch` / commit `CodeReview`をPTY/VTで右paneへ埋め込み、設定overrideと明示無効化、`l`/`q`/`Shift+Tab`/click focus、resize/input/lifecycle、raw Git・`[diff].display` fallbackに対応。
+- **Done**: built-inのbranch three-dot `CodeDiff` / commit `CodeReview`をPTY/VTで右paneへ埋め込み、設定overrideと明示無効化、`l`/`q`/`Shift+Tab`/click focus、resize/input/lifecycle、raw Git・`[diff].display` fallbackに対応。
+- **Done**: default branch/対象なしではcache-firstのopen PR一覧、current/local PRではdetailを自動表示。`b`で一覧へ戻り、他PRはcheckoutせずnumeric pull refをfetchしてConversationとCodeReviewを表示。
 - **Next**: reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
 
 ### P6 — 仕上げ / 配布
@@ -79,7 +80,7 @@ cmd/            cobra: root(TUI), append, note, pivot, sync, hook, pr, init
 internal/
   event/        Event 型・種別・JSONL ストア
   store/        .live-pr/<branch> パス解決・conclusion
-  git/          shell-out（branch/base/commits/show）
+  git/          shell-out（branch/base/range/pull-ref fetch）
   tui/          Conversation timeline + embedded commit diff・lipgloss スタイル
   review/       reviewer テンプレ + tea.ExecProcess 起動
   summarize/    claude -p 呼び出し・プロンプト（interface で抽象化）
@@ -91,4 +92,4 @@ docs/
 
 ## 現在地
 
-P0〜P5とConversation中心のTUIを`main`へ統合済み。固定2pane、branch/commit review切替、TUIからのPR publish、top-level GitHub commentsのMarkdown表示まで実装。次にreview/inline comment同期と通常コメント投稿を完成させ、その動作確認後にP6の配布へ進む。
+P0〜P5とConversation中心のTUIを`main`へ統合済み。PR navigator、固定2pane、local/remote/commit review切替、TUIからのPR publish、top-level GitHub commentsのMarkdown表示まで実装。次にreview/inline comment同期と通常コメント投稿を完成させ、その動作確認後にP6の配布へ進む。
