@@ -25,6 +25,21 @@ func TestFindOpen(t *testing.T) {
 	}
 }
 
+func TestFindByNumber(t *testing.T) {
+	var got []string
+	client := Client{run: func(args ...string) ([]byte, error) {
+		got = append([]string(nil), args...)
+		return []byte(`{"number":12,"headRefName":"fork-branch","isCrossRepository":true}`), nil
+	}}
+	pr, err := client.Find(12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pr.Number != 12 || !pr.IsCrossRepository || !reflect.DeepEqual(got[:3], []string{"pr", "view", "12"}) {
+		t.Fatalf("Find = %#v args=%v", pr, got)
+	}
+}
+
 func TestListOpen(t *testing.T) {
 	var got []string
 	c := Client{run: func(args ...string) ([]byte, error) {
@@ -69,6 +84,39 @@ func TestFindOpenDistinguishesMissingAndFailure(t *testing.T) {
 	failed := Client{run: func(args ...string) ([]byte, error) { return []byte("network down"), errors.New("exit 1") }}
 	if _, err := failed.FindOpen("feature"); err == nil || errors.Is(err, ErrPRNotFound) || !strings.Contains(err.Error(), "network down") {
 		t.Fatalf("expected operational error, got %v", err)
+	}
+}
+
+func TestPRActionsUseExplicitNonInteractiveCommands(t *testing.T) {
+	var got [][]string
+	client := Client{run: func(args ...string) ([]byte, error) {
+		got = append(got, append([]string(nil), args...))
+		return nil, nil
+	}}
+	if err := client.Merge(12, "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Checkout(34); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"pr", "merge", "12", "--merge", "--match-head-commit", "abc123"}, {"pr", "checkout", "34"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands = %#v, want %#v", got, want)
+	}
+}
+
+func TestPRActionsReturnCommandOutput(t *testing.T) {
+	client := Client{run: func(args ...string) ([]byte, error) {
+		return []byte("merge blocked"), errors.New("exit 1")
+	}}
+	if err := client.Merge(12, "abc123"); err == nil || !strings.Contains(err.Error(), "merge blocked") {
+		t.Fatalf("Merge error = %v", err)
+	}
+	if err := client.Checkout(12); err == nil || !strings.Contains(err.Error(), "merge blocked") {
+		t.Fatalf("Checkout error = %v", err)
+	}
+	if err := client.Merge(12, ""); err == nil || !strings.Contains(err.Error(), "reviewed head") {
+		t.Fatalf("empty-head Merge error = %v", err)
 	}
 }
 
