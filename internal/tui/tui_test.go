@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -289,6 +290,184 @@ func TestLocalPRListEntryCarriesDiffStats(t *testing.T) {
 	}
 }
 
+func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
+	m := testModel()
+	m.viewerLogin = "me"
+	m.navigator.PRs = []gh.PR{
+		{Number: 1, Author: gh.PRUser{Login: "me"}},
+		{Number: 2, Assignees: []gh.PRUser{{Login: "me"}}},
+		{Number: 3, ReviewRequests: []gh.PRUser{{Login: "me"}}},
+		{Number: 4, Author: gh.PRUser{Login: "other"}},
+	}
+	want := map[prView][]int{
+		allPRsView:          {1, 2, 3, 4},
+		reviewRequestedView: {3},
+		assignedView:        {2},
+		authoredView:        {1},
+		needsMeView:         {2, 3},
+	}
+	for view, numbers := range want {
+		m.prView = view
+		m.applyPRFilters(0)
+		got := make([]int, len(m.openPRs))
+		for i := range m.openPRs {
+			got[i] = m.openPRs[i].Number
+		}
+		if !reflect.DeepEqual(got, numbers) {
+			t.Fatalf("view %s = %v, want %v", view, got, numbers)
+		}
+	}
+}
+
+func TestPRFilterSupportsGitHubTermsAndFreeText(t *testing.T) {
+	failed := []gh.PRCheck{{Status: "COMPLETED", Conclusion: "FAILURE"}}
+	pr := gh.PR{Number: 7, Title: "Fix Login", HeadRefName: "auth/fix", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "me"}}, ReviewRequests: []gh.PRUser{{Login: "reviewer"}}, Labels: []gh.PRLabel{{Name: "bug"}}, Checks: failed, Mergeable: "CONFLICTING", IsDraft: false}
+	for _, query := range []string{"login", "#7", "author:alice", "assignee:@me", "review-requested:reviewer", "label:bug", "draft:false", "ci:failed", "merge:conflicting", "label:bug ci:failed auth"} {
+		if !matchesPRFilter(pr, query, "me") {
+			t.Fatalf("filter %q did not match", query)
+		}
+	}
+	teamRequest := pr
+	teamRequest.ReviewRequests = nil
+	teamRequest.ViewerReviewRequested = true
+	if !matchesPRFilter(teamRequest, "review-requested:@me", "me") {
+		t.Fatal("team review request did not match @me")
+	}
+	for _, query := range []string{"author:bob", "assignee:bob", "review-requested:@me", "label:docs", "draft:true", "ci:passed"} {
+		if matchesPRFilter(pr, query, "me") {
+			t.Fatalf("filter %q unexpectedly matched", query)
+		}
+	}
+}
+
+func TestPRListFilterEditingAndViewKeys(t *testing.T) {
+	m := testModel()
+	m.screen, m.viewerLogin = prListScreen, "me"
+	m.navigator.PRs = []gh.PR{{Number: 1, Title: "Bug", Labels: []gh.PRLabel{{Name: "bug"}}}, {Number: 2, Title: "Feature", ReviewRequests: []gh.PRUser{{Login: "me"}}}}
+	m.applyPRFilters(0)
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	m.prCursor = 1
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("label:bug")})
+	m = u.(Model)
+	if !m.filterEditing || m.filterQuery != "label:bug" || len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
+		t.Fatalf("live filter = editing:%v query:%q prs:%#v", m.filterEditing, m.filterQuery, m.openPRs)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	if m.filterQuery != "" || len(m.openPRs) != 2 || m.selectedPRNumber() != 2 {
+		t.Fatalf("Esc did not clear filter/restore selection: %q %#v selected=%d", m.filterQuery, m.openPRs, m.selectedPRNumber())
+	}
+	if m.help.Width != 120 {
+		t.Fatalf("help width = %d", m.help.Width)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	m = u.(Model)
+	if m.prView != reviewRequestedView || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 {
+		t.Fatalf("next view = %v %#v", m.prView, m.openPRs)
+	}
+	plain := ansi.Strip(m.renderPRListHeader())
+	for _, want := range []string{"All 2", "Review requested 1", "Assigned 0", "Authored 0", "Needs me 1"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("header missing %q: %q", want, plain)
+		}
+	}
+}
+
+func TestPRFilteringDoesNotMutateNavigatorCache(t *testing.T) {
+	m := testModel()
+	m.currentBranch, m.defaultBranch = "feature/local", "main"
+	m.localAvailable = true
+	m.navigator.PRs = []gh.PR{{Number: 1, HeadRefName: "one"}, {Number: 2, HeadRefName: "two"}}
+	want := append([]gh.PR(nil), m.navigator.PRs...)
+	m.applyPRFilters(0)
+	if !reflect.DeepEqual(m.navigator.PRs, want) {
+		t.Fatalf("display filtering mutated navigator cache: got=%#v want=%#v", m.navigator.PRs, want)
+	}
+}
+
+func TestBuildPRStacksUsesExactBaseHeadGraph(t *testing.T) {
+	prs := []gh.PR{
+		{Number: 3, Title: "UI", BaseRefName: "stack/api", HeadRefName: "stack/ui"},
+		{Number: 2, Title: "API", BaseRefName: "stack/model", HeadRefName: "stack/api"},
+		{Number: 1, Title: "Model", BaseRefName: "main", HeadRefName: "stack/model"},
+		{Number: 4, Title: "Independent", BaseRefName: "main", HeadRefName: "other"},
+	}
+	stacks := buildPRStacks(prs)
+	if len(stacks) != 2 || len(stacks[0].entries) != 3 || len(stacks[1].entries) != 1 {
+		t.Fatalf("stacks = %#v", stacks)
+	}
+	for i, want := range []int{1, 2, 3} {
+		if stacks[0].entries[i].pr.Number != want || stacks[0].entries[i].depth != i {
+			t.Fatalf("chain[%d] = %#v", i, stacks[0].entries[i])
+		}
+	}
+	if stacks[1].entries[0].pr.Number != 4 {
+		t.Fatalf("independent stack = %#v", stacks[1])
+	}
+}
+
+func TestBuildPRStacksSupportsBranchesWithoutTitleHeuristics(t *testing.T) {
+	prs := []gh.PR{
+		{Number: 2, Title: "same", BaseRefName: "root", HeadRefName: "child-a"},
+		{Number: 3, Title: "same", BaseRefName: "root", HeadRefName: "child-b"},
+		{Number: 1, Title: "different", BaseRefName: "main", HeadRefName: "root"},
+		{Number: 4, Title: "same", BaseRefName: "main", HeadRefName: "unrelated"},
+	}
+	stacks := buildPRStacks(prs)
+	if len(stacks) != 2 || len(stacks[0].entries) != 3 || stacks[0].entries[1].depth != 1 || stacks[0].entries[2].depth != 1 || len(stacks[1].entries) != 1 {
+		t.Fatalf("branched stacks = %#v", stacks)
+	}
+}
+
+func TestDuplicateHeadBranchesDoNotInventStackParent(t *testing.T) {
+	prs := []gh.PR{{Number: 1, HeadRefName: "same"}, {Number: 2, HeadRefName: "same"}, {Number: 3, BaseRefName: "same", HeadRefName: "child"}}
+	stacks := buildPRStacks(prs)
+	if len(stacks) != 3 {
+		t.Fatalf("ambiguous head created stack: %#v", stacks)
+	}
+}
+
+func TestPRStackRenderingAndCollapse(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.navigator.PRs = []gh.PR{
+		{Number: 3, Title: "UI", BaseRefName: "stack/api", HeadRefName: "stack/ui", MergeStateStatus: "DIRTY", Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}},
+		{Number: 2, Title: "API", BaseRefName: "stack/model", HeadRefName: "stack/api", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}},
+		{Number: 1, Title: "Model", BaseRefName: "main", HeadRefName: "stack/model"},
+	}
+	m.applyPRFilters(3)
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	plain := ansi.Strip(m.buildPRList())
+	for _, want := range []string{"stack/model · 3 PRs", "├ #1", "├ #2", "└ #3"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("stack render missing %q: %q", want, plain)
+		}
+	}
+	if !strings.Contains(plain, "CI 1 pending") || !strings.Contains(plain, "conflicts") {
+		t.Fatalf("PR row state missing: %q", plain)
+	}
+	if strings.Contains(plain, "3 PRs ·") {
+		t.Fatalf("stack header leaked aggregate PR state: %q", plain)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = u.(Model)
+	if len(m.openPRs) != 1 || m.openPRs[0].Number != 1 || !m.collapsedStacks[m.prStacks[0].id] {
+		t.Fatalf("collapsed stack = prs:%#v collapsed:%#v", m.openPRs, m.collapsedStacks)
+	}
+	if !strings.Contains(ansi.Strip(m.buildPRList()), "▸ stack/model") {
+		t.Fatalf("collapsed header = %q", ansi.Strip(m.buildPRList()))
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = u.(Model)
+	if len(m.openPRs) != 3 || m.collapsedStacks[m.prStacks[0].id] {
+		t.Fatalf("expanded stack = prs:%#v collapsed:%#v", m.openPRs, m.collapsedStacks)
+	}
+}
+
 func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
@@ -491,6 +670,7 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 		{Number: 1, Title: "A", HeadRefName: "a", BaseRefName: "main"},
 		{Number: 2, Title: "B", HeadRefName: "b", BaseRefName: "main"},
 	}
+	m.navigator.PRs = append([]gh.PR(nil), m.openPRs...)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
