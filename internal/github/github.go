@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -118,7 +119,7 @@ type Client struct{ run runner }
 // New returns a GitHub CLI client.
 func New() Client {
 	return Client{run: func(args ...string) ([]byte, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return exec.CommandContext(ctx, "gh", args...).CombinedOutput()
 	}}
@@ -127,6 +128,18 @@ func New() Client {
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
 // only a successful empty list becomes ErrPRNotFound.
 const prFields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,author,createdAt,assignees,labels"
+
+func (c Client) Find(number int) (PR, error) {
+	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", prFields)
+	if err != nil {
+		return PR{}, commandError("gh pr view", out, err)
+	}
+	var pr PR
+	if err := json.Unmarshal(out, &pr); err != nil {
+		return PR{}, fmt.Errorf("decode gh pr view: %w", err)
+	}
+	return pr, nil
+}
 
 func (c Client) FindOpen(head string) (PR, error) {
 	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", prFields)
@@ -246,6 +259,36 @@ func (c Client) IssueActivities(number int) ([]Activity, error) {
 		activities = append(activities, page...)
 	}
 	return activities, nil
+}
+
+// Merge merges a pull request with a merge commit.
+func (c Client) Merge(number int, headOID string) error {
+	if headOID == "" {
+		return errors.New("merge requires the reviewed head commit")
+	}
+	out, err := c.run("pr", "merge", strconv.Itoa(number), "--merge", "--match-head-commit", headOID)
+	if err != nil {
+		return commandError("gh pr merge", out, err)
+	}
+	return nil
+}
+
+// Close closes a pull request without merging it.
+func (c Client) Close(number int) error {
+	out, err := c.run("pr", "close", strconv.Itoa(number))
+	if err != nil {
+		return commandError("gh pr close", out, err)
+	}
+	return nil
+}
+
+// Checkout checks out a pull request using GitHub CLI's native branch handling.
+func (c Client) Checkout(number int) error {
+	out, err := c.run("pr", "checkout", strconv.Itoa(number))
+	if err != nil {
+		return commandError("gh pr checkout", out, err)
+	}
+	return nil
 }
 
 // Update replaces the title and body of an existing PR.

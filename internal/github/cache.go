@@ -16,6 +16,7 @@ type Cache struct {
 	Version                      int        `json:"version"`
 	Head                         string     `json:"head,omitempty"`
 	PR                           *PR        `json:"pr,omitempty"`
+	ExplicitCheckout             bool       `json:"explicit_checkout,omitempty"`
 	Comments                     []Comment  `json:"comments,omitempty"`
 	Activities                   []Activity `json:"activities,omitempty"`
 	FetchedAt                    string     `json:"fetched_at,omitempty"`

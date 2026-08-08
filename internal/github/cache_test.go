@@ -21,6 +21,7 @@ func TestCacheRoundTripAndHeadIsolation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "github.json")
 	c := NewCache("feature/x")
 	c.PR = &PR{Number: 12, URL: "https://example/pr/12", Author: PRUser{Login: "octocat"}, CreatedAt: "2026-08-07T14:49:25Z", Assignees: []PRUser{{Login: "alice"}}, Labels: []PRLabel{{Name: "bug", Color: "d73a4a"}}}
+	c.ExplicitCheckout = true
 	c.Comments = []Comment{{ID: 42, Body: "cached comment"}}
 	c.Activities = []Activity{{ID: 7, Event: "labeled"}}
 	c.LastPublishedManagedBodyHash = "hash"
@@ -32,7 +33,7 @@ func TestCacheRoundTripAndHeadIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.PR == nil || got.PR.Number != 12 || got.PR.Author.Login != "octocat" || got.PR.CreatedAt != "2026-08-07T14:49:25Z" || len(got.PR.Assignees) != 1 || len(got.PR.Labels) != 1 || len(got.Comments) != 1 || got.Comments[0].ID != 42 || len(got.Activities) != 1 || got.Activities[0].Event != "labeled" || got.LastPublishedManagedBodyHash != "hash" {
+	if got.PR == nil || got.PR.Number != 12 || got.PR.Author.Login != "octocat" || got.PR.CreatedAt != "2026-08-07T14:49:25Z" || len(got.PR.Assignees) != 1 || len(got.PR.Labels) != 1 || len(got.Comments) != 1 || got.Comments[0].ID != 42 || len(got.Activities) != 1 || got.Activities[0].Event != "labeled" || !got.ExplicitCheckout || got.LastPublishedManagedBodyHash != "hash" {
 		t.Fatalf("unexpected cache: %#v", got)
 	}
 	other, err := LoadCache(path, "feature-x")
