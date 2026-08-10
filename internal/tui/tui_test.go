@@ -69,6 +69,32 @@ func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
 	}
 }
 
+func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.diffCommand = ""
+	m.ready = true
+	m.files = []git.ChangedFile{
+		{Status: "M", Path: "internal/tui/tui.go"},
+		{Status: "A", Path: "internal/tui/explorer.go"},
+	}
+	m.focusExplorer = true
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	if m.fileCursor != 1 {
+		t.Fatalf("file cursor = %d, want 1", m.fileCursor)
+	}
+
+	m.focusExplorer, m.focusDiff = false, true
+	m.detail.Width, m.detail.Height = 40, 3
+	m.detail.SetContent(strings.Repeat("line\n", 20))
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	if m.detail.YOffset == 0 {
+		t.Fatal("j did not scroll the diff")
+	}
+}
+
 func TestReservedReviewKeysStayWithLivePR(t *testing.T) {
 	if !reservedReviewKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}) {
 		t.Fatal("q should stay with live-pr")
