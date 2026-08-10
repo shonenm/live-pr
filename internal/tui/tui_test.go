@@ -149,6 +149,50 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 	}
 }
 
+func TestCurrentPRSuppressesLocalPRRow(t *testing.T) {
+	m := testModel()
+	m.currentBranch = "feature/x"
+	m.localAvailable = true
+	pr := gh.PR{Number: 7, HeadRefName: "feature/x", BaseRefName: "main"}
+	items := m.withLocalPR([]gh.PR{pr})
+	if len(items) != 1 || items[0].Number != 7 {
+		t.Fatalf("local row was not suppressed: %#v", items)
+	}
+	m.cache.PR = &pr
+	items = m.withLocalPR(nil)
+	if len(items) != 0 {
+		t.Fatalf("cached current PR produced a local row: %#v", items)
+	}
+}
+
+func TestPRListRefreshAssociatesCurrentLocalBranch(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.currentBranch = "feature/x"
+	m.localAvailable = true
+	m.prListGeneration = 1
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+	pr := gh.PR{Number: 8, HeadRefName: "feature/x", BaseRefName: "main", State: "OPEN", HeadRefOID: "head"}
+	u, _ := m.Update(prListRefreshed{generation: 1, viewer: "me", prs: []gh.PR{pr}})
+	m = u.(Model)
+	if m.cache.PR == nil || m.cache.PR.Number != 8 || m.localAvailable {
+		t.Fatalf("current PR association = cache:%#v local:%v", m.cache.PR, m.localAvailable)
+	}
+}
+
+func TestDetailMergeStartsConfirmation(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.cache.PR = &gh.PR{Number: 9, State: "OPEN", HeadRefOID: "head", HeadRefName: "feature/x"}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = u.(Model)
+	if cmd != nil || m.pendingPRAction != mergePR || m.prActionNumber != 9 {
+		t.Fatalf("detail merge confirmation = pending:%v number:%d cmd:%v", m.pendingPRAction, m.prActionNumber, cmd)
+	}
+}
+
 func TestHeaderShowsCachedPRAssigneesAndLabels(t *testing.T) {
 	m := testModel()
 	m.w = 120
@@ -374,15 +418,20 @@ func TestPRListVimNavigationAndNarrowLayout(t *testing.T) {
 	if m.prCursor != len(m.openPRs)-1 {
 		t.Fatalf("G did not move PR list to bottom: %d", m.prCursor)
 	}
+	m.detail.Height = 3
+	m.detail.SetContent(strings.Repeat("preview\n", 20))
+	m.detail.GotoBottom()
+	bottomOffset := m.detail.YOffset
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 	m = u.(Model)
-	if m.prCursor >= len(m.openPRs)-1 {
-		t.Fatal("Ctrl+U did not page PR list up")
+	if m.detail.YOffset >= bottomOffset {
+		t.Fatal("Ctrl+U did not scroll PR preview up")
 	}
+	topOffset := m.detail.YOffset
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	m = u.(Model)
-	if m.prCursor <= 0 {
-		t.Fatal("Ctrl+D did not page PR list down")
+	if m.detail.YOffset <= topOffset {
+		t.Fatal("Ctrl+D did not scroll PR preview down")
 	}
 }
 
@@ -407,16 +456,20 @@ func TestConversationVimNavigation(t *testing.T) {
 	if m.cursors[conversationTab] != m.activeLen()-1 {
 		t.Fatalf("conversation G = %d, want %d", m.cursors[conversationTab], m.activeLen()-1)
 	}
-	bottom := m.cursors[conversationTab]
+	m.list.Height = 3
+	m.list.SetContent(strings.Repeat("conversation\n", 20))
+	m.list.GotoBottom()
+	bottomOffset := m.list.YOffset
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 	m = u.(Model)
-	if m.cursors[conversationTab] >= bottom {
-		t.Fatal("conversation Ctrl+U did not page up")
+	if m.list.YOffset >= bottomOffset {
+		t.Fatal("conversation Ctrl+U did not scroll up")
 	}
+	topOffset := m.list.YOffset
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	m = u.(Model)
-	if m.cursors[conversationTab] <= 0 {
-		t.Fatal("conversation Ctrl+D did not page down")
+	if m.list.YOffset <= topOffset {
+		t.Fatal("conversation Ctrl+D did not scroll down")
 	}
 }
 
