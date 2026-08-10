@@ -41,9 +41,9 @@ An open/current local PR starts in detail. The default branch, detached HEAD, or
 
 - list views: `[`/`]` switches All, Review requested, Assigned, Authored, and Needs me; `/` live-filters with `author:`, `assignee:`, `review-requested:`, `label:`, `draft:`, `ci:`, and `merge:` terms;
 - stacks: exact `child.baseRefName == parent.headRefName` relationships are grouped without title heuristics; `Space` collapses/expands the selected stack;
-- list: `j`/`k` selects and updates the right metadata/Conversation preview; `gg`/`G` and `Ctrl+U`/`Ctrl+D` move the PR selection by top/bottom/page; `Enter` opens without checkout; `c` checks out, `x` closes, and `m` merge-commits after `y` confirmation; `r` refreshes and `q` exits;
+- list: `j`/`k` selects and updates the right metadata/Conversation preview; `gg`/`G` move the PR selection to top/bottom, while `Ctrl+U`/`Ctrl+D` scroll the preview; `Enter` opens without checkout; `c` checks out, `x` closes, and `m` merge-commits after `y` confirmation; `r` refreshes and `q` exits;
 - preview: bordered opening-description/top-comment cards, ownership/labels, CI, merge/conflict/review state, comments, files/additions/deletions, and commit count;
-- detail: reserved `b` returns to the list from either pane;
+- detail: reserved `b` returns to the list from either pane; `j`/`k` selects Conversation items, `Ctrl+U`/`Ctrl+D` scrolls the focused Conversation, and `m` requests a merge when the current PR is open and has a verified head commit;
 - `c` while the left pane is focused replaces Conversation with the local commit picker; in static diff modes it toggles the selected file's check; in CodeReview, `c` toggles the selected file's reviewed check; CodeReview marks persist in Neovim user state and automatically clear when that file's `base...head` diff changes;
 - static `git diff`/`display` modes keep Conversation in the left pane and show `Explorer │ Diff` in the right pane; focus Explorer with `l`; Diff is always visible and Explorer `l` is a no-op; `Ctrl+U/D` scrolls the Diff, then `j`/`k` changes the selected file and updates the diff immediately, while `c` toggles its checked mark;
 - `j`/`k` selects a commit;

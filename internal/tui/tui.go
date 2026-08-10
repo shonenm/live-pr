@@ -362,6 +362,13 @@ func (m Model) explicitPRNumber() int {
 	return 0
 }
 
+func (m Model) canMergeCurrentPR() bool {
+	if m.cache.PR == nil || m.cache.PR.Number <= 0 || m.cache.PR.HeadRefOID == "" {
+		return false
+	}
+	return strings.EqualFold(m.cache.PR.State, "OPEN")
+}
+
 func shouldOpenLocal(branch, defaultBranch string, hasPR, hasData, hasChanges bool) bool {
 	return branch != "HEAD" && branch != defaultBranch && (hasPR || hasData || hasChanges)
 }
@@ -398,7 +405,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.screen = detailScreen
 	m.remote = false
 	m.title = deriveTitle(st.Conclusion(), st.Branch)
-	m.localAvailable, m.localTitle = true, m.title
+	m.localAvailable, m.localTitle = cache.PR == nil, m.title
 	m.localStats, m.localCommitCount = stats, len(commits)
 	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
 	m.events, m.files, m.commits = events, files, commits
@@ -695,6 +702,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewerLogin = msg.viewer
 		m.navigator.ViewerLogin = msg.viewer
 		m.navigator.PRs = msg.prs
+		if m.screen == detailScreen && !m.remote && m.cache.PR == nil {
+			for i := range msg.prs {
+				if isCurrentPR(msg.prs[i], m.currentBranch) {
+					m.cache.PR = &msg.prs[i]
+					m.localAvailable = false
+					break
+				}
+			}
+		}
 		m.applyPRFilters(selectedNumber)
 		m.navigator.FetchedAt = time.Now().UTC().Format(time.RFC3339)
 		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
@@ -913,6 +929,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case msg.err == nil:
 			m.cache.PR = &msg.pr
+			m.localAvailable = false
 			m.cache.FetchedAt = now
 			diffCmd = m.useBase(msg.pr.BaseRefName, msg.pr.URL)
 			stale := []string{}
@@ -931,6 +948,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.githubStatus = "GitHub: PR updated · " + strings.Join(stale, "/") + " stale"
 			}
 		case errors.Is(msg.err, gh.ErrPRNotFound):
+			m.localAvailable = true
 			m.cache.PR = nil
 			m.cache.Comments = nil
 			m.cache.Activities = nil
@@ -1020,6 +1038,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if msg.String() == "ctrl+c" {
 					return m, tea.Quit
 				}
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.PreviewUp) {
+				m.detail.HalfPageUp()
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.PreviewDown) {
+				m.detail.HalfPageDown()
 				return m, nil
 			}
 			if handled, cmd := m.handleVimNavigation(msg); handled {
@@ -1119,6 +1145,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, m.diffTerminal.Init())
 				}
 				return m, tea.Batch(cmds...)
+			}
+			return m, nil
+		}
+		if m.pendingPRAction != noPRAction {
+			switch msg.String() {
+			case "y":
+				action, pr := m.pendingPRAction, m.prActionPR
+				m.pendingPRAction = noPRAction
+				m.prActionRunning = action
+				m.notice = ""
+				return m, runPRAction(action, pr)
+			case "n", "q", "esc":
+				m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
+				return m, nil
+			case "ctrl+c":
+				return m, tea.Quit
+			default:
+				return m, nil
+			}
+		}
+		if m.prActionRunning != noPRAction {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
 			}
 			return m, nil
 		}
@@ -1224,6 +1273,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
+		if m.screen == detailScreen && !m.focusDiff && !m.focusExplorer {
+			if key.Matches(msg, m.keys.PreviewUp) {
+				m.list.HalfPageUp()
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.PreviewDown) {
+				m.list.HalfPageDown()
+				return m, nil
+			}
+		}
 		if handled, cmd := m.handleVimNavigation(msg); handled {
 			return m, cmd
 		}
@@ -1243,6 +1302,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, fetchRemotePR(*m.cache.PR, m.targetGeneration)
 			}
 			return m, fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration)
+		case key.Matches(msg, m.keys.Merge):
+			if m.canMergeCurrentPR() {
+				m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, m.cache.PR.Number, *m.cache.PR
+				m.status, m.notice = "", ""
+			}
+			return m, nil
 		case key.Matches(msg, m.keys.Publish):
 			if m.publishing {
 				return m, nil
@@ -1728,7 +1793,7 @@ func matchesPRFilter(pr gh.PR, query, viewer string) bool {
 
 func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
 	items := append([]gh.PR(nil), prs...)
-	if !m.localAvailable {
+	if !m.localAvailable || (m.cache.PR != nil && m.isCurrentTargetPR(*m.cache.PR)) {
 		return items
 	}
 	for _, pr := range items {
@@ -1829,11 +1894,7 @@ func (m *Model) sync() tea.Cmd {
 		m.list.SetContent(content)
 		m.detail.SetContent(m.buildPRPreview())
 		m.detail.GotoTop()
-		if off := selectedLine - 1; off > 0 {
-			m.list.SetYOffset(off)
-		} else {
-			m.list.GotoTop()
-		}
+		keepLineVisible(&m.list, selectedLine)
 		return m.ensureSelectedPRPreview()
 	}
 	m.keys.PreviewUp.SetEnabled(true)
@@ -1850,24 +1911,16 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.Back.SetEnabled(m.active == commitsTab)
 	m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
 	m.keys.Publish.SetEnabled(!m.remote)
-	m.keys.Merge.SetEnabled(false)
+	m.keys.Merge.SetEnabled(m.canMergeCurrentPR() && m.prActionRunning == noPRAction)
 	m.keys.Checkout.SetEnabled(false)
 	m.keys.Close.SetEnabled(false)
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
-	if off := selectedLine - 1; off > 0 {
-		m.list.SetYOffset(off)
-	} else {
-		m.list.GotoTop()
-	}
+	keepLineVisible(&m.list, selectedLine)
 	if m.fileExplorerMode() {
 		explorer, selectedFileLine := m.buildFileExplorer()
 		m.explorer.SetContent(explorer)
-		if off := selectedFileLine - 1; off > 0 {
-			m.explorer.SetYOffset(off)
-		} else {
-			m.explorer.GotoTop()
-		}
+		keepLineVisible(&m.explorer, selectedFileLine)
 	}
 
 	return m.syncDetail(m.buildDetail())
@@ -2629,6 +2682,16 @@ func renderStatus(status string) string {
 		}
 	}
 	return stRedF.Render(status)
+}
+
+func keepLineVisible(v *viewport.Model, line int) {
+	if line < v.YOffset {
+		v.SetYOffset(line)
+		return
+	}
+	if bottom := v.YOffset + v.Height - 1; line > bottom {
+		v.SetYOffset(line - v.Height + 1)
+	}
 }
 
 func selectionBar(selected bool) string {
