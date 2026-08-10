@@ -34,6 +34,16 @@ func TestLoadAllowsExplicitlyDisablingDefaultBranchCommand(t *testing.T) {
 	global := t.TempDir()
 	repo := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", global)
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[diff]\ncommand = ''\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(repo).Diff.Command; got != "" {
+		t.Fatalf("explicit empty command = %q", got)
+	}
+}
+
+func TestLoadLegacyRepoOverride(t *testing.T) {
+	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".live-pr"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +51,7 @@ func TestLoadAllowsExplicitlyDisablingDefaultBranchCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := Load(repo).Diff.Command; got != "" {
-		t.Fatalf("explicit empty command = %q", got)
+		t.Fatalf("legacy config = %q", got)
 	}
 }
 
@@ -55,10 +65,7 @@ func TestLoadDiffDisplayWithRepoOverride(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(global, "live-pr", "config.toml"), []byte("[diff]\ncommand = 'nvim branch'\ncommit_command = 'nvim commit'\ndisplay = 'cat'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(repo, ".live-pr"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, ".live-pr", "config.toml"), []byte("[diff]\ndisplay = 'sed s/foo/bar/'\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[diff]\ndisplay = 'sed s/foo/bar/'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := Load(repo)

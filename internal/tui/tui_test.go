@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -237,24 +238,73 @@ func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 	}
 }
 
-func TestPRListPreviewScrollAndNarrowLayout(t *testing.T) {
+func TestPRListVimNavigationAndNarrowLayout(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
-	m.openPRs = []gh.PR{{Number: 1, Title: "preview", Body: strings.Repeat("line\n\n", 20)}}
+	m.openPRs = make([]gh.PR, 20)
+	for i := range m.openPRs {
+		m.openPRs[i] = gh.PR{Number: i + 1, Title: fmt.Sprintf("PR %d", i+1)}
+	}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 30, Height: 12})
 	m = u.(Model)
 	if m.list.Width+m.detail.Width+3 > m.w {
 		t.Fatalf("narrow layout overflow: list=%d detail=%d width=%d", m.list.Width, m.detail.Width, m.w)
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = u.(Model)
-	if m.detail.YOffset == 0 {
-		t.Fatal("Ctrl+D did not scroll PR preview")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = u.(Model)
+	if m.prCursor != 0 {
+		t.Fatalf("gg did not move PR list to top: %d", m.prCursor)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = u.(Model)
+	if m.prCursor != len(m.openPRs)-1 {
+		t.Fatalf("G did not move PR list to bottom: %d", m.prCursor)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
 	m = u.(Model)
-	if m.detail.YOffset != 0 {
-		t.Fatalf("Ctrl+U did not restore preview top: %d", m.detail.YOffset)
+	if m.prCursor >= len(m.openPRs)-1 {
+		t.Fatal("Ctrl+U did not page PR list up")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = u.(Model)
+	if m.prCursor <= 0 {
+		t.Fatal("Ctrl+D did not page PR list down")
+	}
+}
+
+func TestConversationVimNavigation(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.active = conversationTab
+	for i := 0; i < 8; i++ {
+		m.cache.Comments = append(m.cache.Comments, gh.Comment{NodeID: fmt.Sprintf("comment-%d", i), Body: fmt.Sprintf("comment %d", i), CreatedAt: "2026-08-08T00:00:00Z"})
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = u.(Model)
+	if m.cursors[conversationTab] != 0 {
+		t.Fatalf("conversation gg = %d", m.cursors[conversationTab])
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = u.(Model)
+	if m.cursors[conversationTab] != m.activeLen()-1 {
+		t.Fatalf("conversation G = %d, want %d", m.cursors[conversationTab], m.activeLen()-1)
+	}
+	bottom := m.cursors[conversationTab]
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = u.(Model)
+	if m.cursors[conversationTab] >= bottom {
+		t.Fatal("conversation Ctrl+U did not page up")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = u.(Model)
+	if m.cursors[conversationTab] <= 0 {
+		t.Fatal("conversation Ctrl+D did not page down")
 	}
 }
 

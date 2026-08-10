@@ -41,10 +41,10 @@ An open/current local PR starts in detail. The default branch, detached HEAD, or
 
 - list views: `[`/`]` switches All, Review requested, Assigned, Authored, and Needs me; `/` live-filters with `author:`, `assignee:`, `review-requested:`, `label:`, `draft:`, `ci:`, and `merge:` terms;
 - stacks: exact `child.baseRefName == parent.headRefName` relationships are grouped without title heuristics; `Space` collapses/expands the selected stack;
-- list: `j`/`k` selects and updates the right metadata/Conversation preview; `Ctrl+U`/`Ctrl+D` scrolls it; `Enter` opens without checkout; `c` checks out, `x` closes, and `m` merge-commits after `y` confirmation; `r` refreshes and `q` exits;
+- list: `j`/`k` selects and updates the right metadata/Conversation preview; `gg`/`G` and `Ctrl+U`/`Ctrl+D` move the PR selection by top/bottom/page; `Enter` opens without checkout; `c` checks out, `x` closes, and `m` merge-commits after `y` confirmation; `r` refreshes and `q` exits;
 - preview: bordered opening-description/top-comment cards, ownership/labels, CI, merge/conflict/review state, comments, files/additions/deletions, and commit count;
 - detail: reserved `b` returns to the list from either pane;
-- `c` while the left pane is focused replaces Conversation with the local commit picker;
+- `c` while the left pane is focused replaces Conversation with the local commit picker; in CodeReview, `c` toggles the selected file's reviewed check; marks persist in Neovim user state and automatically clear when that file's `base...head` diff changes;
 - `j`/`k` selects a commit;
 - `Enter` restarts the right pane with `commit_command` and `LIVE_PR_SHA`, then focuses it;
 - `l` focuses the right review pane; `q` returns to the left from review, and exits live-pr when already on the left;
@@ -54,7 +54,9 @@ An open/current local PR starts in detail. The default branch, detached HEAD, or
 - while CodeReview has focus, keys other than reserved `q` and `Shift+Tab` are sent directly to Neovim;
 - the active CodeReview border uses the accent color.
 
-The PTY is resized with the right pane. Each branch/commit switch closes and reaps the previous process, and generation-specific IDs discard its late messages.
+The PTY is resized with the right pane. live-pr runtime state is kept in the XDG state directory rather than `.live-pr/` in the repository; old repository-local state is migrated on first access.
+
+Each branch/commit switch closes and reaps the previous process, and generation-specific IDs discard its late messages.
 
 ## Fallback display
 

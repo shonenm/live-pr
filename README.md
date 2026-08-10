@@ -54,13 +54,20 @@ Go implementation in progress (Bubble Tea + Lipgloss, single binary). The first 
 
 ## Install
 
-Download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases), or install with Homebrew once the tap is published:
+Download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases). The current Linux amd64 alpha can be installed with:
 
 ```sh
-brew install shonenm/live-pr/live-pr
+version=v0.1.0-alpha.2
+asset=live-pr_0.1.0-alpha.2_Linux_amd64.tar.gz
+tmp=$(mktemp -d)
+curl -fL "https://github.com/shonenm/live-pr/releases/download/$version/$asset" -o "$tmp/$asset"
+tar -xzf "$tmp/$asset" -C "$tmp"
+install -Dm755 "$tmp/live-pr" "$HOME/.local/bin/live-pr"
+export PATH="$HOME/.local/bin:$PATH"
+live-pr --version
 ```
 
-Go users can install the latest source version with:
+Homebrew is planned after the tap repository is published. Go users can install the latest source version with:
 
 ```sh
 go install github.com/shonenm/live-pr@latest
@@ -68,22 +75,24 @@ go install github.com/shonenm/live-pr@latest
 
 Check the installed version with `live-pr --version`.
 
+Runtime state is stored outside the repository under the XDG state directory (`~/.local/state/live-pr` on Linux). Existing `.live-pr/` data is migrated automatically; repo-specific configuration uses `.live-pr.toml`.
+
 ## Development
 
 ```sh
 go build -o live-pr .
 
-live-pr init            # create .live-pr/<branch>/ for this branch
+live-pr                 # auto-detect the repository and current branch
+live-pr init            # optional: seed the current branch's local conclusion
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
-live-pr                 # current/local PR detail, or open PR list on main
                         # list: [/] views; / filter; Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
                         # detail: b list; c commits; l review; q left/quit
 live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
 ```
 
-The built-in right-side reviewer starts Neovim with an explicit three-dot `CodeDiff` range for local or remote PRs and `CodeReview` for a selected commit. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr/config.toml`):
+The built-in right-side reviewer starts Neovim with an explicit three-dot `CodeDiff` range for local or remote PRs and `CodeReview` for a selected commit. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
 
 ```toml
 [diff]
