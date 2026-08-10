@@ -23,9 +23,10 @@ import (
 
 func testModel() Model {
 	return Model{
-		title: "CodeDiff review mode",
-		base:  "main",
-		head:  "feature/x",
+		title:       "CodeDiff review mode",
+		diffCommand: "nvim",
+		base:        "main",
+		head:        "feature/x",
 		events: []event.Event{
 			{TS: "2026-07-21T10:00", Kind: event.Decision, Title: "chose Go", Body: "gh-dash stack"},
 			{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: x", SHA: "abc1234"},
@@ -34,6 +35,64 @@ func testModel() Model {
 		commits: []git.Commit{{SHA: "abc1234", Subject: "feat: x", Date: "2026-07-21T11:00"}},
 		help:    newHelp(),
 		keys:    keys,
+	}
+}
+
+func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.diffCommand = ""
+	m.diffTerminal = nil
+	m.base, m.headRev = "main", "HEAD"
+	m.files = []git.ChangedFile{
+		{Status: "M", Path: "internal/tui/tui.go"},
+		{Status: "A", Path: "internal/tui/explorer.go"},
+	}
+	m.explorer.Width = 80
+
+	content, selected := m.buildFileExplorer()
+	plain := ansi.Strip(content)
+	for _, want := range []string{"Files · 2 changed", "□ M internal/tui/tui.go", "□ A internal/tui/explorer.go"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("explorer missing %q: %q", want, plain)
+		}
+	}
+	if selected != 1 {
+		t.Fatalf("selected explorer row = %d, want 1", selected)
+	}
+
+	m.toggleFileCheck()
+	content, _ = m.buildFileExplorer()
+	plain = ansi.Strip(content)
+	if !strings.Contains(plain, "✓ M internal/tui/tui.go") {
+		t.Fatalf("checked file missing: %q", plain)
+	}
+}
+
+func TestReservedReviewKeysStayWithLivePR(t *testing.T) {
+	if !reservedReviewKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}) {
+		t.Fatal("q should stay with live-pr")
+	}
+	if reservedReviewKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) {
+		t.Fatal("j should be forwarded to the reviewer")
+	}
+}
+
+func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.diffCommand = ""
+	m.ready = true
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = u.(Model)
+	if !m.focusDiff || m.focusExplorer {
+		t.Fatalf("l focus = diff:%v explorer:%v", m.focusDiff, m.focusExplorer)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = u.(Model)
+	if m.focusDiff || m.focusExplorer {
+		t.Fatal("q did not return focus to Conversation")
 	}
 }
 

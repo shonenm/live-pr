@@ -44,7 +44,8 @@ An open/current local PR starts in detail. The default branch, detached HEAD, or
 - list: `j`/`k` selects and updates the right metadata/Conversation preview; `gg`/`G` and `Ctrl+U`/`Ctrl+D` move the PR selection by top/bottom/page; `Enter` opens without checkout; `c` checks out, `x` closes, and `m` merge-commits after `y` confirmation; `r` refreshes and `q` exits;
 - preview: bordered opening-description/top-comment cards, ownership/labels, CI, merge/conflict/review state, comments, files/additions/deletions, and commit count;
 - detail: reserved `b` returns to the list from either pane;
-- `c` while the left pane is focused replaces Conversation with the local commit picker; in CodeReview, `c` toggles the selected file's reviewed check; marks persist in Neovim user state and automatically clear when that file's `base...head` diff changes;
+- `c` while the left pane is focused replaces Conversation with the local commit picker; in static diff modes it toggles the selected file's check; in CodeReview, `c` toggles the selected file's reviewed check; CodeReview marks persist in Neovim user state and automatically clear when that file's `base...head` diff changes;
+- static `git diff`/`display` modes keep Conversation in the left pane and show `Explorer │ Diff` in the right pane; focus Diff with `l`, and cycle to Explorer with `Shift+Tab`, then `j`/`k` changes the selected file and updates the diff immediately, while `c` toggles its checked mark;
 - `j`/`k` selects a commit;
 - `Enter` restarts the right pane with `commit_command` and `LIVE_PR_SHA`, then focuses it;
 - `l` focuses the right review pane; `q` returns to the left from review, and exits live-pr when already on the left;
