@@ -104,6 +104,13 @@ type prListRefreshed struct {
 	err        error
 }
 
+type prPreviewLoaded struct {
+	generation uint64
+	number     int
+	pr         gh.PR
+	err        error
+}
+
 type remoteLoaded struct {
 	generation    uint64
 	pr            gh.PR
@@ -209,6 +216,8 @@ type Model struct {
 	filteredPRs               []gh.PR
 	openPRs                   []gh.PR
 	viewerLogin               string
+	prPreviewLoading          map[int]bool
+	prPreviewLoaded           map[int]bool
 	prView                    prView
 	filterQuery               string
 	filterBeforeEdit          string
@@ -319,6 +328,8 @@ func New() (Model, error) {
 		diffCommitCommand: cfg.CommitReviewCommand(),
 		diffCache:         map[string]string{},
 		diffPending:       map[string]bool{},
+		prPreviewLoading:  map[int]bool{},
+		prPreviewLoaded:   map[int]bool{},
 		collapsedStacks:   map[string]bool{},
 		help:              newHelp(),
 		keys:              keys,
@@ -493,6 +504,13 @@ func fetchPRList(generation uint64) tea.Cmd {
 	}
 }
 
+func fetchPRPreview(number int, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		pr, err := gh.New().FindPreview(number)
+		return prPreviewLoaded{generation: generation, number: number, pr: pr, err: err}
+	}
+}
+
 func runPRAction(action prAction, pr gh.PR) tea.Cmd {
 	return func() tea.Msg {
 		client := gh.New()
@@ -652,6 +670,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.sync()
 		}
 		selectedNumber := m.selectedPRNumber()
+		m.prPreviewLoading = map[int]bool{}
+		m.prPreviewLoaded = map[int]bool{}
 		m.viewerLogin = msg.viewer
 		m.navigator.ViewerLogin = msg.viewer
 		m.navigator.PRs = msg.prs
@@ -680,6 +700,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(cmds...)
 				}
 			}
+		}
+		return m, m.sync()
+
+	case prPreviewLoaded:
+		if msg.generation != m.prListGeneration {
+			return m, nil
+		}
+		if m.prPreviewLoading == nil {
+			m.prPreviewLoading = map[int]bool{}
+		}
+		if m.prPreviewLoaded == nil {
+			m.prPreviewLoaded = map[int]bool{}
+		}
+		delete(m.prPreviewLoading, msg.number)
+		m.prPreviewLoaded[msg.number] = true
+		if msg.err != nil {
+			m.status = fmt.Sprintf("PR #%d preview: %v", msg.number, msg.err)
+			return m, nil
+		}
+		for i := range m.navigator.PRs {
+			if m.navigator.PRs[i].Number == msg.number {
+				msg.pr.ViewerReviewRequested = m.navigator.PRs[i].ViewerReviewRequested
+				m.navigator.PRs[i] = msg.pr
+				break
+			}
+		}
+		m.applyPRFilters(msg.number)
+		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
+			m.status = "PR list cache: " + err.Error()
+		}
+		if m.selectedPRNumber() == msg.number {
+			m.status = ""
 		}
 		return m, m.sync()
 
@@ -1534,7 +1586,7 @@ func matchesPRFilter(pr gh.PR, query, viewer string) bool {
 				}
 				continue
 			case "ci":
-				if health, _ := checkHealth(pr.Checks); health != value {
+				if prCIHealth(pr) != value {
 					return false
 				}
 				continue
@@ -1612,6 +1664,25 @@ func (m Model) selectedCommitSHA() string {
 	return ""
 }
 
+func (m *Model) ensureSelectedPRPreview() tea.Cmd {
+	pr := m.selectedPR()
+	if pr == nil || pr.Number <= 0 || pr.PreviewLoaded {
+		return nil
+	}
+	if m.prPreviewLoading == nil {
+		m.prPreviewLoading = map[int]bool{}
+	}
+	if m.prPreviewLoaded == nil {
+		m.prPreviewLoaded = map[int]bool{}
+	}
+	if m.prPreviewLoading[pr.Number] || m.prPreviewLoaded[pr.Number] {
+		return nil
+	}
+	m.prPreviewLoading[pr.Number] = true
+	m.status = fmt.Sprintf("loading PR #%d preview…", pr.Number)
+	return fetchPRPreview(pr.Number, m.prListGeneration)
+}
+
 // sync rebuilds both panes for the current tab and selection.
 func (m *Model) sync() tea.Cmd {
 	if !m.ready {
@@ -1646,7 +1717,7 @@ func (m *Model) sync() tea.Cmd {
 		} else {
 			m.list.GotoTop()
 		}
-		return nil
+		return m.ensureSelectedPRPreview()
 	}
 	m.keys.PreviewUp.SetEnabled(true)
 	m.keys.PreviewDown.SetEnabled(true)
@@ -1898,10 +1969,13 @@ func (m Model) buildPRPreview() string {
 		stMuted.Render(pr.BaseRefName + " ← " + pr.HeadRefName),
 		"",
 		stBold.Render("Status"),
-		"  " + mergeSummary(*pr) + "   " + checkSummary(pr.Checks),
+		"  " + mergeSummary(*pr) + "   " + prCheckSummary(*pr),
 	}
 	if pr.ReviewDecision != "" {
 		lines = append(lines, "  "+reviewSummary(pr.ReviewDecision))
+	}
+	if !pr.PreviewLoaded && pr.Number > 0 {
+		lines = append(lines, "  "+stMuted.Render("loading preview details…"))
 	}
 	lines = append(lines,
 		"",
@@ -2026,6 +2100,39 @@ func checkHealth(checks []gh.PRCheck) (string, int) {
 	return "passed", len(checks)
 }
 
+func prCIHealth(pr gh.PR) string {
+	if pr.PreviewLoaded || len(pr.Checks) > 0 {
+		health, _ := checkHealth(pr.Checks)
+		return health
+	}
+	switch strings.ToUpper(pr.CheckRollupState) {
+	case "SUCCESS":
+		return "passed"
+	case "FAILURE", "ERROR":
+		return "failed"
+	case "PENDING", "EXPECTED", "IN_PROGRESS":
+		return "pending"
+	default:
+		return "unknown"
+	}
+}
+
+func prCheckSummary(pr gh.PR) string {
+	if !pr.PreviewLoaded && len(pr.Checks) == 0 {
+		switch prCIHealth(pr) {
+		case "passed":
+			return stGreenF.Render("CI passed")
+		case "failed":
+			return stRedF.Render("CI failed")
+		case "pending":
+			return stAttention.Render("CI pending")
+		default:
+			return stMuted.Render("CI loading")
+		}
+	}
+	return checkSummary(pr.Checks)
+}
+
 func checkSummary(checks []gh.PRCheck) string {
 	health, count := checkHealth(checks)
 	switch health {
@@ -2116,7 +2223,7 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	line := selectionBar(selected) + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
 	meta := "  " + indent + stateStyle.Render(state)
 	if pr.Number > 0 {
-		meta += " · " + mergeSummary(pr) + " · " + checkSummary(pr.Checks)
+		meta += " · " + mergeSummary(pr) + " · " + prCheckSummary(pr)
 	}
 	meta += stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
 	return []string{ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), ""}
