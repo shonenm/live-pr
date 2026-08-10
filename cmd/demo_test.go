@@ -24,7 +24,7 @@ func TestCreateDemoRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `display = "delta --color-only"`) {
+	if !strings.Contains(string(config), `display = "delta --color-only --paging=never --line-numbers"`) {
 		t.Fatalf("demo config = %s", config)
 	}
 }
