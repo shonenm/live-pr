@@ -1140,13 +1140,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key.Matches(msg, m.keys.Focus) {
 			if m.fileExplorerMode() {
-				switch {
-				case m.focusDiff:
-					m.focusDiff, m.focusExplorer = false, true
-				case m.focusExplorer:
+				if m.focusExplorer {
 					m.focusExplorer = false
-				default:
-					m.focusDiff = true
+				} else {
+					m.focusDiff, m.focusExplorer = false, true
 				}
 			} else {
 				m.focusDiff = !m.focusDiff
@@ -1154,9 +1151,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusRight) {
-			if m.focusExplorer {
-				m.focusDiff, m.focusExplorer = true, false
-			} else if !m.focusDiff {
+			if !m.focusExplorer {
 				m.focusExplorer = true
 			}
 			return m, nil
@@ -1215,6 +1210,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if m.focusExplorer {
+			if m.fileExplorerMode() {
+				if key.Matches(msg, m.keys.PreviewUp) {
+					m.detail.HalfPageUp()
+					return m, nil
+				}
+				if key.Matches(msg, m.keys.PreviewDown) {
+					m.detail.HalfPageDown()
+					return m, nil
+				}
+			}
 			if handled, cmd := m.handleVimNavigation(msg); handled {
 				return m, cmd
 			}
