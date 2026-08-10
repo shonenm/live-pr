@@ -93,6 +93,11 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 	if m.detail.YOffset == 0 {
 		t.Fatal("j did not scroll the diff")
 	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = u.(Model)
+	if !m.checkedFiles[m.fileKey(m.files[m.fileCursor])] {
+		t.Fatal("c did not check the selected file from Diff")
+	}
 }
 
 func TestReservedReviewKeysStayWithLivePR(t *testing.T) {
