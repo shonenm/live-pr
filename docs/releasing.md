@@ -5,7 +5,7 @@ Releases are built by GoReleaser from version tags.
 ## Prerequisites
 
 - The project is released under the MIT License.
-- Configure the `shonenm/homebrew-tap` repository if Homebrew distribution is enabled.
+- Homebrew distribution is a follow-up; the first alpha publishes GitHub Release archives only.
 - Ensure the GitHub Actions `GITHUB_TOKEN` can create releases.
 
 ## Release
@@ -21,7 +21,7 @@ git tag -a v0.1.0-alpha.1 -m 'release: v0.1.0-alpha.1'
 git push origin v0.1.0-alpha.1
 ```
 
-The tag workflow publishes archives and `checksums.txt` to GitHub Releases and updates the Homebrew tap.
+The tag workflow publishes archives and `checksums.txt` to GitHub Releases.
 
 ## Local verification
 
