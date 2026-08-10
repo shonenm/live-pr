@@ -2,6 +2,9 @@ version: 2
 
 project_name: live-pr
 
+release:
+  prerelease: auto
+
 before:
   hooks:
     - go mod verify
@@ -36,13 +39,7 @@ archives:
       - goos: windows
         formats:
           - zip
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- title .Version }}_
-      {{- if eq .Os "darwin" }}_macOS{{ end }}
-      {{- if eq .Os "linux" }}_Linux{{ end }}
-      {{- if eq .Os "windows" }}_Windows{{ end }}
-      _{{ .Arch }}
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ title .Os }}_{{ .Arch }}'
 
 checksum:
   name_template: checksums.txt
