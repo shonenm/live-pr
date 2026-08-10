@@ -115,7 +115,7 @@ display = ""
 [diff]
 command = ""
 commit_command = ""
-display = "delta --color-only"
+display = "delta --color-only --paging=never --line-numbers"
 `
 	case "delta-side":
 		config = `reviewer = ""
@@ -123,7 +123,7 @@ display = "delta --color-only"
 [diff]
 command = ""
 commit_command = ""
-display = "delta --color-only --side-by-side"
+display = "delta --color-only --paging=never --side-by-side --line-numbers"
 `
 	case "codereview":
 		config = `[diff]
