@@ -1157,7 +1157,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusDiff, m.focusExplorer = true, false
 			return m, nil
 		}
-		if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusLeft) {
+		if m.fileExplorerMode() && (m.focusDiff || m.focusExplorer) && key.Matches(msg, m.keys.FocusLeft) {
 			m.focusDiff, m.focusExplorer = false, false
 			return m, nil
 		}

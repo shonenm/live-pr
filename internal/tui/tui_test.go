@@ -94,6 +94,10 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 	if m.focusDiff || m.focusExplorer {
 		t.Fatal("q did not return focus to Conversation")
 	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd == nil {
+		t.Fatal("q from Conversation should quit")
+	}
 }
 
 func TestHeaderShowsCachedPRAssigneesAndLabels(t *testing.T) {
