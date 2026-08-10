@@ -164,8 +164,8 @@ func (c Client) FindOpen(head string) (PR, error) {
 	return prs[0], nil
 }
 
-// ListOpen returns the newest 100 open pull requests with bounded preview
-// metadata: one top comment, exact comment/commit totals, and up to 100 checks.
+// ListOpen returns all open pull requests in pages with bounded preview
+// metadata per PR: one top comment, exact comment/commit totals, and up to 100 checks.
 func (c Client) ListOpen() (OpenPRs, error) {
 	out, err := c.run("repo", "view", "--json", "nameWithOwner")
 	if err != nil {
@@ -181,10 +181,10 @@ func (c Client) ListOpen() (OpenPRs, error) {
 	if !ok {
 		return OpenPRs{}, fmt.Errorf("invalid repository %q", repo.NameWithOwner)
 	}
-	const query = `query($owner:String!,$name:String!,$reviewQuery:String!){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:100){nodes{... on PullRequest{number}}} repository(owner:$owner,name:$name){pullRequests(first:100,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title body state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision additions deletions changedFiles updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} comments(first:1){totalCount nodes{author{login} body createdAt url}} commits{totalCount} statusCheckRollup{contexts(first:100){nodes{... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}}}}}`
-	out, err = c.run("api", "graphql", "-F", "owner="+owner, "-F", "name="+name, "-F", "reviewQuery=repo:"+repo.NameWithOwner+" is:pr is:open review-requested:@me", "-f", "query="+query)
-	if err != nil {
-		return OpenPRs{}, commandError("gh api graphql", out, err)
+	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:100,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:100,after:$after,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title body state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision additions deletions changedFiles updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} comments(first:1){totalCount nodes{author{login} body createdAt url}} commits{totalCount} statusCheckRollup{contexts(first:100){nodes{... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}} pageInfo{hasNextPage endCursor}}}}`
+	type pageInfo struct {
+		HasNextPage bool   `json:"hasNextPage"`
+		EndCursor   string `json:"endCursor"`
 	}
 	type listNode struct {
 		PR
@@ -212,30 +212,71 @@ func (c Client) ListOpen() (OpenPRs, error) {
 			} `json:"contexts"`
 		} `json:"statusCheckRollup"`
 	}
-	var result struct {
-		Data struct {
-			Viewer          PRUser `json:"viewer"`
-			ReviewRequested struct {
-				Nodes []struct {
-					Number int `json:"number"`
-				} `json:"nodes"`
-			} `json:"reviewRequested"`
-			Repository struct {
-				PullRequests struct {
-					Nodes []listNode `json:"nodes"`
-				} `json:"pullRequests"`
-			} `json:"repository"`
-		} `json:"data"`
+	reviewQuery := "repo:" + repo.NameWithOwner + " is:pr is:open review-requested:@me"
+	after, reviewAfter := "", ""
+	var allNodes []listNode
+	seenPRs := map[int]bool{}
+	requested := map[int]bool{}
+	viewerLogin := ""
+	for {
+		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "reviewQuery=" + reviewQuery}
+		if after != "" {
+			args = append(args, "-F", "after="+after)
+		}
+		if reviewAfter != "" {
+			args = append(args, "-F", "reviewAfter="+reviewAfter)
+		}
+		args = append(args, "-f", "query="+query)
+		out, err = c.run(args...)
+		if err != nil {
+			return OpenPRs{}, commandError("gh api graphql", out, err)
+		}
+		var page struct {
+			Data struct {
+				Viewer          PRUser `json:"viewer"`
+				ReviewRequested struct {
+					Nodes []struct {
+						Number int `json:"number"`
+					} `json:"nodes"`
+					PageInfo pageInfo `json:"pageInfo"`
+				} `json:"reviewRequested"`
+				Repository struct {
+					PullRequests struct {
+						Nodes    []listNode `json:"nodes"`
+						PageInfo pageInfo   `json:"pageInfo"`
+					} `json:"pullRequests"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(out, &page); err != nil {
+			return OpenPRs{}, fmt.Errorf("decode PR list: %w", err)
+		}
+		viewerLogin = page.Data.Viewer.Login
+		for _, node := range page.Data.Repository.PullRequests.Nodes {
+			if !seenPRs[node.Number] {
+				seenPRs[node.Number] = true
+				allNodes = append(allNodes, node)
+			}
+		}
+		for _, node := range page.Data.ReviewRequested.Nodes {
+			requested[node.Number] = true
+		}
+		if page.Data.Repository.PullRequests.PageInfo.HasNextPage {
+			after = page.Data.Repository.PullRequests.PageInfo.EndCursor
+		} else {
+			after = ""
+		}
+		if page.Data.ReviewRequested.PageInfo.HasNextPage {
+			reviewAfter = page.Data.ReviewRequested.PageInfo.EndCursor
+		} else {
+			reviewAfter = ""
+		}
+		if after == "" && reviewAfter == "" {
+			break
+		}
 	}
-	if err := json.Unmarshal(out, &result); err != nil {
-		return OpenPRs{}, fmt.Errorf("decode PR list: %w", err)
-	}
-	requested := make(map[int]bool, len(result.Data.ReviewRequested.Nodes))
-	for _, node := range result.Data.ReviewRequested.Nodes {
-		requested[node.Number] = true
-	}
-	prs := make([]PR, 0, len(result.Data.Repository.PullRequests.Nodes))
-	for _, node := range result.Data.Repository.PullRequests.Nodes {
+	prs := make([]PR, 0, len(allNodes))
+	for _, node := range allNodes {
 		pr := node.PR
 		pr.Assignees = node.Assignees.Nodes
 		pr.ViewerReviewRequested = requested[pr.Number]
@@ -251,7 +292,7 @@ func (c Client) ListOpen() (OpenPRs, error) {
 		pr.Checks = node.StatusCheckRollup.Contexts.Nodes
 		prs = append(prs, pr)
 	}
-	return OpenPRs{ViewerLogin: result.Data.Viewer.Login, PRs: prs}, nil
+	return OpenPRs{ViewerLogin: viewerLogin, PRs: prs}, nil
 }
 
 // IssueComments returns every top-level Conversation comment for a PR.
