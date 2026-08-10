@@ -6,11 +6,11 @@
 | --- | --- | --- |
 | 言語 / TUI | **Go + Bubble Tea + Lipgloss + Bubbles** | gh-dash と同一スタック。単一バイナリ。サブプロセス制御が強い |
 | CLI | **Cobra**（サブコマンド） | `live-pr`(TUI) と `live-pr hook/append/pivot/pr` を1バイナリに |
-| ストレージ | **append-only JSONL**（`.live-pr/<branch>/`） | 追記のみで安全。head は `conclusion.md` を上書き |
+| ストレージ | **append-only JSONL**（XDG state配下のrepo/branch state） | 追記のみで安全。head は `conclusion.md` を上書きし、repo rootを汚さない |
 | Git / GitHub | **`git` / `gh` を shell out** | go-git を持ち込まない。gh-dash と同じ流儀 |
 | reviewer表示 | Portalis PTY/VT + command config | Bubble Tea右pane内でNeovim CodeReviewを常時対話操作。tmux不要 |
 | エージェント連携 | Claude Code hooks → `live-pr hook` | 初手は Claude 専用。要約は `claude -p` headless |
-| 設定 | **TOML**（`~/.config/live-pr/config.toml`） | Go 親和。per-repo override 可 |
+| 設定 | **TOML**（`~/.config/live-pr/config.toml`） | Go親和。per-repo overrideは`.live-pr.toml`、旧`.live-pr/config.toml`も読む |
 | 配布 | 単一バイナリ（goreleaser + Homebrew tap は後） | 依存ゼロで入る |
 
 要は **gh-dash と同じ土台に乗る**。参照実装が豊富で、狙う見た目にも最短。
@@ -33,7 +33,7 @@
 
 ```
 [ 物語レイヤ (本体) ]                     Go 1.22+
-  .live-pr/<branch-slug>/
+  $XDG_STATE_HOME/live-pr/repos/<repo-hash>/<branch-slug>/
     timeline.jsonl   append-only  {ts,kind,title,body,sha?,...}
     conclusion.md    overwrite    head（現状結論）
     github.json      atomic replace  PR binding/cache/publish baseline
@@ -76,7 +76,7 @@ CLI 一覧（Cobra）:
 ## 実装で確定した事項
 
 1. **要約トリガー**: Claude Codeの`Stop` hookでセッション終端に要約。短時間の重複実行は設定可能な間隔で抑制し、pivotは`live-pr pivot`で手動記録。
-2. **timelineの扱い**: `.live-pr/`はgitignoreし、ローカルruntimeとして保持。PR export時に読み込む。
+2. **timelineの扱い**: XDG state配下のユーザーruntimeとして保持し、repo rootにはruntimeファイルを作らない。旧`.live-pr/`は初回アクセス時に移行する。
 3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
 4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
 5. **TUI**: default branch/対象なしはPR一覧、current/local PRはdetailへ自動routing。一覧はviewer/review-request cacheを使うSaved ViewsとGitHub風filterを持ち、`baseRefName == headRefName`の確実なbranch graphだけをstack表示する。右paneは冒頭のdescription/commentをカード表示し、metadata、CI/conflict、規模をpreview。detailは固定2paneで、`b`でlocal PRを含む一覧、他PRは通常checkoutなしで開き、一覧の`c`/`x`/`m`のみ確認付きでcheckout/close/mergeする。配色はGitHub Primer darkのsemantic tokenを正本とし、gh-dash同様、通常contentはprimary/muted、PR/review/CI/merge/diff/action/labelのsemantic stateだけを着色する。

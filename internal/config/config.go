@@ -76,10 +76,14 @@ func (c Config) SummaryInterval() time.Duration {
 // config — later files override fields they set. Missing files are ignored.
 func Load(repoRoot string) Config {
 	cfg := Default()
-	paths := []string{
-		filepath.Join(globalConfigDir(), "live-pr", "config.toml"),
-		filepath.Join(repoRoot, ".live-pr", "config.toml"),
+	paths := []string{filepath.Join(globalConfigDir(), "live-pr", "config.toml")}
+	repoConfig := filepath.Join(repoRoot, ".live-pr.toml")
+	if _, err := os.Stat(repoConfig); os.IsNotExist(err) {
+		// Read the old location only as a migration path. It is no longer
+		// created, so a normal run leaves no .live-pr/ directory behind.
+		repoConfig = filepath.Join(repoRoot, ".live-pr", "config.toml")
 	}
+	paths = append(paths, repoConfig)
 	for _, p := range paths {
 		if data, err := os.ReadFile(p); err == nil {
 			_ = toml.Unmarshal(data, &cfg) // only present keys override

@@ -69,6 +69,27 @@ func TestListOpen(t *testing.T) {
 	}
 }
 
+func TestListOpenPaginatesPullRequests(t *testing.T) {
+	var apiCalls int
+	client := Client{run: func(args ...string) ([]byte, error) {
+		if args[0] == "repo" {
+			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
+		}
+		apiCalls++
+		if strings.Contains(strings.Join(args, " "), "after=cursor-1") {
+			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[{"number":2}],"pageInfo":{"hasNextPage":false}}}}}`), nil
+		}
+		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[{"number":1}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}`), nil
+	}}
+	list, err := client.ListOpen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apiCalls != 2 || len(list.PRs) != 2 || list.PRs[0].Number != 1 || list.PRs[1].Number != 2 {
+		t.Fatalf("paginated PRs = calls:%d prs:%#v", apiCalls, list.PRs)
+	}
+}
+
 func TestListOpenFailure(t *testing.T) {
 	c := Client{run: func(args ...string) ([]byte, error) { return []byte("offline"), errors.New("exit 1") }}
 	if _, err := c.ListOpen(); err == nil || !strings.Contains(err.Error(), "offline") {

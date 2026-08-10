@@ -11,13 +11,13 @@
 1. 要約トリガー: `Stop` hook = セッション終端で1要約。pivot は当面 `live-pr pivot` 手動。
 2. timeline ファイル: 当面 **gitignore**（ローカル runtime）。export 時に読むだけ。
 3. 要約生成: `claude -p` headless。将来 API / 他エージェントに差し替え可能な interface で切る。
-4. 設定: TOML（`~/.config/live-pr/config.toml` + per-repo `.live-pr/config.toml` override）。
+4. 設定: TOML（`~/.config/live-pr/config.toml` + per-repo `.live-pr.toml` override、旧パスも移行用に読込）。
 
 ## フェーズ
 
 ### P0 — 骨組み + データ層 ✅
 - `go mod init github.com/shonenm/live-pr`、Cobra 骨組み。
-- Event 型（`ts,kind,title,body,sha?`）と JSONL ストア（`.live-pr/<branch-slug>/timeline.jsonl` の read/append）。ブランチ解決。`live-pr init`。
+- Event 型（`ts,kind,title,body,sha?`）とJSONLストア（XDG state配下のrepo/branch stateからread/append）。ブランチ解決。`live-pr init`。
 - `live-pr append --kind … --title … --body …`、薄いラッパー `live-pr note|pivot`。
 - **Done**: CLI で timeline を手で積める。`cat timeline.jsonl` で確認。
 - 後回し: それ以外全部。
@@ -62,6 +62,8 @@
 - **Done**: PR一覧にAll/Review requested/Assigned/Authored/Needs me view、GitHub風filter、base/head graphによるstack groupingとcollapseを追加。
 - **Done**: default branch/対象なしではcache-firstのPR一覧、current/local PRではdetailを自動表示。`b`でlocal PRを含む一覧へ戻り、右previewへ冒頭のdescription/commentカード、metadata、CI/conflict/review、comments、files/lines/commitsを表示。他PRは通常checkoutせずnumeric pull refをfetchしてConversationとCodeReviewを表示し、一覧で`c`によるcheckout、`x`によるclose、`m`によるmergeを確認後に実行可能。
 - **Next**: reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
+- **Done**: CodeReviewのreviewed markをXDG stateへ保存し、チェック後に対象ファイルのdiffが変わった場合は自動解除。
+- **Done**: repo-local `.live-pr/` runtimeを廃止し、XDG stateへ移行。旧stateは初回アクセス時に移行。
 
 ### P6 — 仕上げ / 配布
 - GitHub双方向連携の完成後、goreleaser + Homebrew tap、補完、テーマ設定、他エージェント hook adapter。dotfiles のツール登録。
