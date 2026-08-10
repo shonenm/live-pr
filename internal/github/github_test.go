@@ -62,7 +62,7 @@ func TestListOpen(t *testing.T) {
 		t.Fatalf("open PRs = %#v", list)
 	}
 	args := strings.Join(got, " ")
-	for _, field := range []string{"pullRequests(first:100", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "additions", "deletions", "changedFiles", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "comments(first:1)", "statusCheckRollup", "commits{totalCount}"} {
+	for _, field := range []string{"pullRequests(first:$pageSize", "pageSize=25", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "additions", "deletions", "changedFiles", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "comments(first:1)", "statusCheckRollup", "commits{totalCount}"} {
 		if !strings.Contains(args, field) {
 			t.Fatalf("list args missing %q: %s", field, args)
 		}
