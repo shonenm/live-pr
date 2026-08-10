@@ -38,12 +38,14 @@ type PR struct {
 	CommentCount          int                     `json:"commentCount,omitempty"`
 	CommitCount           int                     `json:"commitCount,omitempty"`
 	Checks                []PRCheck               `json:"statusCheckRollup,omitempty"`
+	CheckRollupState      string                  `json:"checkRollupState,omitempty"`
 	Author                PRUser                  `json:"author,omitempty"`
 	CreatedAt             string                  `json:"createdAt,omitempty"`
 	Assignees             []PRUser                `json:"assignees,omitempty"`
 	Labels                []PRLabel               `json:"labels,omitempty"`
 	ReviewRequests        []PRUser                `json:"reviewRequests,omitempty"`
 	ViewerReviewRequested bool                    `json:"viewerReviewRequested,omitempty"`
+	PreviewLoaded         bool                    `json:"previewLoaded,omitempty"`
 }
 
 // OpenPRs is one repository PR-list snapshot and its authenticated viewer.
@@ -164,8 +166,8 @@ func (c Client) FindOpen(head string) (PR, error) {
 	return prs[0], nil
 }
 
-// ListOpen returns all open pull requests in pages with bounded preview
-// metadata per PR: one top comment, exact comment/commit totals, and up to 100 checks.
+// ListOpen returns all open pull requests in pages with lightweight row metadata.
+// FindPreview loads the expensive body, conversation, commits, and check details.
 func (c Client) ListOpen() (OpenPRs, error) {
 	out, err := c.run("repo", "view", "--json", "nameWithOwner")
 	if err != nil {
@@ -181,10 +183,11 @@ func (c Client) ListOpen() (OpenPRs, error) {
 	if !ok {
 		return OpenPRs{}, fmt.Errorf("invalid repository %q", repo.NameWithOwner)
 	}
-	// Keep each request small: the per-PR preview fields and check contexts can
-	// make a 100-item GraphQL page time out on large repositories.
+	// List rows only need metadata. Body, comments, commits, and checks are
+	// fetched lazily for the selected PR; loading them for every PR makes large
+	// repositories spend most of startup time in GitHub's GraphQL resolver.
 	const listPageSize = 25
-	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title body state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision additions deletions changedFiles updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} comments(first:1){totalCount nodes{author{login} body createdAt url}} commits{totalCount} statusCheckRollup{contexts(first:$pageSize){nodes{... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}} pageInfo{hasNextPage endCursor}}}}`
+	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
 	type pageInfo struct {
 		HasNextPage bool   `json:"hasNextPage"`
 		EndCursor   string `json:"endCursor"`
@@ -210,9 +213,7 @@ func (c Client) ListOpen() (OpenPRs, error) {
 			TotalCount int `json:"totalCount"`
 		} `json:"commits"`
 		StatusCheckRollup struct {
-			Contexts struct {
-				Nodes []PRCheck `json:"nodes"`
-			} `json:"contexts"`
+			State string `json:"state"`
 		} `json:"statusCheckRollup"`
 	}
 	reviewQuery := "repo:" + repo.NameWithOwner + " is:pr is:open review-requested:@me"
@@ -289,13 +290,34 @@ func (c Client) ListOpen() (OpenPRs, error) {
 				pr.ReviewRequests = append(pr.ReviewRequests, request.RequestedReviewer)
 			}
 		}
-		pr.Conversation = node.Comments.Nodes
-		pr.CommentCount = node.Comments.TotalCount
-		pr.CommitCount = node.Commits.TotalCount
-		pr.Checks = node.StatusCheckRollup.Contexts.Nodes
+		pr.CheckRollupState = node.StatusCheckRollup.State
 		prs = append(prs, pr)
 	}
 	return OpenPRs{ViewerLogin: viewerLogin, PRs: prs}, nil
+}
+
+// FindPreview loads the expensive preview fields for one PR only.
+func (c Client) FindPreview(number int) (PR, error) {
+	const fields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,commits,statusCheckRollup"
+	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
+	if err != nil {
+		return PR{}, commandError("gh pr view", out, err)
+	}
+	var preview struct {
+		PR
+		Conversation []PRConversationComment `json:"comments"`
+		Commits      []json.RawMessage       `json:"commits"`
+		Checks       []PRCheck               `json:"statusCheckRollup"`
+	}
+	if err := json.Unmarshal(out, &preview); err != nil {
+		return PR{}, fmt.Errorf("decode gh pr preview: %w", err)
+	}
+	preview.PR.Conversation = preview.Conversation
+	preview.PR.CommentCount = len(preview.Conversation)
+	preview.PR.CommitCount = len(preview.Commits)
+	preview.PR.Checks = preview.Checks
+	preview.PR.PreviewLoaded = true
+	return preview.PR, nil
 }
 
 // IssueComments returns every top-level Conversation comment for a PR.
