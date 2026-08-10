@@ -48,7 +48,7 @@ func TestListOpen(t *testing.T) {
 		case "repo":
 			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
 		case "api":
-			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":12}]},"repository":{"pullRequests":{"nodes":[{"number":12,"headRefName":"feature/x","headRefOid":"abc123","baseRefName":"main","isDraft":true,"isCrossRepository":true,"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"CHANGES_REQUESTED","additions":42,"deletions":7,"changedFiles":3,"assignees":{"nodes":[{"login":"bob"}]},"reviewRequests":{"nodes":[{"requestedReviewer":{"login":"octocat"}},{"requestedReviewer":{}}]},"labels":{"nodes":[{"name":"bug","color":"d73a4a"}]},"comments":{"totalCount":9,"nodes":[{"author":{"login":"alice"},"body":"review"}]},"commits":{"totalCount":5},"statusCheckRollup":{"contexts":{"nodes":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}}}]}}}}`), nil
+			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":12}]},"repository":{"pullRequests":{"nodes":[{"number":12,"headRefName":"feature/x","headRefOid":"abc123","baseRefName":"main","isDraft":true,"isCrossRepository":true,"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"CHANGES_REQUESTED","assignees":{"nodes":[{"login":"bob"}]},"reviewRequests":{"nodes":[{"requestedReviewer":{"login":"octocat"}},{"requestedReviewer":{}}]},"labels":{"nodes":[{"name":"bug","color":"d73a4a"}]},"comments":{"totalCount":9,"nodes":[{"author":{"login":"alice"},"body":"review"}]},"commits":{"totalCount":5},"statusCheckRollup":{"contexts":{"nodes":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}}}]}}}}`), nil
 		default:
 			return nil, errors.New("unexpected command")
 		}
@@ -58,14 +58,32 @@ func TestListOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	prs := list.PRs
-	if list.ViewerLogin != "octocat" || len(prs) != 1 || prs[0].HeadRefName != "feature/x" || prs[0].HeadRefOID != "abc123" || !prs[0].IsDraft || !prs[0].IsCrossRepository || prs[0].Mergeable != "CONFLICTING" || prs[0].Additions != 42 || prs[0].Deletions != 7 || prs[0].ChangedFiles != 3 || len(prs[0].Conversation) != 1 || prs[0].CommentCount != 9 || prs[0].CommitCount != 5 || len(prs[0].Checks) != 1 || len(prs[0].Assignees) != 1 || len(prs[0].Labels) != 1 || len(prs[0].ReviewRequests) != 1 || prs[0].ReviewRequests[0].Login != "octocat" || !prs[0].ViewerReviewRequested {
+	if list.ViewerLogin != "octocat" || len(prs) != 1 || prs[0].HeadRefName != "feature/x" || prs[0].HeadRefOID != "abc123" || !prs[0].IsDraft || !prs[0].IsCrossRepository || prs[0].Mergeable != "CONFLICTING" || len(prs[0].Conversation) != 0 || prs[0].CommentCount != 0 || prs[0].CommitCount != 0 || len(prs[0].Checks) != 0 || len(prs[0].Assignees) != 1 || len(prs[0].Labels) != 1 || len(prs[0].ReviewRequests) != 1 || prs[0].ReviewRequests[0].Login != "octocat" || !prs[0].ViewerReviewRequested || prs[0].PreviewLoaded {
 		t.Fatalf("open PRs = %#v", list)
 	}
 	args := strings.Join(got, " ")
-	for _, field := range []string{"pullRequests(first:$pageSize", "pageSize=25", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "additions", "deletions", "changedFiles", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "comments(first:1)", "statusCheckRollup", "commits{totalCount}"} {
+	for _, field := range []string{"pullRequests(first:$pageSize", "pageSize=25", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "statusCheckRollup{state}"} {
 		if !strings.Contains(args, field) {
 			t.Fatalf("list args missing %q: %s", field, args)
 		}
+	}
+	for _, field := range []string{"body", "additions", "deletions", "changedFiles", "comments(first:1)", "statusCheckRollup{contexts", "commits{totalCount}"} {
+		if strings.Contains(args, field) {
+			t.Fatalf("list args still request expensive field %q: %s", field, args)
+		}
+	}
+}
+
+func TestFindPreviewLoadsExpensiveFields(t *testing.T) {
+	client := Client{run: func(args ...string) ([]byte, error) {
+		return []byte(`{"number":12,"body":"body","comments":[{"author":{"login":"alice"},"body":"review","createdAt":"2026-08-10T00:00:00Z"}],"commits":[{"oid":"a"},{"oid":"b"}],"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`), nil
+	}}
+	pr, err := client.FindPreview(12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pr.Number != 12 || pr.Body != "body" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || !pr.PreviewLoaded {
+		t.Fatalf("preview = %#v", pr)
 	}
 }
 
