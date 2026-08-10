@@ -10,16 +10,17 @@ Releases are built by GoReleaser from version tags.
 
 ## Release
 
-```sh
-go test ./...
-go vet ./...
-git diff --check
+From a clean, up-to-date `main` checkout:
 
-git switch main
-git pull --ff-only origin main
-git tag -a v0.1.0-alpha.1 -m 'release: v0.1.0-alpha.1'
-git push origin v0.1.0-alpha.1
+```sh
+./scripts/release v0.1.0-alpha.5
 ```
+
+The maintainer-only script verifies the version, branch, clean worktree,
+`origin/main` parity, existing tags, `go test ./...`, `go vet ./...`, and
+`git diff --check`. It asks for confirmation before creating an annotated tag
+and pushing it to `origin`. Use `--yes` for explicit non-interactive approval
+or `--dry-run` to run checks without creating a tag.
 
 The tag workflow publishes archives and `checksums.txt` to GitHub Releases.
 

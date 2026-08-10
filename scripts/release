@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/release [--yes|--dry-run] vX.Y.Z[-prerelease]
+EOF
+}
+
+confirm=false
+dry_run=false
+version=""
+for arg in "$@"; do
+  case "$arg" in
+    --yes) confirm=true ;;
+    --dry-run) dry_run=true ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "unknown option: $arg" >&2; usage >&2; exit 2 ;;
+    *)
+      if [[ -n "$version" ]]; then
+        echo "only one version is allowed" >&2
+        usage >&2
+        exit 2
+      fi
+      version="$arg"
+      ;;
+  esac
+done
+
+if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+  echo "invalid release version: ${version:-<missing>}" >&2
+  usage >&2
+  exit 2
+fi
+
+branch=$(git branch --show-current)
+if [[ "$branch" != main ]]; then
+  echo "release must run on main (current: $branch)" >&2
+  exit 1
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "release requires a clean worktree" >&2
+  exit 1
+fi
+
+head=$(git rev-parse HEAD)
+origin_head=$(git rev-parse origin/main)
+if [[ "$head" != "$origin_head" ]]; then
+  echo "HEAD does not match origin/main" >&2
+  exit 1
+fi
+
+if git rev-parse --verify --quiet "refs/tags/$version" >/dev/null; then
+  echo "tag already exists locally: $version" >&2
+  exit 1
+fi
+if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
+  echo "tag already exists on origin: $version" >&2
+  exit 1
+fi
+
+echo "Running release checks…"
+go test ./...
+go vet ./...
+git diff --check
+
+echo "Ready to release $version from ${head:0:12}"
+if [[ "$dry_run" == true ]]; then
+  echo "Dry run: no tag created or pushed"
+  exit 0
+fi
+
+if [[ "$confirm" != true ]]; then
+  read -r -p "Create and push this release? [y/N] " answer
+  if [[ "$answer" != y && "$answer" != Y ]]; then
+    echo "release cancelled" >&2
+    exit 1
+  fi
+fi
+
+git tag -a "$version" -m "release: $version"
+git push origin "$version"
+echo "Release tag pushed: $version"
