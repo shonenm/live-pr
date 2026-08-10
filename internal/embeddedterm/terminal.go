@@ -48,6 +48,10 @@ func (t *Terminal) Init() tea.Cmd {
 		return func() tea.Msg { return StateMsg{SessionID: t.sessionID} }
 	}
 	t.started = true
+	// Portalis keeps cursor blinking as a host-level concern. live-pr has one
+	// embedded terminal, so make the cursor visible without waiting for a
+	// global blink broadcaster.
+	t.emulator.Update(portalis.CursorBlinkMsg{})
 	return t.emulator.Listen()
 }
 
@@ -94,7 +98,32 @@ func (t *Terminal) Update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 	}
-	return t.emulator.Update(msg)
+	cmd := t.emulator.Update(msg)
+	if output, ok := msg.(portalis.PtyOutputMsg); ok && output.SessionID == t.sessionID {
+		t.drainOutput()
+	}
+	return cmd
+}
+
+// drainOutput applies a small burst of already-buffered PTY output before the
+// next Bubble Tea frame. Neovim redraws commonly span several 4 KiB reads;
+// coalescing those reads avoids rendering the whole terminal once per chunk.
+func (t *Terminal) drainOutput() {
+	pty := t.emulator.Pty()
+	if pty == nil {
+		return
+	}
+	for range 8 {
+		select {
+		case data := <-pty.Output:
+			if len(data) == 0 {
+				return
+			}
+			t.emulator.Update(portalis.PtyOutputMsg{SessionID: t.sessionID, Data: data})
+		default:
+			return
+		}
+	}
 }
 
 // Resize updates both the virtual screen and its PTY.
