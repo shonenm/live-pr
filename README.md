@@ -39,26 +39,26 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 | `gh-dash` | GitHub UI in the terminal | dashboard, not a living PR |
 | Copilot / PR-describe | PR description generation | compresses the final diff |
 
-## Status
+## Features
 
-Go implementation in progress (Bubble Tea + Lipgloss, single binary). The first public release is planned as an alpha. See
-[docs/roadmap.md](docs/roadmap.md).
+- Append-only decision timeline for `decision`, `pivot`, `summary`, `commit`, and `note` events.
+- Bubble Tea TUI with GitHub-style open-PR lists, filters, saved navigation state, stack grouping, and cached previews.
+- Local and remote PR review without changing the worktree for remote browsing.
+- Conversation beside an interactive CodeReview pane, with commit-scoped review support.
+- Static `git diff`/`delta` review with a file Explorer, immediate file selection, reviewed checks, and independent Conversation/Diff scrolling.
+- Create or update GitHub PRs from the conclusion and timeline with `live-pr pr`.
+- Explicit checkout, close, and merge actions with confirmation.
+- Claude Code Stop-hook integration and XDG-compliant runtime state.
 
-- **P0–P2 (done)** — event model + JSONL store, CLI (`append`/`note`/`decision`/`pivot`/`init`), TUI, and pluggable reviewer launch on a commit.
-- **P3 (done)** — auto-feed `base..HEAD` commits into the timeline (`live-pr sync`, and on TUI open).
-- **P4 (done)** — Claude Code `Stop` hook (`live-pr hook stop`) summarizes each session into the timeline, throttled.
-- **P5 (done)** — create or update a GitHub PR from the conclusion and timeline (`live-pr pr`). Only the marked live-pr section is updated, so other PR body content is preserved; conflicting managed edits fail safely.
-- **Current TUI** — an open/current local PR starts in detail; the default branch or a branch without local PR context starts in the cached open-PR list. Press `b` from detail to browse the list, which includes the current Local PR even before publishing. `[`/`]` switches All, Review requested, Assigned, Authored, and Needs me views; `/` applies GitHub-like filters. Exact base/head relationships are grouped as PR stacks, with `Space` collapsing or expanding a stack. The right preview shows the opening description/comment as bordered cards, ownership/labels, CI and conflict state, comments, files/lines, and commits. Colors follow GitHub Primer dark semantics and gh-dash's rule of coloring states rather than ordinary content; `Enter` reviews any remote PR without checking out its branch; `c` checks out its branch, `x` closes it, and `m` merges it after confirmation. In detail, Conversation stays on the left while branch-wide Files changed / CodeReview stays on the right. Press `c` to replace the left pane with a commit picker, then `Enter` to focus a commit-scoped review. Use `q` (or `Shift+Tab`), then `Esc`, to return to Conversation and branch review. Raw Git and `[diff].display` remain fallbacks. The cached PR opening description, metadata, assignees, labels, top-level comments, and GitHub activity are shown immediately; the header exposes assignees and color-matched label pills. GitHub state refreshes once on open, when you press `r`, and after a successful close or merge.
-- **PR workflow** — press `p` to explicitly create/update the PR. The PR opening description and GitHub comments use cloud-bordered cards, while local events use a different border intensity; GitHub activity remains an unboxed timeline row and Git commits appear only in the dedicated `c` picker. Image/video embeds stay as URLs, and `o` opens the focused description or comment on GitHub.
-- **Next** — add outbound comments and review/inline-comment sync, then move to distribution, theming, and other-agent adapters.
+See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer configuration and pane controls.
 
 ## Install
 
 Download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases). The current Linux amd64 alpha can be installed with:
 
 ```sh
-version=v0.1.0-alpha.2
-asset=live-pr_0.1.0-alpha.2_Linux_amd64.tar.gz
+version=v0.1.0-alpha.4
+asset=live-pr_0.1.0-alpha.4_Linux_amd64.tar.gz
 tmp=$(mktemp -d)
 curl -fL "https://github.com/shonenm/live-pr/releases/download/$version/$asset" -o "$tmp/$asset"
 tar -xzf "$tmp/$asset" -C "$tmp"
@@ -67,7 +67,7 @@ export PATH="$HOME/.local/bin:$PATH"
 live-pr --version
 ```
 
-Homebrew is planned after the tap repository is published. Go users can install the latest source version with:
+Homebrew packages are not currently provided. Go users can install the latest source version with:
 
 ```sh
 go install github.com/shonenm/live-pr@latest
@@ -91,7 +91,7 @@ live-pr init            # optional: seed the current branch's local conclusion
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
                         # list: [/] views; / filter; Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
-                        # detail: b list; c commits; l review; q left/quit
+                        # detail: b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
 live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
 ```
