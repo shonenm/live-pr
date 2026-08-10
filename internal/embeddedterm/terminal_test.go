@@ -42,6 +42,23 @@ func TestTerminalStartsInRepoWithContextAndRendersOutput(t *testing.T) {
 	t.Fatalf("terminal output missing: %q", terminal.View(80, 10))
 }
 
+func TestTerminalShowsCursor(t *testing.T) {
+	terminal := New(`printf 'x'; sleep 1`, t.TempDir(), nil)
+	terminal.Resize(20, 4)
+	defer terminal.Close()
+
+	cmd := terminal.Init()
+	deadline := time.Now().Add(time.Second)
+	for cmd != nil && time.Now().Before(deadline) {
+		msg := cmd()
+		cmd = terminal.Update(msg)
+		if strings.Contains(terminal.View(20, 4), "\x1b[7m") {
+			return
+		}
+	}
+	t.Fatalf("cursor was not rendered: %q", terminal.View(20, 4))
+}
+
 func TestCloseBeforeInitPreventsLateStart(t *testing.T) {
 	terminal := New("sleep 10", t.TempDir(), nil)
 	terminal.Close()
