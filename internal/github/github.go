@@ -181,7 +181,10 @@ func (c Client) ListOpen() (OpenPRs, error) {
 	if !ok {
 		return OpenPRs{}, fmt.Errorf("invalid repository %q", repo.NameWithOwner)
 	}
-	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:100,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:100,after:$after,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title body state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision additions deletions changedFiles updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} comments(first:1){totalCount nodes{author{login} body createdAt url}} commits{totalCount} statusCheckRollup{contexts(first:100){nodes{... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}} pageInfo{hasNextPage endCursor}}}}`
+	// Keep each request small: the per-PR preview fields and check contexts can
+	// make a 100-item GraphQL page time out on large repositories.
+	const listPageSize = 25
+	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title body state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision additions deletions changedFiles updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} comments(first:1){totalCount nodes{author{login} body createdAt url}} commits{totalCount} statusCheckRollup{contexts(first:$pageSize){nodes{... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}} pageInfo{hasNextPage endCursor}}}}`
 	type pageInfo struct {
 		HasNextPage bool   `json:"hasNextPage"`
 		EndCursor   string `json:"endCursor"`
@@ -219,7 +222,7 @@ func (c Client) ListOpen() (OpenPRs, error) {
 	requested := map[int]bool{}
 	viewerLogin := ""
 	for {
-		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "reviewQuery=" + reviewQuery}
+		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "reviewQuery=" + reviewQuery, "-F", fmt.Sprintf("pageSize=%d", listPageSize)}
 		if after != "" {
 			args = append(args, "-F", "after="+after)
 		}
