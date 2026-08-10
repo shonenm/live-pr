@@ -41,7 +41,7 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 
 ## Status
 
-Go implementation in progress (Bubble Tea + Lipgloss, single binary). See
+Go implementation in progress (Bubble Tea + Lipgloss, single binary). The first public release is planned as an alpha. See
 [docs/roadmap.md](docs/roadmap.md).
 
 - **P0–P2 (done)** — event model + JSONL store, CLI (`append`/`note`/`decision`/`pivot`/`init`), TUI, and pluggable reviewer launch on a commit.
@@ -51,6 +51,24 @@ Go implementation in progress (Bubble Tea + Lipgloss, single binary). See
 - **Current TUI** — an open/current local PR starts in detail; the default branch or a branch without local PR context starts in the cached open-PR list. Press `b` from detail to browse the list, which includes the current Local PR even before publishing. `[`/`]` switches All, Review requested, Assigned, Authored, and Needs me views; `/` applies GitHub-like filters. Exact base/head relationships are grouped as PR stacks, with `Space` collapsing or expanding a stack. The right preview shows the opening description/comment as bordered cards, ownership/labels, CI and conflict state, comments, files/lines, and commits. Colors follow GitHub Primer dark semantics and gh-dash's rule of coloring states rather than ordinary content; `Enter` reviews any remote PR without checking out its branch; `c` checks out its branch, `x` closes it, and `m` merges it after confirmation. In detail, Conversation stays on the left while branch-wide Files changed / CodeReview stays on the right. Press `c` to replace the left pane with a commit picker, then `Enter` to focus a commit-scoped review. Use `q` (or `Shift+Tab`), then `Esc`, to return to Conversation and branch review. Raw Git and `[diff].display` remain fallbacks. The cached PR opening description, metadata, assignees, labels, top-level comments, and GitHub activity are shown immediately; the header exposes assignees and color-matched label pills. GitHub state refreshes once on open, when you press `r`, and after a successful close or merge.
 - **PR workflow** — press `p` to explicitly create/update the PR. The PR opening description and GitHub comments use cloud-bordered cards, while local events use a different border intensity; GitHub activity remains an unboxed timeline row and Git commits appear only in the dedicated `c` picker. Image/video embeds stay as URLs, and `o` opens the focused description or comment on GitHub.
 - **Next** — add outbound comments and review/inline-comment sync, then move to distribution, theming, and other-agent adapters.
+
+## Install
+
+Download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases), or install with Homebrew once the tap is published:
+
+```sh
+brew install shonenm/live-pr/live-pr
+```
+
+Go users can install the latest source version with:
+
+```sh
+go install github.com/shonenm/live-pr@latest
+```
+
+Check the installed version with `live-pr --version`.
+
+## Development
 
 ```sh
 go build -o live-pr .

@@ -8,6 +8,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:           "live-pr",
+	Version:       version,
 	Short:         "Living pull request for LLM-assisted development",
 	Long:          "live-pr captures the decision/iteration timeline of an AI coding session\nand reviews it like a local GitHub pull request.",
 	SilenceUsage:  true,
