@@ -3,8 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/spf13/cobra"
@@ -51,39 +49,9 @@ var initCmd = &cobra.Command{
 		}
 		_ = f.Close()
 
-		if err := ensureGitignored(st.Root); err != nil {
-			return err
-		}
 		fmt.Printf("initialized %s\n", st.Dir)
 		return nil
 	},
-}
-
-// ensureGitignored adds ".live-pr/" to the repo .gitignore if not already present.
-// The timeline is local runtime state; it is read at export time, not committed.
-func ensureGitignored(root string) error {
-	const entry = ".live-pr/"
-	path := filepath.Join(root, ".gitignore")
-	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == entry {
-			return nil
-		}
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	prefix := ""
-	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
-		prefix = "\n"
-	}
-	_, err = fmt.Fprintf(f, "%s%s\n", prefix, entry)
-	return err
 }
 
 func init() {

@@ -59,21 +59,23 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
 	Up:          key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
 	Down:        key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	PreviewUp:   key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "preview up")),
-	PreviewDown: key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "preview down")),
+	PreviewUp:   key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "page up")),
+	PreviewDown: key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
+	Top:         key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
+	Bottom:      key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
 	PrevView:    key.NewBinding(key.WithKeys("["), key.WithHelp("[", "previous view")),
 	NextView:    key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next view")),
 	Filter:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
@@ -226,6 +228,7 @@ type Model struct {
 	pendingPRAction           prAction
 	prActionRunning           prAction
 	prActionNumber            int
+	pendingG                  bool
 	prActionPR                gh.PR
 	prListGeneration          uint64
 	remote                    bool
@@ -258,6 +261,9 @@ func New() (Model, error) {
 	branch, err := git.CurrentBranch()
 	if err != nil {
 		return Model{}, err
+	}
+	if err := store.MigrateLegacy(root); err != nil {
+		return Model{}, fmt.Errorf("migrate live-pr state: %w", err)
 	}
 	cfg := config.Load(root)
 	navigatorPath := store.NavigatorCache(root)
@@ -943,6 +949,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if handled, cmd := m.handleVimNavigation(msg); handled {
+				return m, cmd
+			}
 			switch {
 			case key.Matches(msg, m.keys.Filter):
 				m.filterBeforeEdit, m.filterSelectionBeforeEdit, m.filterEditing = m.filterQuery, m.selectedPRNumber(), true
@@ -1074,6 +1083,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var cmd tea.Cmd
 			m.detail, cmd = m.detail.Update(msg)
+			return m, cmd
+		}
+		if handled, cmd := m.handleVimNavigation(msg); handled {
 			return m, cmd
 		}
 		switch {
@@ -1234,6 +1246,73 @@ func (m Model) activeLen() int {
 		return len(m.commits)
 	}
 	return len(m.conversationItems())
+}
+
+func (m *Model) handleVimNavigation(msg tea.KeyMsg) (bool, tea.Cmd) {
+	if msg.String() == "g" {
+		if m.pendingG {
+			m.pendingG = false
+			return true, m.moveCursorTo(0)
+		}
+		m.pendingG = true
+		return true, nil
+	}
+	m.pendingG = false
+	if key.Matches(msg, m.keys.Bottom) {
+		return true, m.moveCursorTo(m.navigationLength() - 1)
+	}
+	if key.Matches(msg, m.keys.PreviewUp) {
+		return true, m.moveCursorBy(-m.navigationPage())
+	}
+	if key.Matches(msg, m.keys.PreviewDown) {
+		return true, m.moveCursorBy(m.navigationPage())
+	}
+	return false, nil
+}
+
+func (m Model) navigationLength() int {
+	if m.screen == prListScreen {
+		return len(m.openPRs)
+	}
+	return m.activeLen()
+}
+
+func (m Model) navigationPage() int {
+	height := m.detail.Height
+	if m.screen == prListScreen {
+		height = m.list.Height / 3
+	}
+	return max(1, height/2)
+}
+
+func (m *Model) moveCursorBy(delta int) tea.Cmd {
+	return m.moveCursorTo(m.navigationCursor() + delta)
+}
+
+func (m *Model) moveCursorTo(index int) tea.Cmd {
+	length := m.navigationLength()
+	if length == 0 {
+		return nil
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= length {
+		index = length - 1
+	}
+	if m.screen == prListScreen {
+		m.prCursor = index
+	} else {
+		m.cursors[m.active] = index
+	}
+	return m.sync()
+}
+
+func (m Model) navigationCursor() int {
+	if m.screen == prListScreen {
+		return m.prCursor
+	}
+	return m.cursors[m.active]
 }
 
 func (m Model) selectedBrowseURL() string {
@@ -1569,8 +1648,8 @@ func (m *Model) sync() tea.Cmd {
 		}
 		return nil
 	}
-	m.keys.PreviewUp.SetEnabled(false)
-	m.keys.PreviewDown.SetEnabled(false)
+	m.keys.PreviewUp.SetEnabled(true)
+	m.keys.PreviewDown.SetEnabled(true)
 	m.keys.PrevView.SetEnabled(false)
 	m.keys.NextView.SetEnabled(false)
 	m.keys.Filter.SetEnabled(false)
