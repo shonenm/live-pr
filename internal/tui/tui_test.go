@@ -86,8 +86,13 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = u.(Model)
-	if !m.focusDiff || m.focusExplorer {
+	if m.focusDiff || !m.focusExplorer {
 		t.Fatalf("l focus = diff:%v explorer:%v", m.focusDiff, m.focusExplorer)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = u.(Model)
+	if !m.focusDiff || m.focusExplorer {
+		t.Fatalf("second l focus = diff:%v explorer:%v", m.focusDiff, m.focusExplorer)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	m = u.(Model)
