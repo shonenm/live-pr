@@ -1177,6 +1177,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.diffTerminal != nil && m.diffTerminal.Available() {
 				return m, m.diffTerminal.Update(msg)
 			}
+			if m.fileExplorerMode() && key.Matches(msg, m.keys.Commits) {
+				return m, m.toggleFileCheck()
+			}
+			if msg.String() == "g" {
+				if m.pendingG {
+					m.pendingG = false
+					m.detail.GotoTop()
+				} else {
+					m.pendingG = true
+				}
+				return m, nil
+			}
+			m.pendingG = false
+			if key.Matches(msg, m.keys.Bottom) {
+				m.detail.GotoBottom()
+				return m, nil
+			}
 			if key.Matches(msg, m.keys.PreviewUp) {
 				m.detail.HalfPageUp()
 				return m, nil
