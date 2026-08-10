@@ -83,7 +83,7 @@ var keys = keyMap{
 	Focus:       key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
 	FocusRight:  key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
 	FocusLeft:   key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
-	Commits:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "choose commit")),
+	Commits:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commit/check")),
 	Select:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
 	Back:        key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
 	PRList:      key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
@@ -248,16 +248,20 @@ type Model struct {
 	diffCommitCommand string
 	diffTerminal      *embeddedterm.Terminal
 	focusDiff         bool
+	focusExplorer     bool
+	fileCursor        int
 	detailKey         string
 	diffCache         map[string]string
 	diffPending       map[string]bool
+	checkedFiles      map[string]bool
 
-	list   viewport.Model
-	detail viewport.Model
-	help   help.Model
-	keys   keyMap
-	w, h   int
-	ready  bool
+	list     viewport.Model
+	explorer viewport.Model
+	detail   viewport.Model
+	help     help.Model
+	keys     keyMap
+	w, h     int
+	ready    bool
 }
 
 // New builds a navigator-aware model without creating branch state unless the
@@ -405,7 +409,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	}
 	m.refreshing, m.publishing = true, false
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(base, st.Branch, "HEAD", prURL, ""))
-	m.focusDiff, m.active, m.reviewSHA = false, conversationTab, ""
+	m.focusDiff, m.focusExplorer, m.fileCursor, m.active, m.reviewSHA = false, false, 0, conversationTab, ""
 	m.layout()
 	return nil
 }
@@ -462,6 +466,7 @@ func (m *Model) useBase(base, prURL string) tea.Cmd {
 	}
 	m.commits, _ = git.CommitsRange(base, m.headRev)
 	m.files, _ = git.ChangedFilesRange(base, m.headRev)
+	m.fileCursor = 0
 	return m.restartReview(m.reviewSHA, prURL)
 }
 
@@ -475,7 +480,7 @@ func (m *Model) restartReview(sha, prURL string) tea.Cmd {
 		m.diffTerminal.Close()
 	}
 	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.base, m.head, m.headRev, prURL, sha))
-	m.focusDiff = false
+	m.focusDiff, m.focusExplorer = false, false
 	m.layout()
 	if m.diffTerminal != nil {
 		return m.diffTerminal.Init()
@@ -575,7 +580,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 		m.cache.Activities = snapshot.Activities
 		m.cache.FetchedAt = snapshot.FetchedAt
 	}
-	m.reviewSHA, m.active, m.focusDiff = "", conversationTab, false
+	m.reviewSHA, m.active, m.focusDiff, m.focusExplorer, m.fileCursor = "", conversationTab, false, false, 0
 	m.diffTerminal = nil
 	m.refreshing, m.publishing = true, false
 	m.status = "loading PR refs…"
@@ -618,9 +623,17 @@ func (m *Model) layout() {
 	if listW < 20 {
 		listW = 20
 	}
-	detailW := m.w - listW - 3
-	if detailW < 10 {
-		detailW = 10
+	rightW := m.w - listW - 3
+	if rightW < 10 {
+		rightW = 10
+	}
+	explorerW, detailW := 1, rightW
+	if m.fileExplorerMode() {
+		explorerW = max(18, rightW/3)
+		if rightW-explorerW < 20 {
+			explorerW = max(10, rightW-20)
+		}
+		detailW = rightW - explorerW - 1
 	}
 	bodyH := m.h - m.headerHeight() - footerLines
 	if bodyH < 3 {
@@ -628,10 +641,12 @@ func (m *Model) layout() {
 	}
 	if !m.ready {
 		m.list = viewport.New(listW, bodyH)
+		m.explorer = viewport.New(explorerW, bodyH)
 		m.detail = viewport.New(detailW, bodyH)
 		m.ready = true
 	} else {
 		m.list.Width, m.list.Height = listW, bodyH
+		m.explorer.Width, m.explorer.Height = explorerW, bodyH
 		m.detail.Width, m.detail.Height = detailW, bodyH
 	}
 	if m.diffTerminal != nil {
@@ -639,8 +654,13 @@ func (m *Model) layout() {
 	}
 }
 
+func reservedReviewKey(msg tea.Msg) bool {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	return ok && (key.Matches(keyMsg, keys.FocusLeft) || key.Matches(keyMsg, keys.Focus))
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.diffTerminal != nil && m.diffTerminal.Handles(msg) {
+	if m.diffTerminal != nil && m.diffTerminal.Handles(msg) && !reservedReviewKey(msg) {
 		cmd := m.diffTerminal.Update(msg)
 		if !m.diffTerminal.Available() {
 			if err := m.diffTerminal.Err(); err != nil {
@@ -857,6 +877,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.base = git.ResolveBase(msg.pr.BaseRefName)
 		m.commits, _ = git.CommitsRange(m.base, m.headRev)
 		m.files, _ = git.ChangedFilesRange(m.base, m.headRev)
+		m.fileCursor = 0
 		m.status = ""
 		stale := []string{}
 		if msg.commentsErr != nil {
@@ -1107,7 +1128,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.diffTerminal.Close()
 			}
 			m.diffTerminal = nil
-			m.focusDiff = false
+			m.focusDiff, m.focusExplorer = false, false
 			m.screen = prListScreen
 			m.autoOpenCurrent = false
 			m.refreshing, m.publishing = false, false
@@ -1118,14 +1139,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.sync()
 		}
 		if key.Matches(msg, m.keys.Focus) {
-			m.focusDiff = !m.focusDiff
+			if m.fileExplorerMode() {
+				switch {
+				case m.focusDiff:
+					m.focusDiff, m.focusExplorer = false, true
+				case m.focusExplorer:
+					m.focusExplorer = false
+				default:
+					m.focusDiff = true
+				}
+			} else {
+				m.focusDiff = !m.focusDiff
+			}
 			return m, nil
 		}
-		if !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
+		if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusRight) {
+			m.focusDiff, m.focusExplorer = true, false
+			return m, nil
+		}
+		if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusLeft) {
+			m.focusDiff, m.focusExplorer = false, false
+			return m, nil
+		}
+		if !m.fileExplorerMode() && !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
 			m.focusDiff = true
 			return m, nil
 		}
-		if m.focusDiff && key.Matches(msg, m.keys.FocusLeft) {
+		if !m.fileExplorerMode() && m.focusDiff && key.Matches(msg, m.keys.FocusLeft) {
 			m.focusDiff = false
 			return m, nil
 		}
@@ -1136,6 +1176,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.detail, cmd = m.detail.Update(msg)
 			return m, cmd
+		}
+		if m.focusExplorer {
+			if handled, cmd := m.handleVimNavigation(msg); handled {
+				return m, cmd
+			}
 		}
 		if handled, cmd := m.handleVimNavigation(msg); handled {
 			return m, cmd
@@ -1179,6 +1224,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg { return browserDone{err: openURL(url)} }
 		case key.Matches(msg, m.keys.Commits):
+			if m.fileExplorerMode() {
+				if m.focusExplorer {
+					return m, m.toggleFileCheck()
+				}
+				if m.remote {
+					return m, nil
+				}
+			}
 			m.active = commitsTab
 			m.status = "select a commit and press Enter"
 			return m, m.sync()
@@ -1326,6 +1379,9 @@ func (m Model) navigationLength() int {
 	if m.screen == prListScreen {
 		return len(m.openPRs)
 	}
+	if m.focusExplorer {
+		return len(m.files)
+	}
 	return m.activeLen()
 }
 
@@ -1354,6 +1410,8 @@ func (m *Model) moveCursorTo(index int) tea.Cmd {
 	}
 	if m.screen == prListScreen {
 		m.prCursor = index
+	} else if m.focusExplorer {
+		m.fileCursor = index
 	} else {
 		m.cursors[m.active] = index
 	}
@@ -1363,6 +1421,9 @@ func (m *Model) moveCursorTo(index int) tea.Cmd {
 func (m Model) navigationCursor() int {
 	if m.screen == prListScreen {
 		return m.prCursor
+	}
+	if m.focusExplorer {
+		return m.fileCursor
 	}
 	return m.cursors[m.active]
 }
@@ -1727,7 +1788,7 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.ToggleStack.SetEnabled(false)
 	m.keys.Focus.SetEnabled(true)
 	m.keys.FocusRight.SetEnabled(true)
-	m.keys.Commits.SetEnabled(!m.remote && m.active == conversationTab)
+	m.keys.Commits.SetEnabled(m.fileExplorerMode() || (!m.remote && m.active == conversationTab))
 	m.keys.PRList.SetEnabled(true)
 	m.keys.Select.SetEnabled(m.active == commitsTab)
 	m.keys.Back.SetEnabled(m.active == commitsTab)
@@ -1742,6 +1803,15 @@ func (m *Model) sync() tea.Cmd {
 		m.list.SetYOffset(off)
 	} else {
 		m.list.GotoTop()
+	}
+	if m.fileExplorerMode() {
+		explorer, selectedFileLine := m.buildFileExplorer()
+		m.explorer.SetContent(explorer)
+		if off := selectedFileLine - 1; off > 0 {
+			m.explorer.SetYOffset(off)
+		} else {
+			m.explorer.GotoTop()
+		}
 	}
 
 	return m.syncDetail(m.buildDetail())
@@ -1812,7 +1882,19 @@ func (m Model) View() string {
 		BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
 		BorderForeground(lipgloss.Color(borderColor)).PaddingLeft(1).
 		Render(detailContent)
-	body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), detail)
+	right := detail
+	if m.fileExplorerMode() {
+		explorerBorder := cBorder
+		if m.focusExplorer {
+			explorerBorder = cAccent
+		}
+		explorer := lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
+			BorderForeground(lipgloss.Color(explorerBorder)).PaddingLeft(1).
+			Render(m.explorer.View())
+		right = lipgloss.JoinHorizontal(lipgloss.Top, explorer, detail)
+	}
+	body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), right)
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 }
 
@@ -2343,6 +2425,63 @@ func shortSHA(sha string) string {
 	return sha
 }
 
+func (m Model) buildFileExplorer() (string, int) {
+	if len(m.files) == 0 {
+		return stMuted.Render("Files\n(no changed files)"), 0
+	}
+	lines := []string{stBold.Render("Files") + stMuted.Render(fmt.Sprintf(" · %d changed", len(m.files)))}
+	selectedLine := 0
+	for i, file := range m.files {
+		if i == m.fileCursor {
+			selectedLine = len(lines)
+		}
+		mark := "□"
+		if m.checkedFiles[m.fileKey(file)] {
+			mark = "✓"
+		}
+		path := file.Path
+		if file.OldPath != "" {
+			path = file.OldPath + " → " + file.Path
+		}
+		line := selectionBar(i == m.fileCursor) + stMuted.Render(mark+" "+file.Status) + " " + stFg.Render(path)
+		lines = append(lines, ansi.Truncate(line, max(10, m.explorer.Width), "…"))
+	}
+	return strings.Join(lines, "\n"), selectedLine
+}
+
+func (m Model) selectedFile() *git.ChangedFile {
+	if m.fileCursor < 0 || m.fileCursor >= len(m.files) {
+		return nil
+	}
+	return &m.files[m.fileCursor]
+}
+
+func (m Model) fileKey(file git.ChangedFile) string {
+	return m.base + "..." + m.headRev + "\x00" + file.Status + "\x00" + file.OldPath + "\x00" + file.Path
+}
+
+func (m Model) fileExplorerMode() bool {
+	return m.screen == detailScreen && m.diffCommand == "" && m.diffTerminal == nil
+}
+
+func (m *Model) toggleFileCheck() tea.Cmd {
+	file := m.selectedFile()
+	if file == nil {
+		return nil
+	}
+	if m.checkedFiles == nil {
+		m.checkedFiles = map[string]bool{}
+	}
+	key := m.fileKey(*file)
+	m.checkedFiles[key] = !m.checkedFiles[key]
+	if m.checkedFiles[key] {
+		m.notice = "checked " + file.Path
+	} else {
+		m.notice = "unchecked " + file.Path
+	}
+	return m.sync()
+}
+
 func (m Model) buildCommits() (string, int) {
 	if len(m.commits) == 0 {
 		return stMuted.Render("(no commits in " + m.base + "..HEAD)"), 0
@@ -2358,6 +2497,18 @@ func (m Model) buildCommits() (string, int) {
 func (m Model) buildDetail() detailContent {
 	if m.reviewSHA != "" {
 		return m.commitDetail(m.reviewSHA)
+	}
+	if m.fileExplorerMode() {
+		if file := m.selectedFile(); file != nil {
+			paths := []string{file.Path}
+			if file.OldPath != "" {
+				paths = append(paths, file.OldPath)
+			}
+			if d := git.FileDiffRange(m.base, m.headRev, paths...); d != "" {
+				return detailContent{key: "file:" + m.base + "..." + m.headRev + ":" + file.Path, raw: d, renderable: true}
+			}
+		}
+		return detailContent{raw: stMuted.Render("(no changes in selected file)")}
 	}
 	if d := git.FileDiffRange(m.base, m.headRev); d != "" {
 		return detailContent{key: "range:" + m.base + "..." + m.headRev, raw: d, renderable: true}
