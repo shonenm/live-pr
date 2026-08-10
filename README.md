@@ -83,7 +83,9 @@ Runtime state is stored outside the repository under the XDG state directory (`~
 go build -o live-pr .
 
 live-pr                 # auto-detect the repository and current branch
-live-pr demo delta       # disposable demo with delta fallback
+live-pr demo             # disposable demo with built-in git diff
+live-pr demo delta       # disposable demo with delta (unified)
+live-pr demo delta-side  # disposable demo with delta (side-by-side)
 live-pr demo codereview  # disposable demo with embedded Neovim CodeReview
 live-pr init            # optional: seed the current branch's local conclusion
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
