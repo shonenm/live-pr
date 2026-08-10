@@ -1177,6 +1177,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.diffTerminal != nil && m.diffTerminal.Available() {
 				return m, m.diffTerminal.Update(msg)
 			}
+			if key.Matches(msg, m.keys.PreviewUp) {
+				m.detail.HalfPageUp()
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.PreviewDown) {
+				m.detail.HalfPageDown()
+				return m, nil
+			}
+			switch msg.String() {
+			case "k":
+				m.detail.ScrollUp(1)
+				return m, nil
+			case "j":
+				m.detail.ScrollDown(1)
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.detail, cmd = m.detail.Update(msg)
 			return m, cmd
@@ -1263,12 +1279,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusDiff = m.diffTerminal != nil && m.diffTerminal.Available()
 			return m, tea.Batch(cmd, m.sync())
 		case key.Matches(msg, m.keys.Down):
+			if m.focusExplorer {
+				if m.fileCursor < len(m.files)-1 {
+					m.fileCursor++
+					return m, m.sync()
+				}
+				return m, nil
+			}
 			if m.cursors[m.active] < m.activeLen()-1 {
 				m.cursors[m.active]++
 				return m, m.sync()
 			}
 			return m, nil
 		case key.Matches(msg, m.keys.Up):
+			if m.focusExplorer {
+				if m.fileCursor > 0 {
+					m.fileCursor--
+					return m, m.sync()
+				}
+				return m, nil
+			}
 			if m.cursors[m.active] > 0 {
 				m.cursors[m.active]--
 				return m, m.sync()
