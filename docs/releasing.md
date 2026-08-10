@@ -4,7 +4,7 @@ Releases are built by GoReleaser from version tags.
 
 ## Prerequisites
 
-- Choose and commit a project license before the first public release.
+- The project is released under the MIT License.
 - Configure the `shonenm/homebrew-tap` repository if Homebrew distribution is enabled.
 - Ensure the GitHub Actions `GITHUB_TOKEN` can create releases.
 
