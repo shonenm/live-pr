@@ -85,14 +85,27 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 		t.Fatalf("file cursor = %d, want 1", m.fileCursor)
 	}
 
-	m.focusExplorer, m.focusDiff = false, true
+	m.fileCursor = 0
 	m.detail.Width, m.detail.Height = 40, 3
 	m.detail.SetContent(strings.Repeat("line\n", 20))
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	m = u.(Model)
 	if m.detail.YOffset == 0 {
-		t.Fatal("j did not scroll the diff")
+		t.Fatal("ctrl+d did not scroll the diff")
 	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = u.(Model)
+	if m.fileCursor != 1 {
+		t.Fatalf("G file cursor = %d, want 1", m.fileCursor)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = u.(Model)
+	if m.fileCursor != 0 {
+		t.Fatalf("gg file cursor = %d, want 0", m.fileCursor)
+	}
+
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
 	if !m.checkedFiles[m.fileKey(m.files[m.fileCursor])] {
