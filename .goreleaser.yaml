@@ -1,0 +1,56 @@
+version: 2
+
+project_name: live-pr
+
+before:
+  hooks:
+    - go mod verify
+    - go test ./...
+
+builds:
+  - id: live-pr
+    main: .
+    binary: live-pr
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X github.com/shonenm/live-pr/cmd.version={{.Version}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Version }}_
+      {{- if eq .Os "darwin" }}_macOS{{ end }}
+      {{- if eq .Os "linux" }}_Linux{{ end }}
+      {{- if eq .Os "windows" }}_Windows{{ end }}
+      _{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^Merge '
+      - '^docs:'
+      - '^test:'
