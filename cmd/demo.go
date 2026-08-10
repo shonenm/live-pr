@@ -11,16 +11,18 @@ import (
 )
 
 var demoCmd = &cobra.Command{
-	Use:   "demo [delta|codereview]",
+	Use:   "demo [git|delta|delta-side|codereview]",
 	Short: "Open a disposable local review demo",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		mode := "delta"
+		mode := "git"
 		if len(args) == 1 {
 			mode = args[0]
 		}
-		if mode != "delta" && mode != "codereview" {
-			return fmt.Errorf("unknown demo mode %q (use delta or codereview)", mode)
+		switch mode {
+		case "git", "delta", "delta-side", "codereview":
+		default:
+			return fmt.Errorf("unknown demo mode %q (use git, delta, delta-side, or codereview)", mode)
 		}
 		return runDemo(mode)
 	},
@@ -104,13 +106,30 @@ func createDemoRepo(root, mode string) error {
 [diff]
 command = ""
 commit_command = ""
-display = "delta --color-only"
+display = ""
 `
-	if mode == "codereview" {
+	switch mode {
+	case "delta":
+		config = `reviewer = ""
+
+[diff]
+command = ""
+commit_command = ""
+display = "delta --color-only --paging=never --line-numbers"
+`
+	case "delta-side":
+		config = `reviewer = ""
+
+[diff]
+command = ""
+commit_command = ""
+display = "delta --paging=never --side-by-side --line-numbers --width=\"$LIVE_PR_DIFF_WIDTH\""
+`
+	case "codereview":
 		config = `[diff]
 command = "nvim -c \"CodeDiff $LIVE_PR_BASE...$LIVE_PR_HEAD_REV\""
 commit_command = "nvim -c \"CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA\""
-display = "delta --color-only"
+display = ""
 `
 	}
 	return writeDemoFile(root, ".live-pr.toml", config)
