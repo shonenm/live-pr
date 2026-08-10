@@ -123,7 +123,7 @@ display = "delta --color-only --paging=never --line-numbers"
 [diff]
 command = ""
 commit_command = ""
-display = "delta --paging=never --side-by-side --line-numbers"
+display = "delta --paging=never --side-by-side --line-numbers --width=variable"
 `
 	case "codereview":
 		config = `[diff]
