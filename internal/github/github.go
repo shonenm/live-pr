@@ -157,6 +157,7 @@ type PageInfo struct {
 
 // PRPage is one explicitly requested page of lightweight pull-request rows.
 type PRPage struct {
+	Repository  string
 	ViewerLogin string
 	PRs         []PR
 	TotalCount  int
@@ -355,7 +356,7 @@ func (c Client) SearchPRs(query, cursor string) (PRPage, error) {
 	for _, node := range response.Data.Search.Nodes {
 		prs = append(prs, node.pullRequest(false))
 	}
-	return PRPage{ViewerLogin: response.Data.Viewer.Login, PRs: prs, TotalCount: response.Data.Search.IssueCount, PageInfo: response.Data.Search.PageInfo}, nil
+	return PRPage{Repository: repoName, ViewerLogin: response.Data.Viewer.Login, PRs: prs, TotalCount: response.Data.Search.IssueCount, PageInfo: response.Data.Search.PageInfo}, nil
 }
 
 // FindPreview loads the expensive preview fields for one PR only.

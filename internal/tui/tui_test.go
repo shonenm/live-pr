@@ -949,6 +949,16 @@ func TestPRFilterSupportsGitHubTermsAndFreeText(t *testing.T) {
 	}
 }
 
+func TestPRListHeaderShowsRepositoryAtWideAndNarrowWidths(t *testing.T) {
+	for _, width := range []int{50, 120} {
+		m := testModel()
+		m.repository, m.w = "acme/project", width
+		if out := ansi.Strip(m.renderPRListHeader()); !strings.Contains(out, "acme/project") {
+			t.Fatalf("width %d header missing repository: %q", width, out)
+		}
+	}
+}
+
 func TestPRListFilterEditingAndViewKeys(t *testing.T) {
 	m := testModel()
 	m.screen, m.viewerLogin = prListScreen, "me"

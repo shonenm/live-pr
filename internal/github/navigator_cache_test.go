@@ -10,6 +10,7 @@ import (
 func TestNavigatorCacheRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".live-pr", "github-prs.json")
 	cache := NewNavigatorCache()
+	cache.Repository = "acme/repo"
 	cache.ViewerLogin = "octocat"
 	cache.FetchedStates["OPEN"] = true
 	cache.FetchedStates["CLOSED"] = true
@@ -29,7 +30,7 @@ func TestNavigatorCacheRoundTrip(t *testing.T) {
 	}
 	snapshot, ok := got.Snapshot(12)
 	viewPRs, view, viewOK := got.View("Assigned")
-	if got.ViewerLogin != "octocat" || !got.FetchedStates["OPEN"] || !got.FetchedStates["CLOSED"] || len(got.PRs) != 1 || got.PRs[0].HeadRefName != "feature/x" || len(got.PRs[0].ReviewRequests) != 1 || !viewOK || view.TotalCount != 42 || len(viewPRs) != 1 || !ok || snapshot.PR.Number != 12 || snapshot.PR.Body != "" || len(snapshot.Comments) != 1 {
+	if got.Repository != "acme/repo" || got.ViewerLogin != "octocat" || !got.FetchedStates["OPEN"] || !got.FetchedStates["CLOSED"] || len(got.PRs) != 1 || got.PRs[0].HeadRefName != "feature/x" || len(got.PRs[0].ReviewRequests) != 1 || !viewOK || view.TotalCount != 42 || len(viewPRs) != 1 || !ok || snapshot.PR.Number != 12 || snapshot.PR.Body != "" || len(snapshot.Comments) != 1 {
 		t.Fatalf("navigator cache = %#v snapshot=%#v", got, snapshot)
 	}
 }
