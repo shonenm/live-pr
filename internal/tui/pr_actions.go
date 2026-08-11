@@ -73,7 +73,6 @@ func (m Model) renderActionPopup() string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAccent)).
-		Background(lipgloss.Color(cSelectedBg)).
 		Padding(1, 3).
 		Width(contentWidth).
 		Render(strings.Join(lines, "\n"))

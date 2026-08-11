@@ -1582,6 +1582,9 @@ func TestLocalPRCommentsCanBeManagedFromTUI(t *testing.T) {
 	if m.localEditMode != addLocalComment {
 		t.Fatalf("a did not open comment editor: %v", m.localEditMode)
 	}
+	if background := m.localEditor.FocusedStyle.CursorLine.GetBackground(); background != (lipgloss.NoColor{}) {
+		t.Fatalf("comment editor cursor line background = %v, want transparent", background)
+	}
 	m.localEditor.SetValue("kind: decision\n\nKeep append-only history\n\nAvoid lost concurrent comments.")
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	m = u.(Model)
