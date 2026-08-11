@@ -1,8 +1,13 @@
 package tui
 
 import (
+	"strings"
+	"time"
+
 	"github.com/charmbracelet/bubbles/help"
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/theme"
@@ -36,6 +41,81 @@ var (
 	stAccent    = lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent))
 )
 
+// renderPane draws a rounded box with the title embedded in the top border,
+// lazygit-style: focused panes get the accent border, others stay dim.
+func renderPane(title, content string, width, height int, focused bool) string {
+	if width < 4 || height < 2 {
+		return content
+	}
+	borderColor, titleStyle := cBorder, stMuted.Bold(true)
+	if focused {
+		borderColor, titleStyle = cAccent, stAccent.Bold(true)
+	}
+	border := lipgloss.NewStyle().Foreground(lipgloss.Color(borderColor))
+	innerW := width - 2
+	top := border.Render("╭" + strings.Repeat("─", innerW) + "╮")
+	if title != "" {
+		label := ansi.Truncate(" "+title+" ", max(0, width-4), "…")
+		fill := width - 3 - lipgloss.Width(label)
+		top = border.Render("╭─") + titleStyle.Render(label) + border.Render(strings.Repeat("─", max(0, fill))+"╮")
+	}
+	side := border.Render("│")
+	contentW := innerW - 2
+	lines := strings.Split(content, "\n")
+	rows := make([]string, 0, height)
+	rows = append(rows, top)
+	for i := 0; i < height-2; i++ {
+		line := ""
+		if i < len(lines) {
+			line = ansi.Truncate(lines[i], contentW, "…")
+		}
+		if pad := contentW - lipgloss.Width(line); pad > 0 {
+			line += strings.Repeat(" ", pad)
+		}
+		rows = append(rows, side+" "+line+" "+side)
+	}
+	rows = append(rows, border.Render("╰"+strings.Repeat("─", innerW)+"╯"))
+	return strings.Join(rows, "\n")
+}
+
+// footerSegment is the lualine-style mode block naming the focused pane.
+func footerSegment(label string) string {
+	return lipgloss.NewStyle().
+		Background(lipgloss.Color(cAccent)).Foreground(lipgloss.Color("#0d1117")).
+		Bold(true).Padding(0, 1).Render(label)
+}
+
+// stateGlyph maps a PR state to its GitHub-colored dot.
+func stateGlyph(state string) (string, lipgloss.Style) {
+	switch state {
+	case "open":
+		return "●", stGreenF
+	case "draft":
+		return "◌", stMuted
+	case "merged":
+		return "●", lipgloss.NewStyle().Foreground(lipgloss.Color(cDoneEmphasis))
+	case "closed":
+		return "●", stRedF
+	default:
+		return "●", stMuted
+	}
+}
+
+// padRow truncates an already-styled row and fills the remainder with the
+// row's background so full-row selection reaches the pane edge.
+func padRow(row string, width int, fill lipgloss.Style) string {
+	row = ansi.Truncate(row, width, "…")
+	if gap := width - lipgloss.Width(row); gap > 0 {
+		row += fill.Render(strings.Repeat(" ", gap))
+	}
+	return row
+}
+
+func newLoadSpinner() bspinner.Model {
+	frames := bspinner.Spinner{Frames: []string{"●∙∙", "∙●∙", "∙∙●"}, FPS: time.Second / 6}
+	return bspinner.New(bspinner.WithSpinner(frames), bspinner.WithStyle(stAttention))
+}
+
 func newHelp() help.Model {
 	h := help.New()
 	h.Styles.ShortKey = stFg
@@ -48,6 +128,19 @@ func newHelp() help.Model {
 	return h
 }
 
+// kindLabel colors each timeline event kind so the conversation feed can be
+// scanned by decision flow, not just read.
 func kindLabel(k event.Kind) string {
-	return stMuted.Bold(true).Render(string(k))
+	style := stMuted
+	switch k {
+	case event.Decision:
+		style = stAccent
+	case event.Pivot:
+		style = stAttention
+	case event.Summary:
+		style = lipgloss.NewStyle().Foreground(lipgloss.Color(cDoneEmphasis))
+	case event.Note:
+		style = stGreenF
+	}
+	return style.Bold(true).Render(string(k))
 }
