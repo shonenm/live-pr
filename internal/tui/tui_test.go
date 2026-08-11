@@ -289,16 +289,41 @@ func TestHeaderShowsCachedPRAssigneesAndLabels(t *testing.T) {
 			t.Fatalf("header missing %q: %q", want, plain)
 		}
 	}
-	if m.headerHeight() != headerBaseLines+1 {
+	if m.headerHeight() != logoHeight {
 		t.Fatalf("PR header height = %d", m.headerHeight())
+	}
+	if lines := strings.Count(plain, "\n") + 1; lines != logoHeight {
+		t.Fatalf("PR header rendered %d lines, want %d: %q", lines, logoHeight, plain)
 	}
 	m.w = 25
 	if width := lipgloss.Width(m.renderPRMeta(*m.cache.PR)); width > m.w {
 		t.Fatalf("metadata width = %d, want <= %d", width, m.w)
 	}
 	m.cache.PR = nil
-	if m.headerHeight() != headerBaseLines {
+	if m.headerHeight() != logoHeight {
 		t.Fatalf("local header height = %d", m.headerHeight())
+	}
+}
+
+func TestHeaderCarriesWordmarkUntilTheTerminalIsNarrow(t *testing.T) {
+	m := testModel()
+	m.w = 120
+	wide := ansi.Strip(m.renderHeader())
+	if !strings.Contains(wide, "┗━╸╹┗┛ ┗━╸") {
+		t.Fatalf("wide header missing the wordmark: %q", wide)
+	}
+	for _, line := range strings.Split(wide, "\n") {
+		if width := lipgloss.Width(line); width > m.w {
+			t.Fatalf("header line overflows %d: %d %q", m.w, width, line)
+		}
+	}
+	m.w = logoWidth + 10
+	narrow := ansi.Strip(m.renderHeader())
+	if strings.Contains(narrow, "┗━╸╹┗┛ ┗━╸") {
+		t.Fatalf("narrow header should drop the wordmark: %q", narrow)
+	}
+	if lines := strings.Count(narrow, "\n") + 1; lines != logoHeight {
+		t.Fatalf("narrow header = %d lines, want %d to keep the layout stable", lines, logoHeight)
 	}
 }
 
@@ -1285,7 +1310,7 @@ func TestCommitPickerCancelKeepsBranchTerminal(t *testing.T) {
 	}
 }
 
-func TestPRRefreshAddsMetadataHeaderRow(t *testing.T) {
+func TestPRRefreshAddsMetadataRowWithinTheHeader(t *testing.T) {
 	m := testModel()
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -1293,8 +1318,13 @@ func TestPRRefreshAddsMetadataHeaderRow(t *testing.T) {
 	before := m.detail.Height
 	u, _ = m.Update(githubRefreshed{pr: gh.PR{Number: 12, State: "OPEN"}})
 	m = u.(Model)
-	if m.detail.Height != before-1 || m.headerHeight() != headerBaseLines+1 {
-		t.Fatalf("metadata row not reflected in layout: before=%d after=%d header=%d", before, m.detail.Height, m.headerHeight())
+	// The wordmark already reserves three header rows, so the metadata row
+	// costs no body height.
+	if m.detail.Height != before || m.headerHeight() != logoHeight {
+		t.Fatalf("metadata row disturbed the layout: before=%d after=%d header=%d", before, m.detail.Height, m.headerHeight())
+	}
+	if !strings.Contains(ansi.Strip(m.renderHeader()), "#12 open") {
+		t.Fatalf("metadata row missing from the header: %q", ansi.Strip(m.renderHeader()))
 	}
 }
 
@@ -1527,7 +1557,7 @@ func TestRefreshAndPublishAreMutuallyExclusive(t *testing.T) {
 }
 
 func TestTranslateDiffMouseUsesContentBounds(t *testing.T) {
-	headerHeight := headerBaseLines + 1
+	headerHeight := logoHeight + 1 // header rows plus the review pane's top border
 	msg := tea.MouseMsg{X: 42, Y: headerHeight, Action: tea.MouseActionPress}
 	local, ok := translateDiffMouse(msg, 40, 80, 20, headerHeight)
 	if !ok || local.X != 0 || local.Y != 0 {
