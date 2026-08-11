@@ -108,6 +108,33 @@ func TestListOpenPaginatesPullRequests(t *testing.T) {
 	}
 }
 
+func TestListOpenPaginatesReviewRequestsIndependently(t *testing.T) {
+	var apiCalls int
+	client := Client{run: func(args ...string) ([]byte, error) {
+		if args[0] == "repo" {
+			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
+		}
+		apiCalls++
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "reviewAfter=review-1") {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "after=") {
+					t.Fatalf("finished PR cursor was sent again: %s", joined)
+				}
+			}
+			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":2}],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`), nil
+		}
+		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":1}],"pageInfo":{"hasNextPage":true,"endCursor":"review-1"}},"repository":{"pullRequests":{"nodes":[{"number":1},{"number":2}],"pageInfo":{"hasNextPage":false}}}}}`), nil
+	}}
+	list, err := client.ListOpen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apiCalls != 2 || len(list.PRs) != 2 || !list.PRs[0].ViewerReviewRequested || !list.PRs[1].ViewerReviewRequested {
+		t.Fatalf("review pagination = calls:%d prs:%#v", apiCalls, list.PRs)
+	}
+}
+
 func TestListStateRejectsUnsupportedState(t *testing.T) {
 	called := false
 	c := Client{run: func(args ...string) ([]byte, error) {
