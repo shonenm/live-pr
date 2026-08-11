@@ -534,6 +534,35 @@ func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 	}
 }
 
+func TestPRListTogglesOpenAndClosed(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.navigator.PRs = []gh.PR{
+		{Number: 1, State: "OPEN", Title: "open"},
+		{Number: 2, State: "CLOSED", Title: "closed"},
+	}
+	m.applyPRFilters(0)
+	if len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
+		t.Fatalf("default state = %#v", m.openPRs)
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = u.(Model)
+	if m.prListState != closedPRListState || !m.listRefreshing || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 {
+		t.Fatalf("closed state switch = state:%v refreshing:%v prs:%#v", m.prListState, m.listRefreshing, m.openPRs)
+	}
+	u, _ = m.Update(prListRefreshed{generation: m.prListGeneration, state: closedPRListState, prs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}})
+	m = u.(Model)
+	m.sync()
+	if len(m.openPRs) != 1 || m.openPRs[0].Number != 2 || !strings.Contains(ansi.Strip(m.buildPRList()), "closed") {
+		t.Fatalf("closed PR list = %#v", m.openPRs)
+	}
+	if m.keys.Merge.Enabled() || m.keys.Close.Enabled() {
+		t.Fatal("closed PR actions must be disabled")
+	}
+}
+
 func TestPRFilterSupportsGitHubTermsAndFreeText(t *testing.T) {
 	failed := []gh.PRCheck{{Status: "COMPLETED", Conclusion: "FAILURE"}}
 	pr := gh.PR{Number: 7, Title: "Fix Login", HeadRefName: "auth/fix", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "me"}}, ReviewRequests: []gh.PRUser{{Login: "reviewer"}}, Labels: []gh.PRLabel{{Name: "bug"}}, Checks: failed, Mergeable: "CONFLICTING", IsDraft: false}

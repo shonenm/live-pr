@@ -38,6 +38,13 @@ type screen int
 
 type prView uint8
 
+type prListState uint8
+
+const (
+	openPRListState prListState = iota
+	closedPRListState
+)
+
 const (
 	allPRsView prView = iota
 	reviewRequestedView
@@ -59,14 +66,14 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleState, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleState, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleState, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -79,6 +86,7 @@ var keys = keyMap{
 	PrevView:    key.NewBinding(key.WithKeys("["), key.WithHelp("[", "previous view")),
 	NextView:    key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next view")),
 	Filter:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	ToggleState: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "open/closed")),
 	ToggleStack: key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
 	Focus:       key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
 	FocusRight:  key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
@@ -99,6 +107,7 @@ var keys = keyMap{
 
 type prListRefreshed struct {
 	generation uint64
+	state      prListState
 	viewer     string
 	prs        []gh.PR
 	err        error
@@ -219,6 +228,7 @@ type Model struct {
 	prPreviewLoading          map[int]bool
 	prPreviewLoaded           map[int]bool
 	prView                    prView
+	prListState               prListState
 	filterQuery               string
 	filterBeforeEdit          string
 	filterSelectionBeforeEdit int
@@ -300,7 +310,7 @@ func New() (Model, error) {
 		currentPR = nil
 		cache = gh.NewCache(branch)
 	}
-	if currentPR == nil {
+	if currentPR == nil && strings.EqualFold(navigator.PRsState, "OPEN") {
 		for i := range navigator.PRs {
 			if isCurrentPR(navigator.PRs[i], branch) {
 				currentPR = &navigator.PRs[i]
@@ -437,7 +447,7 @@ func Run() error {
 }
 
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{fetchPRList(m.prListGeneration)}
+	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.prListState)}
 	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
 		cmds = append(cmds, fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration))
 	}
@@ -509,10 +519,10 @@ func renderDiff(generation uint64, key, command, raw string, width int) tea.Cmd 
 	}
 }
 
-func fetchPRList(generation uint64) tea.Cmd {
+func fetchPRList(generation uint64, state prListState) tea.Cmd {
 	return func() tea.Msg {
-		list, err := gh.New().ListOpen()
-		return prListRefreshed{generation: generation, viewer: list.ViewerLogin, prs: list.PRs, err: err}
+		list, err := gh.New().ListState(state.String())
+		return prListRefreshed{generation: generation, state: state, viewer: list.ViewerLogin, prs: list.PRs, err: err}
 	}
 }
 
@@ -688,7 +698,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.sync()
 
 	case prListRefreshed:
-		if msg.generation != m.prListGeneration {
+		if msg.generation != m.prListGeneration || msg.state != m.prListState {
 			return m, nil
 		}
 		m.listRefreshing = false
@@ -702,6 +712,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewerLogin = msg.viewer
 		m.navigator.ViewerLogin = msg.viewer
 		m.navigator.PRs = msg.prs
+		m.navigator.PRsState = msg.state.String()
 		if m.screen == detailScreen && !m.remote && m.cache.PR == nil {
 			for i := range msg.prs {
 				if isCurrentPR(msg.prs[i], m.currentBranch) {
@@ -806,8 +817,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.listRefreshing = true
 			m.prListGeneration++
-			m.githubStatus = "GitHub: refreshing PR list…"
-			return m, fetchPRList(m.prListGeneration)
+			m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
+			return m, fetchPRList(m.prListGeneration, m.prListState)
 		}
 		m.close()
 		next, err := New()
@@ -1073,9 +1084,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, m.keys.Quit):
 				return m, tea.Quit
 			case key.Matches(msg, m.keys.Merge):
-				if pr := m.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
-					m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, pr.Number, *pr
-					m.status, m.notice = "", ""
+				if m.prListState == openPRListState {
+					if pr := m.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
+						m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, pr.Number, *pr
+						m.status, m.notice = "", ""
+					}
 				}
 				return m, nil
 			case key.Matches(msg, m.keys.Checkout):
@@ -1085,11 +1098,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case key.Matches(msg, m.keys.Close):
-				if pr := m.selectedPR(); pr != nil && pr.Number > 0 {
-					m.pendingPRAction, m.prActionNumber, m.prActionPR = closePR, pr.Number, *pr
-					m.status, m.notice = "", ""
+				if m.prListState == openPRListState {
+					if pr := m.selectedPR(); pr != nil && pr.Number > 0 {
+						m.pendingPRAction, m.prActionNumber, m.prActionPR = closePR, pr.Number, *pr
+						m.status, m.notice = "", ""
+					}
 				}
 				return m, nil
+			case key.Matches(msg, m.keys.ToggleState):
+				if m.listRefreshing {
+					return m, nil
+				}
+				selected := m.selectedPRNumber()
+				if m.prListState == openPRListState {
+					m.prListState = closedPRListState
+				} else {
+					m.prListState = openPRListState
+				}
+				m.listRefreshing = true
+				m.prListGeneration++
+				m.applyPRFilters(selected)
+				m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
+				return m, fetchPRList(m.prListGeneration, m.prListState)
 			case key.Matches(msg, m.keys.ToggleStack):
 				if stack, ok := m.stackForPR(m.selectedPRNumber()); ok {
 					collapsing := !m.collapsedStacks[stack.id]
@@ -1108,8 +1138,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.listRefreshing = true
 				m.prListGeneration++
-				m.githubStatus = "GitHub: refreshing PR list…"
-				return m, fetchPRList(m.prListGeneration)
+				m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
+				return m, fetchPRList(m.prListGeneration, m.prListState)
 			case key.Matches(msg, m.keys.PreviewDown):
 				m.detail.HalfPageDown()
 				return m, nil
@@ -1566,6 +1596,20 @@ func (m Model) selectedBrowseURL() string {
 	return ""
 }
 
+func (s prListState) String() string {
+	if s == closedPRListState {
+		return "CLOSED"
+	}
+	return "OPEN"
+}
+
+func (s prListState) Label() string {
+	if s == closedPRListState {
+		return "Closed"
+	}
+	return "Open"
+}
+
 func (v prView) String() string {
 	switch v {
 	case reviewRequestedView:
@@ -1579,6 +1623,17 @@ func (v prView) String() string {
 	default:
 		return "All"
 	}
+}
+
+func (m Model) matchesListState(pr gh.PR) bool {
+	if pr.Number == 0 {
+		return m.prListState == openPRListState
+	}
+	if pr.State == "" {
+		// Keep manually constructed/cache entries usable while metadata is sparse.
+		return true
+	}
+	return strings.EqualFold(pr.State, m.prListState.String())
 }
 
 func (m Model) matchesView(pr gh.PR, view prView) bool {
@@ -1624,7 +1679,7 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 	m.allPRs = m.withLocalPR(m.navigator.PRs)
 	m.filteredPRs = make([]gh.PR, 0, len(m.allPRs))
 	for _, pr := range m.allPRs {
-		if m.matchesView(pr, m.prView) && matchesPRFilter(pr, m.filterQuery, m.viewerLogin) {
+		if m.matchesListState(pr) && m.matchesView(pr, m.prView) && matchesPRFilter(pr, m.filterQuery, m.viewerLogin) {
 			m.filteredPRs = append(m.filteredPRs, pr)
 		}
 	}
@@ -1877,6 +1932,7 @@ func (m *Model) sync() tea.Cmd {
 		m.keys.PrevView.SetEnabled(true)
 		m.keys.NextView.SetEnabled(true)
 		m.keys.Filter.SetEnabled(true)
+		m.keys.ToggleState.SetEnabled(!m.listRefreshing)
 		_, stacked := m.stackForPR(m.selectedPRNumber())
 		m.keys.ToggleStack.SetEnabled(stacked)
 		m.keys.Focus.SetEnabled(false)
@@ -1887,9 +1943,9 @@ func (m *Model) sync() tea.Cmd {
 		m.keys.Browse.SetEnabled(false)
 		m.keys.Publish.SetEnabled(false)
 		pr := m.selectedPR()
-		m.keys.Merge.SetEnabled(pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && m.prActionRunning == noPRAction)
+		m.keys.Merge.SetEnabled(m.prListState == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && m.prActionRunning == noPRAction)
 		m.keys.Checkout.SetEnabled(pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && m.prActionRunning == noPRAction)
-		m.keys.Close.SetEnabled(pr != nil && pr.Number > 0 && m.prActionRunning == noPRAction)
+		m.keys.Close.SetEnabled(m.prListState == openPRListState && pr != nil && pr.Number > 0 && m.prActionRunning == noPRAction)
 		content, selectedLine := m.buildPRListRows()
 		m.list.SetContent(content)
 		m.detail.SetContent(m.buildPRPreview())
@@ -1902,6 +1958,7 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.PrevView.SetEnabled(false)
 	m.keys.NextView.SetEnabled(false)
 	m.keys.Filter.SetEnabled(false)
+	m.keys.ToggleState.SetEnabled(false)
 	m.keys.ToggleStack.SetEnabled(false)
 	m.keys.Focus.SetEnabled(true)
 	m.keys.FocusRight.SetEnabled(true)
@@ -2017,8 +2074,9 @@ func (m Model) renderPRListHeader() string {
 		}
 		views = append(views, style.Render(label))
 	}
-	line1 := stBold.Render("Pull requests") + "  " + strings.Join(views, " ")
-	filter := stMuted.Render("/ filter · [/] views · space stacks")
+	state := stAccent.Render(m.prListState.Label())
+	line1 := stBold.Render("Pull requests") + "  " + state + "  " + strings.Join(views, " ")
+	filter := stMuted.Render("/ filter · [/] views · s state · space stacks")
 	if m.filterEditing {
 		filter = stAccent.Render("Filter: ") + stFg.Render(m.filterQuery+"▌")
 	} else if m.filterQuery != "" {
@@ -2032,7 +2090,7 @@ func (m Model) renderPRListHeader() string {
 func (m Model) viewCount(view prView) int {
 	count := 0
 	for _, pr := range m.allPRs {
-		if m.matchesView(pr, view) {
+		if m.matchesListState(pr) && m.matchesView(pr, view) {
 			count++
 		}
 	}
@@ -2354,7 +2412,7 @@ func (m Model) buildPRList() string {
 func (m Model) buildPRListRows() (string, int) {
 	if len(m.openPRs) == 0 {
 		if m.listRefreshing {
-			return stMuted.Render("fetching open pull requests…"), 0
+			return stMuted.Render("fetching " + strings.ToLower(m.prListState.Label()) + " pull requests…"), 0
 		}
 		return stMuted.Render("(no pull requests in this view)"), 0
 	}
@@ -2397,18 +2455,21 @@ func (m Model) buildPRListRows() (string, int) {
 }
 
 func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
-	state := "open"
+	state := strings.ToLower(pr.State)
+	if state == "" {
+		state = "open"
+	}
 	identifier := fmt.Sprintf("#%d", pr.Number)
 	owner := " · @" + pr.Author.Login
-	if pr.IsDraft {
+	if pr.IsDraft && state == "open" {
 		state = "draft"
 	}
 	if pr.Number == 0 {
 		state, identifier, owner = "local", "Local PR", ""
 	}
-	stateStyle := stGreenF
-	if state != "open" {
-		stateStyle = stMuted
+	stateStyle := stMuted
+	if state == "open" {
+		stateStyle = stGreenF
 	}
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	line := selectionBar(selected) + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
