@@ -26,7 +26,7 @@ func TestNavigatorCacheRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot, ok := got.Snapshot(12)
-	if got.ViewerLogin != "octocat" || !got.FetchedStates["OPEN"] || !got.FetchedStates["CLOSED"] || len(got.PRs) != 1 || got.PRs[0].HeadRefName != "feature/x" || len(got.PRs[0].ReviewRequests) != 1 || !ok || snapshot.PR.Body != "description" || len(snapshot.Comments) != 1 {
+	if got.ViewerLogin != "octocat" || !got.FetchedStates["OPEN"] || !got.FetchedStates["CLOSED"] || len(got.PRs) != 1 || got.PRs[0].HeadRefName != "feature/x" || len(got.PRs[0].ReviewRequests) != 1 || !ok || snapshot.PR.Number != 12 || snapshot.PR.Body != "" || len(snapshot.Comments) != 1 {
 		t.Fatalf("navigator cache = %#v snapshot=%#v", got, snapshot)
 	}
 }
