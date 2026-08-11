@@ -3,14 +3,25 @@
 package git
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
 	"strings"
 )
 
 func run(args ...string) (string, error) {
-	out, err := exec.Command("git", args...).Output()
-	return strings.TrimSpace(string(out)), err
+	cmd := exec.Command("git", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, detail)
+		}
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // RepoRoot returns the absolute path to the current repository's top level.
@@ -147,11 +158,11 @@ func ChangedFiles(base string) ([]ChangedFile, error) { return ChangedFilesRange
 
 // ChangedFilesRange returns changed paths in base...head order.
 func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
-	out, err := exec.Command("git", "diff", "--name-status", "-z", base+"..."+head).Output()
+	out, err := run("diff", "--name-status", "-z", base+"..."+head)
 	if err != nil {
-		return nil, fmt.Errorf("git diff --name-status: %w", err)
+		return nil, err
 	}
-	parts := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	parts := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
 	var files []ChangedFile
 	for i := 0; i < len(parts) && parts[i] != ""; {
 		status := parts[i]

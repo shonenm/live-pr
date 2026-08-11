@@ -4,9 +4,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestGitErrorIncludesOperationAndStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX fake executable")
+	}
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "git")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho 'fatal: deliberate failure' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	_, err := Commits("main")
+	if err == nil || !strings.Contains(err.Error(), "git log") || !strings.Contains(err.Error(), "fatal: deliberate failure") {
+		t.Fatalf("git error = %v", err)
+	}
+}
 
 func TestFetchPullLeavesCheckoutUntouched(t *testing.T) {
 	root := t.TempDir()

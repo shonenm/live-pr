@@ -87,15 +87,45 @@ func TestLoadDiffDisplayWithRepoOverride(t *testing.T) {
 	}
 }
 
-func TestLoadReportsMalformedConfigPath(t *testing.T) {
+func TestLoadMissingFilesUsesDefaults(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	got, err := Load(t.TempDir())
+	if err != nil || got != Default() {
+		t.Fatalf("missing config = %+v, err=%v", got, err)
+	}
+}
+
+func TestLoadReportsMalformedConfigPaths(t *testing.T) {
+	for _, source := range []string{"global", "repository"} {
+		t.Run(source, func(t *testing.T) {
+			global := t.TempDir()
+			repo := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", global)
+			path := filepath.Join(repo, ".live-pr.toml")
+			if source == "global" {
+				path = filepath.Join(global, "live-pr", "config.toml")
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(path, []byte("[diff\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(repo); err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("malformed config error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadReportsReadErrors(t *testing.T) {
 	global := t.TempDir()
-	repo := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", global)
-	path := filepath.Join(repo, ".live-pr.toml")
-	if err := os.WriteFile(path, []byte("[diff\n"), 0o644); err != nil {
+	path := filepath.Join(global, "live-pr", "config.toml")
+	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(repo); err == nil || !strings.Contains(err.Error(), path) {
-		t.Fatalf("malformed config error = %v", err)
+	if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "read config "+path) {
+		t.Fatalf("read config error = %v", err)
 	}
 }
