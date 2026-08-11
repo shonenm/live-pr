@@ -7,16 +7,24 @@ default: check
 test:
     go test ./...
 
+# Run race detection where asynchronous state is concentrated.
+race:
+    go test -race ./internal/github ./internal/tui
+
 # Run static analysis.
 vet:
     go vet ./...
+
+# Verify downloaded modules.
+mod-verify:
+    go mod verify
 
 # Check formatting and whitespace errors.
 diff-check:
     git diff --check
 
 # Run all local checks.
-check: test vet diff-check
+check: test race vet mod-verify diff-check
 
 # Build the binary.
 build:
