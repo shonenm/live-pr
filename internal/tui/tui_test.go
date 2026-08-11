@@ -24,6 +24,7 @@ import (
 func testModel() Model {
 	return Model{
 		title:       "CodeDiff review mode",
+		prView:      allPRsView,
 		diffCommand: "nvim",
 		base:        "main",
 		head:        "feature/x",
@@ -505,6 +506,19 @@ func TestLocalPRListEntryCarriesDiffStats(t *testing.T) {
 	}
 }
 
+func TestPRViewOrderDefaultsToAssigned(t *testing.T) {
+	var m Model
+	if m.prView != assignedView {
+		t.Fatalf("default view = %v", m.prView)
+	}
+	want := []prView{assignedView, reviewRequestedView, allPRsView, authoredView, needsMeView, closedPRsView}
+	for i, view := range want {
+		if prView(i) != view {
+			t.Fatalf("view order[%d] = %v, want %v", i, prView(i), view)
+		}
+	}
+}
+
 func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 	m := testModel()
 	m.viewerLogin = "me"
@@ -534,39 +548,92 @@ func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 	}
 }
 
-func TestPRListTogglesOpenAndClosed(t *testing.T) {
-	m := testModel()
-	m.screen = prListScreen
-	m.navigator.PRs = []gh.PR{
-		{Number: 1, State: "OPEN", Title: "open"},
-		{Number: 2, State: "CLOSED", Title: "closed"},
+func TestReplacePRsForStatePreservesOtherStateWithoutDuplicates(t *testing.T) {
+	existing := []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "CLOSED"}}
+	got := replacePRsForState(existing, []gh.PR{{Number: 3, State: "CLOSED"}}, closedPRListState)
+	if len(got) != 2 || got[0].Number != 1 || got[1].Number != 3 {
+		t.Fatalf("merged state cache = %#v", got)
 	}
+	got = replacePRsForState(existing, []gh.PR{{Number: 1, State: "CLOSED"}}, closedPRListState)
+	if len(got) != 1 || got[0].Number != 1 || got[0].State != "CLOSED" {
+		t.Fatalf("deduplicated state transition = %#v", got)
+	}
+}
+
+func TestPRListLoadsClosedFromView(t *testing.T) {
+	m := testModel()
+	m.screen, m.viewerLogin = prListScreen, "me"
+	m.navigator.FetchedStates = map[string]bool{"OPEN": true}
+	m.navigator.PRs = []gh.PR{{Number: 1, State: "OPEN", Title: "open", Assignees: []gh.PRUser{{Login: "me"}}}}
 	m.applyPRFilters(0)
 	if len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
 		t.Fatalf("default state = %#v", m.openPRs)
 	}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m.prView = needsMeView
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	m = u.(Model)
-	if m.prListState != closedPRListState || !m.listRefreshing || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 {
-		t.Fatalf("closed state switch = state:%v refreshing:%v prs:%#v", m.prListState, m.listRefreshing, m.openPRs)
+	if m.prView != closedPRsView || m.prListState != closedPRListState || !m.listRefreshing || len(m.openPRs) != 0 {
+		t.Fatalf("closed view switch = view:%v state:%v refreshing:%v prs:%#v", m.prView, m.prListState, m.listRefreshing, m.openPRs)
 	}
-	u, _ = m.Update(prListRefreshed{generation: m.prListGeneration, state: closedPRListState, prs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}})
+	u, _ = m.Update(prListRefreshed{generation: m.prListGeneration, state: closedPRListState, viewer: "me", prs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}})
 	m = u.(Model)
 	m.sync()
-	if len(m.openPRs) != 1 || m.openPRs[0].Number != 2 || !strings.Contains(ansi.Strip(m.buildPRList()), "closed") {
-		t.Fatalf("closed PR list = %#v", m.openPRs)
+	if len(m.openPRs) != 1 || m.openPRs[0].Number != 2 || len(m.navigator.PRs) != 2 || m.viewCount(assignedView) != 1 || !strings.Contains(ansi.Strip(m.buildPRList()), "closed") {
+		t.Fatalf("closed PR list/cache = visible:%#v cached:%#v assigned:%d", m.openPRs, m.navigator.PRs, m.viewCount(assignedView))
 	}
 	if m.keys.Merge.Enabled() || m.keys.Close.Enabled() {
 		t.Fatal("closed PR actions must be disabled")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	m = u.(Model)
+	if m.prView != assignedView || m.listRefreshing || len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
+		t.Fatalf("cached assigned view = view:%v refreshing:%v prs:%#v", m.prView, m.listRefreshing, m.openPRs)
+	}
+}
+
+func TestPRListLoadsClosedFromSearch(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.navigator.FetchedStates = map[string]bool{"OPEN": true}
+	m.navigator.PRs = []gh.PR{{Number: 1, State: "OPEN", Title: "open"}}
+	m.applyPRFilters(0)
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("is:closed")})
+	m = u.(Model)
+	if m.prView != allPRsView || m.prListState != closedPRListState || !m.listRefreshing || len(m.openPRs) != 0 {
+		t.Fatalf("closed search = view:%v state:%v refreshing:%v prs:%#v", m.prView, m.prListState, m.listRefreshing, m.openPRs)
+	}
+	u, _ = m.Update(prListRefreshed{generation: m.prListGeneration, state: closedPRListState, prs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	if m.filterQuery != "" || m.prListState != openPRListState || m.listRefreshing || len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
+		t.Fatalf("cleared closed search = query:%q state:%v refreshing:%v prs:%#v", m.filterQuery, m.prListState, m.listRefreshing, m.openPRs)
+	}
+}
+
+func TestLazyPreviewKeepsCurrentPRSelection(t *testing.T) {
+	m := testModel()
+	m.screen, m.prListGeneration = prListScreen, 1
+	m.navigator.PRs = []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}}
+	m.applyPRFilters(0)
+	m.prCursor = 1
+	u, _ := m.Update(prPreviewLoaded{generation: 1, number: 1, pr: gh.PR{Number: 1, State: "OPEN", PreviewLoaded: true}})
+	m = u.(Model)
+	if m.selectedPRNumber() != 2 {
+		t.Fatalf("lazy preview moved selection to PR #%d", m.selectedPRNumber())
 	}
 }
 
 func TestPRFilterSupportsGitHubTermsAndFreeText(t *testing.T) {
 	failed := []gh.PRCheck{{Status: "COMPLETED", Conclusion: "FAILURE"}}
-	pr := gh.PR{Number: 7, Title: "Fix Login", HeadRefName: "auth/fix", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "me"}}, ReviewRequests: []gh.PRUser{{Login: "reviewer"}}, Labels: []gh.PRLabel{{Name: "bug"}}, Checks: failed, Mergeable: "CONFLICTING", IsDraft: false}
-	for _, query := range []string{"login", "#7", "author:alice", "assignee:@me", "review-requested:reviewer", "label:bug", "draft:false", "ci:failed", "merge:conflicting", "label:bug ci:failed auth"} {
+	pr := gh.PR{Number: 7, Title: "Fix Login", State: "OPEN", HeadRefName: "auth/fix", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "me"}}, ReviewRequests: []gh.PRUser{{Login: "reviewer"}}, Labels: []gh.PRLabel{{Name: "bug"}}, Checks: failed, Mergeable: "CONFLICTING", IsDraft: false}
+	for _, query := range []string{"login", "#7", "is:open", "state:open", "author:alice", "assignee:@me", "review-requested:reviewer", "label:bug", "draft:false", "ci:failed", "merge:conflicting", "label:bug ci:failed auth"} {
 		if !matchesPRFilter(pr, query, "me") {
 			t.Fatalf("filter %q did not match", query)
 		}
@@ -577,7 +644,7 @@ func TestPRFilterSupportsGitHubTermsAndFreeText(t *testing.T) {
 	if !matchesPRFilter(teamRequest, "review-requested:@me", "me") {
 		t.Fatal("team review request did not match @me")
 	}
-	for _, query := range []string{"author:bob", "assignee:bob", "review-requested:@me", "label:docs", "draft:true", "ci:passed"} {
+	for _, query := range []string{"is:closed", "state:closed", "author:bob", "assignee:bob", "review-requested:@me", "label:docs", "draft:true", "ci:passed"} {
 		if matchesPRFilter(pr, query, "me") {
 			t.Fatalf("filter %q unexpectedly matched", query)
 		}
@@ -607,13 +674,15 @@ func TestPRListFilterEditingAndViewKeys(t *testing.T) {
 	if m.help.Width != 120 {
 		t.Fatalf("help width = %d", m.help.Width)
 	}
+	m.prView = assignedView
+	m.applyPRFilters(0)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	m = u.(Model)
 	if m.prView != reviewRequestedView || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 {
 		t.Fatalf("next view = %v %#v", m.prView, m.openPRs)
 	}
 	plain := ansi.Strip(m.renderPRListHeader())
-	for _, want := range []string{"All 2", "Review requested 1", "Assigned 0", "Authored 0", "Needs me 1"} {
+	for _, want := range []string{"Assigned 0", "Review requested 1", "All 2", "Authored 0", "Needs me 1", "Closed 0"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("header missing %q: %q", want, plain)
 		}
