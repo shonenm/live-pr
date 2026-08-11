@@ -3,8 +3,18 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func loadConfig(t *testing.T, repo string) Config {
+	t.Helper()
+	cfg, err := Load(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
 
 func TestDefaultStartsBranchAndCommitCodeReview(t *testing.T) {
 	cfg := Default()
@@ -37,7 +47,7 @@ func TestLoadAllowsExplicitlyDisablingDefaultBranchCommand(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[diff]\ncommand = ''\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := Load(repo).Diff.Command; got != "" {
+	if got := loadConfig(t, repo).Diff.Command; got != "" {
 		t.Fatalf("explicit empty command = %q", got)
 	}
 }
@@ -50,7 +60,7 @@ func TestLoadLegacyRepoOverride(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".live-pr", "config.toml"), []byte("[diff]\ncommand = ''\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := Load(repo).Diff.Command; got != "" {
+	if got := loadConfig(t, repo).Diff.Command; got != "" {
 		t.Fatalf("legacy config = %q", got)
 	}
 }
@@ -68,11 +78,24 @@ func TestLoadDiffDisplayWithRepoOverride(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[diff]\ndisplay = 'sed s/foo/bar/'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Load(repo)
+	cfg := loadConfig(t, repo)
 	if cfg.Diff.Display != "sed s/foo/bar/" || cfg.Diff.Command != "nvim branch" || cfg.Diff.CommitCommand != "nvim commit" {
 		t.Fatalf("diff config = %+v", cfg.Diff)
 	}
 	if cfg.Reviewer == "" {
 		t.Fatal("partial config should preserve defaults")
+	}
+}
+
+func TestLoadReportsMalformedConfigPath(t *testing.T) {
+	global := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", global)
+	path := filepath.Join(repo, ".live-pr.toml")
+	if err := os.WriteFile(path, []byte("[diff\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(repo); err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("malformed config error = %v", err)
 	}
 }
