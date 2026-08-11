@@ -62,7 +62,7 @@ func TestListOpen(t *testing.T) {
 		t.Fatalf("open PRs = %#v", list)
 	}
 	args := strings.Join(got, " ")
-	for _, field := range []string{"pullRequests(first:$pageSize", "pageSize=25", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "statusCheckRollup{state}"} {
+	for _, field := range []string{"pullRequests(first:$pageSize", "states:[$state]", "state=OPEN", "pageSize=25", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "statusCheckRollup{state}"} {
 		if !strings.Contains(args, field) {
 			t.Fatalf("list args missing %q: %s", field, args)
 		}
@@ -105,6 +105,17 @@ func TestListOpenPaginatesPullRequests(t *testing.T) {
 	}
 	if apiCalls != 2 || len(list.PRs) != 2 || list.PRs[0].Number != 1 || list.PRs[1].Number != 2 {
 		t.Fatalf("paginated PRs = calls:%d prs:%#v", apiCalls, list.PRs)
+	}
+}
+
+func TestListStateRejectsUnsupportedState(t *testing.T) {
+	called := false
+	c := Client{run: func(args ...string) ([]byte, error) {
+		called = true
+		return nil, nil
+	}}
+	if _, err := c.ListState("merged"); err == nil || called {
+		t.Fatalf("ListState accepted unsupported state: err=%v called=%v", err, called)
 	}
 }
 
