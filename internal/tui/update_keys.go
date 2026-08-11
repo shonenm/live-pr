@@ -249,6 +249,15 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.focusDiff = false
 		return m, nil
 	}
+	if key.Matches(msg, m.keys.AddComment) {
+		return m.startLocalComment()
+	}
+	if key.Matches(msg, m.keys.EditLocal) {
+		return m.editSelectedLocalItem()
+	}
+	if key.Matches(msg, m.keys.DeleteLocal) {
+		return m.deleteSelectedLocalComment()
+	}
 	if m.focusDiff {
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			return m, m.diffTerminal.Update(msg)

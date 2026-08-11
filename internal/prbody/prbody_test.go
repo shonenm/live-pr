@@ -15,6 +15,9 @@ func TestTitle(t *testing.T) {
 	if got := Title("# <title>\n\n<current conclusion — ...>", "feat/x"); got != "feat/x" {
 		t.Errorf("placeholder Title should fall back to branch, got %q", got)
 	}
+	if got := Title("# <title>\n\n## Summary\n\nOutcome", "feat/x"); got != "feat/x" {
+		t.Errorf("unfilled PR template should fall back to branch, got %q", got)
+	}
 }
 
 func TestRenderPutsConclusionAboveTimeline(t *testing.T) {

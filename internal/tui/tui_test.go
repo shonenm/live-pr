@@ -20,6 +20,7 @@ import (
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/publish"
+	"github.com/shonenm/live-pr/internal/store"
 )
 
 func testModel() Model {
@@ -1339,6 +1340,26 @@ func TestLocalRefreshRejectsSameNamedFork(t *testing.T) {
 	}
 }
 
+func TestEmptyLocalPRStaysOpenAfterGitHubLookup(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	st := store.ForBranch(root, "feature")
+	if err := st.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	m := testModel()
+	m.screen = detailScreen
+	m.root, m.currentBranch, m.defaultBranch = root, "feature", "main"
+	m.timelinePath, m.cachePath = st.Timeline(), st.GitHubCache()
+	m.files = nil
+
+	u, _ := m.Update(githubRefreshed{err: gh.ErrPRNotFound})
+	m = u.(Model)
+	if m.screen != detailScreen || !m.localAvailable {
+		t.Fatalf("empty explicitly opened Local PR was closed: screen=%v local=%v", m.screen, m.localAvailable)
+	}
+}
+
 func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 	m := testModel()
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
@@ -1507,11 +1528,113 @@ func TestGitHubCommentsAreBoxedAndActivityIsUnboxed(t *testing.T) {
 	}
 }
 
-func TestLocalEventsUseSourceFreeCards(t *testing.T) {
+func TestLocalEventsShowAuthorAndEditedState(t *testing.T) {
 	m := testModel()
-	local := strings.Join(m.eventLines(m.events[0], false, 60), "\n")
-	if !strings.Contains(local, "╭") || strings.Contains(local, "local ·") || !strings.Contains(local, "claude-agent") {
-		t.Fatalf("local event should be a source-free card: %q", local)
+	agent := strings.Join(m.eventLines(m.events[0], false, 60), "\n")
+	if !strings.Contains(agent, "╭") || strings.Contains(agent, "local ·") || !strings.Contains(agent, "agent") {
+		t.Fatalf("agent event should be a source-free card: %q", agent)
+	}
+	user := strings.Join(m.eventLines(event.Event{Kind: event.Decision, Title: "chosen", Author: "user", UpdatedAt: "2026-01-01T10:00"}, false, 60), "\n")
+	if !strings.Contains(user, "you") || !strings.Contains(user, "edited") {
+		t.Fatalf("user event metadata = %q", user)
+	}
+}
+
+func TestReloadLocalConversationReadsExternalCLIChanges(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	st := store.ForBranch(root, "feature")
+	if err := st.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Conclusion(), []byte("# Final title\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, err := event.Create(st.Timeline(), event.Event{TS: "2026-08-11T10:00", Kind: event.Decision, Title: "external", Author: "agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testModel()
+	m.root, m.currentBranch, m.timelinePath = root, "feature", st.Timeline()
+	m.events = nil
+	m.reloadLocalConversation()
+	if len(m.events) != 1 || m.events[0].ID != created.ID || m.title != "Final title" {
+		t.Fatalf("reloaded local state = title %q events %+v", m.title, m.events)
+	}
+	items := m.conversationItems()
+	if len(items) != 2 || items[0].summary == nil || items[1].event == nil {
+		t.Fatalf("local summary must lead conversation: %#v", items)
+	}
+}
+
+func TestLocalPRCommentsCanBeManagedFromTUI(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	st := store.ForBranch(root, "feature")
+	if err := st.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	m := testModel()
+	m.root, m.currentBranch, m.timelinePath = root, "feature", st.Timeline()
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = u.(Model)
+	if m.localEditMode != addLocalComment {
+		t.Fatalf("a did not open comment editor: %v", m.localEditMode)
+	}
+	m.localEditor.SetValue("kind: decision\n\nKeep append-only history\n\nAvoid lost concurrent comments.")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = u.(Model)
+	events, err := event.Load(st.Timeline())
+	if err != nil || len(events) != 1 || events[0].Author != "user" || events[0].Title != "Keep append-only history" {
+		t.Fatalf("TUI add = %+v, %v", events, err)
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m = u.(Model)
+	m.localEditor.SetValue("kind: pivot\n\nUse operation records\n\nPreserve the original decision too.")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = u.(Model)
+	events, _ = event.Load(st.Timeline())
+	if len(events) != 1 || events[0].Kind != event.Pivot || events[0].UpdatedAt == "" {
+		t.Fatalf("TUI edit = %+v", events)
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = u.(Model)
+	if m.localDeleteTarget == "" {
+		t.Fatal("d did not request comment deletion")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = u.(Model)
+	events, _ = event.Load(st.Timeline())
+	if len(events) != 0 || m.screen != detailScreen {
+		t.Fatalf("TUI delete = %+v screen=%v", events, m.screen)
+	}
+}
+
+func TestLocalPRSummaryCanBeEditedFromTUI(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	st := store.ForBranch(root, "feature")
+	if err := st.WriteConclusion("# Initial\n"); err != nil {
+		t.Fatal(err)
+	}
+	m := testModel()
+	m.root, m.currentBranch, m.timelinePath, m.summary = root, "feature", st.Timeline(), "# Initial\n"
+	m.invalidateConversation()
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m = u.(Model)
+	if m.localEditMode != editLocalSummary {
+		t.Fatalf("e did not open summary editor: %v", m.localEditMode)
+	}
+	m.localEditor.SetValue("# Final outcome\n\n## Summary\n\nImplemented result.")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = u.(Model)
+	body, err := os.ReadFile(st.Conclusion())
+	if err != nil || !strings.Contains(string(body), "Implemented result") || m.title != "Final outcome" {
+		t.Fatalf("TUI summary = %q title=%q err=%v", body, m.title, err)
 	}
 }
 

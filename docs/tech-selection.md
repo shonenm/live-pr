@@ -34,8 +34,8 @@
 ```
 [ 物語レイヤ (本体) ]                     Go 1.22+
   $XDG_STATE_HOME/live-pr/repos/<repo-hash>/<branch-slug>/
-    timeline.jsonl   append-only  {ts,kind,title,body,sha?,...}
-    conclusion.md    overwrite    head（現状結論）
+    timeline.jsonl   append-only  {id,ts,kind,title,body,author,op?,target?,...}
+    conclusion.md    overwrite    PR template準拠のfinal summary
     github.json      atomic replace  PR binding/cache/publish baseline
     config.toml?     per-repo override
 
@@ -75,8 +75,8 @@ CLI 一覧（Cobra）:
 
 ## 実装で確定した事項
 
-1. **要約トリガー**: Claude Codeの`Stop` hookでセッション終端に要約。短時間の重複実行は設定可能な間隔で抑制し、pivotは`live-pr pivot`で手動記録。
-2. **timelineの扱い**: XDG state配下のユーザーruntimeとして保持し、repo rootにはruntimeファイルを作らない。旧`.live-pr/`は初回アクセス時に移行する。
+1. **要約トリガー**: Claude Codeの`Stop` hookは、reviewerに必要な意思決定・pivot・制約・重要指摘がある場合だけ要約する。通常進捗は記録せず、明示的な`live-pr comment add`を正本経路とする。
+2. **timelineの扱い**: XDG state配下のユーザーruntimeとして保持し、stable ID付きbase recordとedit/delete operationを追記する。repo rootにはruntimeファイルを作らず、旧`.live-pr/`とIDなしrecordは互換読込する。
 3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
 4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
 5. **TUI**: default branch/対象なしはPR一覧、current/local PRはdetailへ自動routing。一覧はviewer/review-request cacheを使うSaved ViewsとGitHub風filterを持ち、`baseRefName == headRefName`の確実なbranch graphだけをstack表示する。右paneは冒頭のdescription/commentをカード表示し、metadata、CI/conflict、規模をpreview。detailは固定2paneで、`b`でlocal PRを含む一覧、他PRは通常checkoutなしで開き、一覧の`c`/`x`/`m`のみ確認付きでcheckout/close/mergeする。配色はGitHub Primer darkのsemantic tokenを正本とし、gh-dash同様、通常contentはprimary/muted、PR/review/CI/merge/diff/action/labelのsemantic stateだけを着色する。
@@ -85,7 +85,9 @@ CLI 一覧（Cobra）:
 8. **PR publish**: CLIとTUIの`p`は同じserviceを使用。refreshからpublishは行わない。
 9. **GitHub表示**: PR opening description、top-level comments、issue activityをlocal eventと時系列統合。description/commentsとlocal eventは枠の濃さで区別し、activityは枠なしrow、commitは専用pickerにのみ表示。画像・動画はURLのまま、`o`でdescription/commentをGitHub表示。PR assignees/labelsはcacheし、headerへcompact表示。
 10. **Diff表示**: built-in defaultは明示的な`base...head revision`の`CodeDiff`、commitは`CodeReview`をembedded PTYで表示。他PRはnumeric pull refをnamespaced fetchし、working treeを変更しない。設定でoverrideまたは明示無効化できる。`l`で右、右の`q`で左、左の`q`で終了、`Shift+Tab`/clickでfocus切替。未設定・unsupported・終了・失敗時は対応scopeのraw Git、任意で`[diff].display`をfallback適用。
+11. **Local PR authoring**: default PR templateを`conclusion.md`へseedし、実装後のfinal summaryとしてConversation先頭とpublish body先頭へ表示。TUIの`a/e/d`とCLIは同じ追記型event storeを操作し、decision timelineにはreviewerがdiffから復元できない判断だけを保持する。
+12. **Agent Skill**: canonicalな`skills/live-pr/SKILL.md`をGitHub CLIでinstall可能にし、同じ内容をbinaryへembedして`live-pr skill path/print`でversion一致提供する。
 
 ## 現在地
 
-PR navigator、固定2pane、local/remote/commit review切替、GitHub同期基盤、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review commentsの同期と通常コメント投稿を行い、全体確認後に配布へ進む。
+PR navigator、固定2pane、local/remote/commit review、Local PR summary/comment CRUD、Agent Skill、GitHub同期、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review comments同期と通常コメント投稿outbox。

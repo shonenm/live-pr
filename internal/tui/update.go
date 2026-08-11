@@ -12,6 +12,10 @@ func reservedReviewKey(msg tea.Msg) bool {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.localEditMode != noLocalEdit || m.localDeleteTarget != "" {
+		next, cmd := m.handleLocalOverlay(msg)
+		return next, cmd
+	}
 	if m.diffTerminal != nil && m.diffTerminal.Handles(msg) && !reservedReviewKey(msg) {
 		cmd := m.diffTerminal.Update(msg)
 		if !m.diffTerminal.Available() {

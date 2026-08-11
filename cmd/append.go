@@ -10,17 +10,21 @@ import (
 )
 
 // addEvent stamps and appends one event to the current branch's timeline.
-func addEvent(kind event.Kind, title, body, sha string) error {
+func addEvent(cmd *cobra.Command, kind event.Kind, title, body, sha, author string) error {
+	if err := validateEventInput(kind, title, author); err != nil {
+		return err
+	}
 	st, err := store.Discover()
 	if err != nil {
 		return err
 	}
 	ev := event.New(kind, title, body)
-	ev.SHA = sha
-	if err := event.Append(st.Timeline(), ev); err != nil {
+	ev.SHA, ev.Author = sha, author
+	created, err := event.Create(st.Timeline(), ev)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("%s  %s\n", kind, title)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", created.ID, kind, title)
 	return nil
 }
 
@@ -32,7 +36,8 @@ var appendCmd = &cobra.Command{
 		title, _ := cmd.Flags().GetString("title")
 		body, _ := cmd.Flags().GetString("body")
 		sha, _ := cmd.Flags().GetString("sha")
-		return addEvent(event.Kind(kind), title, body, sha)
+		author, _ := cmd.Flags().GetString("author")
+		return addEvent(cmd, event.Kind(kind), title, body, sha, author)
 	},
 }
 
@@ -46,10 +51,12 @@ func wrapper(name string, kind event.Kind, short string) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, _ := cmd.Flags().GetString("body")
-			return addEvent(kind, strings.Join(args, " "), body, "")
+			author, _ := cmd.Flags().GetString("author")
+			return addEvent(cmd, kind, strings.Join(args, " "), body, "", author)
 		},
 	}
 	c.Flags().String("body", "", "optional detail body")
+	c.Flags().String("author", "user", "comment author: user or agent")
 	return c
 }
 
@@ -58,6 +65,7 @@ func init() {
 	appendCmd.Flags().String("title", "", "one-line title (required)")
 	appendCmd.Flags().String("body", "", "optional detail body")
 	appendCmd.Flags().String("sha", "", "commit sha (for commit events)")
+	appendCmd.Flags().String("author", "user", "event author: user or agent")
 	_ = appendCmd.MarkFlagRequired("title")
 
 	rootCmd.AddCommand(

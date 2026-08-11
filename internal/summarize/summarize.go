@@ -20,11 +20,14 @@ type Summarizer interface {
 	Summarize(transcript string) (Summary, error)
 }
 
-const prompt = `Summarize this coding session as one pull-request timeline entry.
-Output exactly:
-- First line: a concise title (<= 72 chars) naming the key decision, pivot, or what was done.
+const prompt = `Decide whether this coding session contains one PR-level fact a reviewer will need later.
+Record only a material design decision, a change in direction, a consequential constraint/tradeoff, or a significant review finding that changed scope or behavior.
+Do not record routine implementation progress, test failures/fixes, cleanup, readability edits, formatting, or a list of files changed.
+If there is no qualifying fact, output nothing.
+Otherwise output exactly:
+- First line: a concise title (<= 72 chars) naming the decision, pivot, constraint, or finding.
 - A blank line.
-- 2-4 short bullet points ("- ...") covering decisions made, direction changes, and what changed.
+- 1-3 short bullets explaining rationale and reviewer-visible impact.
 No preamble and no closing remarks.`
 
 // Claude summarizes via the `claude -p` headless CLI, piping the transcript on

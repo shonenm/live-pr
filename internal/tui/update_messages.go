@@ -359,21 +359,12 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	default:
 		m.githubStatus = "Offline · showing cached GitHub data"
 	}
+	m.reloadLocalConversation()
 	m.invalidateConversation()
 	if err := gh.SaveCache(m.cachePath, m.cache); err != nil {
 		m.status = "GitHub cache: " + err.Error()
 	} else if strings.HasPrefix(m.status, "GitHub cache") {
 		m.status = ""
-	}
-	if errors.Is(msg.err, gh.ErrPRNotFound) && len(m.files) == 0 && !store.ForBranch(m.root, m.currentBranch).HasData() {
-		m.targetGeneration++
-		if m.diffTerminal != nil {
-			m.diffTerminal.Close()
-		}
-		m.diffTerminal = nil
-		m.screen = prListScreen
-		m.layout()
-		return m, m.sync()
 	}
 	m.layout()
 	m.restoreConversationSelection(selectedKey)

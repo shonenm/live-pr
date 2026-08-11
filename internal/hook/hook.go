@@ -45,10 +45,11 @@ func Stop(transcript string, d Deps) (bool, error) {
 	}
 
 	ev := event.Event{
-		TS:    d.Now.Format(tsFormat),
-		Kind:  event.Summary,
-		Title: sum.Title,
-		Body:  sum.Body,
+		TS:     d.Now.Format(tsFormat),
+		Kind:   event.Summary,
+		Title:  sum.Title,
+		Body:   sum.Body,
+		Author: "agent",
 	}
 	if err := event.Append(d.TimelinePath, ev); err != nil {
 		return false, err

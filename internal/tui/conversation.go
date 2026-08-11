@@ -18,14 +18,19 @@ func (m *Model) conversationItems() []conversationItem {
 		return m.conversationCache
 	}
 	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities)+1)
-	if m.cache.PR != nil {
+	if !m.remote && strings.TrimSpace(m.summary) != "" {
+		items = append(items, conversationItem{key: "local-summary", summary: &m.summary})
+	} else if m.cache.PR != nil {
 		items = append(items, conversationItem{key: "description:" + m.cache.PR.URL, ts: m.cache.PR.CreatedAt, pr: m.cache.PR})
 	}
 	eventOccurrences := map[string]int{}
 	for i := range m.events {
 		e := &m.events[i]
 		if e.Kind != event.Commit {
-			baseKey := fmt.Sprintf("event:%q:%q:%q:%q", e.TS, e.Kind, e.Title, e.Body)
+			baseKey := "event:" + e.ID
+			if e.ID == "" {
+				baseKey = fmt.Sprintf("event:%q:%q:%q:%q", e.TS, e.Kind, e.Title, e.Body)
+			}
 			occurrence := eventOccurrences[baseKey]
 			eventOccurrences[baseKey]++
 			items = append(items, conversationItem{key: fmt.Sprintf("%s:%d", baseKey, occurrence), ts: e.TS, event: e})
@@ -111,7 +116,9 @@ func (m *Model) buildConversation() (string, int) {
 		if selected {
 			selectedLine = len(lines)
 		}
-		if item.pr != nil {
+		if item.summary != nil {
+			lines = append(lines, m.summaryLines(*item.summary, selected, m.list.Width)...)
+		} else if item.pr != nil {
 			lines = append(lines, m.descriptionLines(*item.pr, selected, m.list.Width)...)
 		} else if item.comment != nil {
 			lines = append(lines, m.commentLines(*item.comment, selected, m.list.Width)...)
@@ -126,16 +133,25 @@ func (m *Model) buildConversation() (string, int) {
 }
 
 func (m Model) eventLines(e event.Event, selected bool, width int) []string {
-	who := "🤖 claude-agent"
-	if e.Kind == event.Note {
+	who := "🤖 agent"
+	if e.Author == "user" || (e.Author == "" && e.Kind == event.Note) {
 		who = "👤 you"
 	}
-	header := stMuted.Render(who+" · ") + kindLabel(e.Kind) + stMuted.Render(" · "+shortTS(e.TS))
+	meta := " · " + shortTS(e.TS)
+	if e.UpdatedAt != "" {
+		meta += " · edited"
+	}
+	header := stMuted.Render(who+" · ") + kindLabel(e.Kind) + stMuted.Render(meta)
 	body := stBold.Render(e.Title)
 	if strings.TrimSpace(e.Body) != "" {
 		body += "\n" + md.Render(e.Body, width-7)
 	}
 	return cardLines(header, body, selected, width, cBorder)
+}
+
+func (m Model) summaryLines(summary string, selected bool, width int) []string {
+	header := stMuted.Render("📝 local PR · final summary")
+	return cardLines(header, md.Render(summary, width-7), selected, width, cBorder)
 }
 
 func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
