@@ -90,7 +90,7 @@ live-pr demo codereview  # disposable demo with embedded Neovim CodeReview
 live-pr init            # optional: seed the current branch's local conclusion
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
-                        # list: [/] views; / filter; Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
+                        # list: [/] views; / filter; s open/closed; Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
                         # detail: b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
 live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
