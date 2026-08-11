@@ -161,8 +161,55 @@ func TestCurrentPRSuppressesLocalPRRow(t *testing.T) {
 	}
 	m.cache.PR = &pr
 	items = m.withLocalPR(nil)
-	if len(items) != 0 {
-		t.Fatalf("cached current PR produced a local row: %#v", items)
+	if len(items) != 1 || items[0].Number != 7 {
+		t.Fatalf("cached current PR was not listed: %#v", items)
+	}
+}
+
+func TestCurrentBranchPRPrefersOpenThenClosed(t *testing.T) {
+	prs := []gh.PR{
+		{Number: 1, State: "MERGED", HeadRefName: "feature/x"},
+		{Number: 2, State: "OPEN", HeadRefName: "feature/x"},
+	}
+	if got := currentBranchPR(prs, "feature/x"); got == nil || got.Number != 2 {
+		t.Fatalf("current branch PR = %#v", got)
+	}
+	if got := currentBranchPR(prs[:1], "feature/x"); got == nil || got.Number != 1 {
+		t.Fatalf("merged branch PR = %#v", got)
+	}
+}
+
+func TestCurrentBranchResolutionKeepsLocalOrShowsMergedPR(t *testing.T) {
+	m := testModel()
+	m.screen, m.prView = prListScreen, assignedView
+	m.currentBranch, m.defaultBranch = "feature/x", "main"
+	m.localAvailable, m.autoOpenCurrent = true, true
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+
+	u, _ := m.Update(currentBranchPRLoaded{err: gh.ErrPRNotFound})
+	m = u.(Model)
+	if len(m.openPRs) != 1 || m.openPRs[0].Number != 0 || m.openPRs[0].HeadRefName != "feature/x" {
+		t.Fatalf("empty branch local PR = %#v", m.openPRs)
+	}
+
+	m.autoOpenCurrent = false
+	u, _ = m.Update(currentBranchPRLoaded{pr: gh.PR{Number: 9, State: "MERGED", HeadRefName: "feature/x"}})
+	m = u.(Model)
+	if m.localAvailable || m.prView != closedPRsView || m.prListState != closedPRListState || len(m.openPRs) != 1 || m.openPRs[0].Number != 9 {
+		t.Fatalf("merged branch PR = local:%v view:%v state:%v prs:%#v", m.localAvailable, m.prView, m.prListState, m.openPRs)
+	}
+}
+
+func TestLocalPRAppearsInEveryOpenView(t *testing.T) {
+	m := testModel()
+	local := gh.PR{}
+	for _, view := range []prView{assignedView, reviewRequestedView, allPRsView, authoredView, needsMeView} {
+		if !m.matchesView(local, view) {
+			t.Fatalf("local PR missing from %s", view)
+		}
+	}
+	if m.matchesView(local, closedPRsView) || !matchesListState(gh.PR{State: "MERGED", Number: 1}, closedPRListState) {
+		t.Fatal("local/merged state routing is incorrect")
 	}
 }
 

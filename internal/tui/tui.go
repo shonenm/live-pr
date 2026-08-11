@@ -114,6 +114,11 @@ type prListRefreshed struct {
 	err        error
 }
 
+type currentBranchPRLoaded struct {
+	pr  gh.PR
+	err error
+}
+
 type prPreviewLoaded struct {
 	generation uint64
 	number     int
@@ -317,15 +322,15 @@ func New() (Model, error) {
 		cache = gh.NewCache(branch)
 	}
 	if currentPR == nil {
-		for i := range navigator.PRs {
-			if matchesListState(navigator.PRs[i], openPRListState) && isCurrentPR(navigator.PRs[i], branch) {
-				currentPR = &navigator.PRs[i]
-				break
-			}
-		}
+		currentPR = currentBranchPR(navigator.PRs, branch)
 	}
 	defaultBranch := strings.TrimPrefix(defaultRef, "origin/")
+	localEligible := branch != "HEAD" && branch != defaultBranch
 	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), len(files) > 0)
+	initialView, initialState := assignedView, openPRListState
+	if currentPR != nil && matchesListState(*currentPR, closedPRListState) {
+		initialView, initialState = closedPRsView, closedPRListState
+	}
 
 	m := Model{
 		screen:            prListScreen,
@@ -342,7 +347,11 @@ func New() (Model, error) {
 		navigatorPath:     navigatorPath,
 		openPRs:           navigator.PRs,
 		viewerLogin:       navigator.ViewerLogin,
-		autoOpenCurrent:   branch != "HEAD" && branch != defaultBranch,
+		prView:            initialView,
+		prListState:       initialState,
+		localAvailable:    localEligible && currentPR == nil,
+		localTitle:        branch,
+		autoOpenCurrent:   localEligible,
 		listRefreshing:    true,
 		prListGeneration:  1,
 		diffDisplay:       cfg.Diff.Display,
@@ -369,12 +378,23 @@ func isCurrentPR(pr gh.PR, branch string) bool {
 	return !pr.IsCrossRepository && (pr.HeadRefName == "" || pr.HeadRefName == branch)
 }
 
+func currentBranchPR(prs []gh.PR, branch string) *gh.PR {
+	for _, state := range []prListState{openPRListState, closedPRListState} {
+		for i := range prs {
+			if matchesListState(prs[i], state) && isCurrentPR(prs[i], branch) {
+				return &prs[i]
+			}
+		}
+	}
+	return nil
+}
+
 func (m Model) isCurrentTargetPR(pr gh.PR) bool {
 	return isCurrentPR(pr, m.currentBranch) || (!m.remote && m.cache.ExplicitCheckout && m.cache.PR != nil && m.cache.PR.Number == pr.Number)
 }
 
-func (m Model) explicitPRNumber() int {
-	if m.cache.ExplicitCheckout && m.cache.PR != nil {
+func (m Model) currentPRNumber() int {
+	if m.cache.PR != nil {
 		return m.cache.PR.Number
 	}
 	return 0
@@ -460,8 +480,11 @@ func (m Model) Init() tea.Cmd {
 	}
 	m.spinnerRunning = true
 	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.prListState), m.loadSpinner.Tick}
+	if m.screen == prListScreen && m.localAvailable && m.autoOpenCurrent {
+		cmds = append(cmds, fetchCurrentBranchPR(m.currentBranch))
+	}
 	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
-		cmds = append(cmds, fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration))
+		cmds = append(cmds, fetchGitHub(m.head, m.currentPRNumber(), m.targetGeneration))
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
@@ -563,6 +586,13 @@ func fetchPRList(generation uint64, state prListState) tea.Cmd {
 	}
 }
 
+func fetchCurrentBranchPR(head string) tea.Cmd {
+	return func() tea.Msg {
+		pr, err := gh.New().FindForHead(head)
+		return currentBranchPRLoaded{pr: pr, err: err}
+	}
+}
+
 func fetchPRPreview(number int, generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		pr, err := gh.New().FindPreview(number)
@@ -594,7 +624,7 @@ func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 		if number > 0 {
 			pr, err = client.Find(number)
 		} else {
-			pr, err = client.FindOpen(head)
+			pr, err = client.FindForHead(head)
 		}
 		if err != nil {
 			return githubRefreshed{generation: generation, err: err}
@@ -780,9 +810,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.restorePRSelection(selectedNumber)
 		m.githubStatus = "GitHub: PR list updated"
 		if m.screen == prListScreen && m.autoOpenCurrent {
-			m.autoOpenCurrent = false
 			for i := range m.openPRs {
-				if m.isCurrentTargetPR(m.openPRs[i]) {
+				if m.openPRs[i].Number > 0 && m.isCurrentTargetPR(m.openPRs[i]) {
+					m.autoOpenCurrent = false
 					st := store.ForBranch(m.root, m.currentBranch)
 					cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
 					if err := m.loadLocal(st, cache, &m.openPRs[i]); err != nil {
@@ -790,7 +820,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					var cmds []tea.Cmd
-					cmds = append(cmds, fetchGitHub(m.currentBranch, m.explicitPRNumber(), m.targetGeneration), m.sync())
+					cmds = append(cmds, fetchGitHub(m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync())
 					if m.diffTerminal != nil {
 						cmds = append(cmds, m.diffTerminal.Init())
 					}
@@ -799,6 +829,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, m.sync()
+
+	case currentBranchPRLoaded:
+		if msg.err != nil {
+			m.autoOpenCurrent = false
+			if errors.Is(msg.err, gh.ErrPRNotFound) {
+				m.localAvailable = true
+				m.applyPRFilters(m.selectedPRNumber())
+				return m, m.sync()
+			}
+			m.githubStatus = "Offline · current branch PR unavailable"
+			return m, nil
+		}
+		if !isCurrentPR(msg.pr, m.currentBranch) {
+			return m, nil
+		}
+		m.localAvailable = false
+		m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
+		if matchesListState(msg.pr, closedPRListState) {
+			m.prView, m.prListState, m.listRefreshing = closedPRsView, closedPRListState, false
+		}
+		m.applyPRFilters(msg.pr.Number)
+		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
+			m.status = "PR list cache: " + err.Error()
+		}
+		if m.screen != prListScreen || !m.autoOpenCurrent {
+			return m, m.sync()
+		}
+		m.autoOpenCurrent = false
+		st := store.ForBranch(m.root, m.currentBranch)
+		cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
+		cache.PR = &msg.pr
+		if err := m.loadLocal(st, cache, &msg.pr); err != nil {
+			m.status = err.Error()
+			return m, nil
+		}
+		cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync()}
+		if m.diffTerminal != nil {
+			cmds = append(cmds, m.diffTerminal.Init())
+		}
+		return m, tea.Batch(cmds...)
 
 	case prPreviewLoaded:
 		if msg.generation != m.prListGeneration {
@@ -993,6 +1063,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cache.PR = &msg.pr
 			m.localAvailable = false
 			m.cache.FetchedAt = now
+			m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
+			if matchesListState(msg.pr, closedPRListState) {
+				m.prView, m.prListState, m.listRefreshing = closedPRsView, closedPRListState, false
+			}
+			m.applyPRFilters(msg.pr.Number)
+			if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
+				m.status = "PR list cache: " + err.Error()
+			}
 			diffCmd = m.useBase(msg.pr.BaseRefName, msg.pr.URL)
 			stale := []string{}
 			if msg.commentsErr == nil {
@@ -1010,12 +1088,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.githubStatus = "GitHub: PR updated · " + strings.Join(stale, "/") + " stale"
 			}
 		case errors.Is(msg.err, gh.ErrPRNotFound):
-			m.localAvailable = true
+			m.localAvailable = m.currentBranch != "HEAD" && m.currentBranch != m.defaultBranch
 			m.cache.PR = nil
 			m.cache.Comments = nil
 			m.cache.Activities = nil
 			m.cache.FetchedAt = now
 			m.githubStatus = "Local only · no GitHub PR"
+			m.applyPRFilters(0)
 		default:
 			m.githubStatus = "Offline · showing cached GitHub data"
 		}
@@ -1202,7 +1281,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.status = err.Error()
 					return m, nil
 				}
-				cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.explicitPRNumber(), m.targetGeneration), m.sync(), m.startSpinner()}
+				cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync(), m.startSpinner()}
 				if m.diffTerminal != nil {
 					cmds = append(cmds, m.diffTerminal.Init())
 				}
@@ -1363,7 +1442,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.remote && m.cache.PR != nil {
 				return m, tea.Batch(fetchRemotePR(*m.cache.PR, m.targetGeneration), m.startSpinner())
 			}
-			return m, tea.Batch(fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration), m.startSpinner())
+			return m, tea.Batch(fetchGitHub(m.head, m.currentPRNumber(), m.targetGeneration), m.startSpinner())
 		case key.Matches(msg, m.keys.Merge):
 			if m.canMergeCurrentPR() {
 				m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, m.cache.PR.Number, *m.cache.PR
@@ -1713,7 +1792,21 @@ func matchesListState(pr gh.PR, state prListState) bool {
 		// Local and older sparse cache entries belong to the open navigator.
 		return state == openPRListState
 	}
+	if state == closedPRListState {
+		return strings.EqualFold(pr.State, "CLOSED") || strings.EqualFold(pr.State, "MERGED")
+	}
 	return strings.EqualFold(pr.State, state.String())
+}
+
+func upsertPR(prs []gh.PR, updated gh.PR) []gh.PR {
+	result := append([]gh.PR(nil), prs...)
+	for i := range result {
+		if result[i].Number == updated.Number {
+			result[i] = updated
+			return result
+		}
+	}
+	return append([]gh.PR{updated}, result...)
 }
 
 func replacePRsForState(existing, fetched []gh.PR, state prListState) []gh.PR {
@@ -1734,11 +1827,11 @@ func replacePRsForState(existing, fetched []gh.PR, state prListState) []gh.PR {
 }
 
 func (m Model) matchesView(pr gh.PR, view prView) bool {
+	if pr.Number == 0 {
+		return view != closedPRsView
+	}
 	if view == allPRsView || view == closedPRsView {
 		return true
-	}
-	if pr.Number == 0 {
-		return view == authoredView
 	}
 	authored := strings.EqualFold(pr.Author.Login, m.viewerLogin)
 	assigned := hasLogin(pr.Assignees, m.viewerLogin)
@@ -1963,7 +2056,15 @@ func matchesPRFilter(pr gh.PR, query, viewer string) bool {
 
 func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
 	items := append([]gh.PR(nil), prs...)
-	if !m.localAvailable || (m.cache.PR != nil && m.isCurrentTargetPR(*m.cache.PR)) {
+	if m.cache.PR != nil && m.isCurrentTargetPR(*m.cache.PR) {
+		for _, pr := range items {
+			if pr.Number == m.cache.PR.Number {
+				return items
+			}
+		}
+		return append([]gh.PR{*m.cache.PR}, items...)
+	}
+	if !m.localAvailable {
 		return items
 	}
 	for _, pr := range items {
