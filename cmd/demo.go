@@ -12,7 +12,7 @@ import (
 
 var demoCmd = &cobra.Command{
 	Use:   "demo [git|delta|delta-side|codereview]",
-	Short: "Open a disposable local review demo",
+	Short: "Open a disposable review with mocked GitHub actions",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		mode := "git"
@@ -38,6 +38,10 @@ func runDemo(mode string) error {
 	if err := createDemoRepo(root, mode); err != nil {
 		return err
 	}
+	mockBin, mockState, err := setupDemoGitHub(root, mode)
+	if err != nil {
+		return err
+	}
 	oldDir, err := os.Getwd()
 	if err != nil {
 		return err
@@ -46,9 +50,19 @@ func runDemo(mode string) error {
 	if err := os.Chdir(root); err != nil {
 		return err
 	}
-	oldState := os.Getenv("XDG_STATE_HOME")
-	defer os.Setenv("XDG_STATE_HOME", oldState)
+	oldState, hadState := os.LookupEnv("XDG_STATE_HOME")
+	oldDemoState, hadDemoState := os.LookupEnv("LIVE_PR_DEMO_STATE")
+	oldPath := os.Getenv("PATH")
+	defer restoreEnv("XDG_STATE_HOME", oldState, hadState)
+	defer restoreEnv("LIVE_PR_DEMO_STATE", oldDemoState, hadDemoState)
+	defer os.Setenv("PATH", oldPath)
 	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(root, ".state")); err != nil {
+		return err
+	}
+	if err := os.Setenv("LIVE_PR_DEMO_STATE", mockState); err != nil {
+		return err
+	}
+	if err := os.Setenv("PATH", mockBin+string(os.PathListSeparator)+oldPath); err != nil {
 		return err
 	}
 	return tui.Run()
@@ -133,6 +147,14 @@ display = ""
 `
 	}
 	return writeDemoFile(root, ".live-pr.toml", config)
+}
+
+func restoreEnv(name, value string, existed bool) {
+	if existed {
+		_ = os.Setenv(name, value)
+	} else {
+		_ = os.Unsetenv(name)
+	}
 }
 
 func writeDemoFile(root, name, content string) error {

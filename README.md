@@ -87,6 +87,7 @@ live-pr demo             # disposable demo with built-in git diff
 live-pr demo delta       # disposable demo with delta (unified)
 live-pr demo delta-side  # disposable demo with delta (side-by-side)
 live-pr demo codereview  # disposable demo with embedded Neovim CodeReview
+                         # every demo includes stateful mock PRs; no GitHub resources are created
 live-pr init            # optional: seed the current branch's local conclusion
 live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
@@ -95,6 +96,8 @@ live-pr sync            # import base..HEAD commits
 live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
 ```
+
+In a demo, press `b` for the mocked PR list, then use `m`, `c`, and `x` to exercise merge, checkout, and close. Press `s` to verify that completed mock PRs move to Closed. The checkout changes only the disposable repository; all GitHub data stays local.
 
 The built-in right-side reviewer starts Neovim with an explicit three-dot `CodeDiff` range for local or remote PRs and `CodeReview` for a selected commit. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
 
