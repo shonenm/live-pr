@@ -44,7 +44,11 @@ var hookStopCmd = &cobra.Command{
 			return nil
 		}
 
-		cfg := config.Load(st.Root)
+		cfg, err := config.Load(st.Root)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "live-pr hook stop:", err)
+			return nil
+		}
 		added, err := hook.Stop(text, hook.Deps{
 			TimelinePath: st.Timeline(),
 			Summarizer:   summarize.Claude{Model: cfg.SummarizeModel},

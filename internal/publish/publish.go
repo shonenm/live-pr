@@ -50,13 +50,20 @@ func BuildPreview(base string) (Preview, error) {
 		return Preview{}, err
 	}
 	base = git.ResolveBase(base)
-	_, _ = timeline.SyncCommits(st.Timeline(), base)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
 		return Preview{}, err
 	}
+	commits, err := git.Commits(base)
+	if err != nil {
+		return Preview{}, err
+	}
+	events = timeline.WithCommits(events, commits)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	conclusion, _ := os.ReadFile(st.Conclusion())
+	conclusion, err := os.ReadFile(st.Conclusion())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Preview{}, err
+	}
 	return Preview{
 		Title: prbody.Title(string(conclusion), st.Branch),
 		Body:  prbody.Render(string(conclusion), events),
@@ -89,6 +96,9 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 		base = pr.BaseRefName
 	} else if base == "" {
 		base = cache.Base(git.DefaultBase())
+	}
+	if _, err := timeline.SyncCommits(st.Timeline(), git.ResolveBase(base)); err != nil {
+		return Result{}, err
 	}
 	preview, err := BuildPreview(base)
 	if err != nil {

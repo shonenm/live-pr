@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"unicode/utf8"
 )
 
 type entry struct {
@@ -66,7 +67,11 @@ func Text(path string, maxBytes int) (string, error) {
 
 	out := b.String()
 	if maxBytes > 0 && len(out) > maxBytes {
-		out = out[len(out)-maxBytes:]
+		start := len(out) - maxBytes
+		for start < len(out) && !utf8.RuneStart(out[start]) {
+			start++
+		}
+		out = out[start:]
 	}
 	return out, nil
 }
