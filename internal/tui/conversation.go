@@ -22,7 +22,7 @@ func (m *Model) conversationItems() []conversationItem {
 		commitStatuses = len(m.cache.PR.Commits)
 	}
 	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities)+commitStatuses+1)
-	if !m.remote && strings.TrimSpace(m.summary) != "" {
+	if m.cache.PR == nil && strings.TrimSpace(m.summary) != "" {
 		items = append(items, conversationItem{key: "local-summary", summary: &m.summary})
 	} else if m.cache.PR != nil {
 		items = append(items, conversationItem{key: "description:" + m.cache.PR.URL, ts: m.cache.PR.CreatedAt, pr: m.cache.PR})
