@@ -55,25 +55,131 @@ func (m Model) desiredPRListState() prListState {
 	return openPRListState
 }
 
+func standardPRListState(view prView) prListState {
+	if view == closedPRsView {
+		return closedPRListState
+	}
+	return openPRListState
+}
+
+func (m *Model) seedPRPages() {
+	if m.prPages == nil {
+		m.prPages = map[string]prPageState{}
+	}
+	byNumber := make(map[int]gh.PR, len(m.navigator.PRs))
+	for _, pr := range m.navigator.PRs {
+		byNumber[pr.Number] = pr
+	}
+	for view := assignedView; view < prViewCount; view++ {
+		state := standardPRListState(view)
+		key := prPageKey(view, state, "")
+		if _, exists := m.prPages[key]; exists {
+			continue
+		}
+		if cached, ok := m.navigator.Views[view.String()]; ok {
+			prs := make([]gh.PR, 0, len(cached.Numbers))
+			for _, number := range cached.Numbers {
+				if pr, exists := byNumber[number]; exists {
+					prs = append(prs, pr)
+				}
+			}
+			m.prPages[key] = prPageState{prs: prs, total: cached.TotalCount, loaded: true}
+			continue
+		}
+		var prs []gh.PR
+		for _, pr := range m.navigator.PRs {
+			if matchesListState(pr, state) && m.matchesView(pr, view) {
+				prs = append(prs, pr)
+			}
+		}
+		if len(prs) > 0 {
+			m.prPages[key] = prPageState{prs: prs, total: len(prs), loaded: true}
+			m.navigator.SetView(view.String(), prs, len(prs), m.navigator.FetchedAt)
+		}
+	}
+}
+
+func prPageKey(view prView, state prListState, filter string) string {
+	return fmt.Sprintf("%d:%d:%s", view, state, strings.Join(strings.Fields(strings.ToLower(filter)), " "))
+}
+
+func splitPRFilter(query string) (server, local string) {
+	serverTokens, localTokens := []string{}, []string{}
+	for _, token := range strings.Fields(query) {
+		key, value, structured := strings.Cut(strings.ToLower(token), ":")
+		if structured && (key == "ci" || key == "merge") {
+			localTokens = append(localTokens, token)
+			continue
+		}
+		if structured && (key == "is" || key == "state") && (value == "open" || value == "closed") {
+			continue
+		}
+		serverTokens = append(serverTokens, token)
+	}
+	return strings.Join(serverTokens, " "), strings.Join(localTokens, " ")
+}
+
+func prViewSearch(view prView, state prListState, filter string) string {
+	terms := []string{"is:" + strings.ToLower(state.String())}
+	switch view {
+	case assignedView:
+		terms = append(terms, "assignee:@me")
+	case reviewRequestedView:
+		terms = append(terms, "review-requested:@me")
+	case authoredView:
+		terms = append(terms, "author:@me")
+	case needsMeView:
+		terms = append(terms, "(assignee:@me OR review-requested:@me)")
+	}
+	server, _ := splitPRFilter(filter)
+	if server != "" {
+		terms = append(terms, server)
+	}
+	return strings.Join(terms, " ")
+}
+
+func (m *Model) requestPRPage(reset bool) tea.Cmd {
+	if m.prPages == nil {
+		m.prPages = map[string]prPageState{}
+	}
+	key := m.activePRPage
+	page := m.prPages[key]
+	if page.loading || (!reset && (!page.loaded || !page.hasNext)) {
+		return nil
+	}
+	cursor, appendPage := page.endCursor, true
+	if reset {
+		cursor, appendPage = "", false
+	}
+	page.loading = true
+	m.prPages[key] = page
+	m.listRefreshing = true
+	m.githubStatus = "GitHub: fetching " + m.prView.String() + " pull requests…"
+	return tea.Batch(fetchPRList(m.prListGeneration, key, prViewSearch(m.prView, m.prListState, m.filterQuery), cursor, appendPage), m.startSpinner())
+}
+
 func (m *Model) applyPRViewState(selectedNumber int) tea.Cmd {
+	m.seedPRPages()
 	desired := m.desiredPRListState()
-	if desired == m.prListState {
-		m.applyPRFilters(selectedNumber)
-		return m.sync()
+	key := prPageKey(m.prView, desired, m.filterQuery)
+	if key != m.activePRPage {
+		m.prListGeneration++
+		m.activePRPage = key
+		m.prPreviewLoading = map[int]bool{}
+		m.prPreviewLoaded = map[int]bool{}
 	}
 	m.prListState = desired
-	m.prListGeneration++
-	m.prPreviewLoading = map[int]bool{}
-	m.prPreviewLoaded = map[int]bool{}
 	m.applyPRFilters(selectedNumber)
-	if m.navigator.FetchedStates[desired.String()] {
+	if page := m.prPages[key]; page.loading {
+		m.listRefreshing = true
+		m.githubStatus = "GitHub: fetching " + m.prView.String() + " pull requests…"
+		return m.sync()
+	} else if page.fresh {
 		m.listRefreshing = false
-		m.githubStatus = "GitHub: cached PR list"
+		m.githubStatus = "GitHub: cached " + m.prView.String() + " page"
 		return m.sync()
 	}
-	m.listRefreshing = true
-	m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", desired.Label())
-	return tea.Batch(fetchPRList(m.prListGeneration, desired), m.sync(), m.startSpinner())
+	return tea.Batch(m.sync(), m.requestPRPage(true))
 }
 
 func (v prView) String() string {
@@ -115,23 +221,6 @@ func upsertPR(prs []gh.PR, updated gh.PR) []gh.PR {
 		}
 	}
 	return append([]gh.PR{updated}, result...)
-}
-
-func replacePRsForState(existing, fetched []gh.PR, state prListState) []gh.PR {
-	fetchedNumbers := make(map[int]bool, len(fetched))
-	for _, pr := range fetched {
-		fetchedNumbers[pr.Number] = true
-	}
-	preserved := make([]gh.PR, 0, len(existing))
-	for _, pr := range existing {
-		if !matchesListState(pr, state) && !fetchedNumbers[pr.Number] {
-			preserved = append(preserved, pr)
-		}
-	}
-	if state == openPRListState {
-		return append(append([]gh.PR(nil), fetched...), preserved...)
-	}
-	return append(preserved, fetched...)
 }
 
 func (m Model) matchesView(pr gh.PR, view prView) bool {
@@ -179,22 +268,65 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 	if m.collapsedStacks == nil {
 		m.collapsedStacks = map[string]bool{}
 	}
-	m.allPRs = m.withLocalPR(m.navigator.PRs)
+	page, paged := m.prPages[m.activePRPage]
+	source := m.navigator.PRs // legacy/cache fallback before the first page arrives
+	if page.loaded {
+		source = page.prs
+	}
+	sourceNumbers := make(map[int]bool, len(source))
+	for _, pr := range source {
+		sourceNumbers[pr.Number] = true
+	}
+	m.allPRs = m.withLocalPR(source)
 	clear(m.viewCounts[:])
+	clear(m.viewCountKnown[:])
 	for view := assignedView; view < prViewCount; view++ {
 		state := openPRListState
 		if view == closedPRsView {
 			state = closedPRListState
 		}
-		for _, pr := range m.allPRs {
-			if matchesListState(pr, state) && m.matchesView(pr, view) {
+		if cached, ok := m.prPages[prPageKey(view, state, "")]; ok && cached.loaded {
+			m.viewCounts[view], m.viewCountKnown[view] = cached.total, true
+		} else if page.loaded {
+			for _, pr := range m.navigator.PRs {
+				if matchesListState(pr, state) && m.matchesView(pr, view) {
+					m.viewCounts[view]++
+				}
+			}
+		}
+	}
+	if !paged || !page.loaded {
+		for view := assignedView; view < prViewCount; view++ {
+			state := openPRListState
+			if view == closedPRsView {
+				state = closedPRListState
+			}
+			for _, pr := range m.allPRs {
+				if matchesListState(pr, state) && m.matchesView(pr, view) {
+					m.viewCounts[view]++
+				}
+			}
+			m.viewCountKnown[view] = true
+		}
+	}
+	if m.localAvailable && page.loaded {
+		local := gh.PR{State: "LOCAL", Author: gh.PRUser{Login: m.viewerLogin}}
+		for view := assignedView; view < closedPRsView; view++ {
+			if m.matchesView(local, view) || view == allPRsView {
 				m.viewCounts[view]++
 			}
 		}
 	}
 	m.viewCountsValid = true
 	m.filteredPRs = make([]gh.PR, 0, len(m.allPRs))
+	_, localFilter := splitPRFilter(m.filterQuery)
 	for _, pr := range m.allPRs {
+		if page.loaded && pr.Number > 0 && sourceNumbers[pr.Number] {
+			if localFilter == "" || matchesPRFilter(pr, localFilter, m.viewerLogin) {
+				m.filteredPRs = append(m.filteredPRs, pr)
+			}
+			continue
+		}
 		if matchesListState(pr, m.prListState) && m.matchesView(pr, m.prView) && matchesPRFilter(pr, m.filterQuery, m.viewerLogin) {
 			m.filteredPRs = append(m.filteredPRs, pr)
 		}
@@ -460,13 +592,16 @@ func (m Model) renderPRListHeader() string {
 	tabs := make([]string, 0, prViewCount)
 	activeBg := lipgloss.Color(cSelectedBg)
 	for view := assignedView; view < prViewCount; view++ {
-		name, count := view.String(), m.viewCount(view)
+		name, count := view.String(), "?"
+		if !m.viewCountsValid || m.viewCountKnown[view] {
+			count = strconv.Itoa(m.viewCount(view))
+		}
 		border, content := stMuted, stMuted
 		if view == m.prView {
 			border = stAccent
 			content = lipgloss.NewStyle().Background(activeBg).Foreground(lipgloss.Color(cAccent)).Bold(true)
 		}
-		tabs = append(tabs, border.Render("[")+content.Render(fmt.Sprintf(" %s %d ", name, count))+border.Render("]"))
+		tabs = append(tabs, border.Render("[")+content.Render(fmt.Sprintf(" %s %s ", name, count))+border.Render("]"))
 	}
 	available := m.w
 	if m.w >= logoWidth+40 {
@@ -490,11 +625,16 @@ func (m Model) renderPRListHeader() string {
 	}
 	filter := stMuted.Render("/ filter (is:closed) · [/] views · space stacks")
 	if m.filterEditing {
-		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery+"▌")
+		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery+"▌") + stMuted.Render(" · Enter search · Esc cancel")
 	} else if m.filterQuery != "" {
 		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery) + stMuted.Render(" · Esc clear")
 	}
-	line2 := filter + stMuted.Render(fmt.Sprintf("   · %d listed · ⎇ %s", len(m.filteredPRs), m.currentBranch))
+	metrics := []string{}
+	if page, ok := m.prPages[m.activePRPage]; ok && page.loaded {
+		metrics = append(metrics, fmt.Sprintf("%d/%d loaded", len(page.prs), page.total))
+	}
+	metrics = append(metrics, fmt.Sprintf("%d listed", len(m.filteredPRs)), "⎇ "+m.currentBranch)
+	line2 := filter + stMuted.Render("   · "+strings.Join(metrics, " · "))
 	return m.withLogo(lipgloss.JoinVertical(lipgloss.Left, append(tabRows, line2)...))
 }
 

@@ -184,7 +184,10 @@ case "${1:-} ${2:-}" in
     commit_number=
     for arg in "$@"; do
       [ "$arg" = "state=CLOSED" ] && wanted=CLOSED
-      case "$arg" in number=*) commit_number=${arg#number=} ;; esac
+      case "$arg" in
+        number=*) commit_number=${arg#number=} ;;
+        searchQuery=*) printf '%%s' "${arg#searchQuery=}" | grep -q 'is:closed' && wanted=CLOSED ;;
+      esac
     done
     if [ -n "$commit_number" ]; then
       pr_data "$commit_number"
@@ -200,7 +203,9 @@ case "${1:-} ${2:-}" in
       [ -z "$nodes" ] || nodes="$nodes,"
       nodes="$nodes$item"
     done
-    printf '{"data":{"viewer":{"login":"demo-user"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[%%s],"pageInfo":{"hasNextPage":false}}}}}\n' "$nodes"
+    count=0
+    [ -z "$nodes" ] || count=$(printf '%%s' "$nodes" | awk -F'"number":' '{print NF-1}')
+    printf '{"data":{"viewer":{"login":"demo-user"},"search":{"issueCount":%%s,"nodes":[%%s],"pageInfo":{"hasNextPage":false}}}}\n' "$count" "$nodes"
     ;;
   "pr list")
     head=

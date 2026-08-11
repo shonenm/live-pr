@@ -65,78 +65,57 @@ func TestFindByNumber(t *testing.T) {
 	}
 }
 
-func TestListOpen(t *testing.T) {
-	var got []string
-	c := Client{run: func(args ...string) ([]byte, error) {
-		got = append(got, strings.Join(args, " "))
-		switch args[0] {
-		case "repo":
-			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
-		case "api":
-			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":12}]},"repository":{"pullRequests":{"nodes":[{"number":12,"headRefName":"feature/x","headRefOid":"abc123","baseRefName":"main","baseRefOid":"base123","isDraft":true,"isCrossRepository":true,"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"CHANGES_REQUESTED","assignees":{"nodes":[{"login":"bob"}]},"reviewRequests":{"nodes":[{"requestedReviewer":{"login":"octocat"}},{"requestedReviewer":{}}]},"labels":{"nodes":[{"name":"bug","color":"d73a4a"}]},"comments":{"totalCount":9,"nodes":[{"author":{"login":"alice"},"body":"review"}]},"commits":{"totalCount":5},"statusCheckRollup":{"contexts":{"nodes":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}}}]}}}}`), nil
-		default:
-			return nil, errors.New("unexpected command")
-		}
-	}}
-	list, err := c.ListOpen()
-	if err != nil {
-		t.Fatal(err)
-	}
-	prs := list.PRs
-	if list.ViewerLogin != "octocat" || len(prs) != 1 || prs[0].HeadRefName != "feature/x" || prs[0].HeadRefOID != "abc123" || prs[0].BaseRefOID != "base123" || !prs[0].IsDraft || !prs[0].IsCrossRepository || prs[0].Mergeable != "CONFLICTING" || len(prs[0].Conversation) != 0 || prs[0].CommentCount != 0 || prs[0].CommitCount != 0 || len(prs[0].Checks) != 0 || len(prs[0].Assignees) != 1 || len(prs[0].Labels) != 1 || len(prs[0].ReviewRequests) != 1 || prs[0].ReviewRequests[0].Login != "octocat" || !prs[0].ViewerReviewRequested || prs[0].PreviewLoaded {
-		t.Fatalf("open PRs = %#v", list)
-	}
-	args := strings.Join(got, " ")
-	for _, field := range []string{"pullRequests(first:$pageSize", "states:[$state]", "state=OPEN", "pageSize=25", "baseRefOid", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "statusCheckRollup{state}"} {
-		if !strings.Contains(args, field) {
-			t.Fatalf("list args missing %q: %s", field, args)
-		}
-	}
-	for _, field := range []string{"body", "additions", "deletions", "changedFiles", "comments(first:1)", "statusCheckRollup{contexts", "commits{totalCount}"} {
-		if strings.Contains(args, field) {
-			t.Fatalf("list args still request expensive field %q: %s", field, args)
-		}
-	}
-}
-
-func TestListClosedIncludesMergedPullRequests(t *testing.T) {
-	var query string
-	client := Client{run: func(args ...string) ([]byte, error) {
-		if args[0] == "repo" {
-			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
-		}
-		query = strings.Join(args, " ")
-		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[{"number":12,"state":"MERGED"}],"pageInfo":{"hasNextPage":false}}}}}`), nil
-	}}
-	list, err := client.ListState("CLOSED")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(list.PRs) != 1 || list.PRs[0].State != "MERGED" || !strings.Contains(query, "states:[$state,MERGED]") {
-		t.Fatalf("closed list = %#v query=%s", list.PRs, query)
-	}
-	if strings.Contains(query, "reviewRequested:search") || strings.Contains(query, "reviewQuery=") {
-		t.Fatalf("closed list requested open review data: %s", query)
-	}
-}
-
-func TestListStateCachesRepositoryIdentity(t *testing.T) {
-	repoCalls := 0
+func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
+	var apiCalls, repoCalls int
+	var requests []string
 	client := Client{repo: &repositoryIdentity{}, run: func(args ...string) ([]byte, error) {
 		if args[0] == "repo" {
 			repoCalls++
 			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
 		}
-		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`), nil
+		apiCalls++
+		requests = append(requests, strings.Join(args, " "))
+		if apiCalls == 1 {
+			return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":1,"state":"OPEN","baseRefOid":"base1"}],"pageInfo":{"hasNextPage":true,"startCursor":"S1","endCursor":"C1"}}}}`), nil
+		}
+		return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":2,"state":"OPEN"}],"pageInfo":{"hasNextPage":false,"startCursor":"S2","endCursor":"C2"}}}}`), nil
 	}}
-	if _, err := client.ListOpen(); err != nil {
+	first, err := client.SearchPRs("is:open assignee:@me", "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.ListOpen(); err != nil {
+	if apiCalls != 1 || first.TotalCount != 30 || len(first.PRs) != 1 || first.PRs[0].BaseRefOID != "base1" || !first.PageInfo.HasNextPage || first.PageInfo.EndCursor != "C1" {
+		t.Fatalf("first page = %#v calls=%d", first, apiCalls)
+	}
+	second, err := client.SearchPRs("is:open assignee:@me", first.PageInfo.EndCursor)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if repoCalls != 1 {
-		t.Fatalf("gh repo view calls = %d, want 1", repoCalls)
+	if apiCalls != 2 || repoCalls != 1 || len(second.PRs) != 1 || second.PRs[0].Number != 2 || second.PageInfo.HasNextPage {
+		t.Fatalf("second page = %#v calls=%d", second, apiCalls)
+	}
+	if strings.Contains(requests[0], "after=") || !strings.Contains(requests[0], "pageSize=25") || !strings.Contains(requests[1], "after=C1") || !strings.Contains(requests[0], "repo:acme/repo is:pr is:open assignee:@me sort:updated-desc") {
+		t.Fatalf("requests = %#v", requests)
+	}
+}
+
+func TestSearchPRsRejectsIncompleteResponses(t *testing.T) {
+	for name, test := range map[string]struct {
+		response string
+		cursor   string
+	}{
+		"graphql error":  {response: `{"errors":[{"message":"forbidden"}]}`},
+		"missing cursor": {response: `{"data":{"search":{"pageInfo":{"hasNextPage":true}}}}`},
+		"stuck cursor":   {response: `{"data":{"search":{"pageInfo":{"hasNextPage":true,"endCursor":"C1"}}}}`, cursor: "C1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
+				return []byte(test.response), nil
+			}}
+			if _, err := client.SearchPRs("is:open", test.cursor); err == nil {
+				t.Fatalf("response %s was accepted", test.response)
+			}
+		})
 	}
 }
 
@@ -262,72 +241,6 @@ func TestCommitStatusRollupsRejectsIncompleteGraphQLResponses(t *testing.T) {
 				t.Fatalf("commit status response %s was accepted", response)
 			}
 		})
-	}
-}
-
-func TestListOpenPaginatesPullRequests(t *testing.T) {
-	var apiCalls int
-	client := Client{run: func(args ...string) ([]byte, error) {
-		if args[0] == "repo" {
-			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
-		}
-		apiCalls++
-		if strings.Contains(strings.Join(args, " "), "after=cursor-1") {
-			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[{"number":2}],"pageInfo":{"hasNextPage":false}}}}}`), nil
-		}
-		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[{"number":1}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}`), nil
-	}}
-	list, err := client.ListOpen()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if apiCalls != 2 || len(list.PRs) != 2 || list.PRs[0].Number != 1 || list.PRs[1].Number != 2 {
-		t.Fatalf("paginated PRs = calls:%d prs:%#v", apiCalls, list.PRs)
-	}
-}
-
-func TestListOpenPaginatesReviewRequestsIndependently(t *testing.T) {
-	var apiCalls int
-	client := Client{run: func(args ...string) ([]byte, error) {
-		if args[0] == "repo" {
-			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
-		}
-		apiCalls++
-		joined := strings.Join(args, " ")
-		if strings.Contains(joined, "reviewAfter=review-1") {
-			for _, arg := range args {
-				if strings.HasPrefix(arg, "after=") {
-					t.Fatalf("finished PR cursor was sent again: %s", joined)
-				}
-			}
-			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":2}],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`), nil
-		}
-		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":1}],"pageInfo":{"hasNextPage":true,"endCursor":"review-1"}},"repository":{"pullRequests":{"nodes":[{"number":1},{"number":2}],"pageInfo":{"hasNextPage":false}}}}}`), nil
-	}}
-	list, err := client.ListOpen()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if apiCalls != 2 || len(list.PRs) != 2 || !list.PRs[0].ViewerReviewRequested || !list.PRs[1].ViewerReviewRequested {
-		t.Fatalf("review pagination = calls:%d prs:%#v", apiCalls, list.PRs)
-	}
-}
-
-func TestListStateRejectsUnsupportedState(t *testing.T) {
-	called := false
-	c := Client{run: func(args ...string) ([]byte, error) {
-		called = true
-		return nil, nil
-	}}
-	if _, err := c.ListState("merged"); err == nil || called {
-		t.Fatalf("ListState accepted unsupported state: err=%v called=%v", err, called)
-	}
-}
-
-func TestListOpenFailure(t *testing.T) {
-	c := Client{run: func(args ...string) ([]byte, error) { return []byte("offline"), errors.New("exit 1") }}
-	if _, err := c.ListOpen(); err == nil || !strings.Contains(err.Error(), "offline") {
-		t.Fatalf("ListOpen error = %v", err)
 	}
 }
 

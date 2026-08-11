@@ -130,7 +130,7 @@ live-pr comment edit <id> "Use batched GraphQL" --body "One request"
 live-pr comment delete <id>
 live-pr init --hooks     # print the optional, significance-filtered Stop hook
 live-pr sync             # import base..HEAD commits
-                        # list: [/] Assigned/Review/All/Closed views; / filter (is:closed); Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
+                        # list: [/] Assigned/Review/All/Closed views; / filter + Enter; Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
                         # detail: a add comment; e edit selected summary/comment; d delete selected comment; Ctrl+S save; Esc cancel
                         #         b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
 live-pr pr preview       # preview the generated managed PR body
@@ -139,6 +139,8 @@ live-pr pr publish       # push and create or update the GitHub PR
 ```
 
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, and TUI synchronization timings to stderr.
+
+The PR navigator fetches only the active view's first 25 rows. Reaching the final loaded row requests the next page and appends it; switching back to a view loaded in the current session does not issue another request. View counts become exact when that view is first fetched (`?` means unvisited). Search is submitted with `Enter` and runs server-side; `ci:` and `merge:` remain local post-filters over progressively loaded pages. GitHub Search limits any one query to its first 1,000 results.
 
 In a demo, the current PR Conversation shows compact CI activity for two commits: the first has a mocked red failure and the second a green success. Press `c` to inspect the same results in the full two-commit list. Press `b` for the mocked PR list, then use `m`, `c`, and `x` to exercise merge, checkout, and close. Select the Closed view or search `is:closed` to verify that completed mock PRs move out of Open. The checkout changes only the disposable repository; all GitHub data stays local.
 

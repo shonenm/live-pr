@@ -110,9 +110,9 @@ var keys = keyMap{
 
 type prListRefreshed struct {
 	generation uint64
-	state      prListState
-	viewer     string
-	prs        []gh.PR
+	key        string
+	appendPage bool
+	page       gh.PRPage
 	err        error
 }
 
@@ -207,6 +207,13 @@ type prStack struct {
 	entries []stackEntry
 }
 
+type prPageState struct {
+	prs                             []gh.PR
+	total                           int
+	endCursor                       string
+	hasNext, loaded, fresh, loading bool
+}
+
 type prRowCacheKey struct {
 	number, width, additions, deletions, checkCount int
 	prefix, state, title, author, base, head        string
@@ -262,7 +269,10 @@ type Model struct {
 	prPreviewLoaded           map[int]bool
 	prView                    prView
 	prListState               prListState
+	prPages                   map[string]prPageState
+	activePRPage              string
 	viewCounts                [prViewCount]int
+	viewCountKnown            [prViewCount]bool
 	viewCountsValid           bool
 	filterQuery               string
 	filterBeforeEdit          string
@@ -402,6 +412,7 @@ func New() (Model, error) {
 		diffPending:       map[string]bool{},
 		prPreviewLoading:  map[int]bool{},
 		prPreviewLoaded:   map[int]bool{},
+		prPages:           map[string]prPageState{},
 		collapsedStacks:   map[string]bool{},
 		prRowCache:        map[prRowCacheKey][]string{},
 		help:              newHelp(),
@@ -412,6 +423,11 @@ func New() (Model, error) {
 			return Model{}, err
 		}
 	}
+	m.seedPRPages()
+	m.activePRPage = prPageKey(m.prView, m.prListState, m.filterQuery)
+	page := m.prPages[m.activePRPage]
+	page.loading = true
+	m.prPages[m.activePRPage] = page
 	m.applyPRFilters(0)
 	return m, nil
 }
@@ -552,7 +568,7 @@ func (m Model) Init() tea.Cmd {
 		m.loadSpinner = newLoadSpinner()
 	}
 	m.spinnerRunning = true
-	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.prListState), m.loadSpinner.Tick}
+	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.activePRPage, prViewSearch(m.prView, m.prListState, m.filterQuery), "", false), m.loadSpinner.Tick}
 	if m.screen == prListScreen && m.localAvailable && m.autoOpenCurrent {
 		cmds = append(cmds, fetchCurrentBranchPR(m.currentBranch))
 	}
@@ -606,10 +622,10 @@ func (m *Model) invalidateConversation() {
 	m.conversationDirty = true
 }
 
-func fetchPRList(generation uint64, state prListState) tea.Cmd {
+func fetchPRList(generation uint64, key, query, cursor string, appendPage bool) tea.Cmd {
 	return func() tea.Msg {
-		list, err := gh.New().ListState(state.String())
-		return prListRefreshed{generation: generation, state: state, viewer: list.ViewerLogin, prs: list.PRs, err: err}
+		page, err := gh.New().SearchPRs(query, cursor)
+		return prListRefreshed{generation: generation, key: key, appendPage: appendPage, page: page, err: err}
 	}
 }
 
@@ -832,6 +848,11 @@ func (m *Model) moveCursorTo(index int) tea.Cmd {
 	}
 	if m.screen == prListScreen {
 		m.prCursor = index
+		cmd := m.sync()
+		if index == length-1 {
+			return tea.Batch(cmd, m.requestPRPage(false))
+		}
+		return cmd
 	} else if m.focusExplorer {
 		m.fileCursor = index
 	} else {
