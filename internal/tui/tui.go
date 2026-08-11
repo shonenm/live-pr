@@ -15,6 +15,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -216,6 +217,8 @@ type Model struct {
 	status                    string
 	notice                    string
 	githubStatus              string
+	loadSpinner               bspinner.Model
+	spinnerRunning            bool
 	timelinePath              string
 	cachePath                 string
 	cache                     gh.Cache
@@ -330,6 +333,8 @@ func New() (Model, error) {
 		head:              branch,
 		headRev:           "HEAD",
 		status:            status,
+		loadSpinner:       bspinner.New(bspinner.WithSpinner(bspinner.MiniDot), bspinner.WithStyle(stAttention)),
+		spinnerRunning:    true,
 		navigator:         navigator,
 		navigatorPath:     navigatorPath,
 		openPRs:           navigator.PRs,
@@ -447,7 +452,11 @@ func Run() error {
 }
 
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.prListState)}
+	if len(m.loadSpinner.Spinner.Frames) == 0 {
+		m.loadSpinner = bspinner.New(bspinner.WithSpinner(bspinner.MiniDot), bspinner.WithStyle(stAttention))
+	}
+	m.spinnerRunning = true
+	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.prListState), m.loadSpinner.Tick}
 	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
 		cmds = append(cmds, fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration))
 	}
@@ -455,6 +464,31 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m Model) isLoading() bool {
+	return m.refreshing || m.listRefreshing || m.publishing || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
+}
+
+func (m *Model) startSpinner() tea.Cmd {
+	if !m.isLoading() {
+		return nil
+	}
+	if len(m.loadSpinner.Spinner.Frames) == 0 {
+		m.loadSpinner = bspinner.New(bspinner.WithSpinner(bspinner.MiniDot), bspinner.WithStyle(stAttention))
+	}
+	if m.spinnerRunning {
+		return nil
+	}
+	m.spinnerRunning = true
+	return m.loadSpinner.Tick
+}
+
+func (m Model) busyStatus(text string) string {
+	if text == "" {
+		return m.loadSpinner.View()
+	}
+	return m.loadSpinner.View() + " " + renderStatus(text)
 }
 
 func (m *Model) close() {
@@ -603,7 +637,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.status = "loading PR refs…"
 	m.githubStatus = "GitHub: cached · refreshing selected PR…"
 	m.layout()
-	return tea.Batch(fetchRemotePR(pr, m.targetGeneration), m.sync())
+	return tea.Batch(fetchRemotePR(pr, m.targetGeneration), m.sync(), m.startSpinner())
 }
 
 const (
@@ -691,6 +725,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case bspinner.TickMsg:
+		var cmd tea.Cmd
+		m.loadSpinner, cmd = m.loadSpinner.Update(msg)
+		if !m.isLoading() {
+			m.spinnerRunning = false
+			return m, nil
+		}
+		return m, cmd
+
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.help.Width = msg.Width
@@ -818,7 +861,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.listRefreshing = true
 			m.prListGeneration++
 			m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
-			return m, fetchPRList(m.prListGeneration, m.prListState)
+			return m, tea.Batch(fetchPRList(m.prListGeneration, m.prListState), m.startSpinner())
 		}
 		m.close()
 		next, err := New()
@@ -1035,7 +1078,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pendingPRAction = noPRAction
 					m.prActionRunning = action
 					m.notice = ""
-					return m, runPRAction(action, pr)
+					return m, tea.Batch(runPRAction(action, pr), m.startSpinner())
 				case "n", "q", "esc":
 					m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
 					return m, nil
@@ -1119,7 +1162,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.prListGeneration++
 				m.applyPRFilters(selected)
 				m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
-				return m, fetchPRList(m.prListGeneration, m.prListState)
+				return m, tea.Batch(fetchPRList(m.prListGeneration, m.prListState), m.startSpinner())
 			case key.Matches(msg, m.keys.ToggleStack):
 				if stack, ok := m.stackForPR(m.selectedPRNumber()); ok {
 					collapsing := !m.collapsedStacks[stack.id]
@@ -1139,7 +1182,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.listRefreshing = true
 				m.prListGeneration++
 				m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
-				return m, fetchPRList(m.prListGeneration, m.prListState)
+				return m, tea.Batch(fetchPRList(m.prListGeneration, m.prListState), m.startSpinner())
 			case key.Matches(msg, m.keys.PreviewDown):
 				m.detail.HalfPageDown()
 				return m, nil
@@ -1170,7 +1213,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.status = err.Error()
 					return m, nil
 				}
-				cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.explicitPRNumber(), m.targetGeneration), m.sync()}
+				cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.explicitPRNumber(), m.targetGeneration), m.sync(), m.startSpinner()}
 				if m.diffTerminal != nil {
 					cmds = append(cmds, m.diffTerminal.Init())
 				}
@@ -1185,7 +1228,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pendingPRAction = noPRAction
 				m.prActionRunning = action
 				m.notice = ""
-				return m, runPRAction(action, pr)
+				return m, tea.Batch(runPRAction(action, pr), m.startSpinner())
 			case "n", "q", "esc":
 				m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
 				return m, nil
@@ -1329,9 +1372,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshing = true
 			m.githubStatus = "GitHub: refreshing…"
 			if m.remote && m.cache.PR != nil {
-				return m, fetchRemotePR(*m.cache.PR, m.targetGeneration)
+				return m, tea.Batch(fetchRemotePR(*m.cache.PR, m.targetGeneration), m.startSpinner())
 			}
-			return m, fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration)
+			return m, tea.Batch(fetchGitHub(m.head, m.explicitPRNumber(), m.targetGeneration), m.startSpinner())
 		case key.Matches(msg, m.keys.Merge):
 			if m.canMergeCurrentPR() {
 				m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, m.cache.PR.Number, *m.cache.PR
@@ -1350,10 +1393,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "publishing PR…"
 			base := m.base
 			generation := m.targetGeneration
-			return m, func() tea.Msg {
+			return m, tea.Batch(func() tea.Msg {
 				result, err := publish.Run(publish.Options{Base: base})
 				return publishDone{generation: generation, result: result, err: err}
-			}
+			}, m.startSpinner())
 		case key.Matches(msg, m.keys.Browse):
 			url := m.selectedBrowseURL()
 			if url == "" {
@@ -1925,6 +1968,7 @@ func (m *Model) sync() tea.Cmd {
 	if !m.ready {
 		return nil
 	}
+	start := m.startSpinner()
 	if m.screen == prListScreen {
 		m.keys.Select.SetEnabled(true)
 		m.keys.PreviewUp.SetEnabled(true)
@@ -1951,7 +1995,8 @@ func (m *Model) sync() tea.Cmd {
 		m.detail.SetContent(m.buildPRPreview())
 		m.detail.GotoTop()
 		keepLineVisible(&m.list, selectedLine)
-		return m.ensureSelectedPRPreview()
+		preview := m.ensureSelectedPRPreview()
+		return tea.Batch(start, preview, m.startSpinner())
 	}
 	m.keys.PreviewUp.SetEnabled(true)
 	m.keys.PreviewDown.SetEnabled(true)
@@ -1980,7 +2025,8 @@ func (m *Model) sync() tea.Cmd {
 		keepLineVisible(&m.explorer, selectedFileLine)
 	}
 
-	return m.syncDetail(m.buildDetail())
+	detailCmd := m.syncDetail(m.buildDetail())
+	return tea.Batch(start, detailCmd, m.startSpinner())
 }
 
 func (m *Model) syncDetail(detail detailContent) tea.Cmd {
@@ -2028,40 +2074,46 @@ func (m Model) View() string {
 	if !m.ready {
 		return "loading…"
 	}
+	var view string
 	if m.screen == prListScreen {
 		preview := lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
 			BorderForeground(lipgloss.Color(cBorder)).PaddingLeft(1).
 			Render(m.detail.View())
 		body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), preview)
-		return lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
-	}
-	detailContent := m.detail.View()
-	borderColor := cBorder
-	if m.diffTerminal != nil && m.diffTerminal.Available() {
-		detailContent = m.diffTerminal.View(m.detail.Width, m.detail.Height)
-		if m.focusDiff {
-			borderColor = cAccent
+		view = lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
+	} else {
+		detailContent := m.detail.View()
+		borderColor := cBorder
+		if m.diffTerminal != nil && m.diffTerminal.Available() {
+			detailContent = m.diffTerminal.View(m.detail.Width, m.detail.Height)
+			if m.focusDiff {
+				borderColor = cAccent
+			}
 		}
-	}
-	detail := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
-		BorderForeground(lipgloss.Color(borderColor)).PaddingLeft(1).
-		Render(detailContent)
-	right := detail
-	if m.fileExplorerMode() {
-		explorerBorder := cBorder
-		if m.focusExplorer {
-			explorerBorder = cAccent
-		}
-		explorer := lipgloss.NewStyle().
+		detail := lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
-			BorderForeground(lipgloss.Color(explorerBorder)).PaddingLeft(1).
-			Render(m.explorer.View())
-		right = lipgloss.JoinHorizontal(lipgloss.Top, explorer, detail)
+			BorderForeground(lipgloss.Color(borderColor)).PaddingLeft(1).
+			Render(detailContent)
+		right := detail
+		if m.fileExplorerMode() {
+			explorerBorder := cBorder
+			if m.focusExplorer {
+				explorerBorder = cAccent
+			}
+			explorer := lipgloss.NewStyle().
+				BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
+				BorderForeground(lipgloss.Color(explorerBorder)).PaddingLeft(1).
+				Render(m.explorer.View())
+			right = lipgloss.JoinHorizontal(lipgloss.Top, explorer, detail)
+		}
+		body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), right)
+		view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 	}
-	body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), right)
-	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
+	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
+		return overlayPopup(view, m.renderActionPopup(), m.w)
+	}
+	return view
 }
 
 func (m Model) renderPRListHeader() string {
@@ -2698,27 +2750,16 @@ func (m Model) commitDetail(sha string) detailContent {
 
 func (m Model) renderFooter() string {
 	if m.status != "" {
+		if m.isLoading() {
+			return m.busyStatus(m.status)
+		}
 		return renderStatus(m.status)
 	}
 	if m.pendingPRAction != noPRAction {
-		action := "merge with a merge commit"
-		switch m.pendingPRAction {
-		case checkoutPR:
-			action = "checkout its branch"
-		case closePR:
-			action = "close without merging"
-		}
-		return stAccent.Render(fmt.Sprintf("PR #%d: %s?", m.prActionNumber, action)) + stMuted.Render("  y confirm · n cancel")
+		return m.help.View(m.keys)
 	}
 	if m.prActionRunning != noPRAction {
-		action := "Merging"
-		switch m.prActionRunning {
-		case checkoutPR:
-			action = "Checking out"
-		case closePR:
-			action = "Closing"
-		}
-		return stMuted.Render(fmt.Sprintf("%s PR #%d…", action, m.prActionNumber))
+		return m.busyStatus("")
 	}
 	if m.notice != "" {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
@@ -2731,9 +2772,95 @@ func (m Model) renderFooter() string {
 		return hint
 	}
 	if m.githubStatus != "" {
+		if m.isLoading() {
+			return m.busyStatus(m.githubStatus) + "  " + m.help.View(m.keys)
+		}
 		return stMuted.Render(m.githubStatus) + "  " + m.help.View(m.keys)
 	}
 	return m.help.View(m.keys)
+}
+
+func actionLabel(action prAction) string {
+	switch action {
+	case mergePR:
+		return "Merge"
+	case checkoutPR:
+		return "Checkout"
+	case closePR:
+		return "Close"
+	default:
+		return "Action"
+	}
+}
+
+func (m Model) renderActionPopup() string {
+	action := m.prActionRunning
+	if action == noPRAction {
+		action = m.pendingPRAction
+	}
+	label := actionLabel(action)
+	message := "Continue?"
+	switch action {
+	case mergePR:
+		message = "Merge with a merge commit?"
+	case checkoutPR:
+		branch := m.prActionPR.HeadRefName
+		if branch == "" {
+			branch = "its branch"
+		}
+		message = "Checkout " + branch + "?"
+	case closePR:
+		message = "Close without merging?"
+	}
+	lines := []string{
+		stBold.Render(fmt.Sprintf("%s PR #%d", label, m.prActionNumber)),
+		"",
+		stFg.Render(message),
+	}
+	if m.prActionRunning != noPRAction {
+		lines = append(lines, "", stAttention.Render(m.loadSpinner.View()+" "+label+" in progress…"))
+	} else {
+		lines = append(lines, "", stMuted.Render("y confirm · n / Esc cancel"))
+	}
+	contentWidth := max(1, min(52, m.w-14))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(cAccent)).
+		Background(lipgloss.Color(cSelectedBg)).
+		Padding(1, 3).
+		Width(contentWidth).
+		Render(strings.Join(lines, "\n"))
+}
+
+func overlayPopup(base, popup string, width int) string {
+	if width <= 0 {
+		width = lipgloss.Width(base)
+	}
+	baseLines := strings.Split(base, "\n")
+	popupLines := strings.Split(popup, "\n")
+	popupWidth := lipgloss.Width(popup)
+	if popupWidth == 0 || len(baseLines) == 0 {
+		return base
+	}
+	left := max(0, (width-popupWidth)/2)
+	top := max(0, (len(baseLines)-len(popupLines))/2)
+	for i, popupLine := range popupLines {
+		lineIndex := top + i
+		if lineIndex >= len(baseLines) {
+			break
+		}
+		line := ansi.Truncate(baseLines[lineIndex], width, "")
+		if lineWidth := lipgloss.Width(line); lineWidth < width {
+			line += strings.Repeat(" ", width-lineWidth)
+		}
+		cutRight := min(width, left+popupWidth)
+		merged := ansi.Cut(line, 0, left) + popupLine + ansi.Cut(line, cutRight, width)
+		if lineWidth := lipgloss.Width(merged); lineWidth < width {
+			merged += strings.Repeat(" ", width-lineWidth)
+		}
+		baseLines[lineIndex] = merged
+	}
+	return strings.Join(baseLines, "\n")
 }
 
 func renderStatus(status string) string {
