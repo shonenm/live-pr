@@ -5,8 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
+
+	"github.com/shonenm/live-pr/internal/debugtime"
 )
+
+const maxNavigatorSnapshots = 50
 
 // PRSnapshot is cached Conversation data for one browsed pull request.
 type PRSnapshot struct {
@@ -42,6 +47,27 @@ func (c *NavigatorCache) SetSnapshot(snapshot PRSnapshot) {
 		c.Snapshots = map[string]PRSnapshot{}
 	}
 	c.Snapshots[strconv.Itoa(snapshot.PR.Number)] = snapshot
+	c.trimSnapshots()
+}
+
+func (c *NavigatorCache) trimSnapshots() {
+	if len(c.Snapshots) <= maxNavigatorSnapshots {
+		return
+	}
+	keys := make([]string, 0, len(c.Snapshots))
+	for key := range c.Snapshots {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		left, right := c.Snapshots[keys[i]], c.Snapshots[keys[j]]
+		if left.FetchedAt == right.FetchedAt {
+			return keys[i] < keys[j]
+		}
+		return left.FetchedAt < right.FetchedAt
+	})
+	for _, key := range keys[:len(keys)-maxNavigatorSnapshots] {
+		delete(c.Snapshots, key)
+	}
 }
 
 func LoadNavigatorCache(path string) (NavigatorCache, error) {
@@ -69,10 +95,14 @@ func LoadNavigatorCache(path string) (NavigatorCache, error) {
 	if c.Snapshots == nil {
 		c.Snapshots = map[string]PRSnapshot{}
 	}
+	c.trimSnapshots()
 	return c, nil
 }
 
 func SaveNavigatorCache(path string, c NavigatorCache) error {
+	if done := debugtime.Start("navigator cache save"); done != nil {
+		defer done()
+	}
 	c.Version = CacheVersion
 	return saveJSON(path, c)
 }

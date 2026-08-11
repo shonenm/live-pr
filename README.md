@@ -107,6 +107,8 @@ live-pr pr --dry-run    # preview the generated managed PR body
 live-pr pr              # push and create or update the GitHub PR
 ```
 
+Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, and TUI synchronization timings to stderr.
+
 In a demo, press `b` for the mocked PR list, then use `m`, `c`, and `x` to exercise merge, checkout, and close. Select the Closed view or search `is:closed` to verify that completed mock PRs move out of Open. The checkout changes only the disposable repository; all GitHub data stays local.
 
 The built-in right-side reviewer starts Neovim with an explicit three-dot `CodeDiff` range for local or remote PRs and `CodeReview` for a selected commit. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):

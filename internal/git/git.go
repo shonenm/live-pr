@@ -4,12 +4,18 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/shonenm/live-pr/internal/debugtime"
 )
 
 func run(args ...string) (string, error) {
+	if done := debugtime.Start("git " + args[0]); done != nil {
+		defer done()
+	}
 	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -146,6 +152,28 @@ func DiffStats(base, head string) (ChangeStats, error) {
 	return stats, nil
 }
 
+// HasChanges reports whether base...head contains any changed paths.
+func HasChanges(base, head string) (bool, error) {
+	if done := debugtime.Start("git diff --quiet"); done != nil {
+		defer done()
+	}
+	cmd := exec.Command("git", "diff", "--quiet", base+"..."+head, "--")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return true, nil
+		}
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return false, fmt.Errorf("git diff --quiet: %w: %s", err, detail)
+		}
+		return false, fmt.Errorf("git diff --quiet: %w", err)
+	}
+	return false, nil
+}
+
 // ChangedFile is one entry in base...HEAD.
 type ChangedFile struct {
 	Status  string
@@ -221,6 +249,9 @@ func truncate(s string, maxLines int) string {
 // FetchPull fetches a GitHub pull ref and its base without changing HEAD,
 // the index, or the worktree. It returns the namespaced local head ref.
 func FetchPull(number int, base, expectedOID string) (string, error) {
+	if done := debugtime.Start("git fetch pull"); done != nil {
+		defer done()
+	}
 	if number <= 0 {
 		return "", fmt.Errorf("invalid pull request number %d", number)
 	}
