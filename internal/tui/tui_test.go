@@ -41,7 +41,7 @@ func testModel() Model {
 	}
 }
 
-func TestBuildDetailCachesRawGitOutput(t *testing.T) {
+func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a POSIX fake executable")
 	}
@@ -56,7 +56,7 @@ func TestBuildDetailCachesRawGitOutput(t *testing.T) {
 	m.screen, m.base, m.headRev = detailScreen, "main", "HEAD"
 	m.diffCommand, m.diffTerminal = "", nil
 
-	first, second := m.buildDetail(), m.buildDetail()
+	first, second := m.loadDetail(), m.loadDetail()
 	calls, err := os.ReadFile(counter)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestBuildDetailCachesRawGitOutput(t *testing.T) {
 		t.Fatalf("details = %#v / %#v, calls=%q", first, second, calls)
 	}
 	m.resetDetailCaches()
-	_ = m.buildDetail()
+	_ = m.loadDetail()
 	calls, _ = os.ReadFile(counter)
 	if string(calls) != "2" {
 		t.Fatalf("cache reset calls=%q", calls)
