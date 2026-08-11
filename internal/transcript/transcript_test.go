@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestTextExtractsTurnsAndDropsTools(t *testing.T) {
@@ -35,6 +36,23 @@ func TestTextExtractsTurnsAndDropsTools(t *testing.T) {
 		if strings.Contains(got, no) {
 			t.Errorf("did not expect %q in transcript:\n%s", no, got)
 		}
+	}
+}
+
+func TestTextTailCapPreservesUTF8(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "utf8.jsonl")
+	line := `{"type":"assistant","message":{"role":"assistant","content":"古い内容。最新の日本語メッセージ"}}`
+	if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Text(p, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > 20 || !utf8.ValidString(got) || !strings.Contains(got, "メッセージ") {
+		t.Fatalf("invalid UTF-8 tail %q (%d bytes)", got, len(got))
 	}
 }
 
