@@ -415,6 +415,34 @@ func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
 	}
 }
 
+func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
+	m := testModel()
+	m.list.Width = 140
+	pr := gh.PR{
+		Number:           12,
+		Title:            "status colors",
+		State:            "OPEN",
+		Mergeable:        "MERGEABLE",
+		MergeStateStatus: "CLEAN",
+		Checks:           []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}},
+		PreviewLoaded:    true,
+		Additions:        8,
+		Deletions:        3,
+	}
+	rows := strings.Join(m.renderPRRow(pr, true, ""), "\n")
+	bg := lipgloss.Color(cSelectedBg)
+	for _, want := range []string{
+		stGreenF.Background(bg).Render("⇄ mergeable"),
+		stGreenF.Background(bg).Render("✓ CI 1 passed"),
+		stGreenF.Background(bg).Render("+8"),
+		stRedF.Background(bg).Render("-3"),
+	} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("selected PR row lost semantic style %q: %q", want, rows)
+		}
+	}
+}
+
 func TestMainStartupShowsListWithoutCreatingBranchStore(t *testing.T) {
 	dir := t.TempDir()
 	run := func(args ...string) {
@@ -824,7 +852,7 @@ func TestPRListFilterEditingAndViewKeys(t *testing.T) {
 		t.Fatalf("next view = %v %#v", m.prView, m.openPRs)
 	}
 	plain := ansi.Strip(m.renderPRListHeader())
-	for _, want := range []string{"Assigned 0", "Review requested 1", "All 2", "Authored 0", "Needs me 1", "Closed 0"} {
+	for _, want := range []string{"[ Assigned 0 ]", "[ Review requested 1 ]", "[ All 2 ]", "[ Authored 0 ]", "[ Needs me 1 ]", "[ Closed 0 ]"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("header missing %q: %q", want, plain)
 		}
