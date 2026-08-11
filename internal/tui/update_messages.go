@@ -39,6 +39,10 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 			page.loading = false
 			m.prPages[msg.key] = page
 		}
+		if msg.key == m.activePRPage {
+			m.listRefreshing = false
+			return m, m.requestPRPage(!msg.appendPage)
+		}
 		return m, nil
 	}
 	if m.prPages == nil {
