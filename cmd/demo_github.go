@@ -177,14 +177,17 @@ case "${1:-} ${2:-}" in
     ;;
   "pr list")
     head=
+    wanted=OPEN
     while [ "$#" -gt 0 ]; do
       [ "$1" = "--head" ] && { head=$2; shift; }
+      [ "$1" = "--state" ] && { wanted=$(printf '%%s' "$2" | tr '[:lower:]' '[:upper:]'); shift; }
       shift
     done
     found=
     for n in 101 102 99; do
       pr_data "$n"
-      [ "$state" = OPEN ] && [ "$branch" = "$head" ] || continue
+      [ "$branch" = "$head" ] || continue
+      [ "$wanted" = ALL ] || [ "$state" = "$wanted" ] || continue
       found=$(pr_json "$n")
     done
     [ -n "$found" ] && printf '[%%s]\n' "$found" || printf '[]\n'

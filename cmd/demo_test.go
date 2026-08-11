@@ -86,6 +86,10 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	if state, err := os.ReadFile(filepath.Join(stateDir, "pr-101")); err != nil || strings.TrimSpace(string(state)) != "CLOSED" {
 		t.Fatalf("merge state = %q err=%v", state, err)
 	}
+	merged, err := gh.New().FindForHead("demo/git")
+	if err != nil || merged.Number != 101 || merged.State != "CLOSED" {
+		t.Fatalf("merged branch lookup = %#v err=%v", merged, err)
+	}
 	run("pr", "close", "102")
 	if state, err := os.ReadFile(filepath.Join(stateDir, "pr-102")); err != nil || strings.TrimSpace(string(state)) != "CLOSED" {
 		t.Fatalf("close state = %q err=%v", state, err)
