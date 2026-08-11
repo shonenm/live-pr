@@ -18,6 +18,7 @@ func BenchmarkNavigatorSerialization(b *testing.B) {
 					cache.SetSnapshot(PRSnapshot{PR: cache.PRs[i], Comments: []Comment{{Body: "cached comment body"}}})
 				}
 			}
+			cache.SetView("All", cache.PRs, size, "now")
 			encoded, err := json.Marshal(cache)
 			if err != nil {
 				b.Fatal(err)

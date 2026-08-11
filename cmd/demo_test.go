@@ -55,9 +55,9 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	list, err := gh.New().ListState("OPEN")
-	if err != nil || len(list.PRs) != 2 || list.PRs[0].Number != 101 || list.PRs[1].Number != 102 {
-		t.Fatalf("GitHub client open list = %#v err=%v", list, err)
+	list, err := gh.New().SearchPRs("is:open", "")
+	if err != nil || list.TotalCount != 2 || len(list.PRs) != 2 || list.PRs[0].Number != 101 || list.PRs[1].Number != 102 {
+		t.Fatalf("GitHub client open page = %#v err=%v", list, err)
 	}
 	preview, err := gh.New().FindPreview(102)
 	if err != nil || preview.Number != 102 || !preview.PreviewLoaded || len(preview.Conversation) != 1 || len(preview.Commits) != 1 || preview.Commits[0].CheckRollupState != "SUCCESS" {
