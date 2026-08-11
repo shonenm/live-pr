@@ -275,19 +275,29 @@ func TestDetailMergeStartsConfirmation(t *testing.T) {
 	}
 }
 
-func TestHeaderShowsCachedPRAssigneesAndLabels(t *testing.T) {
+func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 	m := testModel()
-	m.w = 120
+	m.w = 180
 	m.cache.PR = &gh.PR{
-		Number:    12,
-		State:     "OPEN",
-		Assignees: []gh.PRUser{{Login: "alice"}, {Login: "bob"}},
-		Labels:    []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}},
+		Number:         12,
+		State:          "OPEN",
+		ReviewDecision: "APPROVED",
+		Checks:         []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}},
+		PreviewLoaded:  true,
+		Assignees:      []gh.PRUser{{Login: "alice"}, {Login: "bob"}},
+		Labels:         []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}},
 	}
+	m.localStats = git.ChangeStats{Files: 4, Additions: 20, Deletions: 3}
+	m.workingTreeDirty = true
 	plain := ansi.Strip(m.renderHeader())
-	for _, want := range []string{"#12 open", "@alice @bob", "bug", "docs"} {
+	for _, want := range []string{"#12 open", "CI 1 passed", "review approved", "4 files", "+20", "-3", "uncommitted changes", "@alice @bob", "bug", "docs"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("header missing %q: %q", want, plain)
+		}
+	}
+	for _, unwanted := range []string{" commits ·", " events ·", " comments ·", " activity ·"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("header still contains Conversation count %q: %q", unwanted, plain)
 		}
 	}
 	if m.headerHeight() != logoHeight {
@@ -296,6 +306,18 @@ func TestHeaderShowsCachedPRAssigneesAndLabels(t *testing.T) {
 	if lines := strings.Count(plain, "\n") + 1; lines != logoHeight {
 		t.Fatalf("PR header rendered %d lines, want %d: %q", lines, logoHeight, plain)
 	}
+	m.remote = true
+	m.cache.PR.ChangedFiles, m.cache.PR.Additions, m.cache.PR.Deletions = 7, 30, 4
+	remote := ansi.Strip(m.renderHeader())
+	if strings.Contains(remote, "uncommitted changes") {
+		t.Fatalf("remote PR header exposed local worktree state: %q", remote)
+	}
+	for _, want := range []string{"7 files", "+30", "-4"} {
+		if !strings.Contains(remote, want) {
+			t.Fatalf("remote PR header missing %q: %q", want, remote)
+		}
+	}
+	m.remote = false
 	m.w = 25
 	if width := lipgloss.Width(m.renderPRMeta(*m.cache.PR)); width > m.w {
 		t.Fatalf("metadata width = %d, want <= %d", width, m.w)
@@ -390,6 +412,34 @@ func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
 	}
 	if got := prStateBadgeColor("MERGED"); got != cDoneEmphasis {
 		t.Fatalf("merged badge = %s", got)
+	}
+}
+
+func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
+	m := testModel()
+	m.list.Width = 140
+	pr := gh.PR{
+		Number:           12,
+		Title:            "status colors",
+		State:            "OPEN",
+		Mergeable:        "MERGEABLE",
+		MergeStateStatus: "CLEAN",
+		Checks:           []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}},
+		PreviewLoaded:    true,
+		Additions:        8,
+		Deletions:        3,
+	}
+	rows := strings.Join(m.renderPRRow(pr, true, ""), "\n")
+	bg := lipgloss.Color(cSelectedBg)
+	for _, want := range []string{
+		stGreenF.Background(bg).Render("⇄ mergeable"),
+		stGreenF.Background(bg).Render("✓ CI 1 passed"),
+		stGreenF.Background(bg).Render("+8"),
+		stRedF.Background(bg).Render("-3"),
+	} {
+		if !strings.Contains(rows, want) {
+			t.Fatalf("selected PR row lost semantic style %q: %q", want, rows)
+		}
 	}
 }
 
@@ -802,7 +852,7 @@ func TestPRListFilterEditingAndViewKeys(t *testing.T) {
 		t.Fatalf("next view = %v %#v", m.prView, m.openPRs)
 	}
 	plain := ansi.Strip(m.renderPRListHeader())
-	for _, want := range []string{"Assigned 0", "Review requested 1", "All 2", "Authored 0", "Needs me 1", "Closed 0"} {
+	for _, want := range []string{"[ Assigned 0 ]", "[ Review requested 1 ]", "[ All 2 ]", "[ Authored 0 ]", "[ Needs me 1 ]", "[ Closed 0 ]"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("header missing %q: %q", want, plain)
 		}
@@ -1193,7 +1243,7 @@ func TestViewRendersHeaderAndTimeline(t *testing.T) {
 	m = updated.(Model)
 
 	out := m.View()
-	for _, want := range []string{"Local", "main", "feature/x", "1 files changed", "decision", "chose Go"} {
+	for _, want := range []string{"Local", "main", "feature/x", "1 files", "decision", "chose Go"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q", want)
 		}
@@ -1221,16 +1271,83 @@ func TestConversationExcludesCommits(t *testing.T) {
 	if items := m.conversationItems(); len(items) != 1 || items[0].event.Kind == event.Commit {
 		t.Fatalf("conversation items = %#v", items)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	m = updated.(Model)
-	if m.cursors[conversationTab] != 0 {
-		t.Fatalf("cursor moved into hidden commits: %d", m.cursors[conversationTab])
+}
+
+func TestConversationEndsWithEventCommentAndActivityCounts(t *testing.T) {
+	m := testModel()
+	m.cache.Comments = []gh.Comment{{ID: 1}, {ID: 2}}
+	m.cache.Activities = []gh.Activity{{ID: 3}}
+	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
+		{OID: "failed1", CommittedDate: "2026-07-21T10:30:00Z", MessageHeadline: "first", CheckRollupState: "FAILURE"},
+		{OID: "passed2", CommittedDate: "2026-07-21T11:30:00Z", MessageHeadline: "second", CheckRollupState: "SUCCESS"},
+	}}
+	out, _ := m.buildConversation()
+	plain := ansi.Strip(out)
+	for _, want := range []string{"✗ CI failed · failed1 first", "✓ CI passed · passed2 second"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("Conversation CI activity missing %q: %q", want, plain)
+		}
+	}
+	if !strings.HasSuffix(plain, "1 events · 2 comments · 3 activity") {
+		t.Fatalf("Conversation counts are not at the end: %q", plain)
+	}
+}
+
+func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
+	m := testModel()
+	m.events = nil
+	m.commits = nil
+	m.cache.Comments = []gh.Comment{{ID: 1, Body: "comment", CreatedAt: "2026-08-01T10:00:00Z"}}
+	m.cache.Activities = []gh.Activity{
+		{ID: 2, Event: "labeled", CreatedAt: "2026-08-01T11:00:00Z"},
+		{ID: 3, Event: "closed", CreatedAt: "2026-08-01T12:00:00Z"},
+	}
+	m.cache.Activities[0].Actor.Login, m.cache.Activities[0].Label.Name = "alice", "demo"
+	m.cache.Activities[1].Actor.Login = "bob"
+	out, _ := m.buildConversation()
+	lines := strings.Split(ansi.Strip(out), "\n")
+	first, second := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "@alice labeled") {
+			first = i
+		}
+		if strings.Contains(line, "@bob closed") {
+			second = i
+		}
+	}
+	if first < 1 || lines[first-1] != "" {
+		t.Fatalf("comment/activity spacing changed: %q", ansi.Strip(out))
+	}
+	if second != first+1 {
+		t.Fatalf("adjacent activities were not compacted: %q", ansi.Strip(out))
+	}
+}
+
+func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
+	m := testModel()
+	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{{OID: "abc1234full", CheckRollupState: "SUCCESS"}}}
+	out, _ := m.buildCommits()
+	if plain := ansi.Strip(out); !strings.Contains(plain, "✓ abc1234 feat: x") {
+		t.Fatalf("commit CI status missing: %q", plain)
+	}
+	m.cache.PR.Commits[0].CheckRollupState = "FAILURE"
+	if icon, _ := m.commitCIState("abc1234"); icon != "✗" {
+		t.Fatalf("failed commit icon = %q", icon)
+	}
+	m.remote = true
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = u.(Model)
+	if m.active != commitsTab || !strings.Contains(ansi.Strip(m.View()), "Commits · 1") {
+		t.Fatalf("remote c did not open commit list: active=%v view=%q", m.active, ansi.Strip(m.View()))
 	}
 }
 
 func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 	m := testModel()
 	m.events = []event.Event{{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: hidden"}}
+	m.commits = nil
 	m.cache.PR = &gh.PR{
 		URL:       "https://github.com/acme/repo/pull/14",
 		Body:      "**opening** ![image](https://example.com/image.png)",
@@ -1447,7 +1564,7 @@ func TestCommentSelectionSurvivesRefresh(t *testing.T) {
 
 func TestDescriptionOrderAndSelectionSurviveRefresh(t *testing.T) {
 	m := testModel()
-	m.events = []event.Event{{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "local"}}
+	m.events = []event.Event{{TS: "2026-07-01T10:01:00Z", Kind: event.Note, Title: "local"}}
 	m.cache.PR = &gh.PR{URL: "https://example/pr/1", Body: "old", CreatedAt: "2026-08-01T10:00:00Z"}
 	m.cache.Comments = []gh.Comment{{ID: 2, CreatedAt: "2026-08-01T10:02:00Z"}}
 	m.cache.Activities = []gh.Activity{{ID: 3, CreatedAt: "2026-08-01T10:03:00Z"}}

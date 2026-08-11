@@ -36,6 +36,11 @@ func (m *Model) reloadLocalConversation() {
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	m.events = events
+	if dirty, err := git.HasUncommittedChanges(); err == nil {
+		m.workingTreeDirty = dirty
+	} else {
+		m.status = "local git data: " + err.Error()
+	}
 	conclusion, err := os.ReadFile(store.ForBranch(m.root, m.currentBranch).Conclusion())
 	if err == nil {
 		m.summary = string(conclusion)
@@ -248,10 +253,37 @@ func (m Model) buildCommits() (string, int) {
 	}
 	lines := make([]string, 0, len(m.commits))
 	for i, c := range m.commits {
-		line := selectionBar(i == m.cursors[commitsTab]) + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+shortTS(c.Date))
+		icon, style := m.commitCIState(c.SHA)
+		line := selectionBar(i == m.cursors[commitsTab]) + style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+shortTS(c.Date))
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), m.cursors[commitsTab]
+}
+
+func (m Model) commitCIState(sha string) (string, lipgloss.Style) {
+	if m.cache.PR == nil {
+		return "●", stMuted
+	}
+	for _, commit := range m.cache.PR.Commits {
+		if strings.HasPrefix(commit.OID, sha) || strings.HasPrefix(sha, commit.OID) {
+			icon, _, style := commitCIStatus(commit.CheckRollupState)
+			return icon, style
+		}
+	}
+	return "○", stMuted
+}
+
+func commitCIStatus(state string) (string, string, lipgloss.Style) {
+	switch strings.ToUpper(state) {
+	case "SUCCESS":
+		return "✓", "CI passed", stGreenF
+	case "FAILURE", "ERROR":
+		return "✗", "CI failed", stRedF
+	case "PENDING", "EXPECTED", "IN_PROGRESS":
+		return "◐", "CI pending", stAttention
+	default:
+		return "○", "CI unavailable", stMuted
+	}
 }
 
 func (m *Model) cachedRawDetail(key string, load func() string) string {
