@@ -19,16 +19,17 @@ type PRSnapshot struct {
 // NavigatorCache is repository-wide browse state. Publish conflict state remains
 // in the branch-local Cache and is intentionally absent here.
 type NavigatorCache struct {
-	Version     int                   `json:"version"`
-	ViewerLogin string                `json:"viewer_login,omitempty"`
-	PRs         []PR                  `json:"prs,omitempty"`
-	PRsState    string                `json:"prs_state,omitempty"`
-	Snapshots   map[string]PRSnapshot `json:"snapshots,omitempty"`
-	FetchedAt   string                `json:"fetched_at,omitempty"`
+	Version       int                   `json:"version"`
+	ViewerLogin   string                `json:"viewer_login,omitempty"`
+	PRs           []PR                  `json:"prs,omitempty"`
+	PRsState      string                `json:"prs_state,omitempty"`
+	FetchedStates map[string]bool       `json:"fetched_states,omitempty"`
+	Snapshots     map[string]PRSnapshot `json:"snapshots,omitempty"`
+	FetchedAt     string                `json:"fetched_at,omitempty"`
 }
 
 func NewNavigatorCache() NavigatorCache {
-	return NavigatorCache{Version: CacheVersion, PRsState: "OPEN", Snapshots: map[string]PRSnapshot{}}
+	return NavigatorCache{Version: CacheVersion, PRsState: "OPEN", FetchedStates: map[string]bool{}, Snapshots: map[string]PRSnapshot{}}
 }
 
 func (c NavigatorCache) Snapshot(number int) (PRSnapshot, bool) {
@@ -61,6 +62,9 @@ func LoadNavigatorCache(path string) (NavigatorCache, error) {
 	if c.PRsState == "" {
 		// Older caches only contained the default open-PR list.
 		c.PRsState = "OPEN"
+	}
+	if c.FetchedStates == nil {
+		c.FetchedStates = map[string]bool{c.PRsState: true}
 	}
 	if c.Snapshots == nil {
 		c.Snapshots = map[string]PRSnapshot{}

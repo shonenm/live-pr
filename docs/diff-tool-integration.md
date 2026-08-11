@@ -39,7 +39,7 @@ The explicit `base...head` range matches GitHub PR semantics for both the checko
 
 An open/current local PR starts in detail. The default branch, detached HEAD, or a branch without local PR context starts in the cached PR list. Returning from local detail adds a `Local PR` entry even before publication.
 
-- list views: `[`/`]` switches All, Review requested, Assigned, Authored, and Needs me; `s` toggles the lazily loaded Open/Closed list; `/` live-filters with `author:`, `assignee:`, `review-requested:`, `label:`, `draft:`, `ci:`, and `merge:` terms;
+- list views: `[`/`]` switches Assigned (default), Review requested, All, Authored, Needs me, and Closed; Closed is loaded lazily once and then retained alongside Open, so moving between cached views does not refetch or clear their counts; `/` live-filters with `is:open`, `is:closed`, `author:`, `assignee:`, `review-requested:`, `label:`, `draft:`, `ci:`, and `merge:` terms;
 - stacks: exact `child.baseRefName == parent.headRefName` relationships are grouped without title heuristics; `Space` collapses/expands the selected stack;
 - list: `j`/`k` selects and updates the right metadata/Conversation preview; `gg`/`G` move the PR selection to top/bottom, while `Ctrl+U`/`Ctrl+D` scroll the preview; `Enter` opens without checkout; `c` checks out, `x` closes, and `m` merge-commits through a centered confirmation popup; `y` confirms and `n`/`Esc` cancels; loading work shows an animated indicator; `r` refreshes and `q` exits;
 - preview: bordered opening-description/top-comment cards, ownership/labels, CI, merge/conflict/review state, comments, files/additions/deletions, and commit count;
