@@ -98,8 +98,11 @@ Runtime state is stored outside the repository under the XDG state directory (`~
 just check              # tests, targeted race checks, vet, module verification, and working-tree diff check
 go build -o live-pr .
 
-live-pr                 # auto-detect the repository and current branch
-live-pr demo             # disposable demo with built-in git diff
+live-pr                  # open the TUI for the current repository and branch
+live-pr -C ../repo        # run any command against another working directory
+live-pr status            # show the cache-first local/GitHub PR status
+live-pr status --json     # stable machine-readable status; add --refresh to query GitHub
+live-pr demo              # disposable demo with built-in git diff
 live-pr demo delta       # disposable demo with delta (unified)
 live-pr demo delta-side  # disposable demo with delta (side-by-side)
 live-pr demo codereview  # disposable demo with embedded Neovim CodeReview
@@ -109,8 +112,9 @@ live-pr init --hooks    # print the Claude Code Stop-hook config to install
 live-pr sync            # import base..HEAD commits
                         # list: [/] Assigned/Review/All/Closed views; / filter (is:closed); Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
                         # detail: b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
-live-pr pr --dry-run    # preview the generated managed PR body
-live-pr pr              # push and create or update the GitHub PR
+live-pr pr preview       # preview the generated managed PR body
+live-pr pr publish       # push and create or update the GitHub PR
+                         # compatible aliases: live-pr pr --dry-run / live-pr pr
 ```
 
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, and TUI synchronization timings to stderr.
