@@ -135,6 +135,15 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if changed, err := HasChanges("main", "HEAD"); err != nil || !changed {
 		t.Fatalf("feature changes = %v, err=%v", changed, err)
 	}
+	if dirty, err := HasUncommittedChanges(); err != nil || dirty {
+		t.Fatalf("clean worktree = %v, err=%v", dirty, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "uncommitted.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirty, err := HasUncommittedChanges(); err != nil || !dirty {
+		t.Fatalf("dirty worktree = %v, err=%v", dirty, err)
+	}
 	stats, err := DiffStats("main", "HEAD")
 	if err != nil || stats.Files != 2 || stats.Additions != 1 || stats.Deletions != 1 {
 		t.Fatalf("diff stats = %#v, err=%v", stats, err)

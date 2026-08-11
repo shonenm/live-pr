@@ -286,6 +286,9 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.fileCursor = 0
 	m.status = ""
 	stale := []string{}
+	if msg.previewErr != nil {
+		stale = append(stale, "metadata")
+	}
 	if msg.commentsErr != nil {
 		stale = append(stale, "comments")
 	}

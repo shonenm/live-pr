@@ -456,15 +456,33 @@ func (m Model) renderPRListHeader() string {
 	activeBg := lipgloss.Color(cSelectedBg)
 	for view := assignedView; view < prViewCount; view++ {
 		name, count := view.String(), m.viewCount(view)
+		border, content := stMuted, stMuted
 		if view == m.prView {
-			tabs = append(tabs,
-				lipgloss.NewStyle().Background(activeBg).Foreground(lipgloss.Color(cAccent)).Bold(true).Render(" "+name+" ")+
-					lipgloss.NewStyle().Background(activeBg).Foreground(lipgloss.Color(cMuted)).Render(fmt.Sprintf("%d ", count)))
+			border = stAccent
+			content = lipgloss.NewStyle().Background(activeBg).Foreground(lipgloss.Color(cAccent)).Bold(true)
+		}
+		tabs = append(tabs, border.Render("[")+content.Render(fmt.Sprintf(" %s %d ", name, count))+border.Render("]"))
+	}
+	available := m.w
+	if m.w >= logoWidth+40 {
+		available -= logoWidth
+	}
+	tabRows := []string{stBold.Render("Pull requests")}
+	if available > 0 && available < 60 {
+		tabRows[0] = ""
+	}
+	for _, tab := range tabs {
+		separator := " "
+		if tabRows[len(tabRows)-1] == "" {
+			separator = ""
+		}
+		candidate := tabRows[len(tabRows)-1] + separator + tab
+		if available > 0 && lipgloss.Width(candidate) > available && tabRows[len(tabRows)-1] != "" {
+			tabRows = append(tabRows, tab)
 		} else {
-			tabs = append(tabs, stMuted.Render(fmt.Sprintf(" %s %d ", name, count)))
+			tabRows[len(tabRows)-1] = candidate
 		}
 	}
-	line1 := stBold.Render("Pull requests") + " " + strings.Join(tabs, "")
 	filter := stMuted.Render("/ filter (is:closed) · [/] views · space stacks")
 	if m.filterEditing {
 		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery+"▌")
@@ -472,7 +490,7 @@ func (m Model) renderPRListHeader() string {
 		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery) + stMuted.Render(" · Esc clear")
 	}
 	line2 := filter + stMuted.Render(fmt.Sprintf("   · %d listed · ⎇ %s", len(m.filteredPRs), m.currentBranch))
-	return m.withLogo(lipgloss.JoinVertical(lipgloss.Left, line1, line2))
+	return m.withLogo(lipgloss.JoinVertical(lipgloss.Left, append(tabRows, line2)...))
 }
 
 func (m Model) viewCount(view prView) int {
@@ -586,6 +604,9 @@ func previewPeople(pr gh.PR) string {
 }
 
 func reviewSummary(decision string) string {
+	if strings.TrimSpace(decision) == "" {
+		return stMuted.Render("review pending")
+	}
 	label := "review " + strings.ToLower(strings.ReplaceAll(decision, "_", " "))
 	switch strings.ToUpper(decision) {
 	case "APPROVED":
@@ -818,19 +839,18 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	mutedSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted)).Background(bg)
 	bar := lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent)).Background(bg).Render("▌")
 	line := bar + rowSt.Render(" ") + glyphStyle.Background(bg).Render(glyph) + mutedSt.Render(" "+prefix+identifier+" ") + rowSt.Bold(true).Render(pr.Title)
-	metaText := state
+	meta := bar + mutedSt.Render("   "+indent) + glyphStyle.Background(bg).Render(state)
 	if pr.Number > 0 {
-		if mergeText, _ := mergeState(pr); mergeText != "" {
-			metaText += " · " + mergeText
+		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
+			meta += mutedSt.Render(" · ") + mergeStyle.Background(bg).Render(mergeText)
 		}
-		checkText, _ := prCheckState(pr)
-		metaText += " · " + checkText
+		checkText, checkStyle := prCheckState(pr)
+		meta += mutedSt.Render(" · ") + checkStyle.Background(bg).Render(checkText)
 	}
 	if pr.Additions != 0 || pr.Deletions != 0 {
-		metaText += fmt.Sprintf(" · +%d -%d", pr.Additions, pr.Deletions)
+		meta += mutedSt.Render(" · ") + stGreenF.Background(bg).Render(fmt.Sprintf("+%d", pr.Additions)) + mutedSt.Render(" ") + stRedF.Background(bg).Render(fmt.Sprintf("-%d", pr.Deletions))
 	}
-	metaText += fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner)
-	meta := bar + mutedSt.Render("   "+indent+metaText)
+	meta += mutedSt.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
 	return []string{padRow(line, width, rowSt), padRow(meta, width, mutedSt), ""}
 }
 func (m Model) renderPRMeta(pr gh.PR) string {
@@ -850,7 +870,7 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		}
 		labels = stMuted.Render("🏷 ") + strings.Join(pills, " ")
 	}
-	line := "  " + assignees + "   " + labels
+	line := "  " + prCheckSummary(pr) + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + "   " + labels
 	if m.w > 0 {
 		return ansi.Truncate(line, m.w, "…")
 	}

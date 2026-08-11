@@ -152,6 +152,12 @@ func DiffStats(base, head string) (ChangeStats, error) {
 	return stats, nil
 }
 
+// HasUncommittedChanges reports whether the index, worktree, or untracked files differ from HEAD.
+func HasUncommittedChanges() (bool, error) {
+	out, err := run("status", "--porcelain", "--untracked-files=normal")
+	return out != "", err
+}
+
 // HasChanges reports whether base...head contains any changed paths.
 func HasChanges(base, head string) (bool, error) {
 	if done := debugtime.Start("git diff --quiet"); done != nil {
