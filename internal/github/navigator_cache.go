@@ -33,6 +33,7 @@ type PRViewCache struct {
 // in the branch-local Cache and is intentionally absent here.
 type NavigatorCache struct {
 	Version       int                    `json:"version"`
+	Repository    string                 `json:"repository,omitempty"`
 	ViewerLogin   string                 `json:"viewer_login,omitempty"`
 	PRs           []PR                   `json:"prs,omitempty"`
 	PRsState      string                 `json:"prs_state,omitempty"`

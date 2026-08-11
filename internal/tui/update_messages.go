@@ -67,6 +67,10 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 		m.prPreviewLoading = map[int]bool{}
 		m.prPreviewLoaded = map[int]bool{}
 	}
+	if msg.page.Repository != "" {
+		m.repository = msg.page.Repository
+		m.navigator.Repository = msg.page.Repository
+	}
 	if msg.page.ViewerLogin != "" {
 		m.viewerLogin = msg.page.ViewerLogin
 		m.navigator.ViewerLogin = msg.page.ViewerLogin

@@ -237,6 +237,7 @@ type Model struct {
 	screen                    screen
 	title                     string
 	root                      string
+	repository                string
 	currentBranch             string
 	defaultBranch             string
 	base, head                string
@@ -384,6 +385,7 @@ func New() (Model, error) {
 	m := Model{
 		screen:            prListScreen,
 		root:              root,
+		repository:        navigator.Repository,
 		currentBranch:     branch,
 		defaultBranch:     defaultBranch,
 		base:              base,
