@@ -1480,6 +1480,7 @@ func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
 
 func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 	m := testModel()
+	m.summary = "<final pull request summary>"
 	m.events = []event.Event{{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: hidden"}}
 	m.commits = nil
 	m.cache.PR = &gh.PR{
@@ -1488,20 +1489,21 @@ func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 		Author:    gh.PRUser{Login: "shonenm"},
 		CreatedAt: "2026-08-07T14:49:25Z",
 	}
+	m.cache.Comments = []gh.Comment{{ID: 1, Body: "review comment", CreatedAt: "2026-08-07T15:00:00Z"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
 	items := m.conversationItems()
-	if len(items) != 1 || items[0].pr == nil || items[0].event != nil {
+	if len(items) != 2 || items[0].pr == nil || items[0].event != nil || items[1].comment == nil {
 		t.Fatalf("conversation items = %#v", items)
 	}
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"@shonenm", "description", "opening", "https://example.com/image.png"} {
+	for _, want := range []string{"@shonenm", "description", "opening", "https://example.com/image.png", "review comment"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("description view missing %q: %q", want, out)
 		}
 	}
-	if strings.Contains(out, "**opening**") || strings.Contains(out, "![image]") || strings.Contains(out, "feat: hidden") {
+	if strings.Contains(out, "**opening**") || strings.Contains(out, "![image]") || strings.Contains(out, "feat: hidden") || strings.Contains(out, "final pull request summary") {
 		t.Fatalf("description Markdown or hidden commit rendered incorrectly: %q", out)
 	}
 	if got := m.selectedBrowseURL(); got != m.cache.PR.URL {
