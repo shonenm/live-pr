@@ -1129,6 +1129,19 @@ func TestStalePRListRefreshCannotRestoreMergedPR(t *testing.T) {
 	}
 }
 
+func TestStalePRListRefreshRestartsWhenItsViewIsActiveAgain(t *testing.T) {
+	m := testModel()
+	m.prListGeneration = 2
+	m.listRefreshing = true
+	m.activePRPage = "active"
+	m.prPages = map[string]prPageState{"active": {prs: []gh.PR{{Number: 1}}, endCursor: "C1", hasNext: true, loaded: true, loading: true}}
+	u, cmd := m.Update(prListRefreshed{generation: 1, key: "active", appendPage: true})
+	m = u.(Model)
+	if cmd == nil || !m.listRefreshing || !m.prPages["active"].loading {
+		t.Fatalf("active stale request was not restarted: refreshing=%v page=%#v cmd=%v", m.listRefreshing, m.prPages["active"], cmd)
+	}
+}
+
 func TestPRListEnterOpensRemoteWithoutChangingCheckout(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
