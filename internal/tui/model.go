@@ -135,6 +135,7 @@ type remoteLoaded struct {
 	comments      []gh.Comment
 	activities    []gh.Activity
 	refErr        error
+	previewErr    error
 	commentsErr   error
 	activitiesErr error
 }
@@ -214,6 +215,7 @@ type conversationItem struct {
 	event    *event.Event
 	comment  *gh.Comment
 	activity *gh.Activity
+	prCommit *gh.PRCommit
 }
 
 // Model holds the living-PR view state.
@@ -265,6 +267,7 @@ type Model struct {
 	localTitle                string
 	localStats                git.ChangeStats
 	localCommitCount          int
+	workingTreeDirty          bool
 	autoOpenCurrent           bool
 	refreshing                bool
 	listRefreshing            bool
@@ -466,7 +469,8 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	commits, commitErr := git.Commits(base)
 	files, fileErr := git.ChangedFiles(base)
 	stats, _ := git.DiffStats(base, "HEAD")
-	if commitErr != nil || fileErr != nil {
+	dirty, dirtyErr := git.HasUncommittedChanges()
+	if commitErr != nil || fileErr != nil || dirtyErr != nil {
 		m.status = "local git data is incomplete"
 	}
 	if m.diffTerminal != nil {
@@ -482,7 +486,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.summary = string(conclusion)
 	m.title = prbody.Title(m.summary, st.Branch)
 	m.localAvailable, m.localTitle = cache.PR == nil, m.title
-	m.localStats, m.localCommitCount = stats, len(commits)
+	m.localStats, m.localCommitCount, m.workingTreeDirty = stats, len(commits), dirty
 	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
@@ -598,10 +602,12 @@ func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 		client := gh.New()
 		var pr gh.PR
 		var err error
-		if number > 0 {
-			pr, err = client.Find(number)
-		} else {
+		if number == 0 {
 			pr, err = client.FindForHead(head)
+			number = pr.Number
+		}
+		if err == nil {
+			pr, err = client.FindPreview(number)
 		}
 		if err != nil {
 			return githubRefreshed{generation: generation, err: err}
@@ -617,19 +623,28 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		var headRef string
 		var comments []gh.Comment
 		var activities []gh.Activity
-		var refErr, commentsErr, activitiesErr error
+		var refErr, previewErr, commentsErr, activitiesErr error
+		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
 		var wg sync.WaitGroup
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
-			headRef, refErr = git.FetchPull(pr.Number, pr.BaseRefName, pr.HeadRefOID)
+			headRef, refErr = git.FetchPull(number, base, headOID)
 		}()
 		go func() {
 			defer wg.Done()
-			comments, activities, commentsErr, activitiesErr = client.IssueDetail(pr.Number)
+			if preview, err := client.FindPreview(number); err != nil {
+				previewErr = err
+			} else {
+				pr = preview
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			comments, activities, commentsErr, activitiesErr = client.IssueDetail(number)
 		}()
 		wg.Wait()
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, refErr: refErr, commentsErr: commentsErr, activitiesErr: activitiesErr}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr}
 	}
 }
 
@@ -876,7 +891,7 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.ToggleStack.SetEnabled(false)
 	m.keys.Focus.SetEnabled(true)
 	m.keys.FocusRight.SetEnabled(true)
-	m.keys.Commits.SetEnabled(m.fileExplorerMode() || (!m.remote && m.active == conversationTab))
+	m.keys.Commits.SetEnabled(m.fileExplorerMode() || m.active == conversationTab)
 	m.keys.PRList.SetEnabled(true)
 	m.keys.Select.SetEnabled(m.active == commitsTab)
 	m.keys.Back.SetEnabled(m.active == commitsTab)
@@ -920,7 +935,7 @@ func (m Model) View() string {
 	} else {
 		leftTitle := "Conversation"
 		if m.active == commitsTab {
-			leftTitle = "Commits"
+			leftTitle = fmt.Sprintf("Commits · %d", len(m.commits))
 		}
 		left := renderPane(leftTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
 		body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
@@ -964,6 +979,20 @@ func (m Model) withLogo(text string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, renderLogo(), block)
 }
 
+func (m Model) detailStats() git.ChangeStats {
+	if !m.remote {
+		stats := m.localStats
+		if stats.Files == 0 && len(m.files) > 0 {
+			stats.Files = len(m.files)
+		}
+		return stats
+	}
+	if m.cache.PR != nil {
+		return git.ChangeStats{Files: m.cache.PR.ChangedFiles, Additions: m.cache.PR.Additions, Deletions: m.cache.PR.Deletions}
+	}
+	return git.ChangeStats{Files: len(m.files)}
+}
+
 func (m Model) renderHeader() string {
 	badgeText, badgeColor := "Local", cBorder
 	if m.cache.PR != nil {
@@ -973,12 +1002,16 @@ func (m Model) renderHeader() string {
 		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color("#ffffff")).
 		Padding(0, 1).Render(badgeText)
 	l1 := badge + "  " + stBold.Render(m.title)
-	scope := fmt.Sprintf("%d files changed", len(m.files))
+	stats := m.detailStats()
+	scope := fmt.Sprintf("%d files", stats.Files) + " " + stGreenF.Render(fmt.Sprintf("+%d", stats.Additions)) + " " + stRedF.Render(fmt.Sprintf("-%d", stats.Deletions))
 	if m.reviewSHA != "" {
 		scope = "commit " + m.reviewSHA
 	}
-	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) +
-		stMuted.Render(fmt.Sprintf("   · %s · %d commits · %d events · %d comments · %d activity", scope, len(m.commits), len(m.events), len(m.cache.Comments), len(m.cache.Activities)))
+	dirty := ""
+	if !m.remote && m.workingTreeDirty {
+		dirty = "   " + stAttention.Render("● uncommitted changes")
+	}
+	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))

@@ -53,7 +53,7 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 - Version-matched Agent Skill teaching coding agents when to record decisions—and when not to.
 - Bubble Tea TUI with GitHub-style open-PR lists, filters, saved navigation state, stack grouping, and cached previews.
 - Local and remote PR review without changing the worktree for remote browsing.
-- Conversation beside an interactive CodeReview pane, with commit-scoped review support.
+- Conversation beside an interactive CodeReview pane, with detail-header CI/review/size status, local uncommitted-change visibility, and commit-scoped CI/review support.
 - Static `git diff`/`delta` review with a file Explorer, immediate file selection, reviewed checks, and independent Conversation/Diff scrolling.
 - Create or update GitHub PRs from the conclusion and timeline with `live-pr pr`.
 - Explicit checkout, close, and merge actions with centered confirmation popups and loading indicators.
@@ -140,7 +140,7 @@ live-pr pr publish       # push and create or update the GitHub PR
 
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, and TUI synchronization timings to stderr.
 
-In a demo, press `b` for the mocked PR list, then use `m`, `c`, and `x` to exercise merge, checkout, and close. Select the Closed view or search `is:closed` to verify that completed mock PRs move out of Open. The checkout changes only the disposable repository; all GitHub data stays local.
+In a demo, the current PR Conversation shows compact CI activity for two commits: the first has a mocked red failure and the second a green success. Press `c` to inspect the same results in the full two-commit list. Press `b` for the mocked PR list, then use `m`, `c`, and `x` to exercise merge, checkout, and close. Select the Closed view or search `is:closed` to verify that completed mock PRs move out of Open. The checkout changes only the disposable repository; all GitHub data stays local.
 
 The built-in right-side reviewer starts Neovim with an explicit three-dot `CodeDiff` range for local or remote PRs and `CodeReview` for a selected commit. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
 

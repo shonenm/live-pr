@@ -167,16 +167,41 @@ func TestIssueDetailStartsIndependentRequestsConcurrently(t *testing.T) {
 	<-done
 }
 
-func TestFindPreviewLoadsExpensiveFields(t *testing.T) {
+func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	client := Client{run: func(args ...string) ([]byte, error) {
-		return []byte(`{"number":12,"body":"body","comments":[{"author":{"login":"alice"},"body":"review","createdAt":"2026-08-10T00:00:00Z"}],"commits":[{"oid":"a"},{"oid":"b"}],"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`), nil
+		switch args[0] {
+		case "pr":
+			return []byte(`{"number":12,"body":"body","comments":[{"author":{"login":"alice"},"body":"review","createdAt":"2026-08-10T00:00:00Z"}],"commits":[{"oid":"aaaa"},{"oid":"bbbb"}],"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`), nil
+		case "repo":
+			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
+		default:
+			return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"oid":"aaaa","committedDate":"2026-08-10T00:00:00Z","messageHeadline":"first","statusCheckRollup":{"state":"SUCCESS"}}},{"commit":{"oid":"bbbb","committedDate":"2026-08-10T01:00:00Z","messageHeadline":"second","statusCheckRollup":{"state":"FAILURE"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
+		}
 	}}
 	pr, err := client.FindPreview(12)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Number != 12 || pr.Body != "body" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || !pr.PreviewLoaded {
+	if pr.Number != 12 || pr.Body != "body" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || len(pr.Commits) != 2 || pr.Commits[0].CheckRollupState != "SUCCESS" || pr.Commits[1].CheckRollupState != "FAILURE" || !pr.PreviewLoaded {
 		t.Fatalf("preview = %#v", pr)
+	}
+}
+
+func TestCommitStatusRollupsPaginates(t *testing.T) {
+	calls := 0
+	client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":{"state":"SUCCESS"}}}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}}`), nil
+		}
+		if !strings.Contains(strings.Join(args, " "), "after=next") {
+			t.Fatalf("second page args = %v", args)
+		}
+		return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"oid":"bbbb","statusCheckRollup":{"state":"FAILURE"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
+	}}
+	commits, err := client.commitStatusRollups(12)
+	if err != nil || calls != 2 || len(commits) != 2 || commits[1].CheckRollupState != "FAILURE" {
+		t.Fatalf("commit statuses = %#v calls=%d err=%v", commits, calls, err)
 	}
 }
 

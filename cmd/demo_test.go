@@ -60,8 +60,12 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 		t.Fatalf("GitHub client open list = %#v err=%v", list, err)
 	}
 	preview, err := gh.New().FindPreview(102)
-	if err != nil || preview.Number != 102 || !preview.PreviewLoaded || len(preview.Conversation) != 1 {
+	if err != nil || preview.Number != 102 || !preview.PreviewLoaded || len(preview.Conversation) != 1 || len(preview.Commits) != 1 || preview.Commits[0].CheckRollupState != "SUCCESS" {
 		t.Fatalf("GitHub client preview = %#v err=%v", preview, err)
+	}
+	currentPreview, err := gh.New().FindPreview(101)
+	if err != nil || len(currentPreview.Commits) != 2 || currentPreview.Commits[0].CheckRollupState != "FAILURE" || currentPreview.Commits[0].MessageHeadline == "" || currentPreview.Commits[0].CommittedDate == "" || currentPreview.Commits[1].CheckRollupState != "SUCCESS" {
+		t.Fatalf("GitHub client mixed commit CI preview = %#v err=%v", currentPreview, err)
 	}
 
 	run := func(args ...string) string {

@@ -586,6 +586,9 @@ func previewPeople(pr gh.PR) string {
 }
 
 func reviewSummary(decision string) string {
+	if strings.TrimSpace(decision) == "" {
+		return stMuted.Render("review pending")
+	}
 	label := "review " + strings.ToLower(strings.ReplaceAll(decision, "_", " "))
 	switch strings.ToUpper(decision) {
 	case "APPROVED":
@@ -850,7 +853,7 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		}
 		labels = stMuted.Render("🏷 ") + strings.Join(pills, " ")
 	}
-	line := "  " + assignees + "   " + labels
+	line := "  " + prCheckSummary(pr) + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + "   " + labels
 	if m.w > 0 {
 		return ansi.Truncate(line, m.w, "…")
 	}
