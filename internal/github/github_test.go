@@ -25,6 +25,30 @@ func TestFindOpen(t *testing.T) {
 	}
 }
 
+func TestFindForHeadFallsBackToNewestClosedPR(t *testing.T) {
+	var states []string
+	client := Client{run: func(args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.Contains(joined, "--state open"):
+			states = append(states, "open")
+			return []byte(`[]`), nil
+		case strings.Contains(joined, "--state all"):
+			states = append(states, "all")
+			return []byte(`[{"number":12,"state":"MERGED","headRefName":"feature"}]`), nil
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}}
+	pr, err := client.FindForHead("feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pr.Number != 12 || pr.State != "MERGED" || !reflect.DeepEqual(states, []string{"open", "all"}) {
+		t.Fatalf("FindForHead = %#v states=%v", pr, states)
+	}
+}
+
 func TestFindByNumber(t *testing.T) {
 	var got []string
 	client := Client{run: func(args ...string) ([]byte, error) {
@@ -71,6 +95,24 @@ func TestListOpen(t *testing.T) {
 		if strings.Contains(args, field) {
 			t.Fatalf("list args still request expensive field %q: %s", field, args)
 		}
+	}
+}
+
+func TestListClosedIncludesMergedPullRequests(t *testing.T) {
+	var query string
+	client := Client{run: func(args ...string) ([]byte, error) {
+		if args[0] == "repo" {
+			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
+		}
+		query = strings.Join(args, " ")
+		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[{"number":12,"state":"MERGED"}],"pageInfo":{"hasNextPage":false}}}}}`), nil
+	}}
+	list, err := client.ListState("CLOSED")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.PRs) != 1 || list.PRs[0].State != "MERGED" || !strings.Contains(query, "states:[$state,MERGED]") {
+		t.Fatalf("closed list = %#v query=%s", list.PRs, query)
 	}
 }
 

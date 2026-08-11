@@ -152,7 +152,20 @@ func (c Client) Find(number int) (PR, error) {
 }
 
 func (c Client) FindOpen(head string) (PR, error) {
-	out, err := c.run("pr", "list", "--head", head, "--state", "open", "--limit", "1", "--json", prFields)
+	return c.findHead(head, "open")
+}
+
+// FindForHead prefers an open PR, then returns the newest PR in any state.
+func (c Client) FindForHead(head string) (PR, error) {
+	pr, err := c.FindOpen(head)
+	if !errors.Is(err, ErrPRNotFound) {
+		return pr, err
+	}
+	return c.findHead(head, "all")
+}
+
+func (c Client) findHead(head, state string) (PR, error) {
+	out, err := c.run("pr", "list", "--head", head, "--state", state, "--limit", "1", "--json", prFields)
 	if err != nil {
 		return PR{}, commandError("gh pr list", out, err)
 	}
@@ -196,7 +209,10 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 	// fetched lazily for the selected PR; loading them for every PR makes large
 	// repositories spend most of startup time in GitHub's GraphQL resolver.
 	const listPageSize = 25
-	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
+	query := `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
+	if state == "CLOSED" {
+		query = strings.Replace(query, "states:[$state]", "states:[$state,MERGED]", 1)
+	}
 	type pageInfo struct {
 		HasNextPage bool   `json:"hasNextPage"`
 		EndCursor   string `json:"endCursor"`
