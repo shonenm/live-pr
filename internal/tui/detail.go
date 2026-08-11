@@ -14,6 +14,7 @@ import (
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
+	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prbody"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/timeline"
@@ -51,23 +52,24 @@ func (m *Model) reloadLocalConversation() {
 	m.invalidateConversation()
 }
 
-func (m *Model) useBase(base, prURL string) tea.Cmd {
+func (m *Model) useBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	base = git.ResolveBase(base)
-	if base == "" || base == m.base {
+	diffBase := localReviewBase(base, pr)
+	if diffBase == "" || (base == m.base && diffBase == m.diffBase && m.reviewRange == diffBase) {
 		return nil
 	}
-	m.base = base
+	m.base, m.diffBase, m.reviewRange = base, diffBase, diffBase
 	m.resetDetailCaches()
 	if !m.remote {
-		_, _ = timeline.SyncCommits(m.timelinePath, base)
+		_, _ = timeline.SyncCommits(m.timelinePath, diffBase)
 		if events, err := event.Load(m.timelinePath); err == nil {
 			m.events = events
 			sort.SliceStable(m.events, func(i, j int) bool { return m.events[i].TS < m.events[j].TS })
 			m.invalidateConversation()
 		}
 	}
-	m.commits, _ = git.CommitsRange(base, m.headRev)
-	m.files, _ = git.ChangedFilesRange(base, m.headRev)
+	m.commits, _ = git.CommitsRange(diffBase, m.headRev)
+	m.files, _ = git.ChangedFilesRange(diffBase, m.headRev)
 	m.fileCursor = 0
 	return m.restartReview(m.reviewSHA, prURL)
 }
@@ -81,7 +83,7 @@ func (m *Model) restartReview(sha, prURL string) tea.Cmd {
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
-	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.base, m.head, m.headRev, prURL, sha))
+	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, prURL, sha))
 	m.focusDiff, m.focusExplorer = false, false
 	m.layout()
 	if m.diffTerminal != nil {
@@ -222,7 +224,7 @@ func (m Model) selectedFile() *git.ChangedFile {
 }
 
 func (m Model) fileKey(file git.ChangedFile) string {
-	return m.base + "..." + m.headRev + "\x00" + file.Status + "\x00" + file.OldPath + "\x00" + file.Path
+	return m.diffBase + "..." + m.headRev + "\x00" + file.Status + "\x00" + file.OldPath + "\x00" + file.Path
 }
 
 func (m Model) fileExplorerMode() bool {
@@ -319,15 +321,15 @@ func (m *Model) loadDetail() detailContent {
 			if file.OldPath != "" {
 				paths = append(paths, file.OldPath)
 			}
-			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.base, m.headRev, file.Status, file.OldPath, file.Path)
-			if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.base, m.headRev, paths...) }); d != "" {
+			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.diffBase, m.headRev, file.Status, file.OldPath, file.Path)
+			if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev, paths...) }); d != "" {
 				return detailContent{key: key, raw: d, renderable: true}
 			}
 		}
 		return detailContent{raw: stMuted.Render("(no changes in selected file)")}
 	}
-	key := "range:" + m.base + "..." + m.headRev
-	if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.base, m.headRev) }); d != "" {
+	key := "range:" + m.diffBase + "..." + m.headRev
+	if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev) }); d != "" {
 		return detailContent{key: key, raw: d, renderable: true}
 	}
 	return detailContent{raw: stMuted.Render("(no changes in " + m.base + "..." + m.headRev + ")")}

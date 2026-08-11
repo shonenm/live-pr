@@ -32,8 +32,8 @@ type Config struct {
 // DiffConfig customizes how raw Git diff is rendered in the right pane.
 type DiffConfig struct {
 	// Command runs an interactive reviewer in the right pane's embedded PTY.
-	// It receives LIVE_PR_BASE, LIVE_PR_HEAD, LIVE_PR_HEAD_REV,
-	// LIVE_PR_PR_URL, and LIVE_PR_SHA.
+	// It receives LIVE_PR_RANGE, LIVE_PR_BASE, LIVE_PR_HEAD,
+	// LIVE_PR_HEAD_REV, LIVE_PR_PR_URL, and LIVE_PR_SHA.
 	Command string `toml:"command"`
 
 	// CommitCommand runs the embedded reviewer for LIVE_PR_SHA.
@@ -50,7 +50,7 @@ func Default() Config {
 		Reviewer:                  `nvim -c "CodeReview {sha}~1 {sha}"`,
 		SummaryMinIntervalMinutes: 10,
 		Diff: DiffConfig{
-			Command: `nvim -c "CodeDiff $LIVE_PR_BASE...$LIVE_PR_HEAD_REV"`,
+			Command: `nvim -c "CodeDiff $LIVE_PR_RANGE"`,
 		},
 	}
 }

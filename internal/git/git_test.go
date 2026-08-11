@@ -180,6 +180,13 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mainOID, err := run("rev-parse", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mergeBase, err := MergeBase("main", "HEAD"); err != nil || mergeBase != mainOID {
+		t.Fatalf("merge base = %q, want %q, err=%v", mergeBase, mainOID, err)
+	}
 	runGit("update-ref", "refs/live-pr/pulls/1/head", featureOID)
 	runGit("switch", "main")
 	if changed, err := HasChanges("main", "HEAD"); err != nil || changed {

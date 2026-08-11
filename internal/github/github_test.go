@@ -12,13 +12,13 @@ func TestFindOpen(t *testing.T) {
 	var got []string
 	c := Client{run: func(args ...string) ([]byte, error) {
 		got = append([]string(nil), args...)
-		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN","baseRefName":"release","author":{"login":"octocat"},"createdAt":"2026-08-07T14:49:25Z","assignees":[{"login":"alice"}],"labels":[{"name":"bug","color":"d73a4a"}]}]`), nil
+		return []byte(`[{"number":12,"url":"https://example/pr/12","title":"title","body":"body","state":"OPEN","baseRefName":"release","baseRefOid":"base123","author":{"login":"octocat"},"createdAt":"2026-08-07T14:49:25Z","assignees":[{"login":"alice"}],"labels":[{"name":"bug","color":"d73a4a"}]}]`), nil
 	}}
 	pr, err := c.FindOpen("feature")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Number != 12 || pr.Body != "body" || pr.BaseRefName != "release" || pr.Author.Login != "octocat" || pr.CreatedAt != "2026-08-07T14:49:25Z" || len(pr.Assignees) != 1 || pr.Assignees[0].Login != "alice" || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
+	if pr.Number != 12 || pr.Body != "body" || pr.BaseRefName != "release" || pr.BaseRefOID != "base123" || pr.Author.Login != "octocat" || pr.CreatedAt != "2026-08-07T14:49:25Z" || len(pr.Assignees) != 1 || pr.Assignees[0].Login != "alice" || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
 		t.Fatalf("unexpected PR: %#v", pr)
 	}
 	if args := strings.Join(got, " "); !strings.Contains(args, "author") || !strings.Contains(args, "createdAt") || !strings.Contains(args, "assignees") || !strings.Contains(args, "labels") {
@@ -73,7 +73,7 @@ func TestListOpen(t *testing.T) {
 		case "repo":
 			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
 		case "api":
-			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":12}]},"repository":{"pullRequests":{"nodes":[{"number":12,"headRefName":"feature/x","headRefOid":"abc123","baseRefName":"main","isDraft":true,"isCrossRepository":true,"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"CHANGES_REQUESTED","assignees":{"nodes":[{"login":"bob"}]},"reviewRequests":{"nodes":[{"requestedReviewer":{"login":"octocat"}},{"requestedReviewer":{}}]},"labels":{"nodes":[{"name":"bug","color":"d73a4a"}]},"comments":{"totalCount":9,"nodes":[{"author":{"login":"alice"},"body":"review"}]},"commits":{"totalCount":5},"statusCheckRollup":{"contexts":{"nodes":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}}}]}}}}`), nil
+			return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[{"number":12}]},"repository":{"pullRequests":{"nodes":[{"number":12,"headRefName":"feature/x","headRefOid":"abc123","baseRefName":"main","baseRefOid":"base123","isDraft":true,"isCrossRepository":true,"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"CHANGES_REQUESTED","assignees":{"nodes":[{"login":"bob"}]},"reviewRequests":{"nodes":[{"requestedReviewer":{"login":"octocat"}},{"requestedReviewer":{}}]},"labels":{"nodes":[{"name":"bug","color":"d73a4a"}]},"comments":{"totalCount":9,"nodes":[{"author":{"login":"alice"},"body":"review"}]},"commits":{"totalCount":5},"statusCheckRollup":{"contexts":{"nodes":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE"}]}}}]}}}}`), nil
 		default:
 			return nil, errors.New("unexpected command")
 		}
@@ -83,11 +83,11 @@ func TestListOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	prs := list.PRs
-	if list.ViewerLogin != "octocat" || len(prs) != 1 || prs[0].HeadRefName != "feature/x" || prs[0].HeadRefOID != "abc123" || !prs[0].IsDraft || !prs[0].IsCrossRepository || prs[0].Mergeable != "CONFLICTING" || len(prs[0].Conversation) != 0 || prs[0].CommentCount != 0 || prs[0].CommitCount != 0 || len(prs[0].Checks) != 0 || len(prs[0].Assignees) != 1 || len(prs[0].Labels) != 1 || len(prs[0].ReviewRequests) != 1 || prs[0].ReviewRequests[0].Login != "octocat" || !prs[0].ViewerReviewRequested || prs[0].PreviewLoaded {
+	if list.ViewerLogin != "octocat" || len(prs) != 1 || prs[0].HeadRefName != "feature/x" || prs[0].HeadRefOID != "abc123" || prs[0].BaseRefOID != "base123" || !prs[0].IsDraft || !prs[0].IsCrossRepository || prs[0].Mergeable != "CONFLICTING" || len(prs[0].Conversation) != 0 || prs[0].CommentCount != 0 || prs[0].CommitCount != 0 || len(prs[0].Checks) != 0 || len(prs[0].Assignees) != 1 || len(prs[0].Labels) != 1 || len(prs[0].ReviewRequests) != 1 || prs[0].ReviewRequests[0].Login != "octocat" || !prs[0].ViewerReviewRequested || prs[0].PreviewLoaded {
 		t.Fatalf("open PRs = %#v", list)
 	}
 	args := strings.Join(got, " ")
-	for _, field := range []string{"pullRequests(first:$pageSize", "states:[$state]", "state=OPEN", "pageSize=25", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "statusCheckRollup{state}"} {
+	for _, field := range []string{"pullRequests(first:$pageSize", "states:[$state]", "state=OPEN", "pageSize=25", "baseRefOid", "headRefName", "headRefOid", "isDraft", "isCrossRepository", "mergeable", "mergeStateStatus", "viewer{login}", "reviewRequested:search", "review-requested:@me", "reviewRequests(first:20)", "statusCheckRollup{state}"} {
 		if !strings.Contains(args, field) {
 			t.Fatalf("list args missing %q: %s", field, args)
 		}
@@ -222,6 +222,9 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	}
 	if pr.Number != 12 || pr.Body != "body" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || len(pr.Commits) != 2 || pr.Commits[0].CheckRollupState != "SUCCESS" || pr.Commits[1].CheckRollupState != "FAILURE" || !pr.PreviewLoaded {
 		t.Fatalf("preview = %#v", pr)
+	}
+	if !strings.Contains(previewFields, "baseRefOid") {
+		t.Fatalf("gh pr preview omitted historical base OID: %q", previewFields)
 	}
 	if strings.Contains(previewFields, "commits") {
 		t.Fatalf("gh pr preview still duplicates GraphQL commits: %q", previewFields)
