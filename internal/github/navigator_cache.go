@@ -22,12 +22,13 @@ type NavigatorCache struct {
 	Version     int                   `json:"version"`
 	ViewerLogin string                `json:"viewer_login,omitempty"`
 	PRs         []PR                  `json:"prs,omitempty"`
+	PRsState    string                `json:"prs_state,omitempty"`
 	Snapshots   map[string]PRSnapshot `json:"snapshots,omitempty"`
 	FetchedAt   string                `json:"fetched_at,omitempty"`
 }
 
 func NewNavigatorCache() NavigatorCache {
-	return NavigatorCache{Version: CacheVersion, Snapshots: map[string]PRSnapshot{}}
+	return NavigatorCache{Version: CacheVersion, PRsState: "OPEN", Snapshots: map[string]PRSnapshot{}}
 }
 
 func (c NavigatorCache) Snapshot(number int) (PRSnapshot, bool) {
@@ -56,6 +57,10 @@ func LoadNavigatorCache(path string) (NavigatorCache, error) {
 	}
 	if c.Version != CacheVersion {
 		return NavigatorCache{}, fmt.Errorf("unsupported PR navigator cache version %d", c.Version)
+	}
+	if c.PRsState == "" {
+		// Older caches only contained the default open-PR list.
+		c.PRsState = "OPEN"
 	}
 	if c.Snapshots == nil {
 		c.Snapshots = map[string]PRSnapshot{}

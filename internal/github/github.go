@@ -169,6 +169,15 @@ func (c Client) FindOpen(head string) (PR, error) {
 // ListOpen returns all open pull requests in pages with lightweight row metadata.
 // FindPreview loads the expensive body, conversation, commits, and check details.
 func (c Client) ListOpen() (OpenPRs, error) {
+	return c.ListState("OPEN")
+}
+
+// ListState returns pull requests in one GitHub state with lightweight row metadata.
+func (c Client) ListState(state string) (OpenPRs, error) {
+	state = strings.ToUpper(strings.TrimSpace(state))
+	if state != "OPEN" && state != "CLOSED" {
+		return OpenPRs{}, fmt.Errorf("unsupported pull request state %q", state)
+	}
 	out, err := c.run("repo", "view", "--json", "nameWithOwner")
 	if err != nil {
 		return OpenPRs{}, commandError("gh repo view", out, err)
@@ -187,7 +196,7 @@ func (c Client) ListOpen() (OpenPRs, error) {
 	// fetched lazily for the selected PR; loading them for every PR makes large
 	// repositories spend most of startup time in GitHub's GraphQL resolver.
 	const listPageSize = 25
-	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:OPEN,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
+	const query = `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
 	type pageInfo struct {
 		HasNextPage bool   `json:"hasNextPage"`
 		EndCursor   string `json:"endCursor"`
@@ -223,7 +232,7 @@ func (c Client) ListOpen() (OpenPRs, error) {
 	requested := map[int]bool{}
 	viewerLogin := ""
 	for {
-		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "reviewQuery=" + reviewQuery, "-F", fmt.Sprintf("pageSize=%d", listPageSize)}
+		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "reviewQuery=" + reviewQuery, "-F", "state=" + state, "-F", fmt.Sprintf("pageSize=%d", listPageSize)}
 		if after != "" {
 			args = append(args, "-F", "after="+after)
 		}
