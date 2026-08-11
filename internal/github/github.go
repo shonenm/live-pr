@@ -54,12 +54,6 @@ type PR struct {
 	PreviewLoaded         bool                    `json:"previewLoaded,omitempty"`
 }
 
-// OpenPRs is one repository PR-list snapshot and its authenticated viewer.
-type OpenPRs struct {
-	ViewerLogin string `json:"viewerLogin,omitempty"`
-	PRs         []PR   `json:"prs,omitempty"`
-}
-
 // PRConversationComment is compact list-preview conversation metadata.
 type PRConversationComment struct {
 	Author    PRUser `json:"author"`
@@ -152,11 +146,21 @@ type repositoryIdentity struct {
 	nameWithOwner string
 }
 
-const prListPageSize = 25
+const PRPageSize = 25
 
-type prListPageInfo struct {
+// PageInfo is one GitHub cursor boundary.
+type PageInfo struct {
 	HasNextPage bool   `json:"hasNextPage"`
+	StartCursor string `json:"startCursor"`
 	EndCursor   string `json:"endCursor"`
+}
+
+// PRPage is one explicitly requested page of lightweight pull-request rows.
+type PRPage struct {
+	ViewerLogin string
+	PRs         []PR
+	TotalCount  int
+	PageInfo    PageInfo
 }
 
 type prListNode struct {
@@ -190,24 +194,6 @@ type prListNode struct {
 	StatusCheckRollup struct {
 		State string `json:"state"`
 	} `json:"statusCheckRollup"`
-}
-
-type prListPage struct {
-	Data struct {
-		Viewer          PRUser `json:"viewer"`
-		ReviewRequested struct {
-			Nodes []struct {
-				Number int `json:"number"`
-			} `json:"nodes"`
-			PageInfo prListPageInfo `json:"pageInfo"`
-		} `json:"reviewRequested"`
-		Repository struct {
-			PullRequests struct {
-				Nodes    []prListNode   `json:"nodes"`
-				PageInfo prListPageInfo `json:"pageInfo"`
-			} `json:"pullRequests"`
-		} `json:"repository"`
-	} `json:"data"`
 }
 
 func (node prListNode) pullRequest(viewerReviewRequested bool) PR {
@@ -277,29 +263,6 @@ func (c Client) repositoryName() (string, error) {
 	return repo.NameWithOwner, nil
 }
 
-func (c Client) requestPRListPage(owner, name, state, reviewQuery, after, reviewAfter, query string) (prListPage, error) {
-	args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "state=" + state, "-F", fmt.Sprintf("pageSize=%d", prListPageSize)}
-	if state == "OPEN" {
-		args = append(args, "-F", "reviewQuery="+reviewQuery)
-	}
-	if after != "" {
-		args = append(args, "-F", "after="+after)
-	}
-	if reviewAfter != "" {
-		args = append(args, "-F", "reviewAfter="+reviewAfter)
-	}
-	args = append(args, "-f", "query="+query)
-	out, err := c.run(args...)
-	if err != nil {
-		return prListPage{}, commandError("gh api graphql", out, err)
-	}
-	var page prListPage
-	if err := json.Unmarshal(out, &page); err != nil {
-		return prListPage{}, fmt.Errorf("decode PR list: %w", err)
-	}
-	return page, nil
-}
-
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
 // only a successful empty list becomes ErrPRNotFound.
 const prFields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,author,createdAt,assignees,labels"
@@ -344,75 +307,55 @@ func (c Client) findHead(head, state string) (PR, error) {
 	return prs[0], nil
 }
 
-// ListOpen returns all open pull requests in pages with lightweight row metadata.
-func (c Client) ListOpen() (OpenPRs, error) {
-	return c.ListState("OPEN")
-}
-
-// ListState returns pull requests in one GitHub state with lightweight row metadata.
-func (c Client) ListState(state string) (OpenPRs, error) {
-	state = strings.ToUpper(strings.TrimSpace(state))
-	if state != "OPEN" && state != "CLOSED" {
-		return OpenPRs{}, fmt.Errorf("unsupported pull request state %q", state)
-	}
+// SearchPRs returns exactly one page. Callers decide when to request PageInfo.EndCursor.
+func (c Client) SearchPRs(query, cursor string) (PRPage, error) {
 	repoName, err := c.repositoryName()
 	if err != nil {
-		return OpenPRs{}, err
+		return PRPage{}, err
 	}
-	owner, name, ok := strings.Cut(repoName, "/")
-	if !ok {
-		return OpenPRs{}, fmt.Errorf("invalid repository %q", repoName)
+	query = strings.TrimSpace("repo:" + repoName + " is:pr " + query + " sort:updated-desc")
+	graphqlQuery := `query($searchQuery:String!,$pageSize:Int!,$after:String){viewer{login} search(query:$searchQuery,type:ISSUE,first:$pageSize,after:$after){issueCount nodes{... on PullRequest{number url title state baseRefName baseRefOid headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}}} pageInfo{hasNextPage startCursor endCursor}}}`
+	args := []string{"api", "graphql", "-F", "searchQuery=" + query, "-F", fmt.Sprintf("pageSize=%d", PRPageSize)}
+	if cursor != "" {
+		args = append(args, "-F", "after="+cursor)
 	}
-	// List rows only need metadata. Body, comments, commits, and checks are
-	// fetched lazily for the selected PR; loading them for every PR makes large
-	// repositories spend most of startup time in GitHub's GraphQL resolver.
-	query := `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName baseRefOid headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
-	if state == "CLOSED" {
-		query = strings.Replace(query, "states:[$state]", "states:[$state,MERGED]", 1)
-		query = strings.Replace(query, "$reviewQuery:String!,", "", 1)
-		query = strings.Replace(query, ",$reviewAfter:String", "", 1)
-		query = strings.Replace(query, `reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} `, "", 1)
+	args = append(args, "-f", "query="+graphqlQuery)
+	out, err := c.run(args...)
+	if err != nil {
+		return PRPage{}, commandError("gh api graphql", out, err)
 	}
-	reviewQuery := "repo:" + repoName + " is:pr is:open review-requested:@me"
-	after, reviewAfter := "", ""
-	var allNodes []prListNode
-	seenPRs := map[int]bool{}
-	requested := map[int]bool{}
-	viewerLogin := ""
-	for {
-		page, err := c.requestPRListPage(owner, name, state, reviewQuery, after, reviewAfter, query)
-		if err != nil {
-			return OpenPRs{}, err
+	var response struct {
+		Data struct {
+			Viewer PRUser `json:"viewer"`
+			Search struct {
+				IssueCount int          `json:"issueCount"`
+				Nodes      []prListNode `json:"nodes"`
+				PageInfo   PageInfo     `json:"pageInfo"`
+			} `json:"search"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(out, &response); err != nil {
+		return PRPage{}, fmt.Errorf("decode PR search page: %w", err)
+	}
+	if len(response.Errors) > 0 {
+		return PRPage{}, fmt.Errorf("query PR search page: %s", response.Errors[0].Message)
+	}
+	if response.Data.Search.PageInfo.HasNextPage {
+		if response.Data.Search.PageInfo.EndCursor == "" {
+			return PRPage{}, errors.New("query PR search page: missing next-page cursor")
 		}
-		viewerLogin = page.Data.Viewer.Login
-		for _, node := range page.Data.Repository.PullRequests.Nodes {
-			if !seenPRs[node.Number] {
-				seenPRs[node.Number] = true
-				allNodes = append(allNodes, node)
-			}
-		}
-		for _, node := range page.Data.ReviewRequested.Nodes {
-			requested[node.Number] = true
-		}
-		if page.Data.Repository.PullRequests.PageInfo.HasNextPage {
-			after = page.Data.Repository.PullRequests.PageInfo.EndCursor
-		} else {
-			after = ""
-		}
-		if page.Data.ReviewRequested.PageInfo.HasNextPage {
-			reviewAfter = page.Data.ReviewRequested.PageInfo.EndCursor
-		} else {
-			reviewAfter = ""
-		}
-		if after == "" && reviewAfter == "" {
-			break
+		if response.Data.Search.PageInfo.EndCursor == cursor {
+			return PRPage{}, errors.New("query PR search page: cursor did not advance")
 		}
 	}
-	prs := make([]PR, 0, len(allNodes))
-	for _, node := range allNodes {
-		prs = append(prs, node.pullRequest(requested[node.Number]))
+	prs := make([]PR, 0, len(response.Data.Search.Nodes))
+	for _, node := range response.Data.Search.Nodes {
+		prs = append(prs, node.pullRequest(false))
 	}
-	return OpenPRs{ViewerLogin: viewerLogin, PRs: prs}, nil
+	return PRPage{ViewerLogin: response.Data.Viewer.Login, PRs: prs, TotalCount: response.Data.Search.IssueCount, PageInfo: response.Data.Search.PageInfo}, nil
 }
 
 // FindPreview loads the expensive preview fields for one PR only.
@@ -479,7 +422,7 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
 									} `json:"statusCheckRollup"`
 								} `json:"commit"`
 							} `json:"nodes"`
-							PageInfo prListPageInfo `json:"pageInfo"`
+							PageInfo PageInfo `json:"pageInfo"`
 						} `json:"commits"`
 					} `json:"pullRequest"`
 				} `json:"repository"`

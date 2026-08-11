@@ -21,20 +21,79 @@ type PRSnapshot struct {
 	FetchedAt  string     `json:"fetched_at,omitempty"`
 }
 
+// PRViewCache preserves loaded row order and an exact server count without
+// duplicating PR metadata already stored in NavigatorCache.PRs.
+type PRViewCache struct {
+	Numbers    []int  `json:"numbers,omitempty"`
+	TotalCount int    `json:"total_count,omitempty"`
+	FetchedAt  string `json:"fetched_at,omitempty"`
+}
+
 // NavigatorCache is repository-wide browse state. Publish conflict state remains
 // in the branch-local Cache and is intentionally absent here.
 type NavigatorCache struct {
-	Version       int                   `json:"version"`
-	ViewerLogin   string                `json:"viewer_login,omitempty"`
-	PRs           []PR                  `json:"prs,omitempty"`
-	PRsState      string                `json:"prs_state,omitempty"`
-	FetchedStates map[string]bool       `json:"fetched_states,omitempty"`
-	Snapshots     map[string]PRSnapshot `json:"snapshots,omitempty"`
-	FetchedAt     string                `json:"fetched_at,omitempty"`
+	Version       int                    `json:"version"`
+	ViewerLogin   string                 `json:"viewer_login,omitempty"`
+	PRs           []PR                   `json:"prs,omitempty"`
+	PRsState      string                 `json:"prs_state,omitempty"`
+	FetchedStates map[string]bool        `json:"fetched_states,omitempty"`
+	Views         map[string]PRViewCache `json:"views,omitempty"`
+	Snapshots     map[string]PRSnapshot  `json:"snapshots,omitempty"`
+	FetchedAt     string                 `json:"fetched_at,omitempty"`
 }
 
 func NewNavigatorCache() NavigatorCache {
-	return NavigatorCache{Version: CacheVersion, PRsState: "OPEN", FetchedStates: map[string]bool{}, Snapshots: map[string]PRSnapshot{}}
+	return NavigatorCache{Version: CacheVersion, PRsState: "OPEN", FetchedStates: map[string]bool{}, Views: map[string]PRViewCache{}, Snapshots: map[string]PRSnapshot{}}
+}
+
+func (c NavigatorCache) View(name string) ([]PR, PRViewCache, bool) {
+	view, ok := c.Views[name]
+	if !ok {
+		return nil, PRViewCache{}, false
+	}
+	byNumber := make(map[int]PR, len(c.PRs))
+	for _, pr := range c.PRs {
+		byNumber[pr.Number] = pr
+	}
+	prs := make([]PR, 0, len(view.Numbers))
+	for _, number := range view.Numbers {
+		if pr, exists := byNumber[number]; exists {
+			prs = append(prs, pr)
+		}
+	}
+	return prs, view, true
+}
+
+func (c *NavigatorCache) SetView(name string, prs []PR, total int, fetchedAt string) {
+	if c.Views == nil {
+		c.Views = map[string]PRViewCache{}
+	}
+	numbers := make([]int, 0, len(prs))
+	for _, pr := range prs {
+		if pr.Number > 0 {
+			numbers = append(numbers, pr.Number)
+		}
+	}
+	c.Views[name] = PRViewCache{Numbers: numbers, TotalCount: total, FetchedAt: fetchedAt}
+}
+
+func (c *NavigatorCache) PrunePRs() {
+	if len(c.Views) == 0 {
+		return
+	}
+	keep := map[int]bool{}
+	for _, view := range c.Views {
+		for _, number := range view.Numbers {
+			keep[number] = true
+		}
+	}
+	prs := c.PRs[:0]
+	for _, pr := range c.PRs {
+		if keep[pr.Number] {
+			prs = append(prs, pr)
+		}
+	}
+	c.PRs = prs
 }
 
 func (c NavigatorCache) Snapshot(number int) (PRSnapshot, bool) {
@@ -94,6 +153,9 @@ func LoadNavigatorCache(path string) (NavigatorCache, error) {
 	}
 	if c.FetchedStates == nil {
 		c.FetchedStates = map[string]bool{c.PRsState: true}
+	}
+	if c.Views == nil {
+		c.Views = map[string]PRViewCache{}
 	}
 	if c.Snapshots == nil {
 		c.Snapshots = map[string]PRSnapshot{}
