@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/internal/prbody"
+	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/timeline"
 )
 
@@ -20,6 +23,27 @@ func (m *Model) resetDetailCaches() {
 	m.rawDetailCache = map[string]string{}
 	m.diffCache = map[string]string{}
 	m.diffPending = map[string]bool{}
+}
+
+func (m *Model) reloadLocalConversation() {
+	if m.remote {
+		return
+	}
+	events, err := event.Load(m.timelinePath)
+	if err != nil {
+		m.status = "timeline: " + err.Error()
+		return
+	}
+	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
+	m.events = events
+	conclusion, err := os.ReadFile(store.ForBranch(m.root, m.currentBranch).Conclusion())
+	if err == nil {
+		m.summary = string(conclusion)
+		m.title = prbody.Title(m.summary, m.currentBranch)
+	} else if os.IsNotExist(err) {
+		m.summary = ""
+	}
+	m.invalidateConversation()
 }
 
 func (m *Model) useBase(base, prURL string) tea.Cmd {

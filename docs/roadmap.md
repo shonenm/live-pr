@@ -17,10 +17,9 @@
 
 ### P0 — 骨組み + データ層 ✅
 - `go mod init github.com/shonenm/live-pr`、Cobra 骨組み。
-- Event 型（`ts,kind,title,body,sha?`）とJSONLストア（XDG state配下のrepo/branch stateからread/append）。ブランチ解決。`live-pr init`。
-- `live-pr append --kind … --title … --body …`、薄いラッパー `live-pr note|pivot`。
-- **Done**: CLI で timeline を手で積める。`cat timeline.jsonl` で確認。
-- 後回し: それ以外全部。
+- Event 型（`id,ts,kind,title,body,author,sha?`）と追記型JSONLストア（XDG state配下のrepo/branch state）。ブランチ解決。`live-pr init`。
+- `live-pr comment add/list/edit/delete`と薄いラッパー`live-pr note|decision|pivot`。edit/deleteは履歴を書き換えずoperation/tombstoneを追記する。
+- **Done**: 人間とagentがstable IDでreviewer向けtimelineを操作でき、legacy recordも編集可能。
 
 ### P1 — 読み取り専用 TUI（体験の本実装） ✅
 - Bubble Tea: 現ブランチの `conclusion.md` + `timeline.jsonl` を読む。
@@ -40,9 +39,9 @@
 - **Done**: 実 commit がタイムラインに自動反映。decision/pivot はまだ手動。
 
 ### P4 — agent hooks（マイルストーン M2: 新規性の実証） ✅
-- `live-pr hook stop`: Claude Code `Stop` hook から呼ばれ、stdin JSON の transcript path を読み、`claude -p` でセッションを要約→`summary` イベントを append。方針転換は要約プロンプト側で拾う（自動 pivot 検出は heuristic 止まり、手動 `live-pr pivot` を主とする）。
+- `live-pr hook stop`: Claude Code `Stop` hook から呼ばれ、reviewerに必要な意思決定・pivot・制約・重要指摘がある場合だけ`summary`イベントをappendする。通常の進捗・test修正・cleanupは記録しない。
 - `live-pr init --hooks` で settings.json スニペットを導入。
-- **Done**: Claude セッション終了 → 要約がタイムラインに自動で乗る。**ここが差別化の核**。
+- **Done**: agent sessionから重要な判断だけを疎なtimelineへ供給。手動`live-pr pivot`を確実な経路とする。
 - 後回し: 他エージェント adapter。
 
 ### P5 — PR export（マイルストーン M3: ループ完成） ✅
@@ -65,8 +64,14 @@
 - **Done**: CodeReviewのreviewed markをXDG stateへ保存し、チェック後に対象ファイルのdiffが変わった場合は自動解除。
 - **Done**: repo-local `.live-pr/` runtimeを廃止し、XDG stateへ移行。旧stateは初回アクセス時に移行。
 
+### P5.2 — Local PR authoring + Agent Skill ✅
+- **Done**: repositoryのdefault PR templateからfinal summaryをseedし、CLIまたはTUIの`e`で更新。local TUIのConversation先頭へ表示する。
+- **Done**: TUIの`a/e/d`でlocal commentを追加・編集・削除し、`Ctrl+S`で保存。remote commentとcommitは編集対象外。
+- **Done**: Agent Skills Standardの`skills/live-pr/SKILL.md`をrepo配布し、binaryにもembed。`gh skill install`と`live-pr skill path/print`の両経路を提供。
+- **Done**: Skillは初期計画ではなく最終結果をsummaryへ書き、reviewerが必要とする重要判断だけをtimelineへ記録する。
+
 ### P6 — 仕上げ / 配布
-- GitHub双方向連携の完成後、goreleaser + Homebrew tap、補完、テーマ設定、他エージェント hook adapter。dotfiles のツール登録。
+- GitHub双方向連携の完成後、Homebrew tap、テーマ設定、追加agent adapter。goreleaser・補完・version-matched Agent Skillは導入済み。
 
 ## マイルストーン
 
@@ -96,4 +101,4 @@ docs/
 
 ## 現在地
 
-P0〜P5とConversation中心のTUIを`main`へ統合済み。PR navigator、固定2pane、local/remote/commit review切替、TUIからのPR publish、top-level GitHub commentsのMarkdown表示まで実装。次にreview/inline comment同期と通常コメント投稿を完成させ、その動作確認後にP6の配布へ進む。
+P0〜P5.2とConversation中心のTUIを実装。Local PRはPR template準拠のfinal summaryと、人間/agentがCLIでCRUDできる疎なdecision timelineを持ち、version一致Skillから運用規則をagentへ提供する。次はGitHub review/inline comment同期と通常コメント投稿outbox、Homebrew配布。

@@ -1,7 +1,9 @@
 package event
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +36,51 @@ func TestAppendLoadRoundTrip(t *testing.T) {
 	// omitempty: a Commit-less event must not serialize an empty sha back as set
 	if got[0].SHA != "" {
 		t.Errorf("expected empty sha on event 0, got %q", got[0].SHA)
+	}
+}
+
+func TestUpdateAndDeleteRemainAppendOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.jsonl")
+	created, err := Create(path, Event{TS: "2026-07-21T10:00", Kind: Decision, Title: "Use REST", Author: "agent"})
+	if err != nil || created.ID == "" {
+		t.Fatalf("create = %+v, %v", created, err)
+	}
+	updated, err := Update(path, created.ID, Event{Kind: Pivot, Title: "Use GraphQL", Body: "One round trip"})
+	if err != nil || updated.TS != created.TS || updated.Author != "agent" || updated.UpdatedAt == "" {
+		t.Fatalf("update = %+v, %v", updated, err)
+	}
+	events, err := Load(path)
+	if err != nil || len(events) != 1 || events[0].Title != "Use GraphQL" {
+		t.Fatalf("load after update = %+v, %v", events, err)
+	}
+	if err := Delete(path, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	events, err = Load(path)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("load after delete = %+v, %v", events, err)
+	}
+	raw, _ := os.ReadFile(path)
+	if lines := strings.Count(strings.TrimSpace(string(raw)), "\n") + 1; lines != 3 {
+		t.Fatalf("record lines = %d, want create/update/delete", lines)
+	}
+}
+
+func TestLegacyEventGetsStableEditableID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.jsonl")
+	if err := os.WriteFile(path, []byte(`{"ts":"2026-07-21T10:00","kind":"decision","title":"legacy"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first, err := Load(path)
+	if err != nil || len(first) != 1 || first[0].ID == "" {
+		t.Fatalf("legacy load = %+v, %v", first, err)
+	}
+	second, _ := Load(path)
+	if second[0].ID != first[0].ID {
+		t.Fatalf("legacy ID changed: %q != %q", first[0].ID, second[0].ID)
+	}
+	if _, err := Update(path, first[0].ID, Event{Kind: Decision, Title: "edited legacy"}); err != nil {
+		t.Fatal(err)
 	}
 }
 

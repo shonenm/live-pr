@@ -72,6 +72,35 @@ func (s *Store) Timeline() string { return filepath.Join(s.Dir, "timeline.jsonl"
 // Conclusion is the path to the pinned current conclusion.
 func (s *Store) Conclusion() string { return filepath.Join(s.Dir, "conclusion.md") }
 
+// WriteConclusion atomically replaces the final pull-request summary.
+func (s *Store) WriteConclusion(body string) error {
+	if err := s.Ensure(); err != nil {
+		return err
+	}
+	path := s.Conclusion()
+	f, err := os.CreateTemp(s.Dir, ".conclusion-*.md")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	if _, err := f.WriteString(strings.TrimSpace(body) + "\n"); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(name, path); err != nil && runtime.GOOS == "windows" {
+		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return err
+		}
+		return os.Rename(name, path)
+	} else {
+		return err
+	}
+}
+
 // GitHubCache is the path to mutable remote state kept separate from the timeline.
 func (s *Store) GitHubCache() string { return filepath.Join(s.Dir, "github.json") }
 
