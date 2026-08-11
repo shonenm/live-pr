@@ -29,6 +29,7 @@ func testModel() Model {
 		prView:      allPRsView,
 		diffCommand: "nvim",
 		base:        "main",
+		diffBase:    "main",
 		head:        "feature/x",
 		events: []event.Event{
 			{TS: "2026-07-21T10:00", Kind: event.Decision, Title: "chose Go", Body: "gh-dash stack"},
@@ -39,6 +40,25 @@ func testModel() Model {
 		conversationDirty: true,
 		help:              newHelp(),
 		keys:              keys,
+	}
+}
+
+func TestReviewRangesUseLocalMergeBaseAndRemoteHistoricalBase(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX fake executable")
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\nif [ \"$1\" = merge-base ]; then echo local-merge-base; exit 0; fi\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	if got := localReviewBase("main", nil); got != "local-merge-base" {
+		t.Fatalf("local review base = %q", got)
+	}
+	pr := gh.PR{BaseRefName: "main", BaseRefOID: "historical-base"}
+	if got := remoteReviewBase(pr); got != "historical-base" {
+		t.Fatalf("remote review base = %q", got)
 	}
 }
 
@@ -1225,7 +1245,7 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	m.diffCommand = "cat"
 	m.navigator = gh.NewNavigatorCache()
 	m.navigatorPath = filepath.Join(t.TempDir(), "github-prs.json")
-	pr := gh.PR{Number: 14, URL: "https://example/pr/14", Title: "remote", HeadRefName: "feature", BaseRefName: "main"}
+	pr := gh.PR{Number: 14, URL: "https://example/pr/14", Title: "remote", HeadRefName: "feature", BaseRefName: "main", BaseRefOID: "historical-base"}
 	m.cache = gh.NewCache("feature")
 	m.cache.PR = &pr
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
@@ -1235,6 +1255,9 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	defer m.close()
 	if cmd == nil || m.diffTerminal == nil || m.refreshing || len(m.cache.Comments) != 1 {
 		t.Fatalf("remote load incomplete: terminal=%v refreshing=%v cache=%#v", m.diffTerminal, m.refreshing, m.cache)
+	}
+	if m.diffBase != "historical-base" || m.reviewRange != "historical-base...HEAD" {
+		t.Fatalf("remote review range = base:%q range:%q", m.diffBase, m.reviewRange)
 	}
 	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
 	if err != nil {
