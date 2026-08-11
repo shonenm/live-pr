@@ -40,12 +40,19 @@ func label(k event.Kind) string {
 // Title is the PR title: the first meaningful line of the conclusion (skipping
 // the seeded placeholders), else the branch name.
 func Title(conclusion, branch string) string {
-	for _, ln := range strings.Split(conclusion, "\n") {
-		ln = strings.TrimSpace(strings.TrimLeft(ln, "# "))
-		if ln == "" || ln == "<title>" || strings.HasPrefix(ln, "<current conclusion") {
+	for _, raw := range strings.Split(conclusion, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "<!--") {
 			continue
 		}
-		return ln
+		if strings.HasPrefix(line, "##") {
+			return branch
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+		if line == "<title>" || strings.HasPrefix(line, "<current conclusion") || strings.HasPrefix(line, "<final pull request summary") {
+			continue
+		}
+		return line
 	}
 	return branch
 }
@@ -136,7 +143,11 @@ func managedRange(body string) (start, end int, block string, err error) {
 }
 
 func writeEvent(b *strings.Builder, e event.Event) {
-	meta := "(" + e.TS + ")"
+	meta := "(" + e.TS
+	if e.Author != "" {
+		meta += " · " + e.Author
+	}
+	meta += ")"
 	if e.Kind == event.Commit && e.SHA != "" {
 		meta = "`" + e.SHA + "`"
 	}
@@ -149,5 +160,5 @@ func writeEvent(b *strings.Builder, e event.Event) {
 }
 
 func isPlaceholder(c string) bool {
-	return strings.Contains(c, "<current conclusion") || strings.Contains(c, "# <title>")
+	return strings.Contains(c, "<current conclusion") || strings.Contains(c, "<final pull request summary") || strings.Contains(c, "# <title>")
 }

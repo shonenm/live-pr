@@ -21,10 +21,9 @@ on the timeline; the PR is written once, at the end, as a terse summary.
 
 live-pr keeps a living artifact during development:
 
-- **head** — the current conclusion, pinned on top (ignore the messy flow, see
-  where we are now)
-- **timeline** — an append-only, chronological feed of `decision` / `pivot` /
-  `summary` / `commit` / `note` events, fed automatically by agent hooks
+- **head** — the final PR-template summary, pinned on top and updated when the implemented outcome is known
+- **timeline** — an append-only, editable view of sparse `decision` / `pivot` /
+  `summary` / `commit` / `note` records from humans and agents
 - **reviewer** — pluggable; an interactive local reviewer such as Neovim CodeReview can stay embedded beside the conversation and review the full PR-equivalent branch diff
 - **export** — at the end, the timeline is turned into a real GitHub PR body
 
@@ -41,13 +40,17 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 | --- | --- | --- |
 | `hex/claude-sessions` | `timeline.jsonl` + labelled checkpoints | manual, no PR export |
 | Agent Decision Records | decisions surfaced as PR links | snapshot-based, no TUI |
+| `Hunk` | agent-controllable diff review and inline comments | review session, not a PR-level decision timeline |
+| `git-appraise` | distributed local reviews and comments in Git objects | no living summary or GitHub PR body workflow |
 | `octorus` | terminal PR + local diff review, AI loop | no decision timeline |
 | `gh-dash` | GitHub UI in the terminal | dashboard, not a living PR |
 | Copilot / PR-describe | PR description generation | compresses the final diff |
 
 ## Features
 
-- Append-only decision timeline for `decision`, `pivot`, `summary`, `commit`, and `note` events.
+- Append-only decision history with stable IDs and non-destructive add/edit/delete operations from both the TUI and CLI.
+- Final summary seeded from the repository's default GitHub pull-request template and rendered above the timeline.
+- Version-matched Agent Skill teaching coding agents when to record decisions—and when not to.
 - Bubble Tea TUI with GitHub-style open-PR lists, filters, saved navigation state, stack grouping, and cached previews.
 - Local and remote PR review without changing the worktree for remote browsing.
 - Conversation beside an interactive CodeReview pane, with commit-scoped review support.
@@ -80,6 +83,17 @@ Homebrew packages are not currently provided. Go users can install the latest so
 go install github.com/shonenm/live-pr@latest
 ```
 
+### Agent Skill
+
+Install the repository's [Agent Skills Standard](https://agentskills.io/) skill with a recent GitHub CLI:
+
+```sh
+gh skill install shonenm/live-pr live-pr --agent pi --scope user
+# replace pi with claude-code, codex, or another supported host
+```
+
+The binary also carries the matching skill version. `live-pr skill path` materializes it and prints its path; `live-pr skill print` writes it to stdout.
+
 ### Requirements and current scope
 
 - Git is required for local use.
@@ -107,11 +121,18 @@ live-pr demo delta       # disposable demo with delta (unified)
 live-pr demo delta-side  # disposable demo with delta (side-by-side)
 live-pr demo codereview  # disposable demo with embedded Neovim CodeReview
                          # every demo includes stateful mock PRs; no GitHub resources are created
-live-pr init            # optional: seed the current branch's local conclusion
-live-pr init --hooks    # print the Claude Code Stop-hook config to install
-live-pr sync            # import base..HEAD commits
+live-pr init             # seed the final summary from the repo PR template
+live-pr summary edit     # edit the final result in $VISUAL/$EDITOR
+live-pr summary set --file summary.md
+live-pr comment add "Use GraphQL" --kind decision --body "Avoids repeated requests"
+live-pr comment list --json
+live-pr comment edit <id> "Use batched GraphQL" --body "One request"
+live-pr comment delete <id>
+live-pr init --hooks     # print the optional, significance-filtered Stop hook
+live-pr sync             # import base..HEAD commits
                         # list: [/] Assigned/Review/All/Closed views; / filter (is:closed); Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
-                        # detail: b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
+                        # detail: a add comment; e edit selected summary/comment; d delete selected comment; Ctrl+S save; Esc cancel
+                        #         b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
 live-pr pr preview       # preview the generated managed PR body
 live-pr pr publish       # push and create or update the GitHub PR
                          # compatible aliases: live-pr pr --dry-run / live-pr pr

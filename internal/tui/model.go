@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	bspinner "github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,6 +26,7 @@ import (
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prbody"
+	"github.com/shonenm/live-pr/internal/prtemplate"
 	"github.com/shonenm/live-pr/internal/publish"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/timeline"
@@ -65,14 +67,14 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, AddComment, EditLocal, DeleteLocal, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.AddComment, k.EditLocal, k.DeleteLocal, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.AddComment, k.EditLocal, k.DeleteLocal, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -94,11 +96,14 @@ var keys = keyMap{
 	Back:        key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
 	PRList:      key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
 	Browse:      key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
-	Refresh:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh GitHub")),
+	Refresh:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 	Publish:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
 	Merge:       key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge PR")),
 	Checkout:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
 	Close:       key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
+	AddComment:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add comment")),
+	EditLocal:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
+	DeleteLocal: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete comment")),
 	Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
@@ -154,6 +159,15 @@ type browserDone struct{ err error }
 
 type prAction uint8
 
+type localEditMode uint8
+
+const (
+	noLocalEdit localEditMode = iota
+	addLocalComment
+	editLocalComment
+	editLocalSummary
+)
+
 const (
 	noPRAction prAction = iota
 	mergePR
@@ -195,6 +209,7 @@ type prStack struct {
 type conversationItem struct {
 	key      string
 	ts       string
+	summary  *string
 	pr       *gh.PR
 	event    *event.Event
 	comment  *gh.Comment
@@ -210,6 +225,7 @@ type Model struct {
 	defaultBranch             string
 	base, head                string
 	headRev                   string
+	summary                   string
 	events                    []event.Event
 	conversationCache         []conversationItem
 	conversationDirty         bool
@@ -253,6 +269,12 @@ type Model struct {
 	refreshing                bool
 	listRefreshing            bool
 	publishing                bool
+	localEditMode             localEditMode
+	localEditor               textarea.Model
+	localEditTarget           string
+	localEditError            string
+	localDeleteTarget         string
+	localDeleteTitle          string
 	pendingPRAction           prAction
 	prActionRunning           prAction
 	prActionNumber            int
@@ -427,6 +449,9 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	if err := st.Ensure(); err != nil {
 		return err
 	}
+	if err := prtemplate.Seed(st); err != nil {
+		return err
+	}
 	if cache.PR == nil && hintedPR != nil && hintedPR.Number > 0 {
 		pr := *hintedPR
 		cache.PR = &pr
@@ -454,7 +479,8 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	conclusion, _ := os.ReadFile(st.Conclusion())
 	m.screen = detailScreen
 	m.remote = false
-	m.title = prbody.Title(string(conclusion), st.Branch)
+	m.summary = string(conclusion)
+	m.title = prbody.Title(m.summary, st.Branch)
 	m.localAvailable, m.localTitle = cache.PR == nil, m.title
 	m.localStats, m.localCommitCount = stats, len(commits)
 	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
@@ -899,6 +925,12 @@ func (m Model) View() string {
 		left := renderPane(leftTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
 		body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
+	}
+	if m.localEditMode != noLocalEdit {
+		return overlayPopup(view, m.renderLocalEditorPopup(), m.w)
+	}
+	if m.localDeleteTarget != "" {
+		return overlayPopup(view, m.renderLocalDeletePopup(), m.w)
 	}
 	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
 		return overlayPopup(view, m.renderActionPopup(), m.w)

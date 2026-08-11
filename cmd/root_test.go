@@ -12,7 +12,7 @@ func TestCommandRegistration(t *testing.T) {
 	for _, command := range rootCmd.Commands() {
 		commands[command.Name()] = true
 	}
-	for _, name := range []string{"append", "decision", "demo", "hook", "init", "note", "pivot", "pr", "status", "sync"} {
+	for _, name := range []string{"append", "comment", "decision", "demo", "hook", "init", "note", "pivot", "pr", "skill", "status", "summary", "sync"} {
 		if !commands[name] {
 			t.Errorf("top-level command %q is not registered", name)
 		}
@@ -24,9 +24,18 @@ func TestCommandRegistration(t *testing.T) {
 		}
 	}
 	for path, want := range map[string]*cobra.Command{
-		"hook stop":  hookStopCmd,
-		"pr preview": prPreviewCmd,
-		"pr publish": prPublishCmd,
+		"comment add":    commentAddCmd,
+		"comment delete": commentDeleteCmd,
+		"comment edit":   commentEditCmd,
+		"comment list":   commentListCmd,
+		"hook stop":      hookStopCmd,
+		"pr preview":     prPreviewCmd,
+		"pr publish":     prPublishCmd,
+		"skill path":     skillPathCmd,
+		"skill print":    skillPrintCmd,
+		"summary edit":   summaryEditCmd,
+		"summary set":    summarySetCmd,
+		"summary show":   summaryShowCmd,
 	} {
 		command, _, err := rootCmd.Find(strings.Fields(path))
 		if err != nil || command != want {
