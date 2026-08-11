@@ -70,7 +70,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	case tea.MouseMsg:
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			if local, ok := translateDiffMouse(msg, m.list.Width, m.detail.Width, m.detail.Height, m.headerHeight()); ok {
+			// The review pane sits after the bordered left pane; +1 row for its own top border.
+			if local, ok := translateDiffMouse(msg, m.list.Width+paneChromeW, m.detail.Width, m.detail.Height, m.headerHeight()+1); ok {
 				m.focusDiff = true
 				return m, m.diffTerminal.Update(local)
 			}

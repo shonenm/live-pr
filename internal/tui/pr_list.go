@@ -452,25 +452,27 @@ func (m *Model) ensureSelectedPRPreview() tea.Cmd {
 
 // sync rebuilds both panes for the current tab and selection.
 func (m Model) renderPRListHeader() string {
-	views := make([]string, 0, prViewCount)
+	tabs := make([]string, 0, prViewCount)
+	activeBg := lipgloss.Color(cSelectedBg)
 	for view := assignedView; view < prViewCount; view++ {
-		label := fmt.Sprintf("%s %d", view, m.viewCount(view))
-		style := stMuted
+		name, count := view.String(), m.viewCount(view)
 		if view == m.prView {
-			style = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Background(lipgloss.Color(cSelectedBg)).Bold(true).Padding(0, 1)
+			tabs = append(tabs,
+				lipgloss.NewStyle().Background(activeBg).Foreground(lipgloss.Color(cAccent)).Bold(true).Render(" "+name+" ")+
+					lipgloss.NewStyle().Background(activeBg).Foreground(lipgloss.Color(cMuted)).Render(fmt.Sprintf("%d ", count)))
+		} else {
+			tabs = append(tabs, stMuted.Render(fmt.Sprintf(" %s %d ", name, count)))
 		}
-		views = append(views, style.Render(label))
 	}
-	line1 := stBold.Render("Pull requests") + "  " + strings.Join(views, " ")
+	line1 := stBold.Render("Pull requests") + " " + strings.Join(tabs, "")
 	filter := stMuted.Render("/ filter (is:closed) · [/] views · space stacks")
 	if m.filterEditing {
-		filter = stAccent.Render("Filter: ") + stFg.Render(m.filterQuery+"▌")
+		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery+"▌")
 	} else if m.filterQuery != "" {
-		filter = stAccent.Render("Filter: ") + stFg.Render(m.filterQuery) + stMuted.Render(" · Esc clear")
+		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery) + stMuted.Render(" · Esc clear")
 	}
-	line2 := filter + stMuted.Render(fmt.Sprintf("   · %d listed · current %s", len(m.filteredPRs), m.currentBranch))
-	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).Render(strings.Repeat("─", max(0, m.w)))
-	return lipgloss.JoinVertical(lipgloss.Left, ansi.Truncate(line1, max(1, m.w), "…"), ansi.Truncate(line2, max(1, m.w), "…"), rule)
+	line2 := filter + stMuted.Render(fmt.Sprintf("   · %d listed · ⎇ %s", len(m.filteredPRs), m.currentBranch))
+	return lipgloss.JoinVertical(lipgloss.Left, ansi.Truncate(line1, max(1, m.w), "…"), ansi.Truncate(line2, max(1, m.w), "…"))
 }
 
 func (m Model) viewCount(view prView) int {
@@ -500,12 +502,25 @@ func (m Model) buildPRPreview() string {
 	if pr.Number > 0 {
 		identifier = fmt.Sprintf("#%d", pr.Number)
 	}
+	var statusParts []string
+	if pr.Number == 0 {
+		statusParts = append(statusParts, stMuted.Render("● local"))
+	} else if pr.State != "" {
+		state := strings.ToLower(pr.State)
+		glyph, style := stateGlyph(state)
+		statusParts = append(statusParts, style.Render(glyph+" "+state))
+	}
+	if mergeText, mergeStyle := mergeState(*pr); mergeText != "" {
+		statusParts = append(statusParts, mergeStyle.Render(mergeText))
+	}
+	statusParts = append(statusParts, prCheckSummary(*pr))
+	statusLine := "  " + strings.Join(statusParts, "   ")
 	lines := []string{
 		stMuted.Render(identifier) + "  " + stBold.Render(pr.Title),
-		stMuted.Render(pr.BaseRefName + " ← " + pr.HeadRefName),
+		stMuted.Render("⎇ " + pr.BaseRefName + " ← " + pr.HeadRefName),
 		"",
 		stBold.Render("Status"),
-		"  " + mergeSummary(*pr) + "   " + prCheckSummary(*pr),
+		statusLine,
 	}
 	if pr.ReviewDecision != "" {
 		lines = append(lines, "  "+reviewSummary(pr.ReviewDecision))
@@ -585,12 +600,20 @@ func reviewSummary(decision string) string {
 }
 
 func mergeSummary(pr gh.PR) string {
+	text, style := mergeState(pr)
+	return style.Render(text)
+}
+
+func mergeState(pr gh.PR) (string, lipgloss.Style) {
 	if pr.Number == 0 {
-		return stMuted.Render("local")
+		return "local", stMuted
+	}
+	if strings.EqualFold(pr.State, "MERGED") || strings.EqualFold(pr.State, "CLOSED") {
+		return "", stMuted // merge readiness is meaningless once the PR is done
 	}
 	state := strings.ToLower(strings.ReplaceAll(pr.MergeStateStatus, "_", " "))
 	if pr.Mergeable == "CONFLICTING" || pr.MergeStateStatus == "DIRTY" {
-		return stRedF.Render("conflicts")
+		return "⚠ conflicts", stRedF
 	}
 	if state == "" {
 		state = strings.ToLower(pr.Mergeable)
@@ -599,15 +622,15 @@ func mergeSummary(pr gh.PR) string {
 		state = "merge unknown"
 	}
 	if pr.Mergeable == "MERGEABLE" && (pr.MergeStateStatus == "CLEAN" || pr.MergeStateStatus == "UNSTABLE") {
-		return stGreenF.Render("mergeable")
+		return "⇄ mergeable", stGreenF
 	}
 	switch pr.MergeStateStatus {
 	case "BLOCKED":
-		return stRedF.Render(state)
+		return state, stRedF
 	case "BEHIND", "HAS_HOOKS":
-		return stAttention.Render(state)
+		return state, stAttention
 	default:
-		return stMuted.Render(state)
+		return state, stMuted
 	}
 }
 
@@ -654,32 +677,42 @@ func prCIHealth(pr gh.PR) string {
 }
 
 func prCheckSummary(pr gh.PR) string {
+	text, style := prCheckState(pr)
+	return style.Render(text)
+}
+
+func prCheckState(pr gh.PR) (string, lipgloss.Style) {
 	if !pr.PreviewLoaded && len(pr.Checks) == 0 {
 		switch prCIHealth(pr) {
 		case "passed":
-			return stGreenF.Render("CI passed")
+			return "✓ CI passed", stGreenF
 		case "failed":
-			return stRedF.Render("CI failed")
+			return "✗ CI failed", stRedF
 		case "pending":
-			return stAttention.Render("CI pending")
+			return "◐ CI pending", stAttention
 		default:
-			return stMuted.Render("CI loading")
+			return "CI loading", stMuted
 		}
 	}
-	return checkSummary(pr.Checks)
+	return checkState(pr.Checks)
 }
 
 func checkSummary(checks []gh.PRCheck) string {
+	text, style := checkState(checks)
+	return style.Render(text)
+}
+
+func checkState(checks []gh.PRCheck) (string, lipgloss.Style) {
 	health, count := checkHealth(checks)
 	switch health {
 	case "failed":
-		return stRedF.Render(fmt.Sprintf("CI %d failed", count))
+		return fmt.Sprintf("✗ CI %d failed", count), stRedF
 	case "pending":
-		return stAttention.Render(fmt.Sprintf("CI %d pending", count))
+		return fmt.Sprintf("◐ CI %d pending", count), stAttention
 	case "passed":
-		return stGreenF.Render(fmt.Sprintf("CI %d passed", count))
+		return fmt.Sprintf("✓ CI %d passed", count), stGreenF
 	default:
-		return stMuted.Render("CI no checks")
+		return "CI no checks", stMuted
 	}
 }
 
@@ -698,10 +731,11 @@ func (m Model) buildPRList() string {
 
 func (m Model) buildPRListRows() (string, int) {
 	if len(m.openPRs) == 0 {
+		message := stMuted.Render("(no pull requests in this view)")
 		if m.listRefreshing {
-			return stMuted.Render("fetching " + strings.ToLower(m.prListState.Label()) + " pull requests…"), 0
+			message = stMuted.Render("fetching " + strings.ToLower(m.prListState.Label()) + " pull requests…")
 		}
-		return stMuted.Render("(no pull requests in this view)"), 0
+		return lipgloss.Place(max(1, m.list.Width), max(1, m.list.Height), lipgloss.Center, lipgloss.Center, message), 0
 	}
 	stacks := m.prStacks
 	if len(stacks) == 0 {
@@ -741,6 +775,13 @@ func (m Model) buildPRListRows() (string, int) {
 	return strings.Join(lines, "\n"), selectedLine
 }
 
+func prDiffStat(pr gh.PR) string {
+	if pr.Additions == 0 && pr.Deletions == 0 {
+		return ""
+	}
+	return " · " + stGreenF.Render(fmt.Sprintf("+%d", pr.Additions)) + " " + stRedF.Render(fmt.Sprintf("-%d", pr.Deletions))
+}
+
 func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	state := strings.ToLower(pr.State)
 	if state == "" {
@@ -754,18 +795,43 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	if pr.Number == 0 {
 		state, identifier, owner = "local", "Local PR", ""
 	}
-	stateStyle := stMuted
-	if state == "open" {
-		stateStyle = stGreenF
-	}
+	width := max(10, m.list.Width)
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
-	line := selectionBar(selected) + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
-	meta := "  " + indent + stateStyle.Render(state)
-	if pr.Number > 0 {
-		meta += " · " + mergeSummary(pr) + " · " + prCheckSummary(pr)
+	glyph, glyphStyle := stateGlyph(state)
+	if !selected {
+		line := "  " + glyphStyle.Render(glyph) + " " + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
+		meta := "    " + indent + glyphStyle.Render(state)
+		if pr.Number > 0 {
+			if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
+				meta += " · " + mergeStyle.Render(mergeText)
+			}
+			meta += " · " + prCheckSummary(pr)
+		}
+		meta += prDiffStat(pr)
+		meta += stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
+		return []string{ansi.Truncate(line, width, "…"), ansi.Truncate(meta, width, "…"), ""}
 	}
-	meta += stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
-	return []string{ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), ""}
+	// Selected rows collapse to one highlight style, lazygit-style; the state
+	// glyph keeps its color on the selection background.
+	bg := lipgloss.Color(cSelectedBg)
+	rowSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Background(bg)
+	mutedSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted)).Background(bg)
+	bar := lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent)).Background(bg).Render("▌")
+	line := bar + rowSt.Render(" ") + glyphStyle.Background(bg).Render(glyph) + mutedSt.Render(" "+prefix+identifier+" ") + rowSt.Bold(true).Render(pr.Title)
+	metaText := state
+	if pr.Number > 0 {
+		if mergeText, _ := mergeState(pr); mergeText != "" {
+			metaText += " · " + mergeText
+		}
+		checkText, _ := prCheckState(pr)
+		metaText += " · " + checkText
+	}
+	if pr.Additions != 0 || pr.Deletions != 0 {
+		metaText += fmt.Sprintf(" · +%d -%d", pr.Additions, pr.Deletions)
+	}
+	metaText += fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner)
+	meta := bar + mutedSt.Render("   "+indent+metaText)
+	return []string{padRow(line, width, rowSt), padRow(meta, width, mutedSt), ""}
 }
 func (m Model) renderPRMeta(pr gh.PR) string {
 	assignees := stMuted.Render("👤 unassigned")
