@@ -2,6 +2,8 @@
 package summarize
 
 import (
+	"bytes"
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -38,9 +40,15 @@ func (c Claude) Summarize(transcript string) (Summary, error) {
 	}
 	cmd := exec.Command("claude", args...)
 	cmd.Stdin = strings.NewReader(transcript)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return Summary{}, err
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return Summary{}, fmt.Errorf("claude summarize: %w: %s", err, detail)
+		}
+		return Summary{}, fmt.Errorf("claude summarize: %w", err)
 	}
 	return Parse(string(out)), nil
 }

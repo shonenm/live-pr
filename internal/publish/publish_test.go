@@ -76,6 +76,37 @@ func TestBuildPreview(t *testing.T) {
 	}
 }
 
+func TestBuildPreviewErrorsAndOptionalConclusion(t *testing.T) {
+	t.Run("commit enumeration", func(t *testing.T) {
+		setupRepo(t)
+		if _, err := BuildPreview("missing-base"); err == nil || !strings.Contains(err.Error(), "git log") {
+			t.Fatalf("commit enumeration error = %v", err)
+		}
+	})
+	t.Run("conclusion read", func(t *testing.T) {
+		st := setupRepo(t)
+		if err := os.Remove(st.Conclusion()); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(st.Conclusion(), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := BuildPreview("main"); err == nil {
+			t.Fatal("expected conclusion read error")
+		}
+	})
+	t.Run("missing conclusion", func(t *testing.T) {
+		st := setupRepo(t)
+		if err := os.Remove(st.Conclusion()); err != nil {
+			t.Fatal(err)
+		}
+		preview, err := BuildPreview("main")
+		if err != nil || preview.Title != "feature" {
+			t.Fatalf("missing conclusion preview = %#v, err=%v", preview, err)
+		}
+	})
+}
+
 type fakeGitHub struct {
 	pr          gh.PR
 	missing     bool
