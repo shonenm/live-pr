@@ -16,7 +16,7 @@ It covers:
 
 This is not a competitor analysis, a request to finish the full roadmap, or a requirement to reach stable `v1.0` quality.
 
-The audit checked the repository contents, GitHub repository metadata, release assets, GitHub Actions history, and the latest `v0.1.0-alpha.6` archive. It also incorporates relevant findings from [code-quality-audit.md](code-quality-audit.md).
+The audit checked the repository contents, GitHub repository metadata, release assets, GitHub Actions history, and the latest `v0.1.0-alpha.6` archive. It also incorporates relevant findings from earlier internal audits.
 
 Local verification passed:
 
@@ -150,8 +150,6 @@ A pull request template and Code of Conduct are useful but can follow once exter
 
 ### 5. Fix configuration error handling
 
-**Source:** [code-quality-audit.md](code-quality-audit.md#1-config-parsing-and-read-errors-are-silently-discarded)
-
 `internal/config.Load` silently ignores malformed TOML and non-not-found read errors. An external user is likely to interpret a typo as broken product behavior.
 
 **Minimum correction:** return or visibly surface read and parse errors with the configuration path, while continuing to ignore genuinely missing optional files.
@@ -161,8 +159,6 @@ Do not add schema machinery or a validation framework.
 **Done when:** malformed global and repository configuration produces an actionable path-specific error or warning, with focused tests.
 
 ### 6. Make preview behavior trustworthy
-
-**Source:** [code-quality-audit.md](code-quality-audit.md#2-publishbuildpreview-has-a-hidden-persistent-side-effect)
 
 `publish.BuildPreview` can synchronize commits into the timeline and discard synchronization/read failures even though preview and dry-run imply observation.
 
