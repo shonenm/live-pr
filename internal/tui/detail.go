@@ -116,6 +116,35 @@ func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight, 
 	return msg, true
 }
 
+// renderReviewPane frames the review side. In file-explorer mode the changed
+// file list and the diff share one frame, split by an inner rule, so the two
+// read as one region rather than two separate boxes.
+func (m Model) renderReviewPane() string {
+	if !m.fileExplorerMode() {
+		title, content := "Diff", m.detail.View()
+		if m.reviewSHA != "" {
+			title = "Commit · " + m.reviewSHA
+		}
+		if m.diffTerminal != nil && m.diffTerminal.Available() {
+			title, content = "Review", m.diffTerminal.View(m.detail.Width, m.detail.Height)
+			if m.reviewSHA != "" {
+				title = "Review · " + m.reviewSHA
+			}
+		}
+		return renderPane(title, content, m.detail.Width+paneChromeW, m.detail.Height+paneChromeH, m.focusDiff)
+	}
+	title := "Files"
+	if file := m.selectedFile(); file != nil {
+		title = "Files · " + file.Path
+	}
+	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).
+		Render(strings.TrimSuffix(strings.Repeat("│\n", m.explorer.Height), "\n"))
+	divider := lipgloss.NewStyle().Padding(0, 1).Render(rule)
+	content := lipgloss.JoinHorizontal(lipgloss.Top, m.explorer.View(), divider, m.detail.View())
+	width := m.explorer.Width + dividerW + m.detail.Width + paneChromeW
+	return renderPane(title, content, width, m.explorer.Height+paneChromeH, m.focusDiff || m.focusExplorer)
+}
+
 func (m Model) buildFileExplorer() (string, int) {
 	if len(m.files) == 0 {
 		return stMuted.Render("Files\n(no changed files)"), 0
