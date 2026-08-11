@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -22,6 +23,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/config"
+	"github.com/shonenm/live-pr/internal/debugtime"
 	"github.com/shonenm/live-pr/internal/diffview"
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/event"
@@ -214,6 +216,8 @@ type Model struct {
 	base, head                string
 	headRev                   string
 	events                    []event.Event
+	conversationCache         []conversationItem
+	conversationDirty         bool
 	files                     []git.ChangedFile
 	commits                   []git.Commit
 	active                    tab
@@ -237,6 +241,8 @@ type Model struct {
 	prPreviewLoaded           map[int]bool
 	prView                    prView
 	prListState               prListState
+	viewCounts                [prViewCount]int
+	viewCountsValid           bool
 	filterQuery               string
 	filterBeforeEdit          string
 	filterSelectionBeforeEdit int
@@ -269,6 +275,7 @@ type Model struct {
 	focusExplorer     bool
 	fileCursor        int
 	detailKey         string
+	rawDetailCache    map[string]string
 	diffCache         map[string]string
 	diffPending       map[string]bool
 	checkedFiles      map[string]bool
@@ -285,6 +292,9 @@ type Model struct {
 // New builds a navigator-aware model without creating branch state unless the
 // current checkout is routed to local detail.
 func New() (Model, error) {
+	if done := debugtime.Start("tui startup"); done != nil {
+		defer done()
+	}
 	root, err := git.RepoRoot()
 	if err != nil {
 		return Model{}, err
@@ -315,7 +325,7 @@ func New() (Model, error) {
 	}
 	defaultRef := git.DefaultBase()
 	base := git.ResolveBase(cache.Base(defaultRef))
-	files, _ := git.ChangedFiles(base)
+	hasChanges, _ := git.HasChanges(base, "HEAD")
 	currentPR := cache.PR
 	if currentPR != nil && !isCurrentPR(*currentPR, branch) && !cache.ExplicitCheckout {
 		currentPR = nil
@@ -326,7 +336,7 @@ func New() (Model, error) {
 	}
 	defaultBranch := strings.TrimPrefix(defaultRef, "origin/")
 	localEligible := branch != "HEAD" && branch != defaultBranch
-	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), len(files) > 0)
+	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), hasChanges)
 	initialView, initialState := assignedView, openPRListState
 	if currentPR != nil && matchesListState(*currentPR, closedPRListState) {
 		initialView, initialState = closedPRsView, closedPRListState
@@ -354,9 +364,11 @@ func New() (Model, error) {
 		autoOpenCurrent:   localEligible,
 		listRefreshing:    true,
 		prListGeneration:  1,
+		conversationDirty: true,
 		diffDisplay:       cfg.Diff.Display,
 		diffCommand:       cfg.Diff.Command,
 		diffCommitCommand: cfg.CommitReviewCommand(),
+		rawDetailCache:    map[string]string{},
 		diffCache:         map[string]string{},
 		diffPending:       map[string]bool{},
 		prPreviewLoading:  map[int]bool{},
@@ -412,7 +424,11 @@ func shouldOpenLocal(branch, defaultBranch string, hasPR, hasData, hasChanges bo
 }
 
 func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) error {
+	if done := debugtime.Start("tui local hydration"); done != nil {
+		defer done()
+	}
 	m.targetGeneration++
+	m.resetDetailCaches()
 	if err := st.Ensure(); err != nil {
 		return err
 	}
@@ -448,6 +464,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
+	m.invalidateConversation()
 	m.githubStatus = "Local only · checking for PR…"
 	if cache.PR != nil {
 		m.githubStatus = "GitHub: cached · refreshing…"
@@ -526,6 +543,17 @@ func (m *Model) close() {
 func (m *Model) advanceAsyncGenerations(previous Model) {
 	m.targetGeneration = previous.targetGeneration + 1
 	m.prListGeneration = previous.prListGeneration + 1
+	m.resetDetailCaches()
+}
+
+func (m *Model) resetDetailCaches() {
+	m.rawDetailCache = map[string]string{}
+	m.diffCache = map[string]string{}
+	m.diffPending = map[string]bool{}
+}
+
+func (m *Model) invalidateConversation() {
+	m.conversationDirty = true
 }
 
 func (m *Model) useBase(base, prURL string) tea.Cmd {
@@ -534,11 +562,13 @@ func (m *Model) useBase(base, prURL string) tea.Cmd {
 		return nil
 	}
 	m.base = base
+	m.resetDetailCaches()
 	if !m.remote {
 		_, _ = timeline.SyncCommits(m.timelinePath, base)
 		if events, err := event.Load(m.timelinePath); err == nil {
 			m.events = events
 			sort.SliceStable(m.events, func(i, j int) bool { return m.events[i].TS < m.events[j].TS })
+			m.invalidateConversation()
 		}
 	}
 	m.commits, _ = git.CommitsRange(base, m.headRev)
@@ -629,24 +659,36 @@ func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 		if err != nil {
 			return githubRefreshed{generation: generation, err: err}
 		}
-		comments, commentsErr := client.IssueComments(pr.Number)
-		activities, activitiesErr := client.IssueActivities(pr.Number)
+		comments, activities, commentsErr, activitiesErr := client.IssueDetail(pr.Number)
 		return githubRefreshed{generation: generation, pr: pr, comments: comments, activities: activities, commentsErr: commentsErr, activitiesErr: activitiesErr}
 	}
 }
 
 func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		headRef, refErr := git.FetchPull(pr.Number, pr.BaseRefName, pr.HeadRefOID)
 		client := gh.New()
-		comments, commentsErr := client.IssueComments(pr.Number)
-		activities, activitiesErr := client.IssueActivities(pr.Number)
+		var headRef string
+		var comments []gh.Comment
+		var activities []gh.Activity
+		var refErr, commentsErr, activitiesErr error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			headRef, refErr = git.FetchPull(pr.Number, pr.BaseRefName, pr.HeadRefOID)
+		}()
+		go func() {
+			defer wg.Done()
+			comments, activities, commentsErr, activitiesErr = client.IssueDetail(pr.Number)
+		}()
+		wg.Wait()
 		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, refErr: refErr, commentsErr: commentsErr, activitiesErr: activitiesErr}
 	}
 }
 
 func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.targetGeneration++
+	m.resetDetailCaches()
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
@@ -664,6 +706,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 		m.cache.Activities = snapshot.Activities
 		m.cache.FetchedAt = snapshot.FetchedAt
 	}
+	m.invalidateConversation()
 	m.reviewSHA, m.active, m.focusDiff, m.focusExplorer, m.fileCursor = "", conversationTab, false, false, 0
 	m.diffTerminal = nil
 	m.refreshing, m.publishing = true, false
@@ -985,6 +1028,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		selectedKey := m.selectedConversationKey()
 		if cache, err := gh.LoadCache(m.cachePath, m.head); err == nil {
 			m.cache = cache
+			m.invalidateConversation()
 		}
 		action := "updated"
 		if msg.result.Created {
@@ -1003,6 +1047,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshing = false
 		selectedKey := m.selectedConversationKey()
 		now := time.Now().UTC().Format(time.RFC3339)
+		m.resetDetailCaches()
 		m.cache.PR = &msg.pr
 		if msg.commentsErr == nil {
 			m.cache.Comments = msg.comments
@@ -1011,6 +1056,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cache.Activities = msg.activities
 		}
 		m.cache.FetchedAt = now
+		m.invalidateConversation()
 		m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
 		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
 			m.status = "PR list cache: " + err.Error()
@@ -1060,6 +1106,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var diffCmd tea.Cmd
 		switch {
 		case msg.err == nil:
+			m.resetDetailCaches()
 			m.cache.PR = &msg.pr
 			m.localAvailable = false
 			m.cache.FetchedAt = now
@@ -1098,6 +1145,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			m.githubStatus = "Offline · showing cached GitHub data"
 		}
+		m.invalidateConversation()
 		if err := gh.SaveCache(m.cachePath, m.cache); err != nil {
 			m.status = "GitHub cache: " + err.Error()
 		} else if strings.HasPrefix(m.status, "GitHub cache") {
@@ -1540,7 +1588,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) conversationItems() []conversationItem {
+func (m *Model) conversationItems() []conversationItem {
+	if !m.conversationDirty {
+		return m.conversationCache
+	}
 	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities)+1)
 	if m.cache.PR != nil {
 		items = append(items, conversationItem{key: "description:" + m.cache.PR.URL, ts: m.cache.PR.CreatedAt, pr: m.cache.PR})
@@ -1574,10 +1625,11 @@ func (m Model) conversationItems() []conversationItem {
 	sort.SliceStable(items, func(i, j int) bool {
 		return conversationTime(items[i].ts).Before(conversationTime(items[j].ts))
 	})
-	return items
+	m.conversationCache, m.conversationDirty = items, false
+	return m.conversationCache
 }
 
-func (m Model) selectedConversationItem() *conversationItem {
+func (m *Model) selectedConversationItem() *conversationItem {
 	items := m.conversationItems()
 	i := m.cursors[conversationTab]
 	if i < 0 || i >= len(items) {
@@ -1586,7 +1638,7 @@ func (m Model) selectedConversationItem() *conversationItem {
 	return &items[i]
 }
 
-func (m Model) selectedConversationKey() string {
+func (m *Model) selectedConversationKey() string {
 	if item := m.selectedConversationItem(); item != nil {
 		return item.key
 	}
@@ -1608,7 +1660,7 @@ func (m *Model) restoreConversationSelection(key string) {
 	}
 }
 
-func (m Model) activeLen() int {
+func (m *Model) activeLen() int {
 	if m.active == commitsTab {
 		return len(m.commits)
 	}
@@ -1637,7 +1689,7 @@ func (m *Model) handleVimNavigation(msg tea.KeyMsg) (bool, tea.Cmd) {
 	return false, nil
 }
 
-func (m Model) navigationLength() int {
+func (m *Model) navigationLength() int {
 	if m.screen == prListScreen {
 		return len(m.openPRs)
 	}
@@ -1867,6 +1919,19 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 		m.collapsedStacks = map[string]bool{}
 	}
 	m.allPRs = m.withLocalPR(m.navigator.PRs)
+	clear(m.viewCounts[:])
+	for view := assignedView; view < prViewCount; view++ {
+		state := openPRListState
+		if view == closedPRsView {
+			state = closedPRListState
+		}
+		for _, pr := range m.allPRs {
+			if matchesListState(pr, state) && m.matchesView(pr, view) {
+				m.viewCounts[view]++
+			}
+		}
+	}
+	m.viewCountsValid = true
 	m.filteredPRs = make([]gh.PR, 0, len(m.allPRs))
 	for _, pr := range m.allPRs {
 		if matchesListState(pr, m.prListState) && m.matchesView(pr, m.prView) && matchesPRFilter(pr, m.filterQuery, m.viewerLogin) {
@@ -2138,6 +2203,9 @@ func (m *Model) ensureSelectedPRPreview() tea.Cmd {
 
 // sync rebuilds both panes for the current tab and selection.
 func (m *Model) sync() tea.Cmd {
+	if done := debugtime.Start("tui sync"); done != nil {
+		defer done()
+	}
 	if !m.ready {
 		return nil
 	}
@@ -2310,6 +2378,9 @@ func (m Model) renderPRListHeader() string {
 }
 
 func (m Model) viewCount(view prView) int {
+	if m.viewCountsValid && view >= 0 && view < prViewCount {
+		return m.viewCounts[view]
+	}
 	state := openPRListState
 	if view == closedPRsView {
 		state = closedPRListState
@@ -2707,14 +2778,14 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	return []string{ansi.Truncate(line, max(10, m.list.Width), "…"), ansi.Truncate(meta, max(10, m.list.Width), "…"), ""}
 }
 
-func (m Model) buildList() (string, int) {
+func (m *Model) buildList() (string, int) {
 	if m.active == commitsTab {
 		return m.buildCommits()
 	}
 	return m.buildConversation()
 }
 
-func (m Model) buildConversation() (string, int) {
+func (m *Model) buildConversation() (string, int) {
 	items := m.conversationItems()
 	if len(items) == 0 {
 		return stMuted.Render("(no conversation yet — try `live-pr note …`)"), 0
@@ -2890,7 +2961,19 @@ func (m Model) buildCommits() (string, int) {
 	return strings.Join(lines, "\n"), m.cursors[commitsTab]
 }
 
-func (m Model) buildDetail() detailContent {
+func (m *Model) cachedRawDetail(key string, load func() string) string {
+	if m.rawDetailCache == nil {
+		m.rawDetailCache = map[string]string{}
+	}
+	if raw, ok := m.rawDetailCache[key]; ok {
+		return raw
+	}
+	raw := load()
+	m.rawDetailCache[key] = raw
+	return raw
+}
+
+func (m *Model) buildDetail() detailContent {
 	if m.reviewSHA != "" {
 		return m.commitDetail(m.reviewSHA)
 	}
@@ -2900,24 +2983,27 @@ func (m Model) buildDetail() detailContent {
 			if file.OldPath != "" {
 				paths = append(paths, file.OldPath)
 			}
-			if d := git.FileDiffRange(m.base, m.headRev, paths...); d != "" {
-				return detailContent{key: "file:" + m.base + "..." + m.headRev + ":" + file.Path, raw: d, renderable: true}
+			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.base, m.headRev, file.Status, file.OldPath, file.Path)
+			if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.base, m.headRev, paths...) }); d != "" {
+				return detailContent{key: key, raw: d, renderable: true}
 			}
 		}
 		return detailContent{raw: stMuted.Render("(no changes in selected file)")}
 	}
-	if d := git.FileDiffRange(m.base, m.headRev); d != "" {
-		return detailContent{key: "range:" + m.base + "..." + m.headRev, raw: d, renderable: true}
+	key := "range:" + m.base + "..." + m.headRev
+	if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.base, m.headRev) }); d != "" {
+		return detailContent{key: key, raw: d, renderable: true}
 	}
 	return detailContent{raw: stMuted.Render("(no changes in " + m.base + "..." + m.headRev + ")")}
 }
 
-func (m Model) commitDetail(sha string) detailContent {
+func (m *Model) commitDetail(sha string) detailContent {
 	if sha == "" {
 		return detailContent{raw: stMuted.Render("no commit selected")}
 	}
-	if d := git.Show(sha); d != "" {
-		return detailContent{key: "commit:" + sha, raw: d, renderable: true}
+	key := "commit:" + sha
+	if d := m.cachedRawDetail(key, func() string { return git.Show(sha) }); d != "" {
+		return detailContent{key: key, raw: d, renderable: true}
 	}
 	return detailContent{raw: stMuted.Render("(commit " + sha + " not found in this repo)")}
 }
