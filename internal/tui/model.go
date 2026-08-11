@@ -233,7 +233,8 @@ type Model struct {
 	currentBranch             string
 	defaultBranch             string
 	base, head                string
-	headRev                   string
+	diffBase, headRev         string
+	reviewRange               string
 	summary                   string
 	events                    []event.Event
 	conversationCache         []conversationItem
@@ -452,6 +453,25 @@ func shouldOpenLocal(branch, defaultBranch string, hasPR, hasData, hasChanges bo
 	return branch != "HEAD" && branch != defaultBranch && (hasPR || hasData || hasChanges)
 }
 
+func localReviewBase(base string, pr *gh.PR) string {
+	if pr != nil && pr.BaseRefOID != "" {
+		if mergeBase, err := git.MergeBase(pr.BaseRefOID, "HEAD"); err == nil {
+			return mergeBase
+		}
+	}
+	if mergeBase, err := git.MergeBase(base, "HEAD"); err == nil {
+		return mergeBase
+	}
+	return base
+}
+
+func remoteReviewBase(pr gh.PR) string {
+	if pr.BaseRefOID != "" {
+		return pr.BaseRefOID
+	}
+	return git.ResolveBase(pr.BaseRefName)
+}
+
 func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) error {
 	if done := debugtime.Start("tui local hydration"); done != nil {
 		defer done()
@@ -469,15 +489,16 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 		cache.PR = &pr
 	}
 	base := git.ResolveBase(cache.Base(git.DefaultBase()))
-	_, _ = timeline.SyncCommits(st.Timeline(), base)
+	diffBase := localReviewBase(base, cache.PR)
+	_, _ = timeline.SyncCommits(st.Timeline(), diffBase)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
 		return err
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	commits, commitErr := git.Commits(base)
-	files, fileErr := git.ChangedFiles(base)
-	stats, _ := git.DiffStats(base, "HEAD")
+	commits, commitErr := git.Commits(diffBase)
+	files, fileErr := git.ChangedFiles(diffBase)
+	stats, _ := git.DiffStats(diffBase, "HEAD")
 	dirty, dirtyErr := git.HasUncommittedChanges()
 	if commitErr != nil || fileErr != nil || dirtyErr != nil {
 		m.status = "local git data is incomplete"
@@ -496,7 +517,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.title = prbody.Title(m.summary, st.Branch)
 	m.localAvailable, m.localTitle = cache.PR == nil, m.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = stats, len(commits), dirty
-	m.base, m.head, m.headRev = base, st.Branch, "HEAD"
+	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = base, diffBase, st.Branch, "HEAD", diffBase
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
 	m.invalidateConversation()
@@ -505,7 +526,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 		m.githubStatus = "GitHub: cached · refreshing…"
 	}
 	m.refreshing, m.publishing = true, false
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(base, st.Branch, "HEAD", prURL, ""))
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, diffBase, st.Branch, "HEAD", prURL, ""))
 	m.focusDiff, m.focusExplorer, m.fileCursor, m.active, m.reviewSHA = false, false, 0, conversationTab, ""
 	m.layout()
 	return nil
@@ -658,8 +679,10 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.screen, m.remote = detailScreen, true
 	m.title = pr.Title
 	m.base = git.ResolveBase(pr.BaseRefName)
+	m.diffBase = remoteReviewBase(pr)
 	m.head = pr.HeadRefName
 	m.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
+	m.reviewRange = m.diffBase + "..." + m.headRev
 	m.events, m.commits, m.files = nil, nil, nil
 	m.timelinePath, m.cachePath = "", ""
 	m.cache = gh.NewCache(pr.HeadRefName)

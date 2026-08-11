@@ -142,11 +142,11 @@ Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, a
 
 In a demo, the current PR Conversation shows compact CI activity for two commits: the first has a mocked red failure and the second a green success. Press `c` to inspect the same results in the full two-commit list. Press `b` for the mocked PR list, then use `m`, `c`, and `x` to exercise merge, checkout, and close. Select the Closed view or search `is:closed` to verify that completed mock PRs move out of Open. The checkout changes only the disposable repository; all GitHub data stays local.
 
-The built-in right-side reviewer starts Neovim with an explicit three-dot `CodeDiff` range for local or remote PRs and `CodeReview` for a selected commit. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
+The built-in right-side reviewer starts Neovim with `LIVE_PR_RANGE`: a merge-base-to-working-tree comparison for checked-out Local PRs, or the historical PR base-to-fetched-head three-dot range for remote PRs. Selected commits use `CodeReview`. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
 
 ```toml
 [diff]
-command = 'nvim -c "CodeDiff $LIVE_PR_BASE...$LIVE_PR_HEAD_REV"'
+command = 'nvim -c "CodeDiff $LIVE_PR_RANGE"'
 commit_command = 'nvim -c "CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
 display = "delta --color-only" # fallback after CodeReview exits
 ```

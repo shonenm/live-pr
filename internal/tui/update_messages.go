@@ -281,8 +281,10 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	}
 	m.headRev = msg.headRef
 	m.base = git.ResolveBase(msg.pr.BaseRefName)
-	m.commits, _ = git.CommitsRange(m.base, m.headRev)
-	m.files, _ = git.ChangedFilesRange(m.base, m.headRev)
+	m.diffBase = remoteReviewBase(msg.pr)
+	m.reviewRange = m.diffBase + "..." + m.headRev
+	m.commits, _ = git.CommitsRange(m.diffBase, m.headRev)
+	m.files, _ = git.ChangedFilesRange(m.diffBase, m.headRev)
 	m.fileCursor = 0
 	m.status = ""
 	stale := []string{}
@@ -299,7 +301,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	if len(stale) > 0 {
 		m.githubStatus += " · " + strings.Join(stale, "/") + " stale"
 	}
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.base, m.head, m.headRev, msg.pr.URL, ""))
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, msg.pr.URL, ""))
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
 	cmds := []tea.Cmd{m.sync()}
@@ -335,7 +337,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
 			m.status = "PR list cache: " + err.Error()
 		}
-		diffCmd = m.useBase(msg.pr.BaseRefName, msg.pr.URL)
+		diffCmd = m.useBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL)
 		stale := []string{}
 		if msg.commentsErr == nil {
 			m.cache.Comments = msg.comments
