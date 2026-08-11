@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFindOpen(t *testing.T) {
@@ -114,6 +115,56 @@ func TestListClosedIncludesMergedPullRequests(t *testing.T) {
 	if len(list.PRs) != 1 || list.PRs[0].State != "MERGED" || !strings.Contains(query, "states:[$state,MERGED]") {
 		t.Fatalf("closed list = %#v query=%s", list.PRs, query)
 	}
+	if strings.Contains(query, "reviewRequested:search") || strings.Contains(query, "reviewQuery=") {
+		t.Fatalf("closed list requested open review data: %s", query)
+	}
+}
+
+func TestListStateCachesRepositoryIdentity(t *testing.T) {
+	repoCalls := 0
+	client := Client{repo: &repositoryIdentity{}, run: func(args ...string) ([]byte, error) {
+		if args[0] == "repo" {
+			repoCalls++
+			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
+		}
+		return []byte(`{"data":{"viewer":{"login":"octocat"},"reviewRequested":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`), nil
+	}}
+	if _, err := client.ListOpen(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListOpen(); err != nil {
+		t.Fatal(err)
+	}
+	if repoCalls != 1 {
+		t.Fatalf("gh repo view calls = %d, want 1", repoCalls)
+	}
+}
+
+func TestIssueDetailStartsIndependentRequestsConcurrently(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	client := Client{run: func(args ...string) ([]byte, error) {
+		started <- struct{}{}
+		<-release
+		return []byte(`[[]]`), nil
+	}}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _, commentsErr, activitiesErr := client.IssueDetail(12)
+		if commentsErr != nil || activitiesErr != nil {
+			t.Errorf("IssueDetail errors = %v, %v", commentsErr, activitiesErr)
+		}
+	}()
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("comment and activity requests did not overlap")
+		}
+	}
+	close(release)
+	<-done
 }
 
 func TestFindPreviewLoadsExpensiveFields(t *testing.T) {

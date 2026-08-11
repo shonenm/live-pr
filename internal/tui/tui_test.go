@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -32,10 +33,42 @@ func testModel() Model {
 			{TS: "2026-07-21T10:00", Kind: event.Decision, Title: "chose Go", Body: "gh-dash stack"},
 			{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: x", SHA: "abc1234"},
 		},
-		files:   []git.ChangedFile{{Status: "M", Path: "internal/tui/tui.go"}},
-		commits: []git.Commit{{SHA: "abc1234", Subject: "feat: x", Date: "2026-07-21T11:00"}},
-		help:    newHelp(),
-		keys:    keys,
+		files:             []git.ChangedFile{{Status: "M", Path: "internal/tui/tui.go"}},
+		commits:           []git.Commit{{SHA: "abc1234", Subject: "feat: x", Date: "2026-07-21T11:00"}},
+		conversationDirty: true,
+		help:              newHelp(),
+		keys:              keys,
+	}
+}
+
+func TestBuildDetailCachesRawGitOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX fake executable")
+	}
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "calls")
+	script := fmt.Sprintf("#!/bin/sh\ncount=0\n[ -f %q ] && read count < %q\ncount=$((count + 1))\nprintf '%%s' \"$count\" > %q\nprintf 'cached diff\\n'\n", counter, counter, counter)
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	m := testModel()
+	m.screen, m.base, m.headRev = detailScreen, "main", "HEAD"
+	m.diffCommand, m.diffTerminal = "", nil
+
+	first, second := m.buildDetail(), m.buildDetail()
+	calls, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.raw != "cached diff" || second.raw != first.raw || string(calls) != "1" {
+		t.Fatalf("details = %#v / %#v, calls=%q", first, second, calls)
+	}
+	m.resetDetailCaches()
+	_ = m.buildDetail()
+	calls, _ = os.ReadFile(counter)
+	if string(calls) != "2" {
+		t.Fatalf("cache reset calls=%q", calls)
 	}
 }
 
@@ -1124,6 +1157,20 @@ func TestViewRendersHeaderAndTimeline(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q", want)
 		}
+	}
+}
+
+func TestConversationCacheInvalidation(t *testing.T) {
+	m := testModel()
+	first := m.conversationItems()
+	second := m.conversationItems()
+	if len(first) == 0 || &first[0] != &second[0] {
+		t.Fatal("conversation derivation was not reused")
+	}
+	m.events = append(m.events, event.Event{TS: "2026-07-21T12:00", Kind: event.Note, Title: "new"})
+	m.invalidateConversation()
+	if got := m.conversationItems(); len(got) != len(first)+1 {
+		t.Fatalf("invalidated conversation length = %d, want %d", len(got), len(first)+1)
 	}
 }
 

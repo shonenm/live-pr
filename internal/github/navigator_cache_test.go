@@ -1,6 +1,7 @@
 package github
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 )
@@ -27,6 +28,22 @@ func TestNavigatorCacheRoundTrip(t *testing.T) {
 	snapshot, ok := got.Snapshot(12)
 	if got.ViewerLogin != "octocat" || !got.FetchedStates["OPEN"] || !got.FetchedStates["CLOSED"] || len(got.PRs) != 1 || got.PRs[0].HeadRefName != "feature/x" || len(got.PRs[0].ReviewRequests) != 1 || !ok || snapshot.PR.Body != "description" || len(snapshot.Comments) != 1 {
 		t.Fatalf("navigator cache = %#v snapshot=%#v", got, snapshot)
+	}
+}
+
+func TestNavigatorCacheRetainsRecentSnapshots(t *testing.T) {
+	cache := NewNavigatorCache()
+	for i := 1; i <= maxNavigatorSnapshots+1; i++ {
+		cache.SetSnapshot(PRSnapshot{PR: PR{Number: i}, FetchedAt: fmt.Sprintf("%04d", i)})
+	}
+	if len(cache.Snapshots) != maxNavigatorSnapshots {
+		t.Fatalf("snapshot count = %d", len(cache.Snapshots))
+	}
+	if _, ok := cache.Snapshot(1); ok {
+		t.Fatal("oldest snapshot was retained")
+	}
+	if _, ok := cache.Snapshot(maxNavigatorSnapshots + 1); !ok {
+		t.Fatal("newest snapshot was evicted")
 	}
 }
 

@@ -132,6 +132,9 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if changed, err := HasChanges("main", "HEAD"); err != nil || !changed {
+		t.Fatalf("feature changes = %v, err=%v", changed, err)
+	}
 	stats, err := DiffStats("main", "HEAD")
 	if err != nil || stats.Files != 2 || stats.Additions != 1 || stats.Deletions != 1 {
 		t.Fatalf("diff stats = %#v, err=%v", stats, err)
@@ -170,6 +173,9 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	}
 	runGit("update-ref", "refs/live-pr/pulls/1/head", featureOID)
 	runGit("switch", "main")
+	if changed, err := HasChanges("main", "HEAD"); err != nil || changed {
+		t.Fatalf("main changes = %v, err=%v", changed, err)
+	}
 	if local := FileDiff("main"); local != "" {
 		t.Fatalf("main...HEAD should be empty: %q", local)
 	}
