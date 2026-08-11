@@ -345,7 +345,7 @@ func New() (Model, error) {
 		head:              branch,
 		headRev:           "HEAD",
 		status:            status,
-		loadSpinner:       bspinner.New(bspinner.WithSpinner(bspinner.MiniDot), bspinner.WithStyle(stAttention)),
+		loadSpinner:       newLoadSpinner(),
 		spinnerRunning:    true,
 		navigator:         navigator,
 		navigatorPath:     navigatorPath,
@@ -488,7 +488,7 @@ func Run() error {
 
 func (m Model) Init() tea.Cmd {
 	if len(m.loadSpinner.Spinner.Frames) == 0 {
-		m.loadSpinner = bspinner.New(bspinner.WithSpinner(bspinner.MiniDot), bspinner.WithStyle(stAttention))
+		m.loadSpinner = newLoadSpinner()
 	}
 	m.spinnerRunning = true
 	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.prListState), m.loadSpinner.Tick}
@@ -513,7 +513,7 @@ func (m *Model) startSpinner() tea.Cmd {
 		return nil
 	}
 	if len(m.loadSpinner.Spinner.Frames) == 0 {
-		m.loadSpinner = bspinner.New(bspinner.WithSpinner(bspinner.MiniDot), bspinner.WithStyle(stAttention))
+		m.loadSpinner = newLoadSpinner()
 	}
 	if m.spinnerRunning {
 		return nil
@@ -637,21 +637,24 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 }
 
 const (
-	headerBaseLines = 3
+	headerBaseLines = 2
 	footerLines     = 1
+	paneChromeW     = 4 // border + one space padding per side
+	paneChromeH     = 2 // top and bottom border
 	listRatio       = 52
 	reviewListRatio = 38
+	prListPaneRatio = 45
 )
 
 func (m *Model) layout() {
 	if m.screen == prListScreen {
-		bodyH := max(3, m.h-4)
-		available := max(2, m.w-3)
-		listW := max(10, available*reviewListRatio/100)
-		if available-listW < 10 {
-			listW = max(1, available-10)
+		bodyH := max(3, m.h-2-footerLines-paneChromeH)
+		listPaneW := max(24, m.w*prListPaneRatio/100)
+		if m.w-listPaneW < 20 {
+			listPaneW = max(12, m.w-20)
 		}
-		detailW := max(1, available-listW)
+		listW := max(4, listPaneW-paneChromeW)
+		detailW := max(4, m.w-listPaneW-paneChromeW)
 		if !m.ready {
 			m.list = viewport.New(listW, bodyH)
 			m.detail = viewport.New(detailW, bodyH)
@@ -666,23 +669,23 @@ func (m *Model) layout() {
 	if m.diffTerminal != nil && m.diffTerminal.Available() {
 		ratio = reviewListRatio
 	}
-	listW := m.w * ratio / 100
-	if listW < 20 {
-		listW = 20
+	leftPaneW := max(24, m.w*ratio/100)
+	rightPaneW := m.w - leftPaneW
+	if rightPaneW < 14 {
+		rightPaneW = 14
+		leftPaneW = max(8, m.w-14)
 	}
-	rightW := m.w - listW - 3
-	if rightW < 10 {
-		rightW = 10
-	}
-	explorerW, detailW := 1, rightW
+	listW := max(4, leftPaneW-paneChromeW)
+	explorerW, detailW := 1, max(4, rightPaneW-paneChromeW)
 	if m.fileExplorerMode() {
-		explorerW = max(18, rightW/3)
-		if rightW-explorerW < 20 {
-			explorerW = max(10, rightW-20)
+		explorerPaneW := max(22, rightPaneW/3)
+		if rightPaneW-explorerPaneW < 24 {
+			explorerPaneW = max(14, rightPaneW-24)
 		}
-		detailW = rightW - explorerW - 1
+		explorerW = max(4, explorerPaneW-paneChromeW)
+		detailW = max(4, rightPaneW-explorerPaneW-paneChromeW)
 	}
-	bodyH := m.h - m.headerHeight() - footerLines
+	bodyH := m.h - m.headerHeight() - footerLines - paneChromeH
 	if bodyH < 3 {
 		bodyH = 3
 	}
@@ -872,38 +875,43 @@ func (m Model) View() string {
 	}
 	var view string
 	if m.screen == prListScreen {
-		preview := lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
-			BorderForeground(lipgloss.Color(cBorder)).PaddingLeft(1).
-			Render(m.detail.View())
-		body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), preview)
+		listTitle := fmt.Sprintf("%s · %d", m.prView, len(m.filteredPRs))
+		previewTitle := "Preview"
+		if pr := m.selectedPR(); pr != nil {
+			if pr.Number > 0 {
+				previewTitle = fmt.Sprintf("Preview · #%d", pr.Number)
+			} else {
+				previewTitle = "Preview · local"
+			}
+		}
+		listPane := renderPane(listTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, true)
+		previewPane := renderPane(previewTitle, m.detail.View(), m.detail.Width+paneChromeW, m.detail.Height+paneChromeH, false)
+		body := lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane)
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
 	} else {
-		detailContent := m.detail.View()
-		borderColor := cBorder
-		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			detailContent = m.diffTerminal.View(m.detail.Width, m.detail.Height)
-			if m.focusDiff {
-				borderColor = cAccent
-			}
+		leftTitle := "Conversation"
+		if m.active == commitsTab {
+			leftTitle = "Commits"
 		}
-		detail := lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
-			BorderForeground(lipgloss.Color(borderColor)).PaddingLeft(1).
-			Render(detailContent)
+		detailTitle, detailContent := "Diff", m.detail.View()
+		if m.reviewSHA != "" {
+			detailTitle = "Commit · " + m.reviewSHA
+		}
+		if m.diffTerminal != nil && m.diffTerminal.Available() {
+			detailTitle = "Review"
+			if m.reviewSHA != "" {
+				detailTitle = "Review · " + m.reviewSHA
+			}
+			detailContent = m.diffTerminal.View(m.detail.Width, m.detail.Height)
+		}
+		left := renderPane(leftTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
+		detail := renderPane(detailTitle, detailContent, m.detail.Width+paneChromeW, m.detail.Height+paneChromeH, m.focusDiff)
 		right := detail
 		if m.fileExplorerMode() {
-			explorerBorder := cBorder
-			if m.focusExplorer {
-				explorerBorder = cAccent
-			}
-			explorer := lipgloss.NewStyle().
-				BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).
-				BorderForeground(lipgloss.Color(explorerBorder)).PaddingLeft(1).
-				Render(m.explorer.View())
+			explorer := renderPane("", m.explorer.View(), m.explorer.Width+paneChromeW, m.explorer.Height+paneChromeH, m.focusExplorer)
 			right = lipgloss.JoinHorizontal(lipgloss.Top, explorer, detail)
 		}
-		body := lipgloss.JoinHorizontal(lipgloss.Top, m.list.View(), right)
+		body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 	}
 	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
@@ -914,7 +922,7 @@ func (m Model) View() string {
 
 func (m Model) headerHeight() int {
 	if m.screen == prListScreen {
-		return 3
+		return 2
 	}
 	if m.cache.PR != nil {
 		return headerBaseLines + 1
@@ -941,11 +949,30 @@ func (m Model) renderHeader() string {
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
 	}
-	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).Render(strings.Repeat("─", max(0, m.w))))
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
+func (m Model) footerMode() string {
+	if m.screen == prListScreen {
+		return "PRS"
+	}
+	switch {
+	case m.focusDiff:
+		return "REVIEW"
+	case m.focusExplorer:
+		return "FILES"
+	case m.active == commitsTab:
+		return "COMMITS"
+	default:
+		return "CONV"
+	}
+}
+
 func (m Model) renderFooter() string {
+	return footerSegment(m.footerMode()) + " " + m.footerContent()
+}
+
+func (m Model) footerContent() string {
 	if m.status != "" {
 		if m.isLoading() {
 			return m.busyStatus(m.status)

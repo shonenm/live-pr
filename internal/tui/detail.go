@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/diffview"
@@ -125,18 +126,34 @@ func (m Model) buildFileExplorer() (string, int) {
 		if i == m.fileCursor {
 			selectedLine = len(lines)
 		}
-		mark := "□"
+		mark := stMuted.Render("□")
 		if m.checkedFiles[m.fileKey(file)] {
-			mark = "✓"
+			mark = stGreenF.Render("✓")
 		}
 		path := file.Path
 		if file.OldPath != "" {
 			path = file.OldPath + " → " + file.Path
 		}
-		line := selectionBar(i == m.fileCursor) + stMuted.Render(mark+" "+file.Status) + " " + stFg.Render(path)
+		line := selectionBar(i == m.fileCursor) + mark + " " + fileStatusStyle(file.Status).Render(file.Status) + " " + stFg.Render(path)
 		lines = append(lines, ansi.Truncate(line, max(10, m.explorer.Width), "…"))
 	}
 	return strings.Join(lines, "\n"), selectedLine
+}
+
+// fileStatusStyle mirrors git status letter colors: A green, D red, M yellow.
+func fileStatusStyle(status string) lipgloss.Style {
+	switch {
+	case strings.HasPrefix(status, "A"):
+		return stGreenF
+	case strings.HasPrefix(status, "D"):
+		return stRedF
+	case strings.HasPrefix(status, "M"):
+		return stAttention
+	case strings.HasPrefix(status, "R"), strings.HasPrefix(status, "C"):
+		return stAccent
+	default:
+		return stMuted
+	}
 }
 
 func (m Model) selectedFile() *git.ChangedFile {

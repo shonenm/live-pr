@@ -321,11 +321,25 @@ func TestPaletteMatchesPrimerDarkSemantics(t *testing.T) {
 	}
 }
 
-func TestEventKindsUseMutedTextInsteadOfInventedColors(t *testing.T) {
-	for _, kind := range []event.Kind{event.Note, event.Decision, event.Pivot, event.Summary, event.Commit} {
-		if got, want := kindLabel(kind), stMuted.Bold(true).Render(string(kind)); got != want {
-			t.Fatalf("kind %s = %q, want muted %q", kind, got, want)
+func TestEventKindsUseDistinctSemanticColors(t *testing.T) {
+	want := map[event.Kind]string{
+		event.Decision: stAccent.Bold(true).Render(string(event.Decision)),
+		event.Pivot:    stAttention.Bold(true).Render(string(event.Pivot)),
+		event.Note:     stGreenF.Bold(true).Render(string(event.Note)),
+		event.Commit:   stMuted.Bold(true).Render(string(event.Commit)),
+	}
+	for kind, expected := range want {
+		if got := kindLabel(kind); got != expected {
+			t.Fatalf("kind %s = %q, want %q", kind, got, expected)
 		}
+	}
+	seen := map[string]event.Kind{}
+	for _, kind := range []event.Kind{event.Note, event.Decision, event.Pivot, event.Summary, event.Commit} {
+		label := kindLabel(kind)
+		if other, dup := seen[label]; dup {
+			t.Fatalf("kinds %s and %s render identically: %q", kind, other, label)
+		}
+		seen[label] = kind
 	}
 }
 
@@ -339,10 +353,10 @@ func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
 	if got := mergeSummary(gh.PR{Number: 1, MergeStateStatus: "BLOCKED"}); got != stRedF.Render("blocked") {
 		t.Fatalf("blocked merge = %q", got)
 	}
-	if got := mergeSummary(gh.PR{Number: 1, Mergeable: "MERGEABLE", MergeStateStatus: "UNSTABLE"}); got != stGreenF.Render("mergeable") {
+	if got := mergeSummary(gh.PR{Number: 1, Mergeable: "MERGEABLE", MergeStateStatus: "UNSTABLE"}); got != stGreenF.Render("⇄ mergeable") {
 		t.Fatalf("unstable merge = %q", got)
 	}
-	if got := checkSummary([]gh.PRCheck{{Status: "IN_PROGRESS"}}); got != stAttention.Render("CI 1 pending") {
+	if got := checkSummary([]gh.PRCheck{{Status: "IN_PROGRESS"}}); got != stAttention.Render("◐ CI 1 pending") {
 		t.Fatalf("pending CI = %q", got)
 	}
 	if cDoneEmphasis != "#8957e5" {
