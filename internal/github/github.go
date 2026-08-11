@@ -109,6 +109,16 @@ type Comment struct {
 	} `json:"user"`
 }
 
+// PRDetail is one concurrently loaded pull-request detail snapshot.
+type PRDetail struct {
+	PR            PR
+	Comments      []Comment
+	Activities    []Activity
+	PreviewErr    error
+	CommentsErr   error
+	ActivitiesErr error
+}
+
 // Activity is a non-comment PR timeline event from GitHub's issue events API.
 type Activity struct {
 	ID        int64  `json:"id"`
@@ -405,7 +415,7 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 
 // FindPreview loads the expensive preview fields for one PR only.
 func (c Client) FindPreview(number int) (PR, error) {
-	const fields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,commits,statusCheckRollup"
+	const fields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup"
 	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
 	if err != nil {
 		return PR{}, commandError("gh pr view", out, err)
@@ -413,7 +423,6 @@ func (c Client) FindPreview(number int) (PR, error) {
 	var preview struct {
 		PR
 		Conversation []PRConversationComment `json:"comments"`
-		Commits      []PRCommit              `json:"commits"`
 		Checks       []PRCheck               `json:"statusCheckRollup"`
 	}
 	if err := json.Unmarshal(out, &preview); err != nil {
@@ -421,15 +430,11 @@ func (c Client) FindPreview(number int) (PR, error) {
 	}
 	preview.PR.Conversation = preview.Conversation
 	preview.PR.CommentCount = len(preview.Conversation)
-	preview.PR.CommitCount = len(preview.Commits)
-	preview.PR.Commits = preview.Commits
-	if len(preview.Commits) > 0 {
-		commits, err := c.commitStatusRollups(number)
-		if err != nil {
-			return PR{}, err
-		}
-		preview.PR.Commits = commits
+	commits, err := c.commitStatusRollups(number)
+	if err != nil {
+		return PR{}, err
 	}
+	preview.PR.CommitCount, preview.PR.Commits = len(commits), commits
 	preview.PR.Checks = preview.Checks
 	preview.PR.PreviewLoaded = true
 	return preview.PR, nil
@@ -477,9 +482,15 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
 					} `json:"pullRequest"`
 				} `json:"repository"`
 			} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
 		}
 		if err := json.Unmarshal(out, &page); err != nil {
 			return nil, fmt.Errorf("decode PR commit statuses: %w", err)
+		}
+		if len(page.Errors) > 0 {
+			return nil, fmt.Errorf("query PR commit statuses: %s", page.Errors[0].Message)
 		}
 		connection := page.Data.Repository.PullRequest.Commits
 		for _, node := range connection.Nodes {
@@ -489,6 +500,9 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
 			return commits, nil
 		}
 		after = connection.PageInfo.EndCursor
+		if after == "" {
+			return nil, errors.New("query PR commit statuses: missing next-page cursor")
+		}
 	}
 }
 
@@ -545,6 +559,23 @@ func (c Client) IssueDetail(number int) ([]Comment, []Activity, error, error) {
 	}()
 	wg.Wait()
 	return comments, activities, commentsErr, activitiesErr
+}
+
+// LoadPRDetail loads preview metadata, comments, and activity concurrently.
+func (c Client) LoadPRDetail(number int) PRDetail {
+	var detail PRDetail
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		detail.PR, detail.PreviewErr = c.FindPreview(number)
+	}()
+	go func() {
+		defer wg.Done()
+		detail.Comments, detail.Activities, detail.CommentsErr, detail.ActivitiesErr = c.IssueDetail(number)
+	}()
+	wg.Wait()
+	return detail
 }
 
 // Merge merges a pull request with a merge commit.

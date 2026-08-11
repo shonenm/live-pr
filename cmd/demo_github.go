@@ -143,15 +143,6 @@ pr_data() {
   state=$(tr -d '\n' < "$state_dir/pr-$1")
 }
 
-commit_json() {
-  items=
-  for commit_oid in $(git rev-list --reverse main.."$1"); do
-    [ -z "$items" ] || items="$items,"
-    items="$items{\"oid\":\"$commit_oid\"}"
-  done
-  printf '%%s' "$items"
-}
-
 commit_status_json() {
   commit_oids=$(git rev-list --reverse main.."$1")
   count=$(printf '%%s\n' "$commit_oids" | wc -w | tr -d ' ')
@@ -171,9 +162,8 @@ commit_status_json() {
 
 pr_json() {
   pr_data "$1"
-  commits=$(commit_json "$oid")
   cat <<JSON
-{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","body":"## Demo pull request\n\nAll GitHub data and actions in this screen are local mocks.","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","additions":24,"deletions":6,"changedFiles":3,"updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user"},"assignees":[{"login":"demo-user"}],"labels":[{"name":"demo","color":"1f6feb"}],"reviewRequests":[],"comments":[{"author":{"login":"reviewer"},"body":"This is mock review feedback.","createdAt":"2026-08-10T11:00:00Z","url":"https://example.invalid/pull/$1#comment"}],"commits":[$commits],"statusCheckRollup":[{"name":"demo-check","status":"COMPLETED","conclusion":"SUCCESS"}]}
+{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","body":"## Demo pull request\n\nAll GitHub data and actions in this screen are local mocks.","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","additions":24,"deletions":6,"changedFiles":3,"updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user"},"assignees":[{"login":"demo-user"}],"labels":[{"name":"demo","color":"1f6feb"}],"reviewRequests":[],"comments":[{"author":{"login":"reviewer"},"body":"This is mock review feedback.","createdAt":"2026-08-10T11:00:00Z","url":"https://example.invalid/pull/$1#comment"}],"statusCheckRollup":[{"name":"demo-check","status":"COMPLETED","conclusion":"SUCCESS"}]}
 JSON
 }
 

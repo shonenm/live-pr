@@ -171,6 +171,11 @@ func hasLogin(users []gh.PRUser, login string) bool {
 }
 
 func (m *Model) applyPRFilters(selectedNumber int) {
+	if m.prRowCache == nil {
+		m.prRowCache = map[prRowCacheKey][]string{}
+	} else {
+		clear(m.prRowCache)
+	}
 	if m.collapsedStacks == nil {
 		m.collapsedStacks = map[string]bool{}
 	}
@@ -745,12 +750,12 @@ func previewMarkdown(text string, width, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) buildPRList() string {
+func (m *Model) buildPRList() string {
 	content, _ := m.buildPRListRows()
 	return content
 }
 
-func (m Model) buildPRListRows() (string, int) {
+func (m *Model) buildPRListRows() (string, int) {
 	if len(m.openPRs) == 0 {
 		message := stMuted.Render("(no pull requests in this view)")
 		if m.listRefreshing {
@@ -789,11 +794,34 @@ func (m Model) buildPRListRows() (string, int) {
 			if selected {
 				selectedLine = len(lines)
 			}
-			lines = append(lines, m.renderPRRow(entry.pr, selected, prefix)...)
+			if selected {
+				lines = append(lines, m.renderPRRow(entry.pr, true, prefix)...)
+			} else {
+				lines = append(lines, m.cachedPRRow(entry.pr, prefix)...)
+			}
 			openIndex++
 		}
 	}
 	return strings.Join(lines, "\n"), selectedLine
+}
+
+func (m *Model) cachedPRRow(pr gh.PR, prefix string) []string {
+	if m.prRowCache == nil {
+		m.prRowCache = map[prRowCacheKey][]string{}
+	}
+	health, count := checkHealth(pr.Checks)
+	key := prRowCacheKey{
+		number: pr.Number, width: max(10, m.list.Width), additions: pr.Additions, deletions: pr.Deletions, checkCount: count,
+		prefix: prefix, state: pr.State, title: pr.Title, author: pr.Author.Login, base: pr.BaseRefName, head: pr.HeadRefName,
+		mergeable: pr.Mergeable, mergeState: pr.MergeStateStatus, checkHealth: health, rollup: pr.CheckRollupState,
+		draft: pr.IsDraft, previewLoaded: pr.PreviewLoaded,
+	}
+	if rows, ok := m.prRowCache[key]; ok {
+		return rows
+	}
+	rows := m.renderPRRow(pr, false, prefix)
+	m.prRowCache[key] = rows
+	return rows
 }
 
 func prDiffStat(pr gh.PR) string {

@@ -46,7 +46,10 @@ func (c *NavigatorCache) SetSnapshot(snapshot PRSnapshot) {
 	if c.Snapshots == nil {
 		c.Snapshots = map[string]PRSnapshot{}
 	}
-	c.Snapshots[strconv.Itoa(snapshot.PR.Number)] = snapshot
+	number := snapshot.PR.Number
+	// Detailed PR metadata already lives in PRs; snapshots only add Conversation data.
+	snapshot.PR = PR{Number: number}
+	c.Snapshots[strconv.Itoa(number)] = snapshot
 	c.trimSnapshots()
 }
 
