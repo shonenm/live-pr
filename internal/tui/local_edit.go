@@ -21,6 +21,8 @@ func (m Model) openLocalEditor(mode localEditMode, value, target string) (Model,
 	editor := textarea.New()
 	editor.Prompt = ""
 	editor.ShowLineNumbers = false
+	editor.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	editor.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	editor.CharLimit = 65536
 	editor.SetValue(value)
 	m.localEditor = editor
@@ -221,7 +223,6 @@ func (m Model) renderLocalEditorPopup() string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAccent)).
-		Background(lipgloss.Color(cSelectedBg)).
 		Padding(1, 2).
 		Render(strings.Join(lines, "\n"))
 }
@@ -230,7 +231,6 @@ func (m Model) renderLocalDeletePopup() string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAttention)).
-		Background(lipgloss.Color(cSelectedBg)).
 		Padding(1, 3).
 		Width(max(24, min(60, m.w-14))).
 		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(m.localDeleteTitle) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
