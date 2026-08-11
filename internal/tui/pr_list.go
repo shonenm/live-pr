@@ -472,7 +472,7 @@ func (m Model) renderPRListHeader() string {
 		filter = stAccent.Render(" ") + stFg.Render(m.filterQuery) + stMuted.Render(" · Esc clear")
 	}
 	line2 := filter + stMuted.Render(fmt.Sprintf("   · %d listed · ⎇ %s", len(m.filteredPRs), m.currentBranch))
-	return lipgloss.JoinVertical(lipgloss.Left, ansi.Truncate(line1, max(1, m.w), "…"), ansi.Truncate(line2, max(1, m.w), "…"))
+	return m.withLogo(lipgloss.JoinVertical(lipgloss.Left, line1, line2))
 }
 
 func (m Model) viewCount(view prView) int {
