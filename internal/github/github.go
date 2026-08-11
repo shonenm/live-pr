@@ -27,6 +27,7 @@ type PR struct {
 	Body                  string                  `json:"body"`
 	State                 string                  `json:"state"`
 	BaseRefName           string                  `json:"baseRefName,omitempty"`
+	BaseRefOID            string                  `json:"baseRefOid,omitempty"`
 	HeadRefName           string                  `json:"headRefName,omitempty"`
 	HeadRefOID            string                  `json:"headRefOid,omitempty"`
 	IsDraft               bool                    `json:"isDraft,omitempty"`
@@ -164,6 +165,7 @@ type prListNode struct {
 	Title             string `json:"title"`
 	State             string `json:"state"`
 	BaseRefName       string `json:"baseRefName"`
+	BaseRefOID        string `json:"baseRefOid"`
 	HeadRefName       string `json:"headRefName"`
 	HeadRefOID        string `json:"headRefOid"`
 	IsDraft           bool   `json:"isDraft"`
@@ -211,7 +213,7 @@ type prListPage struct {
 func (node prListNode) pullRequest(viewerReviewRequested bool) PR {
 	pr := PR{
 		Number: node.Number, URL: node.URL, Title: node.Title, State: node.State,
-		BaseRefName: node.BaseRefName, HeadRefName: node.HeadRefName, HeadRefOID: node.HeadRefOID,
+		BaseRefName: node.BaseRefName, BaseRefOID: node.BaseRefOID, HeadRefName: node.HeadRefName, HeadRefOID: node.HeadRefOID,
 		IsDraft: node.IsDraft, IsCrossRepository: node.IsCrossRepository,
 		Mergeable: node.Mergeable, MergeStateStatus: node.MergeStateStatus, ReviewDecision: node.ReviewDecision,
 		UpdatedAt: node.UpdatedAt, CreatedAt: node.CreatedAt, Author: node.Author,
@@ -300,7 +302,7 @@ func (c Client) requestPRListPage(owner, name, state, reviewQuery, after, review
 
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
 // only a successful empty list becomes ErrPRNotFound.
-const prFields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,author,createdAt,assignees,labels"
+const prFields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,author,createdAt,assignees,labels"
 
 func (c Client) Find(number int) (PR, error) {
 	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", prFields)
@@ -364,7 +366,7 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 	// List rows only need metadata. Body, comments, commits, and checks are
 	// fetched lazily for the selected PR; loading them for every PR makes large
 	// repositories spend most of startup time in GitHub's GraphQL resolver.
-	query := `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
+	query := `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName baseRefOid headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
 	if state == "CLOSED" {
 		query = strings.Replace(query, "states:[$state]", "states:[$state,MERGED]", 1)
 		query = strings.Replace(query, "$reviewQuery:String!,", "", 1)
@@ -415,7 +417,7 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 
 // FindPreview loads the expensive preview fields for one PR only.
 func (c Client) FindPreview(number int) (PR, error) {
-	const fields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup"
+	const fields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup"
 	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
 	if err != nil {
 		return PR{}, commandError("gh pr view", out, err)

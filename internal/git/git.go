@@ -76,6 +76,15 @@ func ResolveBase(base string) string {
 	return base
 }
 
+// MergeBase returns the best common ancestor of two revisions.
+func MergeBase(base, head string) (string, error) {
+	out, err := run("merge-base", base, head)
+	if err != nil {
+		return "", fmt.Errorf("git merge-base %s %s: %w", base, head, err)
+	}
+	return out, nil
+}
+
 // Commit is a git commit reduced to what the timeline needs.
 type Commit struct {
 	SHA     string
