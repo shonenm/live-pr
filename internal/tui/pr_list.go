@@ -607,9 +607,13 @@ func (m Model) renderPRListHeader() string {
 	if m.w >= logoWidth+40 {
 		available -= logoWidth
 	}
-	tabRows := []string{stBold.Render("Pull requests")}
+	heading := "Pull requests"
+	if m.repository != "" {
+		heading = m.repository + " · " + heading
+	}
+	tabRows := []string{stBold.Render(heading)}
 	if available > 0 && available < 60 {
-		tabRows[0] = ""
+		tabRows[0] = stBold.Render(m.repository)
 	}
 	for _, tab := range tabs {
 		separator := " "
