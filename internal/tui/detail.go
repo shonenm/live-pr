@@ -252,25 +252,36 @@ func (m Model) buildCommits() (string, int) {
 		return stMuted.Render("(no commits in " + m.base + "..HEAD)"), 0
 	}
 	lines := make([]string, 0, len(m.commits))
+	ciStates := m.commitCIStates()
 	for i, c := range m.commits {
-		icon, style := m.commitCIState(c.SHA)
+		icon, style := "●", stMuted
+		if m.cache.PR != nil {
+			icon, _, style = commitCIStatus(ciStates[c.SHA])
+		}
 		line := selectionBar(i == m.cursors[commitsTab]) + style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+shortTS(c.Date))
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), m.cursors[commitsTab]
 }
 
-func (m Model) commitCIState(sha string) (string, lipgloss.Style) {
+func (m Model) commitCIStates() map[string]string {
+	states := make(map[string]string, len(m.commits))
 	if m.cache.PR == nil {
-		return "●", stMuted
+		return states
+	}
+	lengths := map[int]bool{}
+	for _, commit := range m.commits {
+		lengths[len(commit.SHA)] = true
 	}
 	for _, commit := range m.cache.PR.Commits {
-		if strings.HasPrefix(commit.OID, sha) || strings.HasPrefix(sha, commit.OID) {
-			icon, _, style := commitCIStatus(commit.CheckRollupState)
-			return icon, style
+		for length := range lengths {
+			if len(commit.OID) >= length {
+				prefix := commit.OID[:length]
+				states[prefix] = commit.CheckRollupState
+			}
 		}
 	}
-	return "○", stMuted
+	return states
 }
 
 func commitCIStatus(state string) (string, string, lipgloss.Style) {

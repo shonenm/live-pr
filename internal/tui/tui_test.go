@@ -443,6 +443,30 @@ func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
 	}
 }
 
+func TestPRRowCacheReusesUnselectedRowsAndInvalidatesWithFilters(t *testing.T) {
+	m := testModel()
+	m.list.Width = 120
+	m.openPRs = []gh.PR{{Number: 1, Title: "one"}, {Number: 2, Title: "two"}, {Number: 3, Title: "three"}}
+	m.prStacks = buildPRStacks(m.openPRs)
+	_, _ = m.buildPRListRows()
+	if len(m.prRowCache) != 2 {
+		t.Fatalf("initial cached rows = %d, want 2 unselected rows", len(m.prRowCache))
+	}
+	_, _ = m.buildPRListRows()
+	if len(m.prRowCache) != 2 {
+		t.Fatalf("stable render grew row cache to %d", len(m.prRowCache))
+	}
+	m.prCursor = 1
+	_, _ = m.buildPRListRows()
+	if len(m.prRowCache) != 3 {
+		t.Fatalf("selection change cached rows = %d, want 3", len(m.prRowCache))
+	}
+	m.applyPRFilters(0)
+	if len(m.prRowCache) != 0 {
+		t.Fatalf("filter update retained %d stale rows", len(m.prRowCache))
+	}
+}
+
 func TestMainStartupShowsListWithoutCreatingBranchStore(t *testing.T) {
 	dir := t.TempDir()
 	run := func(args ...string) {
@@ -1325,21 +1349,22 @@ func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
 
 func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
 	m := testModel()
-	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{{OID: "abc1234full", CheckRollupState: "SUCCESS"}}}
+	m.commits = []git.Commit{{SHA: "abc12341", Subject: "first"}, {SHA: "abc12342", Subject: "second"}}
+	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
+		{OID: "abc1234100000000000000000000000000000000", CheckRollupState: "SUCCESS"},
+		{OID: "abc1234200000000000000000000000000000000", CheckRollupState: "FAILURE"},
+	}}
 	out, _ := m.buildCommits()
-	if plain := ansi.Strip(out); !strings.Contains(plain, "✓ abc1234 feat: x") {
-		t.Fatalf("commit CI status missing: %q", plain)
-	}
-	m.cache.PR.Commits[0].CheckRollupState = "FAILURE"
-	if icon, _ := m.commitCIState("abc1234"); icon != "✗" {
-		t.Fatalf("failed commit icon = %q", icon)
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "✓ abc12341 first") || !strings.Contains(plain, "✗ abc12342 second") {
+		t.Fatalf("commit CI statuses missing or collided: %q", plain)
 	}
 	m.remote = true
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
-	if m.active != commitsTab || !strings.Contains(ansi.Strip(m.View()), "Commits · 1") {
+	if m.active != commitsTab || !strings.Contains(ansi.Strip(m.View()), "Commits · 2") {
 		t.Fatalf("remote c did not open commit list: active=%v view=%q", m.active, ansi.Strip(m.View()))
 	}
 }

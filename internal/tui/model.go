@@ -207,6 +207,13 @@ type prStack struct {
 	entries []stackEntry
 }
 
+type prRowCacheKey struct {
+	number, width, additions, deletions, checkCount int
+	prefix, state, title, author, base, head        string
+	mergeable, mergeState, checkHealth, rollup      string
+	draft, previewLoaded                            bool
+}
+
 type conversationItem struct {
 	key      string
 	ts       string
@@ -261,6 +268,7 @@ type Model struct {
 	filterSelectionBeforeEdit int
 	filterEditing             bool
 	prStacks                  []prStack
+	prRowCache                map[prRowCacheKey][]string
 	collapsedStacks           map[string]bool
 	prCursor                  int
 	localAvailable            bool
@@ -394,6 +402,7 @@ func New() (Model, error) {
 		prPreviewLoading:  map[int]bool{},
 		prPreviewLoaded:   map[int]bool{},
 		collapsedStacks:   map[string]bool{},
+		prRowCache:        map[prRowCacheKey][]string{},
 		help:              newHelp(),
 		keys:              keys,
 	}
@@ -600,20 +609,15 @@ func fetchPRPreview(number int, generation uint64) tea.Cmd {
 func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		client := gh.New()
-		var pr gh.PR
-		var err error
 		if number == 0 {
-			pr, err = client.FindForHead(head)
+			pr, err := client.FindForHead(head)
+			if err != nil {
+				return githubRefreshed{generation: generation, err: err}
+			}
 			number = pr.Number
 		}
-		if err == nil {
-			pr, err = client.FindPreview(number)
-		}
-		if err != nil {
-			return githubRefreshed{generation: generation, err: err}
-		}
-		comments, activities, commentsErr, activitiesErr := client.IssueDetail(pr.Number)
-		return githubRefreshed{generation: generation, pr: pr, comments: comments, activities: activities, commentsErr: commentsErr, activitiesErr: activitiesErr}
+		detail := client.LoadPRDetail(number)
+		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr}
 	}
 }
 
@@ -626,22 +630,19 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		var refErr, previewErr, commentsErr, activitiesErr error
 		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
 		var wg sync.WaitGroup
-		wg.Add(3)
+		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			headRef, refErr = git.FetchPull(number, base, headOID)
 		}()
 		go func() {
 			defer wg.Done()
-			if preview, err := client.FindPreview(number); err != nil {
-				previewErr = err
-			} else {
-				pr = preview
+			detail := client.LoadPRDetail(number)
+			comments, activities = detail.Comments, detail.Activities
+			previewErr, commentsErr, activitiesErr = detail.PreviewErr, detail.CommentsErr, detail.ActivitiesErr
+			if previewErr == nil {
+				pr = detail.PR
 			}
-		}()
-		go func() {
-			defer wg.Done()
-			comments, activities, commentsErr, activitiesErr = client.IssueDetail(number)
 		}()
 		wg.Wait()
 		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr}
@@ -702,6 +703,9 @@ func (m *Model) layout() {
 			m.detail = viewport.New(detailW, bodyH)
 			m.ready = true
 		} else {
+			if m.list.Width != listW {
+				clear(m.prRowCache)
+			}
 			m.list.Width, m.list.Height = listW, bodyH
 			m.detail.Width, m.detail.Height = detailW, bodyH
 		}

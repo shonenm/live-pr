@@ -35,7 +35,7 @@ func BenchmarkNavigatorSerialization(b *testing.B) {
 	for _, size := range []int{100 << 10, 1 << 20, 10 << 20} {
 		b.Run(fmt.Sprintf("payload=%d", size), func(b *testing.B) {
 			cache := NewNavigatorCache()
-			cache.SetSnapshot(PRSnapshot{PR: PR{Number: 1, Body: strings.Repeat("x", size)}})
+			cache.SetSnapshot(PRSnapshot{PR: PR{Number: 1}, Comments: []Comment{{Body: strings.Repeat("x", size)}}})
 			encoded, err := json.Marshal(cache)
 			if err != nil {
 				b.Fatal(err)
