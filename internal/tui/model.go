@@ -641,6 +641,7 @@ const (
 	footerLines     = 1
 	paneChromeW     = 4 // border + one space padding per side
 	paneChromeH     = 2 // top and bottom border
+	dividerW        = 3 // padded rule between the file list and the diff
 	listRatio       = 52
 	reviewListRatio = 38
 	prListPaneRatio = 45
@@ -676,18 +677,20 @@ func (m *Model) layout() {
 		leftPaneW = max(8, m.w-14)
 	}
 	listW := max(4, leftPaneW-paneChromeW)
-	explorerW, detailW := 1, max(4, rightPaneW-paneChromeW)
-	if m.fileExplorerMode() {
-		explorerPaneW := max(22, rightPaneW/3)
-		if rightPaneW-explorerPaneW < 24 {
-			explorerPaneW = max(14, rightPaneW-24)
-		}
-		explorerW = max(4, explorerPaneW-paneChromeW)
-		detailW = max(4, rightPaneW-explorerPaneW-paneChromeW)
-	}
+	rightW := max(4, rightPaneW-paneChromeW)
 	bodyH := m.h - m.headerHeight() - footerLines - paneChromeH
 	if bodyH < 3 {
 		bodyH = 3
+	}
+	// The file list and the diff share one frame, split by an inner rule, so
+	// the review side reads as a single region instead of two boxes.
+	explorerW, detailW := 1, rightW
+	if m.fileExplorerMode() {
+		explorerW = max(14, rightW/3)
+		if rightW-explorerW-dividerW < 20 {
+			explorerW = max(8, rightW-dividerW-20)
+		}
+		detailW = max(4, rightW-explorerW-dividerW)
 	}
 	if !m.ready {
 		m.list = viewport.New(listW, bodyH)
@@ -893,25 +896,8 @@ func (m Model) View() string {
 		if m.active == commitsTab {
 			leftTitle = "Commits"
 		}
-		detailTitle, detailContent := "Diff", m.detail.View()
-		if m.reviewSHA != "" {
-			detailTitle = "Commit · " + m.reviewSHA
-		}
-		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			detailTitle = "Review"
-			if m.reviewSHA != "" {
-				detailTitle = "Review · " + m.reviewSHA
-			}
-			detailContent = m.diffTerminal.View(m.detail.Width, m.detail.Height)
-		}
 		left := renderPane(leftTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
-		detail := renderPane(detailTitle, detailContent, m.detail.Width+paneChromeW, m.detail.Height+paneChromeH, m.focusDiff)
-		right := detail
-		if m.fileExplorerMode() {
-			explorer := renderPane("", m.explorer.View(), m.explorer.Width+paneChromeW, m.explorer.Height+paneChromeH, m.focusExplorer)
-			right = lipgloss.JoinHorizontal(lipgloss.Top, explorer, detail)
-		}
-		body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+		body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 	}
 	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
