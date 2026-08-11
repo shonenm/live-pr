@@ -41,6 +41,7 @@ type PR struct {
 	Conversation          []PRConversationComment `json:"comments,omitempty"`
 	CommentCount          int                     `json:"commentCount,omitempty"`
 	CommitCount           int                     `json:"commitCount,omitempty"`
+	Commits               []PRCommit              `json:"commits,omitempty"`
 	Checks                []PRCheck               `json:"statusCheckRollup,omitempty"`
 	CheckRollupState      string                  `json:"checkRollupState,omitempty"`
 	Author                PRUser                  `json:"author,omitempty"`
@@ -64,6 +65,14 @@ type PRConversationComment struct {
 	Body      string `json:"body"`
 	CreatedAt string `json:"createdAt"`
 	URL       string `json:"url,omitempty"`
+}
+
+// PRCommit is one pull-request commit with its commit-specific CI rollup.
+type PRCommit struct {
+	OID              string `json:"oid"`
+	CommittedDate    string `json:"committedDate,omitempty"`
+	MessageHeadline  string `json:"messageHeadline,omitempty"`
+	CheckRollupState string `json:"checkRollupState,omitempty"`
 }
 
 // PRCheck covers both GitHub check runs and legacy status contexts.
@@ -404,7 +413,7 @@ func (c Client) FindPreview(number int) (PR, error) {
 	var preview struct {
 		PR
 		Conversation []PRConversationComment `json:"comments"`
-		Commits      []json.RawMessage       `json:"commits"`
+		Commits      []PRCommit              `json:"commits"`
 		Checks       []PRCheck               `json:"statusCheckRollup"`
 	}
 	if err := json.Unmarshal(out, &preview); err != nil {
@@ -413,9 +422,74 @@ func (c Client) FindPreview(number int) (PR, error) {
 	preview.PR.Conversation = preview.Conversation
 	preview.PR.CommentCount = len(preview.Conversation)
 	preview.PR.CommitCount = len(preview.Commits)
+	preview.PR.Commits = preview.Commits
+	if len(preview.Commits) > 0 {
+		commits, err := c.commitStatusRollups(number)
+		if err != nil {
+			return PR{}, err
+		}
+		preview.PR.Commits = commits
+	}
 	preview.PR.Checks = preview.Checks
 	preview.PR.PreviewLoaded = true
 	return preview.PR, nil
+}
+
+func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
+	repoName, err := c.repositoryName()
+	if err != nil {
+		return nil, err
+	}
+	owner, name, ok := strings.Cut(repoName, "/")
+	if !ok {
+		return nil, fmt.Errorf("invalid repository %q", repoName)
+	}
+	const query = `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){commits(first:100,after:$after){nodes{commit{oid committedDate messageHeadline statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
+	var commits []PRCommit
+	after := ""
+	for {
+		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", fmt.Sprintf("number=%d", number)}
+		if after != "" {
+			args = append(args, "-F", "after="+after)
+		}
+		args = append(args, "-f", "query="+query)
+		out, err := c.run(args...)
+		if err != nil {
+			return nil, commandError("gh api graphql commit statuses", out, err)
+		}
+		var page struct {
+			Data struct {
+				Repository struct {
+					PullRequest struct {
+						Commits struct {
+							Nodes []struct {
+								Commit struct {
+									OID               string `json:"oid"`
+									CommittedDate     string `json:"committedDate"`
+									MessageHeadline   string `json:"messageHeadline"`
+									StatusCheckRollup struct {
+										State string `json:"state"`
+									} `json:"statusCheckRollup"`
+								} `json:"commit"`
+							} `json:"nodes"`
+							PageInfo prListPageInfo `json:"pageInfo"`
+						} `json:"commits"`
+					} `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(out, &page); err != nil {
+			return nil, fmt.Errorf("decode PR commit statuses: %w", err)
+		}
+		connection := page.Data.Repository.PullRequest.Commits
+		for _, node := range connection.Nodes {
+			commits = append(commits, PRCommit{OID: node.Commit.OID, CommittedDate: node.Commit.CommittedDate, MessageHeadline: node.Commit.MessageHeadline, CheckRollupState: node.Commit.StatusCheckRollup.State})
+		}
+		if !connection.PageInfo.HasNextPage {
+			return commits, nil
+		}
+		after = connection.PageInfo.EndCursor
+	}
 }
 
 // IssueComments returns every top-level Conversation comment for a PR.

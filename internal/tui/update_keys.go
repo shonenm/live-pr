@@ -372,13 +372,8 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, func() tea.Msg { return browserDone{err: openURL(url)} }
 	case key.Matches(msg, m.keys.Commits):
-		if m.fileExplorerMode() {
-			if m.focusExplorer {
-				return m, m.toggleFileCheck()
-			}
-			if m.remote {
-				return m, nil
-			}
+		if m.fileExplorerMode() && m.focusExplorer {
+			return m, m.toggleFileCheck()
 		}
 		m.active = commitsTab
 		m.status = "select a commit and press Enter"
