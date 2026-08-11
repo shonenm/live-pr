@@ -47,7 +47,7 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 - Conversation beside an interactive CodeReview pane, with commit-scoped review support.
 - Static `git diff`/`delta` review with a file Explorer, immediate file selection, reviewed checks, and independent Conversation/Diff scrolling.
 - Create or update GitHub PRs from the conclusion and timeline with `live-pr pr`.
-- Explicit checkout, close, and merge actions with confirmation.
+- Explicit checkout, close, and merge actions with centered confirmation popups and loading indicators.
 - Claude Code Stop-hook integration and XDG-compliant runtime state.
 
 See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer configuration and pane controls.

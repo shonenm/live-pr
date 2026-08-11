@@ -774,8 +774,8 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
 	m = u.(Model)
-	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderFooter()), "merge with a merge commit") {
-		t.Fatalf("merge confirmation not shown: pending=%v footer=%q", m.pendingPRAction, ansi.Strip(m.renderFooter()))
+	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "merge commit") || !strings.Contains(ansi.Strip(m.View()), "Merge PR #14") {
+		t.Fatalf("merge confirmation not shown: pending=%v popup=%q", m.pendingPRAction, ansi.Strip(m.renderActionPopup()))
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	m = u.(Model)
@@ -794,8 +794,8 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 	m.prActionRunning = noPRAction
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = u.(Model)
-	if m.pendingPRAction != closePR || !strings.Contains(ansi.Strip(m.renderFooter()), "close without merging") {
-		t.Fatalf("close confirmation not shown: pending=%v footer=%q", m.pendingPRAction, ansi.Strip(m.renderFooter()))
+	if m.pendingPRAction != closePR || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Close PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Close without merging") {
+		t.Fatalf("close confirmation not shown: pending=%v popup=%q", m.pendingPRAction, ansi.Strip(m.renderActionPopup()))
 	}
 }
 
