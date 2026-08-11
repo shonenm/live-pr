@@ -1,9 +1,3 @@
-```
-╻  ╻╻ ╻┏━╸   ┏━┓┏━┓
-┃  ┃┃┏┛┣╸ ╺━╸┣━┛┣┳┛
-┗━╸╹┗┛ ┗━╸   ╹  ╹┗╸
-```
-
 # live-pr
 
 Living pull request for LLM-assisted development.

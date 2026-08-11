@@ -41,19 +41,6 @@ var (
 	stAccent    = lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent))
 )
 
-const (
-	logo = "╻  ╻╻ ╻┏━╸   ┏━┓┏━┓\n" +
-		"┃  ┃┃┏┛┣╸ ╺━╸┣━┛┣┳┛\n" +
-		"┗━╸╹┗┛ ┗━╸   ╹  ╹┗╸"
-	logoHeight = 3
-	logoWidth  = 21 // wordmark plus its right margin
-)
-
-// renderLogo draws the wordmark anchoring the left edge of the header.
-func renderLogo() string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent)).MarginRight(2).Render(logo)
-}
-
 // renderPane draws a rounded box with the title embedded in the top border,
 // lazygit-style: focused panes get the accent border, others stay dim.
 func renderPane(title, content string, width, height int, focused bool) string {

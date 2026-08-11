@@ -16,7 +16,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/debugtime"
@@ -638,6 +637,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 }
 
 const (
+	headerBaseLines = 2
 	footerLines     = 1
 	paneChromeW     = 4 // border + one space padding per side
 	paneChromeH     = 2 // top and bottom border
@@ -649,7 +649,7 @@ const (
 
 func (m *Model) layout() {
 	if m.screen == prListScreen {
-		bodyH := max(3, m.h-m.headerHeight()-footerLines-paneChromeH)
+		bodyH := max(3, m.h-2-footerLines-paneChromeH)
 		listPaneW := max(24, m.w*prListPaneRatio/100)
 		if m.w-listPaneW < 20 {
 			listPaneW = max(12, m.w-20)
@@ -906,30 +906,14 @@ func (m Model) View() string {
 	return view
 }
 
-// headerHeight is the wordmark's height on both screens: the header text is
-// never taller, so the metadata row costs no extra space.
-func (m Model) headerHeight() int { return logoHeight }
-
-// withLogo anchors the wordmark at the far left of a header block and pads the
-// text to the wordmark's height. Narrow terminals drop the wordmark but keep
-// the height, so the layout never jumps.
-func (m Model) withLogo(text string) string {
-	width := m.w
-	if m.w >= logoWidth+40 {
-		width = m.w - logoWidth
+func (m Model) headerHeight() int {
+	if m.screen == prListScreen {
+		return 2
 	}
-	lines := strings.Split(text, "\n")
-	for i := range lines {
-		lines[i] = ansi.Truncate(lines[i], max(1, width), "…")
+	if m.cache.PR != nil {
+		return headerBaseLines + 1
 	}
-	for len(lines) < logoHeight {
-		lines = append(lines, "")
-	}
-	block := strings.Join(lines, "\n")
-	if width == m.w {
-		return block
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, renderLogo(), block)
+	return headerBaseLines
 }
 
 func (m Model) renderHeader() string {
@@ -951,7 +935,7 @@ func (m Model) renderHeader() string {
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
 	}
-	return m.withLogo(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func (m Model) footerMode() string {
