@@ -6,10 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/shonenm/live-pr/internal/debugtime"
 )
 
 // ErrPRNotFound means no open pull request exists for the requested head.
@@ -123,16 +127,58 @@ type Activity struct {
 
 type runner func(args ...string) ([]byte, error)
 
+type repositoryIdentity struct {
+	sync.Mutex
+	nameWithOwner string
+}
+
+var repositoryIdentities sync.Map
+
 // Client runs GitHub operations through gh.
-type Client struct{ run runner }
+type Client struct {
+	run  runner
+	repo *repositoryIdentity
+}
 
 // New returns a GitHub CLI client.
 func New() Client {
+	var repo *repositoryIdentity
+	if cwd, err := os.Getwd(); err == nil {
+		value, _ := repositoryIdentities.LoadOrStore(cwd, &repositoryIdentity{})
+		repo = value.(*repositoryIdentity)
+	}
 	return Client{run: func(args ...string) ([]byte, error) {
+		if done := debugtime.Start("github gh " + args[0]); done != nil {
+			defer done()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return exec.CommandContext(ctx, "gh", args...).CombinedOutput()
-	}}
+	}, repo: repo}
+}
+
+func (c Client) repositoryName() (string, error) {
+	if c.repo != nil {
+		c.repo.Lock()
+		defer c.repo.Unlock()
+		if c.repo.nameWithOwner != "" {
+			return c.repo.nameWithOwner, nil
+		}
+	}
+	out, err := c.run("repo", "view", "--json", "nameWithOwner")
+	if err != nil {
+		return "", commandError("gh repo view", out, err)
+	}
+	var repo struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	}
+	if err := json.Unmarshal(out, &repo); err != nil {
+		return "", fmt.Errorf("decode gh repo view: %w", err)
+	}
+	if c.repo != nil {
+		c.repo.nameWithOwner = repo.NameWithOwner
+	}
+	return repo.NameWithOwner, nil
 }
 
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
@@ -191,19 +237,13 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 	if state != "OPEN" && state != "CLOSED" {
 		return OpenPRs{}, fmt.Errorf("unsupported pull request state %q", state)
 	}
-	out, err := c.run("repo", "view", "--json", "nameWithOwner")
+	repoName, err := c.repositoryName()
 	if err != nil {
-		return OpenPRs{}, commandError("gh repo view", out, err)
+		return OpenPRs{}, err
 	}
-	var repo struct {
-		NameWithOwner string `json:"nameWithOwner"`
-	}
-	if err := json.Unmarshal(out, &repo); err != nil {
-		return OpenPRs{}, fmt.Errorf("decode gh repo view: %w", err)
-	}
-	owner, name, ok := strings.Cut(repo.NameWithOwner, "/")
+	owner, name, ok := strings.Cut(repoName, "/")
 	if !ok {
-		return OpenPRs{}, fmt.Errorf("invalid repository %q", repo.NameWithOwner)
+		return OpenPRs{}, fmt.Errorf("invalid repository %q", repoName)
 	}
 	// List rows only need metadata. Body, comments, commits, and checks are
 	// fetched lazily for the selected PR; loading them for every PR makes large
@@ -212,6 +252,9 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 	query := `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
 	if state == "CLOSED" {
 		query = strings.Replace(query, "states:[$state]", "states:[$state,MERGED]", 1)
+		query = strings.Replace(query, "$reviewQuery:String!,", "", 1)
+		query = strings.Replace(query, ",$reviewAfter:String", "", 1)
+		query = strings.Replace(query, `reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} `, "", 1)
 	}
 	type pageInfo struct {
 		HasNextPage bool   `json:"hasNextPage"`
@@ -241,14 +284,17 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 			State string `json:"state"`
 		} `json:"statusCheckRollup"`
 	}
-	reviewQuery := "repo:" + repo.NameWithOwner + " is:pr is:open review-requested:@me"
+	reviewQuery := "repo:" + repoName + " is:pr is:open review-requested:@me"
 	after, reviewAfter := "", ""
 	var allNodes []listNode
 	seenPRs := map[int]bool{}
 	requested := map[int]bool{}
 	viewerLogin := ""
 	for {
-		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "reviewQuery=" + reviewQuery, "-F", "state=" + state, "-F", fmt.Sprintf("pageSize=%d", listPageSize)}
+		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "state=" + state, "-F", fmt.Sprintf("pageSize=%d", listPageSize)}
+		if state == "OPEN" {
+			args = append(args, "-F", "reviewQuery="+reviewQuery)
+		}
 		if after != "" {
 			args = append(args, "-F", "after="+after)
 		}
@@ -256,7 +302,7 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 			args = append(args, "-F", "reviewAfter="+reviewAfter)
 		}
 		args = append(args, "-f", "query="+query)
-		out, err = c.run(args...)
+		out, err := c.run(args...)
 		if err != nil {
 			return OpenPRs{}, commandError("gh api graphql", out, err)
 		}
@@ -379,6 +425,25 @@ func (c Client) IssueActivities(number int) ([]Activity, error) {
 		activities = append(activities, page...)
 	}
 	return activities, nil
+}
+
+// IssueDetail loads independent comment and activity collections concurrently.
+func (c Client) IssueDetail(number int) ([]Comment, []Activity, error, error) {
+	var comments []Comment
+	var activities []Activity
+	var commentsErr, activitiesErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		comments, commentsErr = c.IssueComments(number)
+	}()
+	go func() {
+		defer wg.Done()
+		activities, activitiesErr = c.IssueActivities(number)
+	}()
+	wg.Wait()
+	return comments, activities, commentsErr, activitiesErr
 }
 
 // Merge merges a pull request with a merge commit.

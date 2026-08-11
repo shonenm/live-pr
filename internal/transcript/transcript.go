@@ -33,7 +33,8 @@ func Text(path string, maxBytes int) (string, error) {
 	}
 	defer f.Close()
 
-	var b strings.Builder
+	chunks := make([]string, 0, 128)
+	start, retained := 0, 0
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {
@@ -56,16 +57,26 @@ func Text(path string, maxBytes int) (string, error) {
 		if role == "" {
 			role = e.Type
 		}
-		b.WriteString(role)
-		b.WriteString(": ")
-		b.WriteString(strings.TrimSpace(text))
-		b.WriteString("\n\n")
+		chunk := role + ": " + strings.TrimSpace(text) + "\n\n"
+		chunks = append(chunks, chunk)
+		retained += len(chunk)
+		if maxBytes > 0 {
+			for start < len(chunks) && retained-len(chunks[start]) >= maxBytes {
+				retained -= len(chunks[start])
+				chunks[start] = ""
+				start++
+			}
+			if start >= 1024 && start*2 >= len(chunks) {
+				chunks = append([]string(nil), chunks[start:]...)
+				start = 0
+			}
+		}
 	}
 	if err := sc.Err(); err != nil {
 		return "", err
 	}
 
-	out := b.String()
+	out := strings.Join(chunks[start:], "")
 	if maxBytes > 0 && len(out) > maxBytes {
 		start := len(out) - maxBytes
 		for start < len(out) && !utf8.RuneStart(out[start]) {
