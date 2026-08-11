@@ -14,60 +14,90 @@ import (
 	"github.com/shonenm/live-pr/internal/store"
 )
 
+func appendUniquePRs(existing, added []gh.PR) []gh.PR {
+	result := append([]gh.PR(nil), existing...)
+	index := make(map[int]int, len(existing)+len(added))
+	for i, pr := range result {
+		index[pr.Number] = i
+	}
+	for _, pr := range added {
+		if i, ok := index[pr.Number]; ok {
+			if !result[i].PreviewLoaded || pr.PreviewLoaded {
+				result[i] = pr
+			}
+		} else {
+			index[pr.Number] = len(result)
+			result = append(result, pr)
+		}
+	}
+	return result
+}
+
 func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
-	if msg.generation != m.prListGeneration || msg.state != m.prListState {
+	if msg.generation != m.prListGeneration || msg.key != m.activePRPage {
+		if page, ok := m.prPages[msg.key]; ok {
+			page.loading = false
+			m.prPages[msg.key] = page
+		}
 		return m, nil
 	}
+	if m.prPages == nil {
+		m.prPages = map[string]prPageState{}
+	}
+	page := m.prPages[msg.key]
+	page.loading = false
 	m.listRefreshing = false
 	if msg.err != nil {
+		m.prPages[msg.key] = page
 		m.githubStatus = "Offline · showing cached PR list"
 		return m, m.sync()
 	}
 	selectedNumber := m.selectedPRNumber()
-	m.prPreviewLoading = map[int]bool{}
-	m.prPreviewLoaded = map[int]bool{}
-	m.viewerLogin = msg.viewer
-	m.navigator.ViewerLogin = msg.viewer
-	m.navigator.PRs = replacePRsForState(m.navigator.PRs, msg.prs, msg.state)
-	m.navigator.PRsState = msg.state.String()
-	if m.navigator.FetchedStates == nil {
-		m.navigator.FetchedStates = map[string]bool{}
+	if msg.appendPage {
+		page.prs = appendUniquePRs(page.prs, msg.page.PRs)
+	} else {
+		page.prs = append([]gh.PR(nil), msg.page.PRs...)
 	}
-	m.navigator.FetchedStates[msg.state.String()] = true
+	page.total = msg.page.TotalCount
+	page.endCursor = msg.page.PageInfo.EndCursor
+	page.hasNext = msg.page.PageInfo.HasNextPage
+	page.loaded, page.fresh = true, true
+	m.prPages[msg.key] = page
+	if !msg.appendPage {
+		m.prPreviewLoading = map[int]bool{}
+		m.prPreviewLoaded = map[int]bool{}
+	}
+	if msg.page.ViewerLogin != "" {
+		m.viewerLogin = msg.page.ViewerLogin
+		m.navigator.ViewerLogin = msg.page.ViewerLogin
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	cacheUpdated := strings.TrimSpace(m.filterQuery) == "" && m.prListState == standardPRListState(m.prView)
+	if cacheUpdated {
+		m.navigator.PRs = appendUniquePRs(m.navigator.PRs, msg.page.PRs)
+		m.navigator.SetView(m.prView.String(), page.prs, page.total, now)
+		m.navigator.PrunePRs()
+		m.navigator.FetchedAt = now
+	}
 	if m.screen == detailScreen && !m.remote && m.cache.PR == nil {
-		for i := range msg.prs {
-			if isCurrentPR(msg.prs[i], m.currentBranch) {
-				m.cache.PR = &msg.prs[i]
+		for i := range msg.page.PRs {
+			if isCurrentPR(msg.page.PRs[i], m.currentBranch) {
+				m.cache.PR = &msg.page.PRs[i]
 				m.localAvailable = false
 				break
 			}
 		}
 	}
 	m.applyPRFilters(selectedNumber)
-	m.navigator.FetchedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
-		m.status = "PR list cache: " + err.Error()
-	}
-	m.restorePRSelection(selectedNumber)
-	m.githubStatus = "GitHub: PR list updated"
-	if m.screen == prListScreen && m.autoOpenCurrent {
-		for i := range m.openPRs {
-			if m.openPRs[i].Number > 0 && m.isCurrentTargetPR(m.openPRs[i]) {
-				m.autoOpenCurrent = false
-				st := store.ForBranch(m.root, m.currentBranch)
-				cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
-				if err := m.loadLocal(st, cache, &m.openPRs[i]); err != nil {
-					m.status = err.Error()
-					break
-				}
-				var cmds []tea.Cmd
-				cmds = append(cmds, fetchGitHub(m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync())
-				if m.diffTerminal != nil {
-					cmds = append(cmds, m.diffTerminal.Init())
-				}
-				return m, tea.Batch(cmds...)
-			}
+	if cacheUpdated {
+		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
+			m.status = "PR list cache: " + err.Error()
 		}
+	}
+	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.prView.String())
+	_, localFilter := splitPRFilter(m.filterQuery)
+	if page.hasNext && (len(msg.page.PRs) == 0 || localFilter != "" && len(m.openPRs) == 0) {
+		return m, tea.Batch(m.sync(), m.requestPRPage(false))
 	}
 	return m, m.sync()
 
@@ -91,6 +121,8 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
 	if matchesListState(msg.pr, closedPRListState) {
 		m.prView, m.prListState, m.listRefreshing = closedPRsView, closedPRListState, false
+		m.prListGeneration++
+		m.activePRPage = prPageKey(m.prView, m.prListState, "")
 	}
 	m.applyPRFilters(msg.pr.Number)
 	if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
@@ -139,6 +171,16 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 			break
 		}
 	}
+	for key, page := range m.prPages {
+		for i := range page.prs {
+			if page.prs[i].Number == msg.number {
+				copy := msg.pr
+				copy.ViewerReviewRequested = page.prs[i].ViewerReviewRequested
+				page.prs[i] = copy
+			}
+		}
+		m.prPages[key] = page
+	}
 	m.applyPRFilters(selectedNumber)
 	if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
 		m.status = "PR list cache: " + err.Error()
@@ -185,10 +227,14 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 		} else {
 			m.notice = fmt.Sprintf("Closed PR #%d", msg.number)
 		}
-		m.listRefreshing = true
 		m.prListGeneration++
-		m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
-		return m, tea.Batch(fetchPRList(m.prListGeneration, m.prListState), m.startSpinner())
+		if m.prPages == nil {
+			m.prPages = map[string]prPageState{}
+		}
+		page := m.prPages[m.activePRPage]
+		page.fresh, page.loading = false, false
+		m.prPages[m.activePRPage] = page
+		return m, m.requestPRPage(true)
 	}
 	m.close()
 	next, err := New()
@@ -332,6 +378,8 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
 		if matchesListState(msg.pr, closedPRListState) {
 			m.prView, m.prListState, m.listRefreshing = closedPRsView, closedPRListState, false
+			m.prListGeneration++
+			m.activePRPage = prPageKey(m.prView, m.prListState, "")
 		}
 		m.applyPRFilters(msg.pr.Number)
 		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {

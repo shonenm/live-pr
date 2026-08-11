@@ -89,6 +89,22 @@ func BenchmarkCommitRows(b *testing.B) {
 	}
 }
 
+func BenchmarkApplyPRPage(b *testing.B) {
+	for _, size := range []int{25, 250, 2500} {
+		b.Run(fmt.Sprintf("rows=%d", size), func(b *testing.B) {
+			m := benchmarkPRModel(size)
+			m.prView, m.prListState = allPRsView, openPRListState
+			m.activePRPage = prPageKey(m.prView, m.prListState, "")
+			m.prPages = map[string]prPageState{m.activePRPage: {prs: m.navigator.PRs, total: size, loaded: true, fresh: true}}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				m.applyPRFilters(0)
+			}
+		})
+	}
+}
+
 func BenchmarkPRListRows(b *testing.B) {
 	for _, size := range []int{25, 250, 2500} {
 		b.Run(fmt.Sprintf("rows=%d/cached", size), func(b *testing.B) {
