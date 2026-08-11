@@ -59,6 +59,13 @@ func BenchmarkChangeDetection(b *testing.B) {
 					}
 				}
 			})
+			b.Run("worktree", func(b *testing.B) {
+				for range b.N {
+					if _, err := HasUncommittedChanges(); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
 		})
 	}
 }

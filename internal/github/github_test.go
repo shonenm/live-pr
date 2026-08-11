@@ -167,11 +167,49 @@ func TestIssueDetailStartsIndependentRequestsConcurrently(t *testing.T) {
 	<-done
 }
 
+func TestPRDetailStartsPreviewCommentsAndActivityConcurrently(t *testing.T) {
+	started := make(chan string, 4)
+	release := make(chan struct{})
+	client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
+		started <- strings.Join(args, " ")
+		<-release
+		switch {
+		case args[0] == "pr":
+			return []byte(`{"number":12,"comments":[],"statusCheckRollup":[]}`), nil
+		case len(args) > 1 && args[1] == "graphql":
+			return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`), nil
+		default:
+			return []byte(`[[]]`), nil
+		}
+	}}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = client.LoadPRDetail(12)
+	}()
+	for range 3 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatal("preview/comments/activity did not start concurrently")
+		}
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("PR detail did not finish")
+	}
+}
+
 func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
+	var previewFields string
 	client := Client{run: func(args ...string) ([]byte, error) {
 		switch args[0] {
 		case "pr":
-			return []byte(`{"number":12,"body":"body","comments":[{"author":{"login":"alice"},"body":"review","createdAt":"2026-08-10T00:00:00Z"}],"commits":[{"oid":"aaaa"},{"oid":"bbbb"}],"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`), nil
+			previewFields = args[len(args)-1]
+			return []byte(`{"number":12,"body":"body","comments":[{"author":{"login":"alice"},"body":"review","createdAt":"2026-08-10T00:00:00Z"}],"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`), nil
 		case "repo":
 			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
 		default:
@@ -184,6 +222,9 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	}
 	if pr.Number != 12 || pr.Body != "body" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || len(pr.Commits) != 2 || pr.Commits[0].CheckRollupState != "SUCCESS" || pr.Commits[1].CheckRollupState != "FAILURE" || !pr.PreviewLoaded {
 		t.Fatalf("preview = %#v", pr)
+	}
+	if strings.Contains(previewFields, "commits") {
+		t.Fatalf("gh pr preview still duplicates GraphQL commits: %q", previewFields)
 	}
 }
 
@@ -202,6 +243,22 @@ func TestCommitStatusRollupsPaginates(t *testing.T) {
 	commits, err := client.commitStatusRollups(12)
 	if err != nil || calls != 2 || len(commits) != 2 || commits[1].CheckRollupState != "FAILURE" {
 		t.Fatalf("commit statuses = %#v calls=%d err=%v", commits, calls, err)
+	}
+}
+
+func TestCommitStatusRollupsRejectsIncompleteGraphQLResponses(t *testing.T) {
+	for name, response := range map[string]string{
+		"graphql error":  `{"errors":[{"message":"forbidden"}]}`,
+		"missing cursor": `{"data":{"repository":{"pullRequest":{"commits":{"pageInfo":{"hasNextPage":true,"endCursor":""}}}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
+				return []byte(response), nil
+			}}
+			if _, err := client.commitStatusRollups(12); err == nil {
+				t.Fatalf("commit status response %s was accepted", response)
+			}
+		})
 	}
 }
 
