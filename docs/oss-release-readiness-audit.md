@@ -16,7 +16,7 @@ It covers:
 
 This is not a competitor analysis, a request to finish the full roadmap, or a requirement to reach stable `v1.0` quality.
 
-The audit checked the repository contents, GitHub repository metadata, release assets, GitHub Actions history, and the latest `v0.1.0-alpha.6` archive. It also incorporates relevant findings from [code-quality-audit.md](code-quality-audit.md) and [performance-audit.md](performance-audit.md).
+The audit checked the repository contents, GitHub repository metadata, release assets, GitHub Actions history, and the latest `v0.1.0-alpha.6` archive. It also incorporates relevant findings from [code-quality-audit.md](code-quality-audit.md).
 
 Local verification passed:
 
