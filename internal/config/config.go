@@ -3,6 +3,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +75,7 @@ func (c Config) SummaryInterval() time.Duration {
 
 // Load returns Default overlaid with the global config, then the per-repo
 // config — later files override fields they set. Missing files are ignored.
-func Load(repoRoot string) Config {
+func Load(repoRoot string) (Config, error) {
 	cfg := Default()
 	paths := []string{filepath.Join(globalConfigDir(), "live-pr", "config.toml")}
 	repoConfig := filepath.Join(repoRoot, ".live-pr.toml")
@@ -85,11 +86,18 @@ func Load(repoRoot string) Config {
 	}
 	paths = append(paths, repoConfig)
 	for _, p := range paths {
-		if data, err := os.ReadFile(p); err == nil {
-			_ = toml.Unmarshal(data, &cfg) // only present keys override
+		data, err := os.ReadFile(p)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return Config{}, fmt.Errorf("read config %s: %w", p, err)
+		}
+		if err := toml.Unmarshal(data, &cfg); err != nil {
+			return Config{}, fmt.Errorf("parse config %s: %w", p, err)
 		}
 	}
-	return cfg
+	return cfg, nil
 }
 
 // globalConfigDir honors XDG_CONFIG_HOME, falling back to ~/.config.

@@ -58,7 +58,7 @@ func setupRepo(t *testing.T) *store.Store {
 }
 
 func TestBuildPreview(t *testing.T) {
-	setupRepo(t)
+	st := setupRepo(t)
 	preview, err := BuildPreview("main")
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +70,9 @@ func TestBuildPreview(t *testing.T) {
 		if !strings.Contains(preview.Body, want) {
 			t.Fatalf("preview body missing %q:\n%s", want, preview.Body)
 		}
+	}
+	if _, err := os.Stat(st.Timeline()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("preview mutated timeline: %v", err)
 	}
 }
 
@@ -158,6 +161,9 @@ func TestRunUpdatesExistingPRAndCache(t *testing.T) {
 
 func TestRunUsesAndProtectsExistingPRBase(t *testing.T) {
 	st := setupRepo(t)
+	if out, err := exec.Command("git", "branch", "release", "main").CombinedOutput(); err != nil {
+		t.Fatalf("create release branch: %v: %s", err, out)
+	}
 	old := prbody.Render("# Old", nil)
 	cache := gh.NewCache("feature")
 	cache.LastPublishedManagedBodyHash = prbody.ManagedHash(old)

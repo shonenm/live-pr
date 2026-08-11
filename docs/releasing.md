@@ -5,7 +5,7 @@ Releases are built by GoReleaser from version tags.
 ## Prerequisites
 
 - The project is released under the MIT License.
-- Homebrew distribution is a follow-up; the first alpha publishes GitHub Release archives only.
+- Homebrew distribution is a follow-up; releases currently publish GitHub archives only.
 - Ensure the GitHub Actions `GITHUB_TOKEN` can create releases.
 
 ## Release
@@ -13,7 +13,7 @@ Releases are built by GoReleaser from version tags.
 From a clean, up-to-date `main` checkout:
 
 ```sh
-./scripts/release v0.1.0-alpha.5
+./scripts/release v0.1.0
 ```
 
 The maintainer-only script verifies the version, branch, clean worktree,

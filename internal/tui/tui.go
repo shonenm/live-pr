@@ -291,7 +291,10 @@ func New() (Model, error) {
 	if err := store.MigrateLegacy(root); err != nil {
 		return Model{}, fmt.Errorf("migrate live-pr state: %w", err)
 	}
-	cfg := config.Load(root)
+	cfg, err := config.Load(root)
+	if err != nil {
+		return Model{}, err
+	}
 	navigatorPath := store.NavigatorCache(root)
 	navigator, navErr := gh.LoadNavigatorCache(navigatorPath)
 	status := ""

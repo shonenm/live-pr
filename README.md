@@ -54,17 +54,18 @@ See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer 
 
 ## Install
 
-Download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases). The current Linux amd64 alpha can be installed with:
+Download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases). For example, Linux amd64:
 
 ```sh
-version=v0.1.0-alpha.4
-asset=live-pr_0.1.0-alpha.4_Linux_amd64.tar.gz
+version=v0.1.0
+asset=live-pr_0.1.0_Linux_amd64.tar.gz
 tmp=$(mktemp -d)
 curl -fL "https://github.com/shonenm/live-pr/releases/download/$version/$asset" -o "$tmp/$asset"
 tar -xzf "$tmp/$asset" -C "$tmp"
 install -Dm755 "$tmp/live-pr" "$HOME/.local/bin/live-pr"
 export PATH="$HOME/.local/bin:$PATH"
 live-pr --version
+live-pr demo
 ```
 
 Homebrew packages are not currently provided. Go users can install the latest source version with:
@@ -73,7 +74,15 @@ Homebrew packages are not currently provided. Go users can install the latest so
 go install github.com/shonenm/live-pr@latest
 ```
 
-Check the installed version with `live-pr --version`.
+### Requirements and current scope
+
+- Git is required for local use.
+- An authenticated GitHub CLI (`gh`) is required only for GitHub browsing and publishing.
+- Claude Code is required only for automatic Stop-hook summaries.
+- Neovim CodeReview and external diff formatters are optional; raw Git diff is built in.
+- macOS and Linux support the embedded reviewer. Windows falls back to static diff.
+- GitHub review comments and inline comments are not synchronized yet.
+- Local state remains outside the repository until an explicit `live-pr pr` publish.
 
 Runtime state is stored outside the repository under the XDG state directory (`~/.local/state/live-pr` on Linux). Existing `.live-pr/` data is migrated automatically; repo-specific configuration uses `.live-pr.toml`.
 
