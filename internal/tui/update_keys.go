@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"fmt"
-
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -24,9 +22,12 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		switch msg.String() {
 		case "enter":
 			m.filterEditing, m.filterBeforeEdit, m.filterSelectionBeforeEdit = false, "", 0
+			return m, m.applyPRViewState(selected)
 		case "esc":
 			selected = m.filterSelectionBeforeEdit
 			m.filterQuery, m.filterEditing, m.filterBeforeEdit, m.filterSelectionBeforeEdit = m.filterBeforeEdit, false, "", 0
+			m.restorePRSelection(selected)
+			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
 		case "backspace":
@@ -39,11 +40,9 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.filterQuery += string(msg.Runes)
 			} else if msg.String() == " " {
 				m.filterQuery += " "
-			} else {
-				return m, nil
 			}
 		}
-		return m, m.applyPRViewState(selected)
+		return m, nil
 	}
 	if m.pendingPRAction != noPRAction {
 		switch msg.String() {
@@ -135,10 +134,14 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.listRefreshing {
 			return m, nil
 		}
-		m.listRefreshing = true
 		m.prListGeneration++
-		m.githubStatus = fmt.Sprintf("GitHub: refreshing %s pull requests…", m.prListState.Label())
-		return m, tea.Batch(fetchPRList(m.prListGeneration, m.prListState), m.startSpinner())
+		if m.prPages == nil {
+			m.prPages = map[string]prPageState{}
+		}
+		page := m.prPages[m.activePRPage]
+		page.fresh, page.loading = false, false
+		m.prPages[m.activePRPage] = page
+		return m, m.requestPRPage(true)
 	case key.Matches(msg, m.keys.PreviewDown):
 		m.detail.HalfPageDown()
 		return m, nil
@@ -215,9 +218,9 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.refreshing, m.publishing = false, false
 		m.active = conversationTab
 		m.status = ""
-		m.applyPRFilters(m.selectedPRNumber())
+		selected := m.selectedPRNumber()
 		m.layout()
-		return m, m.sync()
+		return m, m.applyPRViewState(selected)
 	}
 	if key.Matches(msg, m.keys.Focus) {
 		if m.fileExplorerMode() {
