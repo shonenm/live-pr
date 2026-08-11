@@ -84,7 +84,7 @@ func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if apiCalls != 1 || first.TotalCount != 30 || len(first.PRs) != 1 || first.PRs[0].BaseRefOID != "base1" || !first.PageInfo.HasNextPage || first.PageInfo.EndCursor != "C1" {
+	if apiCalls != 1 || first.Repository != "acme/repo" || first.TotalCount != 30 || len(first.PRs) != 1 || first.PRs[0].BaseRefOID != "base1" || !first.PageInfo.HasNextPage || first.PageInfo.EndCursor != "C1" {
 		t.Fatalf("first page = %#v calls=%d", first, apiCalls)
 	}
 	second, err := client.SearchPRs("is:open assignee:@me", first.PageInfo.EndCursor)
