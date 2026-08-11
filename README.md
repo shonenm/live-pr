@@ -89,6 +89,7 @@ Runtime state is stored outside the repository under the XDG state directory (`~
 ## Development
 
 ```sh
+just check              # tests, targeted race checks, vet, module verification, and working-tree diff check
 go build -o live-pr .
 
 live-pr                 # auto-detect the repository and current branch
