@@ -132,6 +132,81 @@ type repositoryIdentity struct {
 	nameWithOwner string
 }
 
+const prListPageSize = 25
+
+type prListPageInfo struct {
+	HasNextPage bool   `json:"hasNextPage"`
+	EndCursor   string `json:"endCursor"`
+}
+
+type prListNode struct {
+	Number            int    `json:"number"`
+	URL               string `json:"url"`
+	Title             string `json:"title"`
+	State             string `json:"state"`
+	BaseRefName       string `json:"baseRefName"`
+	HeadRefName       string `json:"headRefName"`
+	HeadRefOID        string `json:"headRefOid"`
+	IsDraft           bool   `json:"isDraft"`
+	IsCrossRepository bool   `json:"isCrossRepository"`
+	Mergeable         string `json:"mergeable"`
+	MergeStateStatus  string `json:"mergeStateStatus"`
+	ReviewDecision    string `json:"reviewDecision"`
+	UpdatedAt         string `json:"updatedAt"`
+	CreatedAt         string `json:"createdAt"`
+	Author            PRUser `json:"author"`
+	Assignees         struct {
+		Nodes []PRUser `json:"nodes"`
+	} `json:"assignees"`
+	Labels struct {
+		Nodes []PRLabel `json:"nodes"`
+	} `json:"labels"`
+	ReviewRequests struct {
+		Nodes []struct {
+			RequestedReviewer PRUser `json:"requestedReviewer"`
+		} `json:"nodes"`
+	} `json:"reviewRequests"`
+	StatusCheckRollup struct {
+		State string `json:"state"`
+	} `json:"statusCheckRollup"`
+}
+
+type prListPage struct {
+	Data struct {
+		Viewer          PRUser `json:"viewer"`
+		ReviewRequested struct {
+			Nodes []struct {
+				Number int `json:"number"`
+			} `json:"nodes"`
+			PageInfo prListPageInfo `json:"pageInfo"`
+		} `json:"reviewRequested"`
+		Repository struct {
+			PullRequests struct {
+				Nodes    []prListNode   `json:"nodes"`
+				PageInfo prListPageInfo `json:"pageInfo"`
+			} `json:"pullRequests"`
+		} `json:"repository"`
+	} `json:"data"`
+}
+
+func (node prListNode) pullRequest(viewerReviewRequested bool) PR {
+	pr := PR{
+		Number: node.Number, URL: node.URL, Title: node.Title, State: node.State,
+		BaseRefName: node.BaseRefName, HeadRefName: node.HeadRefName, HeadRefOID: node.HeadRefOID,
+		IsDraft: node.IsDraft, IsCrossRepository: node.IsCrossRepository,
+		Mergeable: node.Mergeable, MergeStateStatus: node.MergeStateStatus, ReviewDecision: node.ReviewDecision,
+		UpdatedAt: node.UpdatedAt, CreatedAt: node.CreatedAt, Author: node.Author,
+		Assignees: node.Assignees.Nodes, Labels: node.Labels.Nodes,
+		ViewerReviewRequested: viewerReviewRequested, CheckRollupState: node.StatusCheckRollup.State,
+	}
+	for _, request := range node.ReviewRequests.Nodes {
+		if request.RequestedReviewer.Login != "" {
+			pr.ReviewRequests = append(pr.ReviewRequests, request.RequestedReviewer)
+		}
+	}
+	return pr
+}
+
 var repositoryIdentities sync.Map
 
 // Client runs GitHub operations through gh.
@@ -181,6 +256,29 @@ func (c Client) repositoryName() (string, error) {
 	return repo.NameWithOwner, nil
 }
 
+func (c Client) requestPRListPage(owner, name, state, reviewQuery, after, reviewAfter, query string) (prListPage, error) {
+	args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "state=" + state, "-F", fmt.Sprintf("pageSize=%d", prListPageSize)}
+	if state == "OPEN" {
+		args = append(args, "-F", "reviewQuery="+reviewQuery)
+	}
+	if after != "" {
+		args = append(args, "-F", "after="+after)
+	}
+	if reviewAfter != "" {
+		args = append(args, "-F", "reviewAfter="+reviewAfter)
+	}
+	args = append(args, "-f", "query="+query)
+	out, err := c.run(args...)
+	if err != nil {
+		return prListPage{}, commandError("gh api graphql", out, err)
+	}
+	var page prListPage
+	if err := json.Unmarshal(out, &page); err != nil {
+		return prListPage{}, fmt.Errorf("decode PR list: %w", err)
+	}
+	return page, nil
+}
+
 // FindOpen finds the open PR for head. Operational errors are returned as-is;
 // only a successful empty list becomes ErrPRNotFound.
 const prFields = "number,url,title,body,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository,author,createdAt,assignees,labels"
@@ -226,7 +324,6 @@ func (c Client) findHead(head, state string) (PR, error) {
 }
 
 // ListOpen returns all open pull requests in pages with lightweight row metadata.
-// FindPreview loads the expensive body, conversation, commits, and check details.
 func (c Client) ListOpen() (OpenPRs, error) {
 	return c.ListState("OPEN")
 }
@@ -248,7 +345,6 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 	// List rows only need metadata. Body, comments, commits, and checks are
 	// fetched lazily for the selected PR; loading them for every PR makes large
 	// repositories spend most of startup time in GitHub's GraphQL resolver.
-	const listPageSize = 25
 	query := `query($owner:String!,$name:String!,$reviewQuery:String!,$state:PullRequestState!,$pageSize:Int!,$after:String,$reviewAfter:String){viewer{login} reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} repository(owner:$owner,name:$name){pullRequests(first:$pageSize,after:$after,states:[$state],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number url title state baseRefName headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}} pageInfo{hasNextPage endCursor}}}}`
 	if state == "CLOSED" {
 		query = strings.Replace(query, "states:[$state]", "states:[$state,MERGED]", 1)
@@ -256,75 +352,16 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 		query = strings.Replace(query, ",$reviewAfter:String", "", 1)
 		query = strings.Replace(query, `reviewRequested:search(query:$reviewQuery,type:ISSUE,first:$pageSize,after:$reviewAfter){nodes{... on PullRequest{number}} pageInfo{hasNextPage endCursor}} `, "", 1)
 	}
-	type pageInfo struct {
-		HasNextPage bool   `json:"hasNextPage"`
-		EndCursor   string `json:"endCursor"`
-	}
-	type listNode struct {
-		PR
-		Assignees struct {
-			Nodes []PRUser `json:"nodes"`
-		} `json:"assignees"`
-		Labels struct {
-			Nodes []PRLabel `json:"nodes"`
-		} `json:"labels"`
-		ReviewRequests struct {
-			Nodes []struct {
-				RequestedReviewer PRUser `json:"requestedReviewer"`
-			} `json:"nodes"`
-		} `json:"reviewRequests"`
-		Comments struct {
-			TotalCount int                     `json:"totalCount"`
-			Nodes      []PRConversationComment `json:"nodes"`
-		} `json:"comments"`
-		Commits struct {
-			TotalCount int `json:"totalCount"`
-		} `json:"commits"`
-		StatusCheckRollup struct {
-			State string `json:"state"`
-		} `json:"statusCheckRollup"`
-	}
 	reviewQuery := "repo:" + repoName + " is:pr is:open review-requested:@me"
 	after, reviewAfter := "", ""
-	var allNodes []listNode
+	var allNodes []prListNode
 	seenPRs := map[int]bool{}
 	requested := map[int]bool{}
 	viewerLogin := ""
 	for {
-		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", "state=" + state, "-F", fmt.Sprintf("pageSize=%d", listPageSize)}
-		if state == "OPEN" {
-			args = append(args, "-F", "reviewQuery="+reviewQuery)
-		}
-		if after != "" {
-			args = append(args, "-F", "after="+after)
-		}
-		if reviewAfter != "" {
-			args = append(args, "-F", "reviewAfter="+reviewAfter)
-		}
-		args = append(args, "-f", "query="+query)
-		out, err := c.run(args...)
+		page, err := c.requestPRListPage(owner, name, state, reviewQuery, after, reviewAfter, query)
 		if err != nil {
-			return OpenPRs{}, commandError("gh api graphql", out, err)
-		}
-		var page struct {
-			Data struct {
-				Viewer          PRUser `json:"viewer"`
-				ReviewRequested struct {
-					Nodes []struct {
-						Number int `json:"number"`
-					} `json:"nodes"`
-					PageInfo pageInfo `json:"pageInfo"`
-				} `json:"reviewRequested"`
-				Repository struct {
-					PullRequests struct {
-						Nodes    []listNode `json:"nodes"`
-						PageInfo pageInfo   `json:"pageInfo"`
-					} `json:"pullRequests"`
-				} `json:"repository"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(out, &page); err != nil {
-			return OpenPRs{}, fmt.Errorf("decode PR list: %w", err)
+			return OpenPRs{}, err
 		}
 		viewerLogin = page.Data.Viewer.Login
 		for _, node := range page.Data.Repository.PullRequests.Nodes {
@@ -352,17 +389,7 @@ func (c Client) ListState(state string) (OpenPRs, error) {
 	}
 	prs := make([]PR, 0, len(allNodes))
 	for _, node := range allNodes {
-		pr := node.PR
-		pr.Assignees = node.Assignees.Nodes
-		pr.ViewerReviewRequested = requested[pr.Number]
-		pr.Labels = node.Labels.Nodes
-		for _, request := range node.ReviewRequests.Nodes {
-			if request.RequestedReviewer.Login != "" {
-				pr.ReviewRequests = append(pr.ReviewRequests, request.RequestedReviewer)
-			}
-		}
-		pr.CheckRollupState = node.StatusCheckRollup.State
-		prs = append(prs, pr)
+		prs = append(prs, node.pullRequest(requested[node.Number]))
 	}
 	return OpenPRs{ViewerLogin: viewerLogin, PRs: prs}, nil
 }

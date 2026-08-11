@@ -244,8 +244,6 @@ func truncate(s string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-// ShowStat returns `git show --stat` for a commit, colorized, with a compact
-// author/date header. Empty string if the sha cannot be resolved.
 // FetchPull fetches a GitHub pull ref and its base without changing HEAD,
 // the index, or the worktree. It returns the namespaced local head ref.
 func FetchPull(number int, base, expectedOID string) (string, error) {
@@ -275,6 +273,8 @@ func FetchPull(number int, base, expectedOID string) (string, error) {
 	return headRef, nil
 }
 
+// ShowStat returns `git show --stat` for a commit, colorized, with a compact
+// author/date header. Empty string if the sha cannot be resolved.
 func ShowStat(sha string) string {
 	out, err := run("show", "--stat", "--color=always",
 		"--format=%C(dim)%an committed · %ad%C(reset)", "--date=short", sha)
