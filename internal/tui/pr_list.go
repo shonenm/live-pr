@@ -982,7 +982,7 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 		state = "open"
 	}
 	identifier := fmt.Sprintf("#%d", pr.Number)
-	owner := " · " + userIcon(pr.Author.Login) + " @" + pr.Author.Login
+	owner := " · @" + pr.Author.Login
 	if pr.IsDraft && state == "open" {
 		state = "draft"
 	}
