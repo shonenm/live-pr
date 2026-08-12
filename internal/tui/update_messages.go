@@ -335,6 +335,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.reviewRange = m.diffBase + "..." + m.headRev
 	m.commits, _ = git.CommitsRange(m.diffBase, m.headRev)
 	m.files, _ = git.ChangedFilesRange(m.diffBase, m.headRev)
+	m.mergeReadiness, m.mergeReadinessErr = msg.readiness, msg.readinessErr
 	m.fileCursor = 0
 	m.status = ""
 	stale := []string{}
@@ -346,6 +347,9 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	}
 	if msg.activitiesErr != nil {
 		stale = append(stale, "activity")
+	}
+	if msg.readinessErr != nil {
+		stale = append(stale, "merge readiness")
 	}
 	m.githubStatus = "GitHub: selected PR updated"
 	if len(stale) > 0 {

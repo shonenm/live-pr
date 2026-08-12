@@ -137,10 +137,12 @@ type remoteLoaded struct {
 	headRef       string
 	comments      []gh.Comment
 	activities    []gh.Activity
+	readiness     git.MergeReadiness
 	refErr        error
 	previewErr    error
 	commentsErr   error
 	activitiesErr error
+	readinessErr  error
 }
 
 type ciPollTick struct {
@@ -309,6 +311,8 @@ type Model struct {
 	localStats                git.ChangeStats
 	localCommitCount          int
 	workingTreeDirty          bool
+	mergeReadiness            git.MergeReadiness
+	mergeReadinessErr         error
 	autoOpenCurrent           bool
 	refreshing                bool
 	ciPollFailures            int
@@ -716,7 +720,8 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		var headRef string
 		var comments []gh.Comment
 		var activities []gh.Activity
-		var refErr, previewErr, commentsErr, activitiesErr error
+		var refErr, previewErr, commentsErr, activitiesErr, readinessErr error
+		var readiness git.MergeReadiness
 		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -734,7 +739,10 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 			}
 		}()
 		wg.Wait()
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr}
+		if refErr == nil {
+			readiness, readinessErr = git.CheckMergeReadiness(git.ResolveBase(pr.BaseRefName), headRef)
+		}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
 	}
 }
 
@@ -752,6 +760,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
 	m.reviewRange = m.diffBase + "..." + m.headRev
 	m.events, m.commits, m.files = nil, nil, nil
+	m.mergeReadiness, m.mergeReadinessErr = git.MergeReadiness{}, nil
 	m.timelinePath, m.cachePath = "", ""
 	m.cache = gh.NewCache(pr.HeadRefName)
 	m.cache.PR = &pr
@@ -781,6 +790,9 @@ const (
 )
 
 func (m *Model) layout() {
+	if m.w <= 0 || m.h <= 0 {
+		return
+	}
 	if m.screen == prListScreen {
 		bodyH := max(3, m.h-m.headerHeight()-footerLines-paneChromeH)
 		listPaneW := max(24, m.w*prListPaneRatio/100)
@@ -876,11 +888,23 @@ func (m *Model) navigationLength() int {
 }
 
 func (m Model) navigationPage() int {
-	height := m.detail.Height
-	if m.screen == prListScreen {
-		height = m.list.Height / 3
+	height := m.list.Height
+	if m.focusDiff || m.focusExplorer {
+		height = m.detail.Height
 	}
-	return max(1, height/2)
+	if m.screen == prListScreen {
+		height /= 3 // each PR row occupies three terminal lines
+	}
+	return max(1, height/4)
+}
+
+func scrollQuarter(v *viewport.Model, down bool) {
+	lines := max(1, v.Height/4)
+	if down {
+		v.ScrollDown(lines)
+	} else {
+		v.ScrollUp(lines)
+	}
 }
 
 func (m *Model) moveCursorBy(delta int) tea.Cmd {
@@ -1114,7 +1138,18 @@ func (m Model) renderHeader() string {
 	if !m.remote && m.workingTreeDirty {
 		dirty = "   " + stAttention.Render("● uncommitted changes")
 	}
-	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty
+	readiness := ""
+	if m.remote && m.cache.PR != nil {
+		readiness = stMuted.Render(fmt.Sprintf("   · %d behind", m.mergeReadiness.Behind))
+		if conflicts := len(m.mergeReadiness.ConflictFiles); conflicts > 0 {
+			readiness += "   " + stRedF.Render(fmt.Sprintf("⚠ %d conflict files", conflicts))
+		} else if m.mergeReadinessErr == nil {
+			readiness += "   " + stGreenF.Render("✓ no conflicts")
+		} else {
+			readiness += "   " + stMuted.Render("merge readiness unavailable")
+		}
+	}
+	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty + readiness
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
