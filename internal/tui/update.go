@@ -101,8 +101,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
-		m.avatarColors = msg.colors
+		if m.avatarColors == nil {
+			m.avatarColors = map[string]string{}
+		}
+		for login, color := range msg.colors {
+			m.avatarColors[login] = color
+		}
 		m.layout()
+		return m, m.sync()
+	case listAvatarColorsLoaded:
+		if msg.generation != m.prListGeneration {
+			return m, nil
+		}
+		if m.avatarColors == nil {
+			m.avatarColors = map[string]string{}
+		}
+		for login, color := range msg.colors {
+			m.avatarColors[login] = color
+		}
+		clear(m.prRowCache)
 		return m, m.sync()
 	case tea.MouseMsg:
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
