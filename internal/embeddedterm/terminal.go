@@ -5,6 +5,8 @@ package embeddedterm
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	portalis "github.com/Starframe/portalis"
@@ -14,6 +16,7 @@ import (
 // Terminal embeds one interactive process and its VT screen.
 type Terminal struct {
 	sessionID string
+	pidFile   string
 	emulator  *portalis.Emulator
 	started   bool
 	exited    bool
@@ -27,13 +30,25 @@ func New(command, cwd string, env []string) *Terminal {
 	if strings.TrimSpace(command) == "" {
 		return nil
 	}
-	// exec ensures closing live-pr terminates the actual reviewer, not only sh.
+	// The child copy of live-pr watches this process and owns the reviewer group.
+	// This survives parent SIGKILL, where deferred PTY cleanup cannot run.
 	sessionID := nextSessionID()
-	emulator := portalis.NewEmulator(sessionID, "CodeDiff", "sh", []string{"-c", "exec " + command})
+	executable, err := os.Executable()
+	if err != nil {
+		return &Terminal{sessionID: sessionID, err: fmt.Errorf("CodeDiff watchdog: %w", err), exited: true}
+	}
+	pidFile := fmt.Sprintf("%s/live-pr-review-%d-%s.pid", os.TempDir(), os.Getpid(), sessionID)
+	emulator := portalis.NewEmulator(sessionID, "CodeDiff", executable, nil)
 	emulator.SetInitialCWD(cwd)
+	env = append(env,
+		watchdogModeEnv+"=1",
+		watchdogParentEnv+"="+strconv.Itoa(os.Getpid()),
+		watchdogCommandEnv+"="+command,
+		watchdogPIDFileEnv+"="+pidFile,
+	)
 	emulator.SetStartEnv(env)
 	emulator.SetScrollbackLimit(2_000)
-	return &Terminal{sessionID: sessionID, emulator: emulator}
+	return &Terminal{sessionID: sessionID, pidFile: pidFile, emulator: emulator}
 }
 
 // Init starts the child before returning its first output listener. Synchronous
@@ -163,6 +178,12 @@ func (t *Terminal) Close() {
 	}
 	t.closed = true
 	t.exited = true
+	if data, err := os.ReadFile(t.pidFile); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+			killProcessGroup(pid)
+		}
+		_ = os.Remove(t.pidFile)
+	}
 	if t.emulator != nil {
 		t.emulator.Close()
 	}
