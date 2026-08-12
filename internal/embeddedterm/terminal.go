@@ -29,7 +29,7 @@ func New(command, cwd string, env []string) *Terminal {
 	}
 	// exec ensures closing live-pr terminates the actual reviewer, not only sh.
 	sessionID := nextSessionID()
-	emulator := portalis.NewEmulator(sessionID, "CodeReview", "sh", []string{"-c", "exec " + command})
+	emulator := portalis.NewEmulator(sessionID, "CodeDiff", "sh", []string{"-c", "exec " + command})
 	emulator.SetInitialCWD(cwd)
 	emulator.SetStartEnv(env)
 	emulator.SetScrollbackLimit(2_000)
@@ -44,7 +44,7 @@ func (t *Terminal) Init() tea.Cmd {
 	}
 	if err := t.emulator.StartSync(nil); err != nil {
 		t.exited = true
-		t.err = fmt.Errorf("CodeReview: %w", err)
+		t.err = fmt.Errorf("CodeDiff: %w", err)
 		return func() tea.Msg { return StateMsg{SessionID: t.sessionID} }
 	}
 	t.started = true
@@ -91,7 +91,7 @@ func (t *Terminal) Update(msg tea.Msg) tea.Cmd {
 		if msg.SessionID == t.sessionID {
 			t.exited = true
 			if msg.Err != nil {
-				t.err = fmt.Errorf("CodeReview: %w", msg.Err)
+				t.err = fmt.Errorf("CodeDiff: %w", msg.Err)
 			}
 			t.emulator.Close()
 			t.closed = true
@@ -140,7 +140,7 @@ func (t *Terminal) View(width, height int) string {
 		return ""
 	}
 	if !t.started && t.err == nil {
-		return "Starting CodeReview…"
+		return "Starting CodeDiff…"
 	}
 	return t.emulator.View(width, height)
 }
