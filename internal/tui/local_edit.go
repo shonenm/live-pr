@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shonenm/live-pr/internal/event"
+	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
 )
 
@@ -127,6 +128,33 @@ func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 			return m, nil
 		}
 		selectedKey = "event:" + created.ID + ":0"
+	case editReviewBody:
+		if err := m.loadReviewDraft(); err != nil {
+			m.localEditError = err.Error()
+			return m, nil
+		}
+		m.reviewDraft.Body = strings.TrimSpace(m.localEditor.Value())
+		if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
+			m.localEditError = err.Error()
+			return m, nil
+		}
+		selectedKey = m.selectedConversationKey()
+	case addInlineReviewComment:
+		comment, err := parseInlineReviewComment(m.localEditor.Value())
+		if err != nil {
+			m.localEditError = err.Error()
+			return m, nil
+		}
+		if err := m.loadReviewDraft(); err != nil {
+			m.localEditError = err.Error()
+			return m, nil
+		}
+		m.reviewDraft.Comments = append(m.reviewDraft.Comments, comment)
+		if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
+			m.localEditError = err.Error()
+			return m, nil
+		}
+		selectedKey = m.selectedConversationKey()
 	case editLocalComment:
 		kind, title, body, err := parseLocalComment(m.localEditor.Value(), true)
 		if err != nil {
@@ -145,11 +173,16 @@ func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 		}
 		selectedKey = "event:" + current.ID + ":0"
 	}
+	mode := m.localEditMode
 	m.localEditor.Blur()
 	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-	m.reloadLocalConversation()
+	if mode != editReviewBody && mode != addInlineReviewComment {
+		m.reloadLocalConversation()
+		m.notice = "Local PR updated"
+	} else {
+		m.notice = "Draft review updated"
+	}
 	m.restoreConversationSelection(selectedKey)
-	m.notice = "Local PR updated"
 	return m, m.sync()
 }
 
@@ -214,6 +247,12 @@ func (m Model) renderLocalEditorPopup() string {
 	}
 	if m.localEditMode == editLocalSummary {
 		title, hint = "Edit final summary", "follow the repository PR template; describe the final result"
+	}
+	if m.localEditMode == editReviewBody {
+		title, hint = "Edit general review", "submitted with Comment, Approve, or Request changes"
+	}
+	if m.localEditMode == addInlineReviewComment {
+		title, hint = "Add inline review comment", "RIGHT = new code; LEFT = deleted code"
 	}
 	lines := []string{stBold.Render(title), stMuted.Render(hint), "", m.localEditor.View()}
 	if m.localEditError != "" {

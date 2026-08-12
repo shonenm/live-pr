@@ -7,6 +7,14 @@ import (
 	"testing"
 )
 
+func TestPullRequestReviewDraftUsesRepositoryState(t *testing.T) {
+	root := t.TempDir()
+	got := PullRequestReviewDraft(root, 42)
+	if filepath.Base(got) != "42.json" || filepath.Base(filepath.Dir(got)) != "reviews" {
+		t.Fatalf("PR review draft path = %q", got)
+	}
+}
+
 func TestForBranchUsesUserStateOutsideRepository(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
