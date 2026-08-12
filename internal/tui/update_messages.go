@@ -100,10 +100,11 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	}
 	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.prView.String())
 	_, localFilter := splitPRFilter(m.filterQuery)
+	avatars := loadListAvatarColors(m.prListGeneration, msg.page.PRs)
 	if page.hasNext && (len(msg.page.PRs) == 0 || localFilter != "" && len(m.openPRs) == 0) {
-		return m, tea.Batch(m.sync(), m.requestPRPage(false))
+		return m, tea.Batch(m.sync(), avatars, m.requestPRPage(false))
 	}
-	return m, m.sync()
+	return m, tea.Batch(m.sync(), avatars)
 
 }
 
@@ -192,7 +193,7 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	if m.selectedPRNumber() == msg.number {
 		m.status = ""
 	}
-	return m, m.sync()
+	return m, tea.Batch(m.sync(), loadListAvatarColors(m.prListGeneration, []gh.PR{msg.pr}))
 
 }
 

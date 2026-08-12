@@ -25,7 +25,6 @@ func (m *Model) resetDetailCaches() {
 	m.diffCache = map[string]string{}
 	m.diffPending = map[string]bool{}
 	m.richBodies = map[string]string{}
-	m.avatarColors = map[string]string{}
 }
 
 func (m *Model) reloadLocalConversation() {
