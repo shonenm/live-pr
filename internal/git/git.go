@@ -130,6 +130,47 @@ type ChangeStats struct {
 	Files, Additions, Deletions int
 }
 
+// MergeReadiness describes how far head trails base and which paths conflict.
+type MergeReadiness struct {
+	Behind        int
+	ConflictFiles []string
+}
+
+// CheckMergeReadiness simulates merging head into base without touching HEAD,
+// the index, or the worktree.
+func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
+	behindText, err := run("rev-list", "--count", head+".."+base)
+	if err != nil {
+		return MergeReadiness{}, err
+	}
+	var readiness MergeReadiness
+	if _, err := fmt.Sscan(behindText, &readiness.Behind); err != nil {
+		return MergeReadiness{}, fmt.Errorf("parse commits behind %q: %w", behindText, err)
+	}
+	cmd := exec.Command("git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", base, head)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, mergeErr := cmd.Output()
+	if mergeErr == nil {
+		return readiness, nil
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(mergeErr, &exitErr) || exitErr.ExitCode() != 1 {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w: %s", base, head, mergeErr, detail)
+		}
+		return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w", base, head, mergeErr)
+	}
+	parts := bytes.Split(out, []byte{0})
+	for _, path := range parts[1:] { // the first field is the synthetic merge tree
+		if len(path) > 0 {
+			readiness.ConflictFiles = append(readiness.ConflictFiles, string(path))
+		}
+	}
+	return readiness, nil
+}
+
 // DiffStats returns file and line counts for base...head. Binary files count
 // toward Files but not line totals.
 func DiffStats(base, head string) (ChangeStats, error) {

@@ -142,7 +142,7 @@ display = "delta --paging=never --side-by-side --line-numbers --width=\"$LIVE_PR
 	case "codereview":
 		config = `[diff]
 command = "nvim -c \"CodeDiff $LIVE_PR_RANGE\""
-commit_command = "nvim -c \"CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA\""
+commit_command = "nvim -c \"CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA\""
 display = ""
 `
 	}

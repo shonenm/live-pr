@@ -397,9 +397,10 @@ func buildPRStacks(prs []gh.PR) []prStack {
 		if rootPR.Number == 0 {
 			stack.id = "branch:" + rootPR.HeadRefName
 		}
-		stack.title = rootPR.HeadRefName
-		if stack.title == "" {
-			stack.title = rootPR.Title
+		if rootPR.Number > 0 {
+			stack.title = fmt.Sprintf("#%d", rootPR.Number)
+		} else {
+			stack.title = "Local PR"
 		}
 		stacks = append(stacks, stack)
 	}
