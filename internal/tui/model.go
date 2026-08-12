@@ -731,6 +731,9 @@ const (
 )
 
 func (m *Model) layout() {
+	if m.w <= 0 || m.h <= 0 {
+		return
+	}
 	if m.screen == prListScreen {
 		bodyH := max(3, m.h-m.headerHeight()-footerLines-paneChromeH)
 		listPaneW := max(24, m.w*prListPaneRatio/100)
@@ -826,11 +829,23 @@ func (m *Model) navigationLength() int {
 }
 
 func (m Model) navigationPage() int {
-	height := m.detail.Height
-	if m.screen == prListScreen {
-		height = m.list.Height / 3
+	height := m.list.Height
+	if m.focusDiff || m.focusExplorer {
+		height = m.detail.Height
 	}
-	return max(1, height/2)
+	if m.screen == prListScreen {
+		height /= 3 // each PR row occupies three terminal lines
+	}
+	return max(1, height/4)
+}
+
+func scrollQuarter(v *viewport.Model, down bool) {
+	lines := max(1, v.Height/4)
+	if down {
+		v.ScrollDown(lines)
+	} else {
+		v.ScrollUp(lines)
+	}
 }
 
 func (m *Model) moveCursorBy(delta int) tea.Cmd {
