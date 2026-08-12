@@ -12,7 +12,7 @@ func TestCommandRegistration(t *testing.T) {
 	for _, command := range rootCmd.Commands() {
 		commands[command.Name()] = true
 	}
-	for _, name := range []string{"append", "comment", "decision", "demo", "hook", "init", "note", "pivot", "pr", "skill", "status", "summary", "sync"} {
+	for _, name := range []string{"append", "comment", "decision", "demo", "hook", "init", "note", "pivot", "pr", "review", "skill", "status", "summary", "sync"} {
 		if !commands[name] {
 			t.Errorf("top-level command %q is not registered", name)
 		}
@@ -31,6 +31,12 @@ func TestCommandRegistration(t *testing.T) {
 		"hook stop":      hookStopCmd,
 		"pr preview":     prPreviewCmd,
 		"pr publish":     prPublishCmd,
+		"review add":     reviewAddCmd,
+		"review body":    reviewBodyCmd,
+		"review clear":   reviewClearCmd,
+		"review delete":  reviewDeleteCmd,
+		"review show":    reviewShowCmd,
+		"review submit":  reviewSubmitCmd,
 		"skill path":     skillPathCmd,
 		"skill print":    skillPrintCmd,
 		"summary edit":   summaryEditCmd,
