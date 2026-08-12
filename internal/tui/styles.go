@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"hash/fnv"
 	"strings"
 	"time"
 
@@ -50,6 +51,16 @@ const (
 )
 
 // renderLogo draws the wordmark anchoring the left edge of the header.
+func userIcon(login string) string {
+	if login == "" {
+		return stMuted.Render("○")
+	}
+	colors := []string{cAccent, cGreenF, cAttention, cDoneEmphasis, cOpen}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.ToLower(login)))
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(colors[int(h.Sum32())%len(colors)])).Render("●")
+}
+
 func renderLogo() string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent)).MarginRight(2).Render(logo)
 }
