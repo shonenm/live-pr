@@ -187,17 +187,32 @@ func (m Model) summaryLines(summary string, selected bool, width int) []string {
 }
 
 func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
-	body := pr.Body
+	body := m.richBody(pr.Body)
 	if strings.TrimSpace(body) == "" {
 		body = "(no description provided)"
 	}
-	header := stMuted.Render("💬 @" + pr.Author.Login + " · description · " + shortTS(pr.CreatedAt))
+	header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+shortTS(pr.CreatedAt))
 	return cardLines(header, md.Render(body, width-7), selected, width, cCloudBorder)
 }
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
-	header := stMuted.Render("💬 @" + comment.User.Login + " · comment · " + shortTS(comment.CreatedAt))
-	return cardLines(header, md.Render(comment.Body, width-7), selected, width, cCloudBorder)
+	header := m.userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+shortTS(comment.CreatedAt))
+	return cardLines(header, md.Render(m.richBody(comment.Body), width-7), selected, width, cCloudBorder)
+}
+
+func (m Model) richBody(body string) string {
+	if rendered, ok := m.richBodies[body]; ok {
+		return rendered
+	}
+	return body
+}
+
+func (m Model) userIcon(login string) string {
+	color := cMuted
+	if avatarColor := m.avatarColors[login]; avatarColor != "" {
+		color = avatarColor
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("●")
 }
 
 func cardLines(header, body string, selected bool, width int, border string) []string {
@@ -219,7 +234,7 @@ func cardLines(header, body string, selected bool, width int, border string) []s
 }
 
 func (m Model) activityLines(activity gh.Activity, selected bool) []string {
-	line := stMuted.Render("● @"+activity.Actor.Login+" ") + stFg.Render(activitySummary(activity)) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
+	line := m.userIcon(activity.Actor.Login) + stMuted.Render(" @"+activity.Actor.Login+" ") + stFg.Render(activitySummary(activity)) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
 	return []string{selectionBar(selected) + line}
 }
 

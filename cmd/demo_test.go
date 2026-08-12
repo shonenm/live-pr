@@ -32,6 +32,33 @@ func TestCreateDemoRepo(t *testing.T) {
 	}
 }
 
+func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
+	root := t.TempDir()
+	if err := createDemoRepo(root, "git"); err != nil {
+		t.Fatal(err)
+	}
+	binDir, stateDir, err := setupDemoGitHub(root, "git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIVE_PR_DEMO_STATE", stateDir)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	oldDir, _ := os.Getwd()
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	preview, err := gh.New().FindPreview(101)
+	if err != nil || !strings.Contains(preview.Body, "```mermaid") || !strings.Contains(preview.Body, "K --> N[Local terminal]") || preview.Author.AvatarURL == "" {
+		t.Fatalf("demo preview = %#v err=%v", preview, err)
+	}
+	detail := gh.New().LoadPRDetail(101)
+	if detail.CommentsErr != nil || len(detail.Comments) != 1 || detail.Comments[0].User.AvatarURL == "" {
+		t.Fatalf("demo comments = %#v err=%v", detail.Comments, detail.CommentsErr)
+	}
+}
+
 func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	root := t.TempDir()
 	if err := createDemoRepo(root, "git"); err != nil {
