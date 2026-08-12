@@ -125,6 +125,8 @@ func demoGitOutput(root string, args ...string) (string, error) {
 }
 
 func demoGHScript(prs []demoPR) string {
+	body := "## Demo pull request\\n\\nAll GitHub data and actions in this screen are local mocks. User icons stay one terminal cell; Mermaid renders through termaid when installed.\\n\\n### Large Mermaid viewport test\\n\\n```mermaid\\ngraph TD\\n  A[GitHub pull request] --> B[Fetch metadata and conversation]\\n  B --> C{Content type}\\n  C -->|Markdown| D[Render with Glamour]\\n  C -->|Mermaid| E[Render with termaid]\\n  C -->|Avatar| F[Download from GitHub]\\n  E --> G[Compact to pane width]\\n  F --> H[Reduce to representative color]\\n  D --> I[Conversation card]\\n  G --> I\\n  H --> J[One-cell user icon]\\n  J --> I\\n  I --> K[Scrollable viewport]\\n  K --> L[Terminal over SSH]\\n  K --> M[Terminal inside tmux]\\n  K --> N[Local terminal]\\n```"
+	body = strings.ReplaceAll(body, "`", "\\`")
 	var cases strings.Builder
 	for _, pr := range prs {
 		fmt.Fprintf(&cases, `
@@ -163,14 +165,14 @@ commit_status_json() {
 pr_json() {
   pr_data "$1"
   cat <<JSON
-{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","body":"## Demo pull request\n\nAll GitHub data and actions in this screen are local mocks.","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","additions":24,"deletions":6,"changedFiles":3,"updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user"},"assignees":[{"login":"demo-user"}],"labels":[{"name":"demo","color":"1f6feb"}],"reviewRequests":[],"comments":[{"author":{"login":"reviewer"},"body":"This is mock review feedback.","createdAt":"2026-08-10T11:00:00Z","url":"https://example.invalid/pull/$1#comment"}],"statusCheckRollup":[{"name":"demo-check","status":"COMPLETED","conclusion":"SUCCESS"}]}
+{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","body":"%s","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","additions":24,"deletions":6,"changedFiles":3,"updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user","avatarUrl":"https://avatars.githubusercontent.com/shonenm"},"assignees":[{"login":"demo-user"}],"labels":[{"name":"demo","color":"1f6feb"}],"reviewRequests":[],"comments":[{"author":{"login":"reviewer"},"body":"This is mock review feedback.","createdAt":"2026-08-10T11:00:00Z","url":"https://example.invalid/pull/$1#comment"}],"statusCheckRollup":[{"name":"demo-check","status":"COMPLETED","conclusion":"SUCCESS"}]}
 JSON
 }
 
 list_json() {
   pr_data "$1"
   cat <<JSON
-{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user"},"assignees":{"nodes":[{"login":"demo-user"}]},"labels":{"nodes":[{"name":"demo","color":"1f6feb"}]},"reviewRequests":{"nodes":[]},"statusCheckRollup":{"state":"SUCCESS"}}
+{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user","avatarUrl":"https://avatars.githubusercontent.com/shonenm"},"assignees":{"nodes":[{"login":"demo-user"}]},"labels":{"nodes":[{"name":"demo","color":"1f6feb"}]},"reviewRequests":{"nodes":[]},"statusCheckRollup":{"state":"SUCCESS"}}
 JSON
 }
 
@@ -240,8 +242,8 @@ case "${1:-} ${2:-}" in
   "api --paginate")
     endpoint=${4:-}
     case "$endpoint" in
-      */comments*) printf '[[{"id":1,"body":"Mock conversation comment","created_at":"2026-08-10T11:00:00Z","updated_at":"2026-08-10T11:00:00Z","html_url":"https://example.invalid/comment/1","user":{"login":"reviewer"}}]]\n' ;;
-      *) printf '[[{"id":2,"event":"labeled","created_at":"2026-08-10T10:30:00Z","actor":{"login":"demo-user"},"label":{"name":"demo"}}]]\n' ;;
+      */comments*) printf '[[{"id":1,"body":"Mock conversation comment","created_at":"2026-08-10T11:00:00Z","updated_at":"2026-08-10T11:00:00Z","html_url":"https://example.invalid/comment/1","user":{"login":"reviewer","avatar_url":"https://avatars.githubusercontent.com/github"}}]]\n' ;;
+      *) printf '[[{"id":2,"event":"labeled","created_at":"2026-08-10T10:30:00Z","actor":{"login":"demo-user","avatar_url":"https://avatars.githubusercontent.com/shonenm"},"label":{"name":"demo"}}]]\n' ;;
     esac
     ;;
   *)
@@ -249,7 +251,7 @@ case "${1:-} ${2:-}" in
     exit 1
     ;;
 esac
-`, cases.String())
+`, cases.String(), body)
 }
 
 func demoGitCommand(args ...string) (string, error) {

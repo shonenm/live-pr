@@ -2,6 +2,8 @@
 package tui
 
 import (
+	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,6 +31,7 @@ import (
 	"github.com/shonenm/live-pr/internal/prbody"
 	"github.com/shonenm/live-pr/internal/prtemplate"
 	"github.com/shonenm/live-pr/internal/publish"
+	"github.com/shonenm/live-pr/internal/richcontent"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/timeline"
 )
@@ -212,6 +215,18 @@ type diffRendered struct {
 	err              error
 }
 
+type richBodiesLoaded struct {
+	generation uint64
+	key        [sha256.Size]byte
+	bodies     map[string]string
+}
+
+type avatarColorsLoaded struct {
+	generation uint64
+	key        [sha256.Size]byte
+	colors     map[string]string
+}
+
 type detailContent struct {
 	key        string
 	raw        string
@@ -270,6 +285,8 @@ type Model struct {
 	events                    []event.Event
 	conversationCache         []conversationItem
 	conversationDirty         bool
+	richBodies                map[string]string
+	avatarColors              map[string]string
 	files                     []git.ChangedFile
 	commits                   []git.Commit
 	active                    tab
@@ -441,6 +458,8 @@ func New() (Model, error) {
 		diffCommitCommand: cfg.CommitReviewCommand(),
 		rawDetailCache:    map[string]string{},
 		diffCache:         map[string]string{},
+		richBodies:        map[string]string{},
+		avatarColors:      map[string]string{},
 		diffPending:       map[string]bool{},
 		prPreviewLoading:  map[int]bool{},
 		prPreviewLoaded:   map[int]bool{},
@@ -607,6 +626,9 @@ func (m Model) Init() tea.Cmd {
 	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
 		cmds = append(cmds, fetchGitHub(m.head, m.currentPRNumber(), m.targetGeneration))
 	}
+	if m.screen == detailScreen {
+		cmds = append(cmds, loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities))
+	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
@@ -712,6 +734,74 @@ func pollCI(generation uint64, number int) tea.Cmd {
 		pr, err := gh.New().FindChecks(number)
 		return ciPolled{generation: generation, pr: pr, err: err}
 	}
+}
+
+func richContentKey(pr *gh.PR, comments []gh.Comment, activities []gh.Activity) [sha256.Size]byte {
+	var input strings.Builder
+	if pr != nil {
+		fmt.Fprintf(&input, "%s\x00%s\x00%s\x00", pr.Author.Login, pr.Author.AvatarURL, pr.Body)
+	}
+	for _, comment := range comments {
+		fmt.Fprintf(&input, "%s\x00%s\x00%s\x00", comment.User.Login, comment.User.AvatarURL, comment.Body)
+	}
+	for _, activity := range activities {
+		fmt.Fprintf(&input, "%s\x00%s\x00", activity.Actor.Login, activity.Actor.AvatarURL)
+	}
+	return sha256.Sum256([]byte(input.String()))
+}
+
+func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity) tea.Cmd {
+	key := richContentKey(pr, comments, activities)
+	bodies := make([]string, 0, len(comments)+1)
+	avatars := map[string]string{}
+	if pr != nil {
+		bodies = append(bodies, pr.Body)
+		avatars[pr.Author.Login] = pr.Author.AvatarURL
+	}
+	for _, comment := range comments {
+		bodies = append(bodies, comment.Body)
+		avatars[comment.User.Login] = comment.User.AvatarURL
+	}
+	for _, activity := range activities {
+		avatars[activity.Actor.Login] = activity.Actor.AvatarURL
+	}
+	return tea.Batch(
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			results := map[string]string{}
+			for _, body := range bodies {
+				rendered := map[string]string{}
+				for _, source := range richcontent.MermaidSources(body) {
+					if len(rendered) >= 32 {
+						break
+					}
+					if diagram, err := richcontent.RenderMermaidContext(ctx, source, width); err == nil {
+						rendered[source] = diagram
+					}
+				}
+				results[body] = richcontent.ReplaceMermaid(body, rendered)
+			}
+			return richBodiesLoaded{generation: generation, key: key, bodies: results}
+		},
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			colors := map[string]string{}
+			for login, avatarURL := range avatars {
+				if login == "" || len(colors) >= 32 {
+					continue
+				}
+				if avatarURL == "" {
+					avatarURL = "https://avatars.githubusercontent.com/" + login
+				}
+				if color, err := richcontent.AvatarColorContext(ctx, avatarURL); err == nil {
+					colors[login] = color
+				}
+			}
+			return avatarColorsLoaded{generation: generation, key: key, colors: colors}
+		},
+	)
 }
 
 func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {

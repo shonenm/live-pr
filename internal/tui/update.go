@@ -90,6 +90,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case githubRefreshed:
 		next, cmd := m.handleGitHubRefreshed(msg)
 		return next, cmd
+	case richBodiesLoaded:
+		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.cache.PR, m.cache.Comments, m.cache.Activities) {
+			return m, nil
+		}
+		m.richBodies = msg.bodies
+		m.layout()
+		return m, m.sync()
+	case avatarColorsLoaded:
+		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.cache.PR, m.cache.Comments, m.cache.Activities) {
+			return m, nil
+		}
+		m.avatarColors = msg.colors
+		m.layout()
+		return m, m.sync()
 	case tea.MouseMsg:
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			// The review pane sits after the bordered left pane; +1 row for its own top border.
