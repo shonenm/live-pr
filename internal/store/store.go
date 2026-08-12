@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -106,6 +107,11 @@ func (s *Store) GitHubCache() string { return filepath.Join(s.Dir, "github.json"
 
 // NavigatorCache is the repository-wide PR list and remote snapshot cache.
 func NavigatorCache(root string) string { return filepath.Join(repoStateRoot(root), "github-prs.json") }
+
+// PullRequestReviewDraft is an unpublished review isolated by pull-request number.
+func PullRequestReviewDraft(root string, number int) string {
+	return filepath.Join(repoStateRoot(root), "reviews", fmt.Sprintf("%d.json", number))
+}
 
 // MigrateLegacy moves data from the old repository-local .live-pr/ layout.
 // Legacy config.toml is renamed to .live-pr.toml when possible; the old path

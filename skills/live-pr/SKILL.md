@@ -76,6 +76,19 @@ Kinds:
 
 Prefer a short title plus one or two sentences of rationale and reviewer-visible impact. Edit an existing comment when clarifying the same decision; add a `pivot` when the direction actually changed. Delete only noise or an accidental duplicate—do not erase a real decision transition.
 
+## GitHub review workflow
+
+When reviewing an existing GitHub PR, keep comments in a local draft and submit them together with one verdict. Do not use local decision comments for code review findings.
+
+```sh
+live-pr review body --body "General review feedback"
+live-pr review add internal/app.go --line 42 --side RIGHT --body "Handle this error."
+live-pr review show --json
+live-pr review submit --event REQUEST_CHANGES
+```
+
+Events are `COMMENT`, `APPROVE`, and `REQUEST_CHANGES`. `RIGHT` addresses new/context lines and `LEFT` addresses deleted lines. Submission verifies that the PR head SHA still matches the reviewed revision; if it changed, review the new revision and recreate the stale draft. Use `live-pr review delete <index>` or `live-pr review clear` only before submission.
+
 ## Finalize the summary
 
 After implementation stabilizes:

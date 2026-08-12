@@ -253,7 +253,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.AddComment) {
+		if m.cache.PR != nil {
+			return m.startReviewComment()
+		}
 		return m.startLocalComment()
+	}
+	if key.Matches(msg, m.keys.InlineReview) {
+		return m.startInlineReviewComment()
+	}
+	if key.Matches(msg, m.keys.Review) {
+		return m.openReviewSubmit()
 	}
 	if key.Matches(msg, m.keys.EditLocal) {
 		return m.editSelectedLocalItem()

@@ -12,6 +12,13 @@ func reservedReviewKey(msg tea.Msg) bool {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.reviewSubmitEvent != "" {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			next, cmd := m.handleReviewSubmitKey(keyMsg)
+			return next, cmd
+		}
+		return m, nil
+	}
 	if m.localEditMode != noLocalEdit || m.localDeleteTarget != "" {
 		next, cmd := m.handleLocalOverlay(msg)
 		return next, cmd
@@ -65,6 +72,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	case publishDone:
 		next, cmd := m.handlePublishDone(msg)
+		return next, cmd
+	case reviewSubmitted:
+		next, cmd := m.handleReviewSubmitted(msg)
 		return next, cmd
 	case remoteLoaded:
 		next, cmd := m.handleRemoteLoaded(msg)

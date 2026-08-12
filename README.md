@@ -101,7 +101,7 @@ The binary also carries the matching skill version. `live-pr skill path` materia
 - Claude Code is required only for automatic Stop-hook summaries.
 - Neovim CodeReview and external diff formatters are optional; raw Git diff is built in.
 - macOS and Linux support the embedded reviewer. Windows falls back to static diff.
-- GitHub review comments and inline comments are not synchronized yet.
+- GitHub review submission supports general and inline comments, approval, and changes requested. Existing review threads and inline comments are not synchronized into the TUI yet.
 - Local state remains outside the repository until an explicit `live-pr pr` publish.
 
 Runtime state is stored outside the repository under the XDG state directory (`~/.local/state/live-pr` on Linux). Existing `.live-pr/` data is migrated automatically; repo-specific configuration uses `.live-pr.toml`.
@@ -128,11 +128,16 @@ live-pr comment add "Use GraphQL" --kind decision --body "Avoids repeated reques
 live-pr comment list --json
 live-pr comment edit <id> "Use batched GraphQL" --body "One request"
 live-pr comment delete <id>
+live-pr review body --body "General review feedback"
+live-pr review add internal/app.go --line 42 --side RIGHT --body "Handle this error."
+live-pr review show --json
+live-pr review submit --event REQUEST_CHANGES # or COMMENT / APPROVE
 live-pr init --hooks     # print the optional, significance-filtered Stop hook
 live-pr sync             # import base..HEAD commits
                         # list: [/] Assigned/Review/All/Closed views; / filter + Enter; Space stack; j/k select; Enter open; c checkout; x close; m merge; r refresh; q quit
-                        # detail: a add comment; e edit selected summary/comment; d delete selected comment; Ctrl+S save; Esc cancel
-                        #         b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
+                        # detail: Local PR: a/e/d local summary/comment; GitHub PR: a general review body
+                        #         Explorer: a/A inline review comment; v inspect/submit Comment/Approve/Request changes
+                        #         Ctrl+S save; Esc cancel; b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
 live-pr pr preview       # preview the generated managed PR body
 live-pr pr publish       # push and create or update the GitHub PR
                          # compatible aliases: live-pr pr --dry-run / live-pr pr
@@ -143,6 +148,8 @@ Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, a
 The PR navigator fetches only the active view's first 25 rows. Reaching the final loaded row requests the next page and appends it; switching back to a view loaded in the current session does not issue another request. View counts become exact when that view is first fetched (`?` means unvisited). Search is submitted with `Enter` and runs server-side; `ci:` and `merge:` remain local post-filters over progressively loaded pages. GitHub Search limits any one query to its first 1,000 results.
 
 In a demo, the current PR Conversation shows compact CI activity for two commits: the first has a mocked red failure and the second a green success. Press `c` to inspect the same results in the full two-commit list. Press `b` for the mocked PR list, then use `m`, `c`, and `x` to exercise merge, checkout, and close. Select the Closed view or search `is:closed` to verify that completed mock PRs move out of Open. The checkout changes only the disposable repository; all GitHub data stays local.
+
+Review drafts live under repository XDG state, isolated by PR number and head commit. Submission rechecks the current GitHub head SHA and refuses stale line comments after a push. Press `A` from the left pane to comment on the currently selected changed file. With the static Explorer (`[diff].command = ""`), `a` on a selected file does the same to enter `path`, `line`, `side` (`RIGHT` for new code, `LEFT` for deleted code), and the body. In Conversation, `a` edits the general review body. Press `v` to inspect and submit the draft. External Neovim reviewers remain usable, but live-pr cannot infer their cursor line; use `live-pr review add` for explicit inline comments.
 
 The built-in right-side reviewer starts Neovim with `LIVE_PR_RANGE`: a merge-base-to-working-tree comparison for checked-out Local PRs, or the historical PR base-to-fetched-head three-dot range for remote PRs. Selected commits use `CodeReview`. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
 

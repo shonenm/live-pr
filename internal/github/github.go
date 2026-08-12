@@ -524,6 +524,57 @@ func (c Client) LoadPRDetail(number int) PRDetail {
 	return detail
 }
 
+// SubmitReview publishes a complete review and its inline comments atomically.
+func (c Client) SubmitReview(draft ReviewDraft, event ReviewEvent) error {
+	if err := ValidateReviewDraft(draft); err != nil {
+		return err
+	}
+	if err := ValidateReviewEvent(event); err != nil {
+		return err
+	}
+	if event == ReviewRequestChangesEvent && strings.TrimSpace(draft.Body) == "" {
+		return errors.New("request changes requires a review body")
+	}
+	if event == ReviewCommentEvent && strings.TrimSpace(draft.Body) == "" && len(draft.Comments) == 0 {
+		return errors.New("comment review requires a body or inline comment")
+	}
+	current, err := c.Find(draft.PR)
+	if err != nil {
+		return fmt.Errorf("verify pull request review revision: %w", err)
+	}
+	if current.HeadRefOID != draft.Commit {
+		return fmt.Errorf("pull request head changed from %s to %s; review the new revision before submitting", draft.Commit, current.HeadRefOID)
+	}
+	payload := struct {
+		CommitID string          `json:"commit_id"`
+		Body     string          `json:"body,omitempty"`
+		Event    ReviewEvent     `json:"event"`
+		Comments []ReviewComment `json:"comments,omitempty"`
+	}{CommitID: draft.Commit, Body: draft.Body, Event: event, Comments: draft.Comments}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode pull request review: %w", err)
+	}
+	file, err := os.CreateTemp("", "live-pr-review-*.json")
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	defer os.Remove(name)
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	out, err := c.run("api", "--method", "POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", draft.PR), "--input", name)
+	if err != nil {
+		return commandError("gh api submit pull request review", out, err)
+	}
+	return nil
+}
+
 // Merge merges a pull request with a merge commit.
 func (c Client) Merge(number int, headOID string) error {
 	if headOID == "" {
