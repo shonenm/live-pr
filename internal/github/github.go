@@ -82,7 +82,8 @@ type PRCheck struct {
 
 // PRUser is a GitHub account attached to PR metadata.
 type PRUser struct {
-	Login string `json:"login"`
+	Login     string `json:"login"`
+	AvatarURL string `json:"avatarUrl,omitempty"`
 }
 
 // PRLabel is a GitHub label and its six-digit RGB color.
@@ -100,7 +101,8 @@ type Comment struct {
 	UpdatedAt string `json:"updated_at"`
 	HTMLURL   string `json:"html_url"`
 	User      struct {
-		Login string `json:"login"`
+		Login     string `json:"login"`
+		AvatarURL string `json:"avatar_url,omitempty"`
 	} `json:"user"`
 }
 
@@ -122,7 +124,8 @@ type Activity struct {
 	CreatedAt string `json:"created_at"`
 	CommitID  string `json:"commit_id"`
 	Actor     struct {
-		Login string `json:"login"`
+		Login     string `json:"login"`
+		AvatarURL string `json:"avatar_url,omitempty"`
 	} `json:"actor"`
 	Label struct {
 		Name string `json:"name"`
