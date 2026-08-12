@@ -318,7 +318,7 @@ func (c Client) SearchPRs(query, cursor string) (PRPage, error) {
 		return PRPage{}, err
 	}
 	query = strings.TrimSpace("repo:" + repoName + " is:pr " + query + " sort:updated-desc")
-	graphqlQuery := `query($searchQuery:String!,$pageSize:Int!,$after:String){viewer{login} search(query:$searchQuery,type:ISSUE,first:$pageSize,after:$after){issueCount nodes{... on PullRequest{number url title state baseRefName baseRefOid headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login} assignees(first:10){nodes{login}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}}} pageInfo{hasNextPage startCursor endCursor}}}`
+	graphqlQuery := `query($searchQuery:String!,$pageSize:Int!,$after:String){viewer{login avatarUrl} search(query:$searchQuery,type:ISSUE,first:$pageSize,after:$after){issueCount nodes{... on PullRequest{number url title state baseRefName baseRefOid headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login avatarUrl} assignees(first:10){nodes{login avatarUrl}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login avatarUrl}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}}} pageInfo{hasNextPage startCursor endCursor}}}`
 	args := []string{"api", "graphql", "-F", "searchQuery=" + query, "-F", fmt.Sprintf("pageSize=%d", PRPageSize)}
 	if cursor != "" {
 		args = append(args, "-F", "after="+cursor)

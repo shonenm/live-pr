@@ -365,7 +365,7 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 	m.localStats = git.ChangeStats{Files: 4, Additions: 20, Deletions: 3}
 	m.workingTreeDirty = true
 	plain := ansi.Strip(m.renderHeader())
-	for _, want := range []string{"#12 open", "CI 1 passed", "review approved", "4 files", "+20", "-3", "uncommitted changes", "@alice @bob", "bug", "docs"} {
+	for _, want := range []string{"#12 open", "CI 1 passed", "review approved", "4 files", "+20", "-3", "uncommitted changes", "● @alice ● @bob", "bug", "docs"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("header missing %q: %q", want, plain)
 		}
@@ -651,7 +651,7 @@ func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 35})
 	m = u.(Model)
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"description", "comment", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author @bob", "assigned @carol", "feature", "╭", "╰"} {
+	for _, want := range []string{"description", "comment", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author ● @bob", "assigned ● @carol", "feature", "╭", "╰"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("preview missing %q: %q", want, out)
 		}
@@ -1594,6 +1594,25 @@ func TestUserIconKeepsOneCell(t *testing.T) {
 	m.avatarColors = map[string]string{"alice": "#ff0000"}
 	if icon := m.userIcon("alice"); lipgloss.Width(icon) != 1 || ansi.Strip(icon) != "●" {
 		t.Fatalf("user icon = %q", icon)
+	}
+}
+
+func TestUserIconsAppearAcrossPRSurfaces(t *testing.T) {
+	m := testModel()
+	m.w, m.list.Width, m.detail.Width = 160, 70, 80
+	pr := gh.PR{Number: 7, State: "OPEN", Title: "icons", BaseRefName: "main", HeadRefName: "icons", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "bob"}}, PreviewLoaded: true}
+	row := ansi.Strip(strings.Join(m.renderPRRow(pr, false, ""), "\n"))
+	preview := ansi.Strip(func() string { m.openPRs = []gh.PR{pr}; return m.buildPRPreview() }())
+	m.cache.PR = &pr
+	header := ansi.Strip(m.renderHeader())
+	if !strings.Contains(row, "● @alice") {
+		t.Fatalf("row user icon missing: %q", row)
+	}
+	if !strings.Contains(preview, "author ● @alice") || !strings.Contains(preview, "assigned ● @bob") {
+		t.Fatalf("preview user icons missing: %q", preview)
+	}
+	if !strings.Contains(header, "assigned ● @bob") {
+		t.Fatalf("header user icon missing: %q", header)
 	}
 }
 

@@ -207,12 +207,22 @@ func (m Model) richBody(body string) string {
 	return body
 }
 
-func (m Model) userIcon(login string) string {
+func (m Model) userIcon(login string) string { return m.userIconOn(login, "") }
+
+func (m Model) userIconOn(login, background string) string {
 	color := cMuted
 	if avatarColor := m.avatarColors[login]; avatarColor != "" {
 		color = avatarColor
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("●")
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	if background != "" {
+		style = style.Background(lipgloss.Color(background))
+	}
+	return style.Render("●")
+}
+
+func (m Model) userLabel(user gh.PRUser) string {
+	return m.userIcon(user.Login) + stFg.Render(" @"+user.Login)
 }
 
 func cardLines(header, body string, selected bool, width int, border string) []string {
