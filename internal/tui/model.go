@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -140,6 +141,17 @@ type remoteLoaded struct {
 	previewErr    error
 	commentsErr   error
 	activitiesErr error
+}
+
+type ciPollTick struct {
+	generation uint64
+	number     int
+}
+
+type ciPolled struct {
+	generation uint64
+	pr         gh.PR
+	err        error
 }
 
 type githubRefreshed struct {
@@ -299,6 +311,7 @@ type Model struct {
 	workingTreeDirty          bool
 	autoOpenCurrent           bool
 	refreshing                bool
+	ciPollFailures            int
 	listRefreshing            bool
 	publishing                bool
 	localEditMode             localEditMode
@@ -670,6 +683,30 @@ func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 		}
 		detail := client.LoadPRDetail(number)
 		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr}
+	}
+}
+
+func scheduleCIPoll(generation uint64, number, failures int) tea.Cmd {
+	delay := 15 * time.Second
+	if failures > 0 {
+		delay *= time.Duration(1 << min(failures, 3))
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return ciPollTick{generation: generation, number: number}
+	})
+}
+
+func (m Model) nextCIPoll() tea.Cmd {
+	if m.screen == detailScreen && m.cache.PR != nil && prCIHealth(*m.cache.PR) == "pending" {
+		return scheduleCIPoll(m.targetGeneration, m.cache.PR.Number, m.ciPollFailures)
+	}
+	return nil
+}
+
+func pollCI(generation uint64, number int) tea.Cmd {
+	return func() tea.Msg {
+		pr, err := gh.New().FindChecks(number)
+		return ciPolled{generation: generation, pr: pr, err: err}
 	}
 }
 
