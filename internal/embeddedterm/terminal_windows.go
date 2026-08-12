@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-var errUnsupported = errors.New("embedded CodeReview is not supported on Windows")
+var errUnsupported = errors.New("embedded CodeDiff is not supported on Windows")
 
 // Terminal is the Windows fallback; static Git diff remains available.
 type Terminal struct {

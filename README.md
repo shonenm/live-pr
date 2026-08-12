@@ -24,7 +24,7 @@ live-pr keeps a living artifact during development:
 - **head** — the final PR-template summary, pinned on top and updated when the implemented outcome is known
 - **timeline** — an append-only, editable view of sparse `decision` / `pivot` /
   `summary` / `commit` / `note` records from humans and agents
-- **reviewer** — pluggable; an interactive local reviewer such as Neovim CodeReview can stay embedded beside the conversation and review the full PR-equivalent branch diff
+- **reviewer** — pluggable; an interactive local reviewer such as Neovim CodeDiff can stay embedded beside the conversation and review the full PR-equivalent branch diff
 - **export** — at the end, the timeline is turned into a real GitHub PR body
 
 Read it in a tmux popup, review code like a GitHub PR, ship it as a PR whose
@@ -53,7 +53,7 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 - Version-matched Agent Skill teaching coding agents when to record decisions—and when not to.
 - Bubble Tea TUI with GitHub-style open-PR lists, filters, saved navigation state, stack grouping, and cached previews.
 - Local and remote PR review without changing the worktree for remote browsing.
-- Conversation beside an interactive CodeReview pane, with detail-header CI/review/size status, local uncommitted-change visibility, and commit-scoped CI/review support.
+- Conversation beside an interactive CodeDiff pane, with detail-header CI/review/size status, local uncommitted-change visibility, and commit-scoped CI/review support.
 - Static `git diff`/`delta` review with a file Explorer, immediate file selection, reviewed checks, conflict-file markers, and independent Conversation/Diff scrolling.
 - Create or update GitHub PRs from the conclusion and timeline with `live-pr pr`.
 - Explicit checkout, close, and merge actions with centered confirmation popups and loading indicators.
@@ -99,7 +99,7 @@ The binary also carries the matching skill version. `live-pr skill path` materia
 - Git is required for local use.
 - An authenticated GitHub CLI (`gh`) is required only for GitHub browsing and publishing.
 - Claude Code is required only for automatic Stop-hook summaries.
-- Neovim CodeReview and external diff formatters are optional; raw Git diff is built in.
+- Neovim CodeDiff and external diff formatters are optional; raw Git diff is built in.
 - macOS and Linux support the embedded reviewer. Windows falls back to static diff.
 - GitHub review submission supports general and inline comments, approval, and changes requested. Existing review threads and inline comments are not synchronized into the TUI yet.
 - Local state remains outside the repository until an explicit `live-pr pr` publish.
@@ -119,7 +119,7 @@ live-pr status --json     # stable machine-readable status; add --refresh to que
 live-pr demo              # disposable demo with built-in git diff
 live-pr demo delta       # disposable demo with delta (unified)
 live-pr demo delta-side  # disposable demo with delta (side-by-side)
-live-pr demo codereview  # disposable demo with embedded Neovim CodeReview
+live-pr demo codereview  # disposable demo with embedded Neovim CodeDiff
                          # every demo includes stateful mock PRs; no GitHub resources are created
 live-pr init             # seed the final summary from the repo PR template
 live-pr summary edit     # edit the final result in $VISUAL/$EDITOR
@@ -155,13 +155,13 @@ In a demo, the current PR Conversation shows compact CI activity for two commits
 
 Review drafts live under repository XDG state, isolated by PR number and head commit. Submission rechecks the current GitHub head SHA and refuses stale line comments after a push. Press `A` from the left pane to comment on the currently selected changed file. With the static Explorer (`[diff].command = ""`), `a` on a selected file does the same to enter `path`, `line`, `side` (`RIGHT` for new code, `LEFT` for deleted code), and the body. In Conversation, `a` edits the general review body. Press `v` to inspect and submit the draft. External Neovim reviewers remain usable, but live-pr cannot infer their cursor line; use `live-pr review add` for explicit inline comments.
 
-The built-in right-side reviewer starts Neovim with `LIVE_PR_RANGE`: a merge-base-to-working-tree comparison for checked-out Local PRs, or the historical PR base-to-fetched-head three-dot range for remote PRs. Selected commits use `CodeReview`. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
+The built-in right-side reviewer starts Neovim with `LIVE_PR_RANGE`: a merge-base-to-working-tree comparison for checked-out Local PRs, or the historical PR base-to-fetched-head three-dot range for remote PRs. Selected commits use `CodeDiff` with the commit's parent-to-commit range. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
 
 ```toml
 [diff]
 command = 'nvim -c "CodeDiff $LIVE_PR_RANGE"'
-commit_command = 'nvim -c "CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
-display = "delta --color-only" # fallback after CodeReview exits
+commit_command = 'nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
+display = "delta --color-only" # fallback after CodeDiff exits
 ```
 
 Set `command = ""` to disable the built-in branch reviewer. When the command for a scope is empty, unsupported, exits, or fails, the right pane uses the whole raw branch diff or selected commit diff, optionally filtered by `display`.
