@@ -143,10 +143,6 @@ live-pr pr publish       # push and create or update the GitHub PR
                          # compatible aliases: live-pr pr --dry-run / live-pr pr
 ```
 
-Conversation uses portable Unicode user markers, avoiding terminal-specific image protocols and avatar downloads. Mermaid fences render as labeled, syntax-highlighted source when no graphical renderer is available; live-pr does not require Kitty/Sixel support, Node.js, Chromium, or `mmdc`.
-
-Remote PR detail shows commits behind the latest fetched base and conflict files from a non-mutating `git merge-tree` simulation. Neither check changes HEAD, the index, or the worktree.
-
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, and TUI synchronization timings to stderr.
 
 The PR navigator fetches only the active view's first 25 rows. Reaching the final loaded row requests the next page and appends it; switching back to a view loaded in the current session does not issue another request. View counts become exact when that view is first fetched (`?` means unvisited). Search is submitted with `Enter` and runs server-side; `ci:` and `merge:` remain local post-filters over progressively loaded pages. GitHub Search limits any one query to its first 1,000 results.
