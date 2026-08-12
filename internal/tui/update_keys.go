@@ -68,11 +68,11 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.PreviewUp) {
-		m.detail.HalfPageUp()
+		scrollQuarter(&m.detail, false)
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.PreviewDown) {
-		m.detail.HalfPageDown()
+		scrollQuarter(&m.detail, true)
 		return m, nil
 	}
 	if handled, cmd := m.handleVimNavigation(msg); handled {
@@ -143,10 +143,10 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.prPages[m.activePRPage] = page
 		return m, m.requestPRPage(true)
 	case key.Matches(msg, m.keys.PreviewDown):
-		m.detail.HalfPageDown()
+		scrollQuarter(&m.detail, true)
 		return m, nil
 	case key.Matches(msg, m.keys.PreviewUp):
-		m.detail.HalfPageUp()
+		scrollQuarter(&m.detail, false)
 		return m, nil
 	case key.Matches(msg, m.keys.Down):
 		if m.prCursor < len(m.openPRs)-1 {
@@ -283,11 +283,11 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 		if key.Matches(msg, m.keys.PreviewUp) {
-			m.detail.HalfPageUp()
+			scrollQuarter(&m.detail, false)
 			return m, nil
 		}
 		if key.Matches(msg, m.keys.PreviewDown) {
-			m.detail.HalfPageDown()
+			scrollQuarter(&m.detail, true)
 			return m, nil
 		}
 		switch msg.String() {
@@ -305,11 +305,11 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.focusExplorer {
 		if m.fileExplorerMode() {
 			if key.Matches(msg, m.keys.PreviewUp) {
-				m.detail.HalfPageUp()
+				scrollQuarter(&m.detail, false)
 				return m, nil
 			}
 			if key.Matches(msg, m.keys.PreviewDown) {
-				m.detail.HalfPageDown()
+				scrollQuarter(&m.detail, true)
 				return m, nil
 			}
 		}
@@ -319,11 +319,11 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 	if m.screen == detailScreen && !m.focusDiff && !m.focusExplorer {
 		if key.Matches(msg, m.keys.PreviewUp) {
-			m.list.HalfPageUp()
+			scrollQuarter(&m.list, false)
 			return m, nil
 		}
 		if key.Matches(msg, m.keys.PreviewDown) {
-			m.list.HalfPageDown()
+			scrollQuarter(&m.list, true)
 			return m, nil
 		}
 	}
