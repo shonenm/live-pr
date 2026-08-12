@@ -354,12 +354,38 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, msg.pr.URL, ""))
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	cmds := []tea.Cmd{m.sync()}
+	cmds := []tea.Cmd{m.sync(), m.nextCIPoll()}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
 	return m, tea.Batch(cmds...)
 
+}
+
+func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
+	if msg.generation != m.targetGeneration || m.screen != detailScreen || m.cache.PR == nil || m.cache.PR.Number != msg.pr.Number && msg.err == nil {
+		return m, nil
+	}
+	if msg.err != nil {
+		m.ciPollFailures++
+		m.githubStatus = "GitHub: CI update unavailable · retrying…"
+		return m, scheduleCIPoll(msg.generation, m.cache.PR.Number, m.ciPollFailures)
+	}
+	if msg.pr.HeadRefOID != m.cache.PR.HeadRefOID {
+		m.githubStatus = "GitHub: PR head changed · refresh required"
+		return m, nil
+	}
+	m.ciPollFailures = 0
+	m.cache.PR.Checks = msg.pr.Checks
+	m.cache.PR.PreviewLoaded = true
+	m.navigator.PRs = upsertPR(m.navigator.PRs, *m.cache.PR)
+	m.prRowCache = map[prRowCacheKey][]string{}
+	m.githubStatus = "GitHub: CI updated now"
+	m.layout()
+	if prCIHealth(*m.cache.PR) == "pending" {
+		return m, scheduleCIPoll(msg.generation, msg.pr.Number, 0)
+	}
+	return m, nil
 }
 
 func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
@@ -425,6 +451,6 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	}
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	return m, tea.Batch(diffCmd, m.sync())
+	return m, tea.Batch(diffCmd, m.sync(), m.nextCIPoll())
 
 }

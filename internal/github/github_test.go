@@ -182,6 +182,19 @@ func TestPRDetailStartsPreviewCommentsAndActivityConcurrently(t *testing.T) {
 	}
 }
 
+func TestFindChecksLoadsOnlyHeadAndRollup(t *testing.T) {
+	client := Client{run: func(args ...string) ([]byte, error) {
+		if got := strings.Join(args, " "); got != "pr view 12 --json number,headRefOid,statusCheckRollup" {
+			t.Fatalf("FindChecks args = %q", got)
+		}
+		return []byte(`{"number":12,"headRefOid":"abc","statusCheckRollup":[{"name":"test","status":"IN_PROGRESS"}]}`), nil
+	}}
+	pr, err := client.FindChecks(12)
+	if err != nil || pr.Number != 12 || pr.HeadRefOID != "abc" || len(pr.Checks) != 1 || !pr.PreviewLoaded {
+		t.Fatalf("FindChecks = %#v err=%v", pr, err)
+	}
+}
+
 func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	var previewFields string
 	client := Client{run: func(args ...string) ([]byte, error) {
