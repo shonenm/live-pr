@@ -331,6 +331,25 @@ func TestDetailMergeStartsConfirmation(t *testing.T) {
 	}
 }
 
+func TestRemotePRHeaderAndExplorerShowMergeReadiness(t *testing.T) {
+	m := testModel()
+	m.w = 180
+	m.remote = true
+	m.cache.PR = &gh.PR{Number: 7, State: "OPEN"}
+	m.mergeReadiness = git.MergeReadiness{Behind: 3, ConflictFiles: []string{"conflict.go"}}
+	m.files = []git.ChangedFile{{Status: "M", Path: "conflict.go"}, {Status: "A", Path: "clean.go"}}
+	m.explorer.Width = 80
+	header := ansi.Strip(m.renderHeader())
+	if !strings.Contains(header, "3 behind") || !strings.Contains(header, "1 conflict files") {
+		t.Fatalf("merge readiness header = %q", header)
+	}
+	explorer, _ := m.buildFileExplorer()
+	plain := ansi.Strip(explorer)
+	if !strings.Contains(plain, "⚠ 1 conflicts") || !strings.Contains(plain, "⚠ M conflict.go") || strings.Contains(plain, "⚠ A clean.go") {
+		t.Fatalf("merge readiness explorer = %q", plain)
+	}
+}
+
 func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 	m := testModel()
 	m.w = 180

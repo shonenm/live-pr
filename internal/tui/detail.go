@@ -177,10 +177,18 @@ func (m Model) renderReviewPane() string {
 }
 
 func (m Model) buildFileExplorer() (string, int) {
+	conflicts := make(map[string]bool, len(m.mergeReadiness.ConflictFiles))
+	for _, path := range m.mergeReadiness.ConflictFiles {
+		conflicts[path] = true
+	}
 	if len(m.files) == 0 {
 		return stMuted.Render("Files\n(no changed files)"), 0
 	}
-	lines := []string{stBold.Render("Files") + stMuted.Render(fmt.Sprintf(" · %d changed", len(m.files)))}
+	title := stBold.Render("Files") + stMuted.Render(fmt.Sprintf(" · %d changed", len(m.files)))
+	if len(conflicts) > 0 {
+		title += " · " + stRedF.Render(fmt.Sprintf("⚠ %d conflicts", len(conflicts)))
+	}
+	lines := []string{title}
 	selectedLine := 0
 	for i, file := range m.files {
 		if i == m.fileCursor {
@@ -194,7 +202,11 @@ func (m Model) buildFileExplorer() (string, int) {
 		if file.OldPath != "" {
 			path = file.OldPath + " → " + file.Path
 		}
-		line := selectionBar(i == m.fileCursor) + mark + " " + fileStatusStyle(file.Status).Render(file.Status) + " " + stFg.Render(path)
+		conflict := ""
+		if conflicts[file.Path] || file.OldPath != "" && conflicts[file.OldPath] {
+			conflict = stRedF.Render("⚠ ")
+		}
+		line := selectionBar(i == m.fileCursor) + mark + " " + conflict + fileStatusStyle(file.Status).Render(file.Status) + " " + stFg.Render(path)
 		lines = append(lines, ansi.Truncate(line, max(10, m.explorer.Width), "…"))
 	}
 	return strings.Join(lines, "\n"), selectedLine
