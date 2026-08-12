@@ -1589,6 +1589,14 @@ func TestEmptyPRDescriptionHasPlaceholder(t *testing.T) {
 	}
 }
 
+func TestUserIconKeepsOneCell(t *testing.T) {
+	m := testModel()
+	m.avatarColors = map[string]string{"alice": "#ff0000"}
+	if icon := m.userIcon("alice"); lipgloss.Width(icon) != 1 || ansi.Strip(icon) != "●" {
+		t.Fatalf("user icon = %q", icon)
+	}
+}
+
 func TestCommitPickerSelectsCommitAndEscRestoresBranchReview(t *testing.T) {
 	m := testModel()
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})

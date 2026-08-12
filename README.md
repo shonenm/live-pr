@@ -100,6 +100,7 @@ The binary also carries the matching skill version. `live-pr skill path` materia
 - An authenticated GitHub CLI (`gh`) is required only for GitHub browsing and publishing.
 - Claude Code is required only for automatic Stop-hook summaries.
 - Neovim CodeDiff and external diff formatters are optional; raw Git diff is built in.
+- `termaid` is optional; when installed, Mermaid fences render as compact terminal diagrams.
 - macOS and Linux support the embedded reviewer. Windows falls back to static diff.
 - GitHub review submission supports general and inline comments, approval, and changes requested. Existing review threads and inline comments are not synchronized into the TUI yet.
 - Local state remains outside the repository until an explicit `live-pr pr` publish.
@@ -120,6 +121,7 @@ live-pr demo              # disposable demo with built-in git diff
 live-pr demo delta       # disposable demo with delta (unified)
 live-pr demo delta-side  # disposable demo with delta (side-by-side)
 live-pr demo codereview  # disposable demo with embedded Neovim CodeDiff
+                         # demos include one-cell avatar colors and Mermaid when termaid is installed
                          # every demo includes stateful mock PRs; no GitHub resources are created
 live-pr init             # seed the final summary from the repo PR template
 live-pr summary edit     # edit the final result in $VISUAL/$EDITOR
