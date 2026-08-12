@@ -191,12 +191,12 @@ func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
 	if strings.TrimSpace(body) == "" {
 		body = "(no description provided)"
 	}
-	header := stMuted.Render("💬 @" + pr.Author.Login + " · description · " + shortTS(pr.CreatedAt))
+	header := userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+shortTS(pr.CreatedAt))
 	return cardLines(header, md.Render(body, width-7), selected, width, cCloudBorder)
 }
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
-	header := stMuted.Render("💬 @" + comment.User.Login + " · comment · " + shortTS(comment.CreatedAt))
+	header := userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+shortTS(comment.CreatedAt))
 	return cardLines(header, md.Render(comment.Body, width-7), selected, width, cCloudBorder)
 }
 
@@ -219,7 +219,7 @@ func cardLines(header, body string, selected bool, width int, border string) []s
 }
 
 func (m Model) activityLines(activity gh.Activity, selected bool) []string {
-	line := stMuted.Render("● @"+activity.Actor.Login+" ") + stFg.Render(activitySummary(activity)) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
+	line := userIcon(activity.Actor.Login) + stMuted.Render(" @"+activity.Actor.Login+" ") + stFg.Render(activitySummary(activity)) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
 	return []string{selectionBar(selected) + line}
 }
 

@@ -54,7 +54,7 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 - Bubble Tea TUI with GitHub-style open-PR lists, filters, saved navigation state, stack grouping, and cached previews.
 - Local and remote PR review without changing the worktree for remote browsing.
 - Conversation beside an interactive CodeReview pane, with detail-header CI/review/size status, local uncommitted-change visibility, and commit-scoped CI/review support.
-- Static `git diff`/`delta` review with a file Explorer, immediate file selection, reviewed checks, and independent Conversation/Diff scrolling.
+- Static `git diff`/`delta` review with a file Explorer, immediate file selection, reviewed checks, conflict-file markers, and independent Conversation/Diff scrolling.
 - Create or update GitHub PRs from the conclusion and timeline with `live-pr pr`.
 - Explicit checkout, close, and merge actions with centered confirmation popups and loading indicators.
 - Claude Code Stop-hook integration and XDG-compliant runtime state.
@@ -137,6 +137,10 @@ live-pr pr preview       # preview the generated managed PR body
 live-pr pr publish       # push and create or update the GitHub PR
                          # compatible aliases: live-pr pr --dry-run / live-pr pr
 ```
+
+Conversation uses portable Unicode user markers, avoiding terminal-specific image protocols and avatar downloads. Mermaid fences render as labeled, syntax-highlighted source when no graphical renderer is available; live-pr does not require Kitty/Sixel support, Node.js, Chromium, or `mmdc`.
+
+Remote PR detail shows commits behind the latest fetched base and conflict files from a non-mutating `git merge-tree` simulation. Neither check changes HEAD, the index, or the worktree.
 
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub, cache-save, and TUI synchronization timings to stderr.
 

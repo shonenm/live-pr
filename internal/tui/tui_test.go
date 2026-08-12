@@ -399,6 +399,16 @@ func TestPaletteMatchesPrimerDarkSemantics(t *testing.T) {
 	}
 }
 
+func TestUserIconIsPortableAndStable(t *testing.T) {
+	alice := userIcon("alice")
+	if ansi.Strip(alice) != "●" || alice != userIcon("alice") || ansi.Strip(userIcon("bob")) != "●" {
+		t.Fatalf("user icons = alice:%q bob:%q", alice, userIcon("bob"))
+	}
+	if ansi.Strip(userIcon("")) != "○" {
+		t.Fatalf("anonymous icon = %q", userIcon(""))
+	}
+}
+
 func TestEventKindsUseDistinctSemanticColors(t *testing.T) {
 	want := map[event.Kind]string{
 		event.Decision: stAccent.Bold(true).Render(string(event.Decision)),
