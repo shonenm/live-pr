@@ -47,7 +47,7 @@ type DiffConfig struct {
 // Default returns built-in settings, including legacy commit compatibility.
 func Default() Config {
 	return Config{
-		Reviewer:                  `nvim -c "CodeReview {sha}~1 {sha}"`,
+		Reviewer:                  `nvim -c "CodeDiff {sha}~1 {sha}"`,
 		SummaryMinIntervalMinutes: 10,
 		Diff: DiffConfig{
 			Command: `nvim -c "CodeDiff $LIVE_PR_RANGE"`,

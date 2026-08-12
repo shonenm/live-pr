@@ -16,7 +16,7 @@ func loadConfig(t *testing.T, repo string) Config {
 	return cfg
 }
 
-func TestDefaultStartsBranchAndCommitCodeReview(t *testing.T) {
+func TestDefaultStartsBranchAndCommitCodeDiff(t *testing.T) {
 	cfg := Default()
 	if cfg.Diff.Command != `nvim -c "CodeDiff $LIVE_PR_RANGE"` {
 		t.Fatalf("branch command = %q", cfg.Diff.Command)
@@ -24,7 +24,7 @@ func TestDefaultStartsBranchAndCommitCodeReview(t *testing.T) {
 	if cfg.Diff.CommitCommand != "" {
 		t.Fatalf("built-in commit_command must remain unset, got %q", cfg.Diff.CommitCommand)
 	}
-	if got := cfg.CommitReviewCommand(); got != `nvim -c "CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA"` {
+	if got := cfg.CommitReviewCommand(); got != `nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"` {
 		t.Fatalf("commit command = %q", got)
 	}
 }
