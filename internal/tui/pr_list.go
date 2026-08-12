@@ -703,7 +703,7 @@ func (m Model) buildPRPreview() string {
 		stFg.Render(fmt.Sprintf("  %d comments", pr.CommentCount)),
 		"",
 		stBold.Render("Metadata"),
-		"  "+previewPeople(*pr),
+		"  "+m.previewPeople(*pr),
 	)
 	if len(pr.Labels) > 0 {
 		pills := make([]string, 0, len(pr.Labels))
@@ -723,11 +723,11 @@ func (m Model) buildPRPreview() string {
 		if strings.TrimSpace(body) == "" {
 			body = "(no description provided)"
 		}
-		header := stMuted.Render("💬 @" + pr.Author.Login + " · description · " + shortTS(pr.CreatedAt))
+		header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+shortTS(pr.CreatedAt))
 		lines = append(lines, cardLines(header, previewMarkdown(body, width-7, 10), false, width, cCloudBorder)...)
 		if len(pr.Conversation) > 0 {
 			comment := pr.Conversation[0]
-			header = stMuted.Render("💬 @" + comment.Author.Login + " · comment · " + shortTS(comment.CreatedAt))
+			header = m.userIcon(comment.Author.Login) + stMuted.Render(" @"+comment.Author.Login+" · comment · "+shortTS(comment.CreatedAt))
 			lines = append(lines, "")
 			lines = append(lines, cardLines(header, previewMarkdown(comment.Body, width-7, 5), false, width, cCloudBorder)...)
 		}
@@ -735,22 +735,22 @@ func (m Model) buildPRPreview() string {
 	return strings.Join(lines, "\n")
 }
 
-func previewPeople(pr gh.PR) string {
+func (m Model) previewPeople(pr gh.PR) string {
 	parts := []string{}
 	if pr.Author.Login != "" {
-		parts = append(parts, "author @"+pr.Author.Login)
+		parts = append(parts, stMuted.Render("author ")+m.userLabel(pr.Author))
 	}
 	if len(pr.Assignees) > 0 {
 		users := make([]string, 0, len(pr.Assignees))
 		for _, user := range pr.Assignees {
-			users = append(users, "@"+user.Login)
+			users = append(users, m.userLabel(user))
 		}
-		parts = append(parts, "assigned "+strings.Join(users, " "))
+		parts = append(parts, stMuted.Render("assigned ")+strings.Join(users, " "))
 	}
 	if len(parts) == 0 {
 		return stMuted.Render("unassigned")
 	}
-	return stFg.Render(strings.Join(parts, " · "))
+	return strings.Join(parts, stMuted.Render(" · "))
 }
 
 func reviewSummary(decision string) string {
@@ -982,7 +982,10 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 		state = "open"
 	}
 	identifier := fmt.Sprintf("#%d", pr.Number)
-	owner := " · @" + pr.Author.Login
+	owner := ""
+	if pr.Author.Login != "" {
+		owner = " · " + m.userIcon(pr.Author.Login) + " @" + pr.Author.Login
+	}
 	if pr.IsDraft && state == "open" {
 		state = "draft"
 	}
@@ -1002,7 +1005,7 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 			meta += " · " + prCheckSummary(pr)
 		}
 		meta += prDiffStat(pr)
-		meta += stMuted.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
+		meta += stMuted.Render(fmt.Sprintf(" · %s ← %s", pr.BaseRefName, pr.HeadRefName)) + owner
 		return []string{ansi.Truncate(line, width, "…"), ansi.Truncate(meta, width, "…"), ""}
 	}
 	// Selected rows collapse to one highlight style, lazygit-style; the state
@@ -1023,17 +1026,21 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	if pr.Additions != 0 || pr.Deletions != 0 {
 		meta += mutedSt.Render(" · ") + stGreenF.Background(bg).Render(fmt.Sprintf("+%d", pr.Additions)) + mutedSt.Render(" ") + stRedF.Background(bg).Render(fmt.Sprintf("-%d", pr.Deletions))
 	}
-	meta += mutedSt.Render(fmt.Sprintf(" · %s ← %s%s", pr.BaseRefName, pr.HeadRefName, owner))
+	meta += mutedSt.Render(fmt.Sprintf(" · %s ← %s", pr.BaseRefName, pr.HeadRefName))
+	if pr.Author.Login != "" {
+		meta += mutedSt.Render(" · ")
+		meta += m.userIconOn(pr.Author.Login, cSelectedBg) + mutedSt.Render(" @"+pr.Author.Login)
+	}
 	return []string{padRow(line, width, rowSt), padRow(meta, width, mutedSt), ""}
 }
 func (m Model) renderPRMeta(pr gh.PR) string {
-	assignees := stMuted.Render("👤 unassigned")
+	assignees := stMuted.Render("unassigned")
 	if len(pr.Assignees) > 0 {
 		users := make([]string, 0, len(pr.Assignees))
 		for _, user := range pr.Assignees {
-			users = append(users, "@"+user.Login)
+			users = append(users, m.userLabel(user))
 		}
-		assignees = stMuted.Render("👤 ") + stFg.Render(strings.Join(users, " "))
+		assignees = stMuted.Render("assigned ") + strings.Join(users, " ")
 	}
 	labels := stMuted.Render("🏷 no labels")
 	if len(pr.Labels) > 0 {

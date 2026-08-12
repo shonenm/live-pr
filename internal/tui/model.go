@@ -227,6 +227,11 @@ type avatarColorsLoaded struct {
 	colors     map[string]string
 }
 
+type listAvatarColorsLoaded struct {
+	generation uint64
+	colors     map[string]string
+}
+
 type detailContent struct {
 	key        string
 	raw        string
@@ -750,6 +755,55 @@ func richContentKey(pr *gh.PR, comments []gh.Comment, activities []gh.Activity) 
 	return sha256.Sum256([]byte(input.String()))
 }
 
+func loadAvatarColors(avatars map[string]string) map[string]string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	colors := map[string]string{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for login, avatarURL := range avatars {
+		if login == "" {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if avatarURL == "" {
+				avatarURL = "https://avatars.githubusercontent.com/" + login
+			}
+			if color, err := richcontent.AvatarColorContext(ctx, avatarURL); err == nil {
+				mu.Lock()
+				colors[login] = color
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return colors
+}
+
+func loadListAvatarColors(generation uint64, prs []gh.PR) tea.Cmd {
+	avatars := map[string]string{}
+	for _, pr := range prs {
+		avatars[pr.Author.Login] = pr.Author.AvatarURL
+		for _, comment := range pr.Conversation {
+			avatars[comment.Author.Login] = comment.Author.AvatarURL
+		}
+		for _, user := range pr.Assignees {
+			avatars[user.Login] = user.AvatarURL
+		}
+		for _, user := range pr.ReviewRequests {
+			avatars[user.Login] = user.AvatarURL
+		}
+	}
+	return func() tea.Msg {
+		return listAvatarColorsLoaded{generation: generation, colors: loadAvatarColors(avatars)}
+	}
+}
+
 func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity) tea.Cmd {
 	key := richContentKey(pr, comments, activities)
 	bodies := make([]string, 0, len(comments)+1)
@@ -785,21 +839,7 @@ func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comm
 			return richBodiesLoaded{generation: generation, key: key, bodies: results}
 		},
 		func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			colors := map[string]string{}
-			for login, avatarURL := range avatars {
-				if login == "" || len(colors) >= 32 {
-					continue
-				}
-				if avatarURL == "" {
-					avatarURL = "https://avatars.githubusercontent.com/" + login
-				}
-				if color, err := richcontent.AvatarColorContext(ctx, avatarURL); err == nil {
-					colors[login] = color
-				}
-			}
-			return avatarColorsLoaded{generation: generation, key: key, colors: colors}
+			return avatarColorsLoaded{generation: generation, key: key, colors: loadAvatarColors(avatars)}
 		},
 	)
 }
