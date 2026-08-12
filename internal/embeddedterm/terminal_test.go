@@ -3,12 +3,76 @@
 package embeddedterm
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	portalis "github.com/Starframe/portalis"
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestWatchdogHelper(t *testing.T) {
+	if os.Getenv("LIVE_PR_WATCHDOG_TEST_HELPER") != "1" {
+		return
+	}
+	pidFile := os.Getenv("LIVE_PR_WATCHDOG_PID_FILE")
+	terminal := New(fmt.Sprintf("echo $$ > %q; exec sleep 30", pidFile), t.TempDir(), nil)
+	if cmd := terminal.Init(); cmd == nil {
+		os.Exit(2)
+	}
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func TestWatchdogKillsReviewerWhenParentIsSIGKILLed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses Unix process groups")
+	}
+	pidFile := t.TempDir() + "/reviewer.pid"
+	parent := exec.Command(os.Args[0], "-test.run=^TestWatchdogHelper$")
+	parent.Env = append(os.Environ(), "LIVE_PR_WATCHDOG_TEST_HELPER=1", "LIVE_PR_WATCHDOG_PID_FILE="+pidFile)
+	if err := parent.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if parent.Process != nil {
+			_ = parent.Process.Kill()
+		}
+	}()
+	var reviewerPID int
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(pidFile)
+		if err == nil {
+			reviewerPID, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+			if reviewerPID > 0 {
+				break
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if reviewerPID == 0 {
+		t.Fatal("reviewer did not start")
+	}
+	if err := parent.Process.Signal(syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = parent.Process.Wait()
+	deadline = time.Now().Add(3 * time.Second)
+	for processAlive(reviewerPID) && time.Now().Before(deadline) {
+		time.Sleep(25 * time.Millisecond)
+	}
+	if processAlive(reviewerPID) {
+		t.Fatalf("reviewer %d survived parent SIGKILL", reviewerPID)
+	}
+}
 
 func TestEnvironment(t *testing.T) {
 	env := Environment("base-sha...head-ref", "main", "feature/x", "refs/live-pr/pulls/1/head", "https://example.test/pr/1", "abc123")
@@ -74,8 +138,12 @@ func TestNaturalExitIsClosedAndReaped(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("missing PTY listener")
 	}
-	msg := cmd()
-	terminal.Update(msg)
+	deadline := time.Now().Add(time.Second)
+	var msg tea.Msg
+	for terminal.Available() && cmd != nil && time.Now().Before(deadline) {
+		msg = cmd()
+		cmd = terminal.Update(msg)
+	}
 	if terminal.Available() || !terminal.closed {
 		t.Fatalf("terminal remained available after %T", msg)
 	}
