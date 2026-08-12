@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -131,6 +132,31 @@ func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
 	plain = ansi.Strip(content)
 	if !strings.Contains(plain, "✓ M internal/tui/tui.go") {
 		t.Fatalf("checked file missing: %q", plain)
+	}
+}
+
+func TestLayoutWaitsForTerminalSize(t *testing.T) {
+	m := testModel()
+	m.ready, m.w, m.h = false, 0, 0
+	m.layout()
+	if m.ready || m.list.Width != 0 || m.detail.Width != 0 {
+		t.Fatalf("layout initialized before terminal size: ready=%v list=%dx%d detail=%dx%d", m.ready, m.list.Width, m.list.Height, m.detail.Width, m.detail.Height)
+	}
+	if got := m.View(); got != "loading…" {
+		t.Fatalf("pre-size view = %q", got)
+	}
+}
+
+func TestQuarterViewportScroll(t *testing.T) {
+	v := viewport.New(40, 20)
+	v.SetContent(strings.Repeat("line\n", 100))
+	scrollQuarter(&v, true)
+	if v.YOffset != 5 {
+		t.Fatalf("quarter down offset = %d, want 5", v.YOffset)
+	}
+	scrollQuarter(&v, false)
+	if v.YOffset != 0 {
+		t.Fatalf("quarter up offset = %d, want 0", v.YOffset)
 	}
 }
 
@@ -1083,7 +1109,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	plain := ansi.Strip(m.buildPRList())
-	for _, want := range []string{"stack/model · 3 PRs", "├ #1", "├ #2", "└ #3"} {
+	for _, want := range []string{"#1 · 3 PRs", "├ #1", "├ #2", "└ #3"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("stack render missing %q: %q", want, plain)
 		}
@@ -1099,7 +1125,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	if len(m.openPRs) != 1 || m.openPRs[0].Number != 1 || !m.collapsedStacks[m.prStacks[0].id] {
 		t.Fatalf("collapsed stack = prs:%#v collapsed:%#v", m.openPRs, m.collapsedStacks)
 	}
-	if !strings.Contains(ansi.Strip(m.buildPRList()), "▸ stack/model") {
+	if !strings.Contains(ansi.Strip(m.buildPRList()), "▸ #1") {
 		t.Fatalf("collapsed header = %q", ansi.Strip(m.buildPRList()))
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
