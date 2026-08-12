@@ -27,7 +27,7 @@ func testModel() Model {
 	return Model{
 		title:       "CodeDiff review mode",
 		prView:      allPRsView,
-		diffCommand: "nvim",
+		diffCommand: "",
 		base:        "main",
 		diffBase:    "main",
 		head:        "feature/x",
@@ -40,6 +40,16 @@ func testModel() Model {
 		conversationDirty: true,
 		help:              newHelp(),
 		keys:              keys,
+	}
+}
+
+func TestModelDoesNotConfigureARealReviewerProcess(t *testing.T) {
+	m := testModel()
+	if m.diffCommand != "" {
+		t.Fatalf("test model reviewer command = %q; tests must opt in to child processes", m.diffCommand)
+	}
+	if terminal := embeddedterm.New(m.diffCommand, t.TempDir(), nil); terminal != nil {
+		t.Fatal("empty test reviewer command created a terminal")
 	}
 }
 
@@ -2011,6 +2021,7 @@ func TestReviewFocusKeys(t *testing.T) {
 
 func TestStaticReviewFocusKeys(t *testing.T) {
 	m := testModel()
+	m.diffCommand = "cat"
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
