@@ -32,6 +32,7 @@ func Render(text string, width int) string {
 	}
 	renderCache.Unlock()
 
+	text = labelMermaidBlocks(text)
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(githubStyle()),
 		glamour.WithWordWrap(width),
@@ -52,6 +53,21 @@ func Render(text string, width int) string {
 	renderCache.items[key] = out
 	renderCache.Unlock()
 	return out
+}
+
+func labelMermaidBlocks(text string) string {
+	lines := strings.Split(text, "\n")
+	inMermaid := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inMermaid && strings.EqualFold(trimmed, "```mermaid") {
+			lines[i] = "> ◇ Mermaid diagram (source)\n\n```mermaid"
+			inMermaid = true
+		} else if inMermaid && trimmed == "```" {
+			inMermaid = false
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func githubStyle() glamouransi.StyleConfig {
