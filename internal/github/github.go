@@ -359,6 +359,24 @@ func (c Client) SearchPRs(query, cursor string) (PRPage, error) {
 	return PRPage{Repository: repoName, ViewerLogin: response.Data.Viewer.Login, PRs: prs, TotalCount: response.Data.Search.IssueCount, PageInfo: response.Data.Search.PageInfo}, nil
 }
 
+// FindChecks loads only the current head revision and its CI rollup.
+func (c Client) FindChecks(number int) (PR, error) {
+	const fields = "number,headRefOid,statusCheckRollup"
+	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
+	if err != nil {
+		return PR{}, commandError("gh pr view checks", out, err)
+	}
+	var result struct {
+		Number     int       `json:"number"`
+		HeadRefOID string    `json:"headRefOid"`
+		Checks     []PRCheck `json:"statusCheckRollup"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return PR{}, fmt.Errorf("decode gh PR checks: %w", err)
+	}
+	return PR{Number: result.Number, HeadRefOID: result.HeadRefOID, Checks: result.Checks, PreviewLoaded: true}, nil
+}
+
 // FindPreview loads the expensive preview fields for one PR only.
 func (c Client) FindPreview(number int) (PR, error) {
 	const fields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup"
