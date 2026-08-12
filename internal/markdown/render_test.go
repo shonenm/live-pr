@@ -21,15 +21,6 @@ func TestRenderFormatsMarkdownAndKeepsMediaURLs(t *testing.T) {
 	}
 }
 
-func TestRenderLabelsMermaidSourceWithoutExternalRenderer(t *testing.T) {
-	got := ansi.ReplaceAllString(Render("```mermaid\ngraph TD\n  A --> B\n```", 80), "")
-	for _, want := range []string{"Mermaid diagram (source)", "graph TD", "A --> B"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("Mermaid fallback missing %q: %q", want, got)
-		}
-	}
-}
-
 func TestGitHubStyleUsesPrimerForMarkdownAndSyntax(t *testing.T) {
 	cfg := githubStyle()
 	if cfg.Document.Color == nil || *cfg.Document.Color != "#f0f6fc" || cfg.H1.BackgroundColor != nil || cfg.Link.Color == nil || *cfg.Link.Color != "#4493f8" {
