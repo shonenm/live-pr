@@ -67,45 +67,47 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, AddComment, EditLocal, DeleteLocal, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, AddComment, InlineReview, EditLocal, DeleteLocal, Review, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.AddComment, k.EditLocal, k.DeleteLocal, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.AddComment, k.EditLocal, k.DeleteLocal, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
-	Up:          key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
-	Down:        key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	PreviewUp:   key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "page up")),
-	PreviewDown: key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
-	Top:         key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
-	Bottom:      key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
-	PrevView:    key.NewBinding(key.WithKeys("["), key.WithHelp("[", "previous view")),
-	NextView:    key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next view")),
-	Filter:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	ToggleStack: key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
-	Focus:       key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
-	FocusRight:  key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
-	FocusLeft:   key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
-	Commits:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commit/check")),
-	Select:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
-	Back:        key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
-	PRList:      key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
-	Browse:      key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
-	Refresh:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
-	Publish:     key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
-	Merge:       key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge PR")),
-	Checkout:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
-	Close:       key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
-	AddComment:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add comment")),
-	EditLocal:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
-	DeleteLocal: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete comment")),
-	Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Up:           key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
+	Down:         key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
+	PreviewUp:    key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "page up")),
+	PreviewDown:  key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
+	Top:          key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
+	Bottom:       key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
+	PrevView:     key.NewBinding(key.WithKeys("["), key.WithHelp("[", "previous view")),
+	NextView:     key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next view")),
+	Filter:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	ToggleStack:  key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
+	Focus:        key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
+	FocusRight:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
+	FocusLeft:    key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
+	Commits:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commit/check")),
+	Select:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
+	Back:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
+	PRList:       key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
+	Browse:       key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
+	Refresh:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+	Publish:      key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "publish PR")),
+	Merge:        key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge PR")),
+	Checkout:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
+	Close:        key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
+	AddComment:   key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add comment/body")),
+	InlineReview: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "inline review")),
+	EditLocal:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
+	DeleteLocal:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete comment")),
+	Review:       key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "review draft/submit")),
+	Help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	Quit:         key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
 type prListRefreshed struct {
@@ -167,6 +169,8 @@ const (
 	addLocalComment
 	editLocalComment
 	editLocalSummary
+	editReviewBody
+	addInlineReviewComment
 )
 
 const (
@@ -175,6 +179,11 @@ const (
 	checkoutPR
 	closePR
 )
+
+type reviewSubmitted struct {
+	event gh.ReviewEvent
+	err   error
+}
 
 type prActionDone struct {
 	action prAction
@@ -298,6 +307,10 @@ type Model struct {
 	localEditError            string
 	localDeleteTarget         string
 	localDeleteTitle          string
+	reviewDraft               gh.ReviewDraft
+	reviewDraftPath           string
+	reviewSubmitEvent         gh.ReviewEvent
+	reviewSubmitting          bool
 	pendingPRAction           prAction
 	prActionRunning           prAction
 	prActionNumber            int
@@ -584,7 +597,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.listRefreshing || m.publishing || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
+	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {
@@ -993,6 +1006,9 @@ func (m Model) View() string {
 	}
 	if m.localEditMode != noLocalEdit {
 		return overlayPopup(view, m.renderLocalEditorPopup(), m.w)
+	}
+	if m.reviewSubmitEvent != "" {
+		return overlayPopup(view, m.renderReviewSubmitPopup(), m.w)
 	}
 	if m.localDeleteTarget != "" {
 		return overlayPopup(view, m.renderLocalDeletePopup(), m.w)
