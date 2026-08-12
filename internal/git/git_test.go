@@ -90,6 +90,58 @@ func TestFetchPullLeavesCheckoutUntouched(t *testing.T) {
 	}
 }
 
+func TestCheckMergeReadinessDoesNotTouchCheckout(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	run("switch", "-c", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "feature")
+	run("switch", "main")
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "main")
+	if err := os.WriteFile(filepath.Join(dir, "dirty"), []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := run("status", "--porcelain")
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+
+	readiness, err := CheckMergeReadiness("main", "feature")
+	if err != nil || readiness.Behind != 1 || len(readiness.ConflictFiles) != 1 || readiness.ConflictFiles[0] != "file.txt" {
+		t.Fatalf("readiness = %#v err=%v", readiness, err)
+	}
+	if got := run("status", "--porcelain"); got != before {
+		t.Fatalf("checkout changed: before=%q after=%q", before, got)
+	}
+}
+
 func TestChangedFilesAndFileDiff(t *testing.T) {
 	dir := t.TempDir()
 	runGit := func(args ...string) {

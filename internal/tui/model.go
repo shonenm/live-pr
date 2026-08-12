@@ -134,10 +134,12 @@ type remoteLoaded struct {
 	headRef       string
 	comments      []gh.Comment
 	activities    []gh.Activity
+	readiness     git.MergeReadiness
 	refErr        error
 	previewErr    error
 	commentsErr   error
 	activitiesErr error
+	readinessErr  error
 }
 
 type githubRefreshed struct {
@@ -288,6 +290,8 @@ type Model struct {
 	localStats                git.ChangeStats
 	localCommitCount          int
 	workingTreeDirty          bool
+	mergeReadiness            git.MergeReadiness
+	mergeReadinessErr         error
 	autoOpenCurrent           bool
 	refreshing                bool
 	listRefreshing            bool
@@ -666,7 +670,8 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		var headRef string
 		var comments []gh.Comment
 		var activities []gh.Activity
-		var refErr, previewErr, commentsErr, activitiesErr error
+		var refErr, previewErr, commentsErr, activitiesErr, readinessErr error
+		var readiness git.MergeReadiness
 		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -684,7 +689,10 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 			}
 		}()
 		wg.Wait()
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr}
+		if refErr == nil {
+			readiness, readinessErr = git.CheckMergeReadiness(git.ResolveBase(pr.BaseRefName), headRef)
+		}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
 	}
 }
 
@@ -702,6 +710,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
 	m.reviewRange = m.diffBase + "..." + m.headRev
 	m.events, m.commits, m.files = nil, nil, nil
+	m.mergeReadiness, m.mergeReadinessErr = git.MergeReadiness{}, nil
 	m.timelinePath, m.cachePath = "", ""
 	m.cache = gh.NewCache(pr.HeadRefName)
 	m.cache.PR = &pr
@@ -1061,7 +1070,18 @@ func (m Model) renderHeader() string {
 	if !m.remote && m.workingTreeDirty {
 		dirty = "   " + stAttention.Render("● uncommitted changes")
 	}
-	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty
+	readiness := ""
+	if m.remote && m.cache.PR != nil {
+		readiness = stMuted.Render(fmt.Sprintf("   · %d behind", m.mergeReadiness.Behind))
+		if conflicts := len(m.mergeReadiness.ConflictFiles); conflicts > 0 {
+			readiness += "   " + stRedF.Render(fmt.Sprintf("⚠ %d conflict files", conflicts))
+		} else if m.mergeReadinessErr == nil {
+			readiness += "   " + stGreenF.Render("✓ no conflicts")
+		} else {
+			readiness += "   " + stMuted.Render("merge readiness unavailable")
+		}
+	}
+	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty + readiness
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
