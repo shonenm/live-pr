@@ -200,6 +200,20 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if err != nil || stats.Files != 2 || stats.Additions != 1 || stats.Deletions != 1 {
 		t.Fatalf("diff stats = %#v, err=%v", stats, err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("after\nextra\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	worktree, err := DiffStats("main", "")
+	if err != nil || worktree.Files != 2 || worktree.Additions != 2 || worktree.Deletions != 1 {
+		t.Fatalf("worktree stats = %#v, err=%v", worktree, err)
+	}
+	worktreeFiles, err := ChangedFilesRange("main", "")
+	if err != nil || len(worktreeFiles) != 2 {
+		t.Fatalf("worktree files = %#v, err=%v", worktreeFiles, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("after\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if len(files) != 2 {
 		t.Fatalf("unexpected files: %#v", files)
 	}

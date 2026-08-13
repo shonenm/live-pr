@@ -586,8 +586,8 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	commits, commitErr := git.Commits(diffBase)
-	files, fileErr := git.ChangedFiles(diffBase)
-	stats, _ := git.DiffStats(diffBase, "HEAD")
+	files, fileErr := git.ChangedFilesRange(diffBase, "")
+	stats, _ := git.DiffStats(diffBase, "")
 	dirty, dirtyErr := git.HasUncommittedChanges()
 	if commitErr != nil || fileErr != nil || dirtyErr != nil {
 		m.status = "local git data is incomplete"
