@@ -1,6 +1,7 @@
 package richcontent
 
 import (
+	"context"
 	"image"
 	"image/color"
 	"os"
@@ -43,5 +44,17 @@ func TestImageColorStaysOneRepresentativeColor(t *testing.T) {
 	img.Set(1, 0, color.RGBA{B: 255, A: 255})
 	if got := imageColor(img); got != "#7f007f" {
 		t.Fatalf("color = %q", got)
+	}
+}
+
+func TestAvatarColorContextRejectsUntrustedURLs(t *testing.T) {
+	for _, raw := range []string{
+		"http://avatars.githubusercontent.com/u/1", // wrong scheme
+		"https://evil.example.com/u/1",             // wrong host
+		"://nope",                                  // unparseable
+	} {
+		if _, err := AvatarColorContext(context.Background(), raw); err == nil {
+			t.Errorf("AvatarColorContext(%q) = nil error; want rejection before any network call", raw)
+		}
 	}
 }

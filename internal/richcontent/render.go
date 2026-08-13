@@ -11,6 +11,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -136,10 +137,21 @@ func AvatarColorContext(ctx context.Context, rawURL string) (string, error) {
 
 func imageColor(img image.Image) string {
 	const bgR, bgG, bgB = uint64(0x0d0d), uint64(0x1111), uint64(0x1717)
+	const maxSamples = 4096
 	var red, green, blue, count uint64
 	bounds := img.Bounds()
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+	// Sample on a stride so a large avatar is averaged from at most a few
+	// thousand pixels; the representative color is visually identical.
+	area := int64(bounds.Dx()) * int64(bounds.Dy())
+	step := 1
+	if area > maxSamples {
+		step = int(math.Sqrt(float64(area) / maxSamples))
+		if step < 1 {
+			step = 1
+		}
+	}
+	for y := bounds.Min.Y; y < bounds.Max.Y; y += step {
+		for x := bounds.Min.X; x < bounds.Max.X; x += step {
 			r, g, b, a := img.At(x, y).RGBA()
 			red += uint64(r) + bgR*(0xffff-uint64(a))/0xffff
 			green += uint64(g) + bgG*(0xffff-uint64(a))/0xffff
