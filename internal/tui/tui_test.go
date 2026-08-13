@@ -2448,3 +2448,81 @@ func TestOverloadedKeysDisambiguateByScreen(t *testing.T) {
 		t.Error("detail: FocusRight (l) should be enabled")
 	}
 }
+
+func TestActivitySummaryFormatsEventKinds(t *testing.T) {
+	cases := []struct {
+		activity gh.Activity
+		want     string
+	}{
+		{gh.Activity{Event: "assigned", Assignee: struct {
+			Login string `json:"login"`
+		}{Login: "octocat"}}, "assigned @octocat"},
+		{gh.Activity{Event: "unassigned", Assignee: struct {
+			Login string `json:"login"`
+		}{Login: "octocat"}}, "unassigned @octocat"},
+		{gh.Activity{Event: "review_requested", RequestedReviewer: struct {
+			Login string `json:"login"`
+		}{Login: "alice"}}, "review requested @alice"},
+		{gh.Activity{Event: "review_request_removed", RequestedReviewer: struct {
+			Login string `json:"login"`
+		}{Login: "alice"}}, "review request removed @alice"},
+		{gh.Activity{Event: "renamed", Rename: struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}{From: "old", To: "new"}}, "renamed old → new"},
+		{gh.Activity{Event: "head_ref_force_pushed", CommitID: "abcdef1234567"}, "force-pushed abcdef1"},
+		{gh.Activity{Event: "merged"}, "merged"},
+	}
+	for _, c := range cases {
+		if got := activitySummary(c.activity); got != c.want {
+			t.Errorf("activitySummary(%q) = %q, want %q", c.activity.Event, got, c.want)
+		}
+	}
+}
+
+func TestParseLocalCommentValidatesInput(t *testing.T) {
+	// Error paths.
+	if _, _, _, err := parseLocalComment("no prefix here\n\nbody", false); err == nil {
+		t.Error("missing kind: prefix should error")
+	}
+	if _, _, _, err := parseLocalComment("kind: bogus\n\ntitle", false); err == nil {
+		t.Error("invalid kind should error")
+	}
+	if _, _, _, err := parseLocalComment("kind: decision\n\n", false); err == nil {
+		t.Error("empty title should error")
+	}
+	// allowSummary gate.
+	if _, _, _, err := parseLocalComment("kind: summary\n\nWrapped up", false); err == nil {
+		t.Error("summary should be rejected when allowSummary is false")
+	}
+	kind, title, body, err := parseLocalComment("kind: summary\n\nWrapped up\n\ndetails", true)
+	if err != nil || kind != event.Summary || title != "Wrapped up" || body != "details" {
+		t.Fatalf("summary parse = %v/%q/%q/%v", kind, title, body, err)
+	}
+	// Happy path.
+	kind, title, _, err = parseLocalComment("kind: decision\n\nChose Go", false)
+	if err != nil || kind != event.Decision || title != "Chose Go" {
+		t.Fatalf("decision parse = %v/%q/%v", kind, title, err)
+	}
+}
+
+func TestPRListJKKeyReachesLastRowAndPaginates(t *testing.T) {
+	m := testModel()
+	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{{Number: 1}, {Number: 2}, {Number: 3}}, total: 4, endCursor: "C1", hasNext: true, loaded: true, fresh: true}}
+	m.applyPRFilters(1)
+	// Press j from the first row toward the last loaded row: only the press
+	// that lands on the last row requests the next page (regression guard for
+	// the moveCursorBy routing).
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	if m.prPages[m.activePRPage].loading {
+		t.Fatal("moving to a non-last row should not request a page")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	if !m.prPages[m.activePRPage].loading {
+		t.Fatal("j to the last loaded row did not request the next page")
+	}
+}
