@@ -173,7 +173,7 @@ func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 		}
 		selectedKey = "event:" + current.ID + ":0"
 	}
-	mode := m.localEditMode
+	mode, target := m.localEditMode, m.localEditTarget
 	m.localEditor.Blur()
 	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
 	if mode != editReviewBody && mode != addInlineReviewComment {
@@ -181,6 +181,9 @@ func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 		m.notice = "Local PR updated"
 	} else {
 		m.notice = "Draft review updated"
+		if mode == editReviewBody && target == "review-submit" && m.cache.PR != nil {
+			m.reviewSubmitEvent = gh.ReviewCommentEvent
+		}
 	}
 	m.restoreConversationSelection(selectedKey)
 	return m, m.sync()
