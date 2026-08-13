@@ -65,7 +65,7 @@ func runDemo(mode string) error {
 	if err := os.Setenv("PATH", mockBin+string(os.PathListSeparator)+oldPath); err != nil {
 		return err
 	}
-	return tui.Run()
+	return tui.Run(version)
 }
 
 func createDemoRepo(root, mode string) error {

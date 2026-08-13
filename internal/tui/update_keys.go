@@ -394,6 +394,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		m.active = commitsTab
 		m.status = "select a commit and press Enter"
+		m.layout()
 		return m, m.sync()
 	case key.Matches(msg, m.keys.Back):
 		if m.active != commitsTab {
@@ -401,6 +402,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		m.active = conversationTab
 		m.status = ""
+		m.layout()
 		if m.reviewSHA == "" {
 			return m, m.sync()
 		}

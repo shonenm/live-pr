@@ -390,11 +390,12 @@ type Model struct {
 	keys     keyMap
 	w, h     int
 	ready    bool
+	version  string
 }
 
 // New builds a navigator-aware model without creating branch state unless the
 // current checkout is routed to local detail.
-func New() (Model, error) {
+func New(version ...string) (Model, error) {
 	if done := debugtime.Start("tui startup"); done != nil {
 		defer done()
 	}
@@ -447,6 +448,7 @@ func New() (Model, error) {
 
 	m := Model{
 		screen:            prListScreen,
+		version:           first(version),
 		root:              root,
 		repository:        navigator.Repository,
 		currentBranch:     branch,
@@ -619,8 +621,8 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 }
 
 // Run launches the TUI.
-func Run() error {
-	m, err := New()
+func Run(version ...string) error {
+	m, err := New(version...)
 	if err != nil {
 		return err
 	}
@@ -985,12 +987,16 @@ func (m *Model) layout() {
 		detailW = max(4, rightW-explorerW-dividerW)
 	}
 	if !m.ready {
-		m.list = viewport.New(listW, bodyH)
+		m.list = viewport.New(listW, max(1, bodyH-1))
 		m.explorer = viewport.New(explorerW, bodyH)
 		m.detail = viewport.New(detailW, bodyH)
 		m.ready = true
 	} else {
-		m.list.Width, m.list.Height = listW, bodyH
+		m.list.Width = listW
+		m.list.Height = bodyH
+		if m.active == conversationTab {
+			m.list.Height = max(1, bodyH-1)
+		}
 		m.explorer.Width, m.explorer.Height = explorerW, bodyH
 		m.detail.Width, m.detail.Height = detailW, bodyH
 	}
@@ -1207,7 +1213,11 @@ func (m Model) View() string {
 		if m.active == commitsTab {
 			leftTitle = fmt.Sprintf("Commits · %d", len(m.commits))
 		}
-		left := renderPane(leftTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
+		leftContent := m.list.View()
+		if m.active == conversationTab {
+			leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
+		}
+		left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
 		body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 	}
@@ -1237,6 +1247,15 @@ func (m Model) headerHeight() int { return logoHeight }
 // text to the wordmark's height. Narrow terminals drop the wordmark but keep
 // the height, so the layout never jumps.
 func (m Model) withLogo(text string) string {
+	if m.version != "" {
+		label := m.version
+		if label != "dev" && !strings.HasPrefix(label, "v") {
+			label = "v" + label
+		}
+		lines := strings.Split(text, "\n")
+		lines[0] = stMuted.Render(label+" · ") + lines[0]
+		text = strings.Join(lines, "\n")
+	}
 	width := m.w
 	if m.w >= logoWidth+40 {
 		width = m.w - logoWidth
@@ -1402,6 +1421,13 @@ func browserCommand(url string) *exec.Cmd {
 func openURL(url string) error { return browserCommand(url).Run() }
 
 func shortTS(ts string) string { return strings.Replace(ts, "T", " ", 1) }
+
+func first(values []string) string {
+	if len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
 
 func max(a, b int) int {
 	if a > b {
