@@ -1077,7 +1077,8 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	bg := lipgloss.Color(cSelectedBg)
 	rowSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Background(bg)
 	mutedSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted)).Background(bg)
-	bar := lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent)).Background(bg).Render("▌")
+	// Selection is shown by the full-row background, not an accent bar.
+	bar := rowSt.Render(" ")
 	checkoutBar := rowSt.Render(" ")
 	if m.isCurrentTargetPR(pr) {
 		checkoutBar = lipgloss.NewStyle().Foreground(lipgloss.Color(cAttention)).Background(bg).Render("▌")

@@ -1514,6 +1514,28 @@ func selectionBar(selected bool) string {
 	return "  "
 }
 
+// selectionBgOpen returns the opening SGR that paints the selected background,
+// or "" when the renderer has color disabled.
+func selectionBgOpen() string {
+	s := lipgloss.NewStyle().Background(lipgloss.Color(cSelectedBg)).Render("\x00")
+	open, _, _ := strings.Cut(s, "\x00")
+	return open
+}
+
+// highlightSelectedBg paints a full-width selected background across a line,
+// re-applying the background after each reset so pre-styled segments keep it.
+func highlightSelectedBg(line string, width int) string {
+	open := selectionBgOpen()
+	if open == "" {
+		return line
+	}
+	line = ansi.Truncate(line, width, "…")
+	if gap := width - lipgloss.Width(line); gap > 0 {
+		line += strings.Repeat(" ", gap)
+	}
+	return open + strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+open) + "\x1b[0m"
+}
+
 func browserCommand(url string) *exec.Cmd {
 	switch runtime.GOOS {
 	case "darwin":
