@@ -127,7 +127,9 @@ func Load(path string) ([]Event, error) {
 	lineNumber := 0
 	for sc.Scan() {
 		lineNumber++
-		line := append([]byte(nil), sc.Bytes()...)
+		// The bytes are fully consumed within this iteration (Unmarshal and
+		// legacyID both copy), so we can use the scanner's buffer directly.
+		line := sc.Bytes()
 		if len(line) == 0 {
 			continue
 		}

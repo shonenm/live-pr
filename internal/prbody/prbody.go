@@ -49,7 +49,7 @@ func Title(conclusion, branch string) string {
 			return branch
 		}
 		line = strings.TrimSpace(strings.TrimPrefix(line, "#"))
-		if line == "<title>" || strings.HasPrefix(line, "<current conclusion") || strings.HasPrefix(line, "<final pull request summary") {
+		if line == "" || line == "<title>" || strings.HasPrefix(line, "<current conclusion") || strings.HasPrefix(line, "<final pull request summary") {
 			continue
 		}
 		return line

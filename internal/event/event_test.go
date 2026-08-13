@@ -93,3 +93,30 @@ func TestLoadMissingFileIsEmpty(t *testing.T) {
 		t.Errorf("missing file should yield nil events, got %v", got)
 	}
 }
+
+func TestLoadIgnoresUpdateAfterDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.jsonl")
+	// A raw stream where an update record follows the delete for the same id:
+	// Load must swallow the update rather than resurrecting the event.
+	raw := `{"id":"x1","ts":"2026-07-21T10:00","kind":"decision","title":"Doomed"}
+{"op":"delete","target":"x1"}
+{"op":"update","target":"x1","kind":"note","title":"back?"}
+`
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	events, err := Load(path)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("update after delete resurrected event: %+v, %v", events, err)
+	}
+}
+
+func TestDeleteUnknownIDErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.jsonl")
+	if _, err := Create(path, Event{TS: "2026-07-21T10:00", Kind: Decision, Title: "real"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Delete(path, "nonexistent"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("Delete(unknown) = %v, want not-found error", err)
+	}
+}
