@@ -243,10 +243,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.sync()
 	}
 	if key.Matches(msg, m.keys.AddComment) {
-		if m.cache.PR != nil {
-			return m.startReviewComment()
-		}
-		return m.startLocalComment()
+		return m.startAddComment()
 	}
 	if key.Matches(msg, m.keys.InlineReview) {
 		return m.startInlineReviewComment()

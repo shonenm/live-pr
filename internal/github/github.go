@@ -603,6 +603,48 @@ func (c Client) SubmitReview(draft ReviewDraft, event ReviewEvent) error {
 	return nil
 }
 
+// PostIssueComment posts a conversation comment on a pull request.
+func (c Client) PostIssueComment(number int, body string) error {
+	return c.writeCommentBody("POST", fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", number), body, "gh api post issue comment")
+}
+
+// EditIssueComment updates an existing conversation comment by its ID.
+func (c Client) EditIssueComment(id int64, body string) error {
+	return c.writeCommentBody("PATCH", fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", id), body, "gh api edit issue comment")
+}
+
+// writeCommentBody sends {"body": ...} to a comment endpoint via a temp file so
+// arbitrary comment text (newlines, quotes) is passed safely.
+func (c Client) writeCommentBody(method, endpoint, body, label string) error {
+	if strings.TrimSpace(body) == "" {
+		return errors.New("comment body must not be empty")
+	}
+	payload, err := json.Marshal(struct {
+		Body string `json:"body"`
+	}{Body: body})
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp("", "live-pr-comment-*.json")
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	defer os.Remove(name)
+	if _, err := file.Write(payload); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	out, err := c.run("api", "--method", method, endpoint, "--input", name)
+	if err != nil {
+		return commandError(label, out, err)
+	}
+	return nil
+}
+
 // Merge merges a pull request with a merge commit.
 func (c Client) Merge(number int, headOID string) error {
 	if headOID == "" {

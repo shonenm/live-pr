@@ -112,11 +112,11 @@ var keys = keyMap{
 	Checkout:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
 	Close:        key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
 	Status:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "PR status")),
-	AddComment:   key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add comment/body")),
-	InlineReview: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "inline review")),
+	AddComment:   key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "comment")),
+	InlineReview: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "inline review comment")),
 	EditLocal:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
 	DeleteLocal:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete comment")),
-	Review:       key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "review draft/submit")),
+	Review:       key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "review (verdict+body)")),
 	Help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:         key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
@@ -195,6 +195,8 @@ const (
 	editLocalSummary
 	editReviewBody
 	addInlineReviewComment
+	addRemoteComment
+	editRemoteComment
 )
 
 const (
@@ -361,6 +363,8 @@ type Model struct {
 	localEditor               textarea.Model
 	localEditTarget           string
 	localEditError            string
+	remoteCommentID           int64
+	remoteCommentBusy         bool
 	localDeleteTarget         string
 	localDeleteTitle          string
 	reviewDraft               gh.ReviewDraft
@@ -703,7 +707,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.statusRunning || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
+	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.statusRunning || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {

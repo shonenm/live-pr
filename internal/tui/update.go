@@ -92,6 +92,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reviewSubmitted:
 		next, cmd := m.handleReviewSubmitted(msg)
 		return next, cmd
+	case remoteCommentDone:
+		next, cmd := m.handleRemoteCommentDone(msg)
+		return next, cmd
 	case prStatusDone:
 		next, cmd := m.handlePRStatusDone(msg)
 		return next, cmd
