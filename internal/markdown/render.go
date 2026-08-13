@@ -2,7 +2,6 @@
 package markdown
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 
@@ -13,10 +12,15 @@ import (
 	"github.com/shonenm/live-pr/internal/theme"
 )
 
+type cacheKey struct {
+	width int
+	text  string
+}
+
 var renderCache = struct {
 	sync.Mutex
-	items map[string]string
-}{items: map[string]string{}}
+	items map[cacheKey]string
+}{items: map[cacheKey]string{}}
 
 // Render formats Markdown. Glamour renders image links as their source URL;
 // ordinary video URLs remain unchanged.
@@ -24,7 +28,7 @@ func Render(text string, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	key := fmt.Sprintf("%d\x00%s", width, text)
+	key := cacheKey{width: width, text: text}
 	renderCache.Lock()
 	if out, ok := renderCache.items[key]; ok {
 		renderCache.Unlock()
@@ -47,7 +51,12 @@ func Render(text string, width int) string {
 
 	renderCache.Lock()
 	if len(renderCache.items) >= 512 {
-		clear(renderCache.items)
+		// Drop a single entry instead of clearing the whole cache, so one
+		// overflow does not force a full re-render of every visible card.
+		for k := range renderCache.items {
+			delete(renderCache.items, k)
+			break
+		}
 	}
 	renderCache.items[key] = out
 	renderCache.Unlock()
