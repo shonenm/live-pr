@@ -45,7 +45,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.diffTerminal.Err(); err != nil {
 				m.status = err.Error() + " · showing raw diff"
 			}
-			m.focusDiff = false
+			m.focusDiff, m.reviewWide = false, false
 			m.layout()
 			return m, tea.Batch(cmd, m.sync())
 		}
