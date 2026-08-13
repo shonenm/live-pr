@@ -1647,6 +1647,11 @@ func TestGitHubConflictingKeepsConflictView(t *testing.T) {
 	if !strings.Contains(ansi.Strip(out), "GitHub reports conflicts") {
 		t.Fatalf("conflicting PR hid conflicts: %q", ansi.Strip(out))
 	}
+	dirty := gh.PR{Number: 9, MergeStateStatus: "DIRTY"}
+	readiness, err := applyGitHubConflictFallback(git.MergeReadiness{}, nil, dirty)
+	if err != nil || len(readiness.ConflictFiles) != 0 {
+		t.Fatalf("DIRTY status should not invent conflicts: %#v err=%v", readiness, err)
+	}
 }
 
 func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {

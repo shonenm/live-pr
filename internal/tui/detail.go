@@ -270,7 +270,7 @@ func applyGitHubConflictFallback(readiness git.MergeReadiness, err error, pr gh.
 	if len(readiness.ConflictFiles) > 0 {
 		return readiness, err
 	}
-	if strings.EqualFold(pr.Mergeable, "CONFLICTING") || strings.EqualFold(pr.MergeStateStatus, "DIRTY") {
+	if strings.EqualFold(pr.Mergeable, "CONFLICTING") {
 		readiness.ConflictFiles = []string{"(GitHub reports conflicts; file list unavailable)"}
 	}
 	return readiness, err
