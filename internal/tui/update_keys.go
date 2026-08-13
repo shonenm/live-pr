@@ -144,22 +144,10 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		page.fresh, page.loading = false, false
 		m.prPages[m.activePRPage] = page
 		return m, m.requestPRPage(true)
-	case key.Matches(msg, m.keys.PreviewDown):
-		scrollQuarter(&m.detail, true)
-		return m, nil
-	case key.Matches(msg, m.keys.PreviewUp):
-		scrollQuarter(&m.detail, false)
-		return m, nil
 	case key.Matches(msg, m.keys.Down):
-		if m.prCursor < len(m.openPRs)-1 {
-			m.prCursor++
-			return m, m.sync()
-		}
+		return m, m.moveCursorBy(1)
 	case key.Matches(msg, m.keys.Up):
-		if m.prCursor > 0 {
-			m.prCursor--
-			return m, m.sync()
-		}
+		return m, m.moveCursorBy(-1)
 	case key.Matches(msg, m.keys.Select):
 		pr := m.selectedPR()
 		if pr == nil {
