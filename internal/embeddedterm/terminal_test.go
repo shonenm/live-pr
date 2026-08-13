@@ -106,6 +106,43 @@ func TestTerminalStartsInRepoWithContextAndRendersOutput(t *testing.T) {
 	t.Fatalf("terminal output missing: %q", terminal.View(80, 10))
 }
 
+func TestReviewerReadingPTYIsNotStopped(t *testing.T) {
+	terminal := New(`cat`, t.TempDir(), nil)
+	terminal.Resize(40, 4)
+	defer terminal.Close()
+	if cmd := terminal.Init(); cmd == nil {
+		t.Fatal("reviewer did not start")
+	}
+
+	var watchdogPID, pid int
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(terminal.pidFile)
+		if err == nil {
+			watchdogPID, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+			if watchdogPID > 0 {
+				out, _ := exec.Command("pgrep", "-P", strconv.Itoa(watchdogPID)).Output()
+				pid, _ = strconv.Atoi(strings.TrimSpace(string(out)))
+				if pid > 0 {
+					break
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pid == 0 {
+		t.Fatal("reviewer PID was not found")
+	}
+	time.Sleep(100 * time.Millisecond)
+	state, err := exec.Command("ps", "-o", "state=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(strings.TrimSpace(string(state)), "T") {
+		t.Fatalf("reviewer stopped while reading PTY: pid=%d state=%q", pid, state)
+	}
+}
+
 func TestTerminalShowsCursor(t *testing.T) {
 	terminal := New(`printf 'x'; sleep 1`, t.TempDir(), nil)
 	terminal.Resize(20, 4)
