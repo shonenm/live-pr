@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -57,5 +58,51 @@ func TestMigrateLegacyState(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".live-pr")); !os.IsNotExist(err) {
 		t.Fatalf("legacy runtime directory remained: %v", err)
+	}
+}
+
+func TestWriteConclusionTrimsAndReplaces(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	st := ForBranch(filepath.Join(t.TempDir(), "repo"), "feature")
+	if st.HasData() {
+		t.Fatal("fresh store should have no data")
+	}
+	if err := st.WriteConclusion("  first body \n"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(st.Conclusion())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "first body\n" {
+		t.Fatalf("conclusion = %q, want trimmed body + trailing newline", got)
+	}
+	if !st.HasData() {
+		t.Fatal("store should report data after WriteConclusion")
+	}
+	// Overwriting replaces rather than appends.
+	if err := st.WriteConclusion("second"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(st.Conclusion())
+	if err != nil || string(got) != "second\n" {
+		t.Fatalf("replaced conclusion = %q, err=%v", got, err)
+	}
+}
+
+func TestStateRootFallsBackByGOOSWithoutXDG(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", "")
+	root := stateRoot()
+	var wantSeg string
+	switch runtime.GOOS {
+	case "darwin":
+		wantSeg = filepath.Join("Library", "Application Support", "live-pr")
+	case "windows":
+		wantSeg = filepath.Join("live-pr", "state")
+	default:
+		wantSeg = filepath.Join(".local", "state", "live-pr")
+	}
+	if !strings.Contains(root, wantSeg) {
+		t.Fatalf("stateRoot() = %q, want it to contain %q", root, wantSeg)
 	}
 }
