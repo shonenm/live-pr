@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -109,8 +110,8 @@ var reviewAddCmd = &cobra.Command{
 var reviewDeleteCmd = &cobra.Command{
 	Use: "delete <index>", Short: "Delete one pending inline comment", Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var index int
-		if _, err := fmt.Sscan(args[0], &index); err != nil || index < 1 {
+		index, err := strconv.Atoi(args[0])
+		if err != nil || index < 1 {
 			return fmt.Errorf("invalid comment index %q", args[0])
 		}
 		st, _, draft, err := currentReviewDraft()
