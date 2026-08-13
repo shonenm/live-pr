@@ -561,6 +561,27 @@ func remoteReviewBase(pr gh.PR) string {
 	return git.ResolveBase(pr.BaseRefName)
 }
 
+func publishedReviewHead(pr *gh.PR) string {
+	if pr == nil || pr.Number <= 0 {
+		return ""
+	}
+	if pr.HeadRefOID != "" {
+		return pr.HeadRefOID
+	}
+	return fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
+}
+
+func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (diffBase, headRev, reviewRange string) {
+	diffBase = localReviewBase(base, pr)
+	if head := publishedReviewHead(pr); head != "" {
+		return remoteReviewBase(*pr), head, remoteReviewBase(*pr) + "..." + head
+	}
+	if remote {
+		return diffBase, currentHead, diffBase + "..." + currentHead
+	}
+	return diffBase, "HEAD", diffBase
+}
+
 func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) error {
 	if done := debugtime.Start("tui local hydration"); done != nil {
 		defer done()
@@ -578,16 +599,26 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 		cache.PR = &pr
 	}
 	base := git.ResolveBase(cache.Base(git.DefaultBase()))
-	diffBase := localReviewBase(base, cache.PR)
+	diffBase, headRev, reviewRange := localReviewRange(base, cache.PR, "HEAD", false)
 	_, _ = timeline.SyncCommits(st.Timeline(), diffBase)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
 		return err
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	commits, commitErr := git.Commits(diffBase)
-	files, fileErr := git.ChangedFilesRange(diffBase, "")
-	stats, _ := git.DiffStats(diffBase, "")
+	var commits []git.Commit
+	var files []git.ChangedFile
+	var stats git.ChangeStats
+	var commitErr, fileErr error
+	if headRev == "HEAD" {
+		commits, commitErr = git.Commits(diffBase)
+		files, fileErr = git.ChangedFilesRange(diffBase, "")
+		stats, _ = git.DiffStats(diffBase, "")
+	} else {
+		commits, commitErr = git.CommitsRange(diffBase, headRev)
+		files, fileErr = git.ChangedFilesRange(diffBase, headRev)
+		stats, _ = git.DiffStats(diffBase, headRev)
+	}
 	dirty, dirtyErr := git.HasUncommittedChanges()
 	if commitErr != nil || fileErr != nil || dirtyErr != nil {
 		m.status = "local git data is incomplete"
@@ -610,7 +641,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.localAvailable, m.localTitle = cache.PR == nil, m.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = stats, len(commits), dirty
 	m.mergeReadiness, m.mergeReadinessErr = git.CheckMergeReadiness(base, "HEAD")
-	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = base, diffBase, st.Branch, "HEAD", diffBase
+	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = base, diffBase, st.Branch, headRev, reviewRange
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
 	m.invalidateConversation()
