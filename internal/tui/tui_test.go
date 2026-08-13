@@ -360,12 +360,13 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 		Checks:         []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}},
 		PreviewLoaded:  true,
 		Assignees:      []gh.PRUser{{Login: "alice"}, {Login: "bob"}},
+		ReviewRequests: []gh.PRUser{{Login: "carol"}},
 		Labels:         []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}},
 	}
 	m.localStats = git.ChangeStats{Files: 4, Additions: 20, Deletions: 3}
 	m.workingTreeDirty = true
 	plain := ansi.Strip(m.renderHeader())
-	for _, want := range []string{"#12 open", "CI 1 passed", "review approved", "4 files", "+20", "-3", "uncommitted changes", "● @alice ● @bob", "bug", "docs"} {
+	for _, want := range []string{"#12 open", "CI 1 passed", "review approved", "4 files", "+20", "-3", "uncommitted changes", "● @alice ● @bob", "review requested ● @carol", "bug", "docs"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("header missing %q: %q", want, plain)
 		}
@@ -403,12 +404,13 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 	}
 }
 
-func TestHeaderCarriesWordmarkUntilTheTerminalIsNarrow(t *testing.T) {
+func TestHeaderCarriesWordmarkAndVersionUntilTheTerminalIsNarrow(t *testing.T) {
 	m := testModel()
+	m.version = "0.2.4"
 	m.w = 120
 	wide := ansi.Strip(m.renderHeader())
-	if !strings.Contains(wide, "┗━╸╹┗┛ ┗━╸") {
-		t.Fatalf("wide header missing the wordmark: %q", wide)
+	if !strings.Contains(wide, "┗━╸╹┗┛ ┗━╸") || !strings.Contains(wide, "v0.2.4") {
+		t.Fatalf("wide header missing the wordmark or version: %q", wide)
 	}
 	for _, line := range strings.Split(wide, "\n") {
 		if width := lipgloss.Width(line); width > m.w {
@@ -1533,23 +1535,28 @@ func TestConversationExcludesCommits(t *testing.T) {
 	}
 }
 
-func TestConversationEndsWithEventCommentAndActivityCounts(t *testing.T) {
+func TestConversationCountsStayAtPaneBottom(t *testing.T) {
 	m := testModel()
+	m.screen, m.active = detailScreen, conversationTab
 	m.cache.Comments = []gh.Comment{{ID: 1}, {ID: 2}}
 	m.cache.Activities = []gh.Activity{{ID: 3}}
 	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
 		{OID: "failed1", CommittedDate: "2026-07-21T10:30:00Z", MessageHeadline: "first", CheckRollupState: "FAILURE"},
 		{OID: "passed2", CommittedDate: "2026-07-21T11:30:00Z", MessageHeadline: "second", CheckRollupState: "SUCCESS"},
 	}}
-	out, _ := m.buildConversation()
-	plain := ansi.Strip(out)
-	for _, want := range []string{"✗ CI failed · failed1 first", "✓ CI passed · passed2 second"} {
-		if !strings.Contains(plain, want) {
-			t.Fatalf("Conversation CI activity missing %q: %q", want, plain)
-		}
+	m.w, m.h = 120, 18
+	m.layout()
+	m.sync()
+	m.list.GotoBottom()
+	plain := ansi.Strip(m.View())
+	counts := "1 events · 2 comments · 3 activity"
+	if strings.Count(plain, counts) != 1 {
+		t.Fatalf("Conversation counts are not fixed once: %q", plain)
 	}
-	if !strings.HasSuffix(plain, "1 events · 2 comments · 3 activity") {
-		t.Fatalf("Conversation counts are not at the end: %q", plain)
+	lines := strings.Split(plain, "\n")
+	leftBottom := lines[m.headerHeight()+m.detail.Height]
+	if !strings.Contains(leftBottom, counts) {
+		t.Fatalf("Conversation counts are not at pane bottom: %q", leftBottom)
 	}
 }
 

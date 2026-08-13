@@ -17,6 +17,7 @@ type StateMsg struct{ SessionID string }
 // Environment builds the context exposed to an embedded diff command.
 func Environment(reviewRange, base, head, headRev, prURL, sha string) []string {
 	return []string{
+		"LIVE_PR_REVIEW=1",
 		"LIVE_PR_RANGE=" + reviewRange,
 		"LIVE_PR_BASE=" + base,
 		"LIVE_PR_HEAD=" + head,

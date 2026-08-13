@@ -242,7 +242,7 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 		return m, m.requestPRPage(true)
 	}
 	m.close()
-	next, err := New()
+	next, err := New(m.version)
 	if err != nil {
 		m.status = "checkout reload: " + err.Error()
 		return m, nil

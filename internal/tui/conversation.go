@@ -118,8 +118,7 @@ func (m *Model) buildList() (string, int) {
 	return m.buildConversation()
 }
 
-func (m *Model) buildConversation() (string, int) {
-	items := m.conversationItems()
+func (m Model) conversationCounts() string {
 	eventCount := 0
 	for _, ev := range m.events {
 		if ev.Kind != event.Commit {
@@ -130,9 +129,13 @@ func (m *Model) buildConversation() (string, int) {
 	if m.cache.PR != nil {
 		activityCount += len(m.cache.PR.Commits)
 	}
-	counts := stMuted.Render(fmt.Sprintf("%d events · %d comments · %d activity", eventCount, len(m.cache.Comments), activityCount))
+	return stMuted.Render(fmt.Sprintf("%d events · %d comments · %d activity", eventCount, len(m.cache.Comments), activityCount))
+}
+
+func (m *Model) buildConversation() (string, int) {
+	items := m.conversationItems()
 	if len(items) == 0 {
-		return stMuted.Render("(no conversation yet — try `live-pr note …`)") + "\n\n" + counts, 0
+		return stMuted.Render("(no conversation yet — try `live-pr note …`)"), 0
 	}
 	var lines []string
 	selectedLine := 0
@@ -160,8 +163,7 @@ func (m *Model) buildConversation() (string, int) {
 			lines = append(lines, "")
 		}
 	}
-	lines = append(lines, counts)
-	return strings.Join(lines, "\n"), selectedLine
+	return strings.TrimSuffix(strings.Join(lines, "\n"), "\n"), selectedLine
 }
 
 func (m Model) eventLines(e event.Event, selected bool, width int) []string {
