@@ -357,7 +357,14 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 		Number:         12,
 		State:          "OPEN",
 		ReviewDecision: "APPROVED",
-		Checks:         []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}},
+		Checks: []gh.PRCheck{
+			{Status: "IN_PROGRESS"},
+			{Status: "COMPLETED", Conclusion: "FAILURE"},
+			{Status: "COMPLETED", Conclusion: "FAILURE"},
+			{Status: "COMPLETED", Conclusion: "SUCCESS"},
+			{Status: "COMPLETED", Conclusion: "SUCCESS"},
+			{Status: "COMPLETED", Conclusion: "SUCCESS"},
+		},
 		PreviewLoaded:  true,
 		Assignees:      []gh.PRUser{{Login: "alice"}, {Login: "bob"}},
 		ReviewRequests: []gh.PRUser{{Login: "carol"}},
@@ -366,7 +373,10 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 	m.localStats = git.ChangeStats{Files: 4, Additions: 20, Deletions: 3}
 	m.workingTreeDirty = true
 	plain := ansi.Strip(m.renderHeader())
-	for _, want := range []string{"#12 open", "CI 1 passed", "review approved", "4 files", "+20", "-3", "uncommitted changes", "● @alice ● @bob", "review requested ● @carol", "bug", "docs"} {
+	for _, want := range []string{"#12 open", "CI 1/2/3", "review approved", "4 files", "+20", "-3", "uncommitted changes", "● @alice ● @bob", "review requested ● @carol", "bug", "docs"} {
+		if strings.Contains(plain, "passed") || strings.Contains(plain, "failed") || strings.Contains(plain, "pending") {
+			t.Fatalf("header CI still has status words: %q", plain)
+		}
 		if !strings.Contains(plain, want) {
 			t.Fatalf("header missing %q: %q", want, plain)
 		}
