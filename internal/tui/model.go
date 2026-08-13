@@ -377,6 +377,8 @@ type Model struct {
 	diffDisplay       string
 	diffCommand       string
 	diffCommitCommand string
+	diffSplitRatio    int
+	diffMinPaneWidth  int
 	diffTerminal      *embeddedterm.Terminal
 	focusDiff         bool
 	focusExplorer     bool
@@ -478,6 +480,8 @@ func New(version ...string) (Model, error) {
 		diffDisplay:       cfg.Diff.Display,
 		diffCommand:       cfg.Diff.Command,
 		diffCommitCommand: cfg.CommitReviewCommand(),
+		diffSplitRatio:    cfg.Diff.SplitRatio,
+		diffMinPaneWidth:  cfg.Diff.MinPaneWidth,
 		rawDetailCache:    map[string]string{},
 		diffCache:         map[string]string{},
 		richBodies:        map[string]string{},
@@ -977,9 +981,20 @@ func (m *Model) layout() {
 	}
 	if m.screen == prListScreen {
 		bodyH := max(3, m.h-m.headerHeight()-footerLines-paneChromeH)
-		listPaneW := max(24, m.w*prListPaneRatio/100)
-		if m.w-listPaneW < 20 {
-			listPaneW = max(12, m.w-20)
+		ratio := m.diffSplitRatio
+		if ratio <= 0 {
+			ratio = prListPaneRatio
+		}
+		listPaneW := max(4, m.w*ratio/100)
+		minPaneW := max(14, m.diffMinPaneWidth)
+		if minPaneW <= 0 {
+			minPaneW = 24
+		}
+		if listPaneW < minPaneW {
+			listPaneW = minPaneW
+		}
+		if m.w-listPaneW < minPaneW {
+			listPaneW = max(minPaneW, m.w-minPaneW)
 		}
 		listW := max(4, listPaneW-paneChromeW)
 		detailW := max(4, m.w-listPaneW-paneChromeW)
@@ -996,15 +1011,22 @@ func (m *Model) layout() {
 		}
 		return
 	}
-	ratio := listRatio
-	if m.diffTerminal != nil && m.diffTerminal.Available() {
-		ratio = reviewListRatio
+	ratio := m.diffSplitRatio
+	if ratio <= 0 {
+		ratio = listRatio
 	}
-	leftPaneW := max(24, m.w*ratio/100)
+	minPaneW := max(14, m.diffMinPaneWidth)
+	if minPaneW <= 0 {
+		minPaneW = 24
+	}
+	if minPaneW > m.w/2 {
+		minPaneW = max(8, m.w/2)
+	}
+	leftPaneW := max(minPaneW, m.w*ratio/100)
 	rightPaneW := m.w - leftPaneW
-	if rightPaneW < 14 {
-		rightPaneW = 14
-		leftPaneW = max(8, m.w-14)
+	if rightPaneW < minPaneW {
+		rightPaneW = minPaneW
+		leftPaneW = max(minPaneW, m.w-minPaneW)
 	}
 	listW := max(4, leftPaneW-paneChromeW)
 	rightW := max(4, rightPaneW-paneChromeW)
