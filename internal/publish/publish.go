@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +50,12 @@ func BuildPreview(base string) (Preview, error) {
 	if err != nil {
 		return Preview{}, err
 	}
+	return buildPreview(st, base)
+}
+
+// buildPreview assembles the preview from an already-resolved store, so callers
+// that have one need not re-discover it.
+func buildPreview(st *store.Store, base string) (Preview, error) {
 	base = git.ResolveBase(base)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
@@ -88,19 +95,14 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 		return Result{}, err
 	}
 	pr, findErr := client.FindOpen(st.Branch)
-	base := opts.Base
-	if findErr == nil && pr.BaseRefName != "" {
-		if requested := normalizeBase(base); requested != "" && requested != pr.BaseRefName {
-			return Result{}, fmt.Errorf("open PR base is %s, not %s", pr.BaseRefName, requested)
-		}
-		base = pr.BaseRefName
-	} else if base == "" {
-		base = cache.Base(git.DefaultBase())
+	base, err := resolvePublishBase(opts.Base, cache, pr, findErr)
+	if err != nil {
+		return Result{}, err
 	}
 	if _, err := timeline.SyncCommits(st.Timeline(), git.ResolveBase(base)); err != nil {
 		return Result{}, err
 	}
-	preview, err := BuildPreview(base)
+	preview, err := buildPreview(st, base)
 	if err != nil {
 		return Result{}, err
 	}
@@ -130,27 +132,9 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 		return Result{}, fmt.Errorf("git push: %w", err)
 	}
 
-	created := findErr != nil
-	if !created {
-		if err := client.Update(st.Branch, preview.Title, bodyFile); err != nil {
-			return Result{}, err
-		}
-		pr.Title, pr.Body = preview.Title, body
-	} else {
-		base := normalizeBase(preview.Base)
-		url, err := client.Create(base, st.Branch, preview.Title, bodyFile, opts.Draft)
-		if err != nil {
-			return Result{}, err
-		}
-		if pr, err = client.FindOpen(st.Branch); err != nil {
-			pr = gh.PR{URL: url, Title: preview.Title, Body: body, State: "OPEN"}
-		}
-		if pr.BaseRefName == "" {
-			pr.BaseRefName = base
-		}
-	}
-	if pr.BaseRefName == "" {
-		pr.BaseRefName = normalizeBase(preview.Base)
+	pr, created, err := applyRemote(client, st.Branch, preview, body, bodyFile, pr, findErr, opts.Draft)
+	if err != nil {
+		return Result{}, err
 	}
 
 	cache.PR = &pr
@@ -160,6 +144,64 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 		return Result{}, err
 	}
 	return Result{PR: pr, Created: created}, nil
+}
+
+// resolvePublishBase picks the base ref: an open PR's base wins (and rejects a
+// conflicting request), otherwise the requested base, otherwise the cache default.
+func resolvePublishBase(requested string, cache gh.Cache, pr gh.PR, findErr error) (string, error) {
+	if findErr == nil && pr.BaseRefName != "" {
+		if req := normalizeBase(requested); req != "" && req != pr.BaseRefName {
+			return "", fmt.Errorf("open PR base is %s, not %s", pr.BaseRefName, req)
+		}
+		return pr.BaseRefName, nil
+	}
+	if requested == "" {
+		return cache.Base(git.DefaultBase()), nil
+	}
+	return requested, nil
+}
+
+// applyRemote creates or updates the PR and returns the resulting PR and whether
+// it was newly created.
+func applyRemote(client githubClient, branch string, preview Preview, body, bodyFile string, pr gh.PR, findErr error, draft bool) (gh.PR, bool, error) {
+	if findErr == nil {
+		if err := client.Update(branch, preview.Title, bodyFile); err != nil {
+			return gh.PR{}, false, err
+		}
+		pr.Title, pr.Body = preview.Title, body
+		if pr.BaseRefName == "" {
+			pr.BaseRefName = normalizeBase(preview.Base)
+		}
+		return pr, false, nil
+	}
+	base := normalizeBase(preview.Base)
+	url, err := client.Create(base, branch, preview.Title, bodyFile, draft)
+	if err != nil {
+		return gh.PR{}, true, err
+	}
+	created, err := client.FindOpen(branch)
+	if err != nil {
+		// Create succeeded but the read-back failed: keep a usable PR shape,
+		// recovering the number from the URL rather than leaving it at 0.
+		created = gh.PR{URL: url, Number: prNumberFromURL(url), Title: preview.Title, Body: body, State: "OPEN"}
+	}
+	if created.BaseRefName == "" {
+		created.BaseRefName = base
+	}
+	return created, true, nil
+}
+
+// prNumberFromURL extracts the trailing number from a .../pull/<n> URL, or 0.
+func prNumberFromURL(url string) int {
+	i := strings.LastIndex(url, "/")
+	if i < 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(url[i+1:])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func normalizeBase(base string) string { return strings.TrimPrefix(base, "origin/") }
