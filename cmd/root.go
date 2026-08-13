@@ -28,7 +28,7 @@ var rootCmd = &cobra.Command{
 	},
 	// No subcommand → open the TUI for the current branch.
 	RunE: func(_ *cobra.Command, _ []string) error {
-		return tui.Run()
+		return tui.Run(version)
 	},
 }
 
