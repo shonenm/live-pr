@@ -1590,6 +1590,41 @@ func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
 	}
 }
 
+func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.mergeReadiness.ConflictFiles = []string{"conflict.go", "nested/other.go"}
+	m.cache.PR = &gh.PR{Checks: []gh.PRCheck{
+		{Name: "unit", WorkflowName: "CI", Status: "COMPLETED", Conclusion: "SUCCESS"},
+		{Context: "lint", Status: "IN_PROGRESS"},
+		{Name: "deploy", State: "FAILURE"},
+	}}
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	plain := ansi.Strip(m.View())
+	if m.active != conflictsTab || !strings.Contains(plain, "Conflicts · 2") || !strings.Contains(plain, "⚠ conflict.go") {
+		t.Fatalf("conflict view = active:%v view:%q", m.active, plain)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	m = updated.(Model)
+	plain = ansi.Strip(m.View())
+	for _, want := range []string{"Checks · 3", "✓ unit · CI · success", "◐ lint · in progress", "✗ deploy · failure"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("check view missing %q: %q", want, plain)
+		}
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.active != conversationTab {
+		t.Fatalf("Esc active = %v, want Conversation", m.active)
+	}
+}
+
 func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
 	m := testModel()
 	m.commits = []git.Commit{{SHA: "abc12341", Subject: "first"}, {SHA: "abc12342", Subject: "second"}}
