@@ -4,6 +4,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/shonenm/live-pr/internal/debugtime"
 )
@@ -81,7 +83,7 @@ func ResolveBase(base string) string {
 
 // MergeBase returns the best common ancestor of two revisions.
 func MergeBase(base, head string) (string, error) {
-	out, err := run("merge-base", base, head)
+	out, err := run("merge-base", "--end-of-options", base, head)
 	if err != nil {
 		return "", fmt.Errorf("git merge-base %s %s: %w", base, head, err)
 	}
@@ -105,7 +107,7 @@ func CommitsRange(base, head string) ([]Commit, error) {
 	out, err := run("log", "--reverse",
 		"--date=format:%Y-%m-%dT%H:%M",
 		"--format=%h%x1f%ad%x1f%s%x1f%b%x1e",
-		base+".."+head)
+		"--end-of-options", base+".."+head)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +144,7 @@ type MergeReadiness struct {
 // CheckMergeReadiness simulates merging head into base without touching HEAD,
 // the index, or the worktree.
 func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
-	behindText, err := run("rev-list", "--count", head+".."+base)
+	behindText, err := run("rev-list", "--count", "--end-of-options", head+".."+base)
 	if err != nil {
 		return MergeReadiness{}, err
 	}
@@ -150,7 +152,7 @@ func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
 	if _, err := fmt.Sscan(behindText, &readiness.Behind); err != nil {
 		return MergeReadiness{}, fmt.Errorf("parse commits behind %q: %w", behindText, err)
 	}
-	cmd := exec.Command("git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", base, head)
+	cmd := exec.Command("git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "--end-of-options", base, head)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, mergeErr := cmd.Output()
@@ -231,7 +233,16 @@ func contentConflicts(base, head string) ([]string, error) {
 		ours, oursOK := blob(head, path)
 		theirs, theirsOK := blob(base, path)
 		ancestor, ancestorOK := blob(mergeBase, path)
-		if !oursOK || !theirsOK || len(ours) > maxContentConflictBlob || len(theirs) > maxContentConflictBlob {
+		if !oursOK || !theirsOK {
+			// The path changed on both sides but is absent on one: a
+			// modify/delete overlap, which is a conflict. (Absent on both
+			// is delete/delete, which is not.)
+			if oursOK != theirsOK {
+				files = append(files, path)
+			}
+			continue
+		}
+		if len(ours) > maxContentConflictBlob || len(theirs) > maxContentConflictBlob {
 			continue
 		}
 		if !ancestorOK {
@@ -303,7 +314,7 @@ func DiffStats(base, head string) (ChangeStats, error) {
 	if head != "" {
 		rangeSpec = base + "..." + head
 	}
-	out, err := run("diff", "--numstat", rangeSpec)
+	out, err := run("diff", "--numstat", "--end-of-options", rangeSpec)
 	if err != nil {
 		return ChangeStats{}, err
 	}
@@ -342,7 +353,7 @@ func HasChanges(base, head string) (bool, error) {
 	if done := debugtime.Start("git diff --quiet"); done != nil {
 		defer done()
 	}
-	cmd := exec.Command("git", "diff", "--quiet", base+"..."+head, "--")
+	cmd := exec.Command("git", "diff", "--quiet", "--end-of-options", base+"..."+head, "--")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -376,7 +387,7 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 	if head != "" {
 		rangeSpec = base + "..." + head
 	}
-	out, err := run("diff", "--name-status", "-z", rangeSpec)
+	out, err := run("diff", "--name-status", "-z", "--end-of-options", rangeSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -407,10 +418,11 @@ func FileDiff(base string, paths ...string) string { return FileDiffRange(base, 
 
 // FileDiffRange returns the colorized base...head patch for selected paths.
 func FileDiffRange(base, head string, paths ...string) string {
-	args := []string{"diff", "--color=always", base + "..." + head, "--"}
+	args := []string{"diff", "--color=always", "--end-of-options", base + "..." + head, "--"}
 	args = append(args, paths...)
 	out, err := run(args...)
 	if err != nil {
+		debugtime.Logf("FileDiffRange %s...%s: %v", base, head, err)
 		return ""
 	}
 	return truncate(out, 800)
@@ -419,8 +431,9 @@ func FileDiffRange(base, head string, paths ...string) string {
 // Show returns the full `git show` for a commit (stat + colorized patch),
 // capped to a sane number of lines. Empty string if the sha is unresolvable.
 func Show(sha string) string {
-	out, err := run("show", "--color=always", "--stat", "-p", sha)
+	out, err := run("show", "--color=always", "--stat", "-p", "--end-of-options", sha)
 	if err != nil {
+		debugtime.Logf("Show %s: %v", sha, err)
 		return ""
 	}
 	return truncate(out, 800)
@@ -449,7 +462,9 @@ func FetchPull(number int, base, expectedOID string) (string, error) {
 	headRef := fmt.Sprintf("refs/live-pr/pulls/%d/head", number)
 	baseSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", base, base)
 	headSpec := fmt.Sprintf("+refs/pull/%d/head:%s", number, headRef)
-	cmd := exec.Command("git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("git fetch PR #%d: %w: %s", number, err, strings.TrimSpace(string(out)))
 	}
@@ -467,8 +482,9 @@ func FetchPull(number int, base, expectedOID string) (string, error) {
 // author/date header. Empty string if the sha cannot be resolved.
 func ShowStat(sha string) string {
 	out, err := run("show", "--stat", "--color=always",
-		"--format=%C(dim)%an committed · %ad%C(reset)", "--date=short", sha)
+		"--format=%C(dim)%an committed · %ad%C(reset)", "--date=short", "--end-of-options", sha)
 	if err != nil {
+		debugtime.Logf("ShowStat %s: %v", sha, err)
 		return ""
 	}
 	return out
