@@ -89,7 +89,7 @@ func (m Model) openReviewSubmit() (Model, tea.Cmd) {
 		m.status = err.Error()
 		return m, nil
 	}
-	m.reviewSubmitEvent, m.reviewSubmitCursor = gh.ReviewCommentEvent, 0
+	m.reviewSubmitEvent, m.reviewSubmitCursor, m.reviewSubmitTyping = gh.ReviewCommentEvent, 0, false
 	return m, nil
 }
 
@@ -102,7 +102,33 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	events := []gh.ReviewEvent{gh.ReviewCommentEvent, gh.ReviewApproveEvent, gh.ReviewRequestChangesEvent}
-	var event gh.ReviewEvent
+	if m.reviewSubmitTyping {
+		switch msg.String() {
+		case "esc":
+			m.localEditor.Blur()
+			m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
+			m.reviewSubmitTyping = false
+			return m, nil
+		case "enter", "ctrl+s":
+			m.reviewDraft.Body = strings.TrimSpace(m.localEditor.Value())
+			if m.reviewSubmitEvent == gh.ReviewRequestChangesEvent && m.reviewDraft.Body == "" {
+				m.status = "request changes requires a general review body"
+				return m, nil
+			}
+			m.localEditor.Blur()
+			m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
+			m.reviewSubmitTyping = false
+			m.reviewSubmitting = true
+			m.status = ""
+			event := m.reviewSubmitEvent
+			m.reviewSubmitEvent = ""
+			return m, tea.Batch(submitReview(m.reviewDraft, event), m.startSpinner())
+		default:
+			var cmd tea.Cmd
+			m.localEditor, cmd = m.localEditor.Update(msg)
+			return m, cmd
+		}
+	}
 	switch msg.String() {
 	case "up", "k":
 		m.reviewSubmitCursor = (m.reviewSubmitCursor + len(events) - 1) % len(events)
@@ -111,52 +137,16 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.reviewSubmitCursor = (m.reviewSubmitCursor + 1) % len(events)
 		return m, nil
 	case "enter":
-		event = events[m.reviewSubmitCursor]
-	case "c":
-		event = gh.ReviewCommentEvent
-	case "a":
-		event = gh.ReviewApproveEvent
-	case "x":
-		event = gh.ReviewRequestChangesEvent
-	case "e":
-		m.reviewSubmitEvent = ""
+		m.reviewSubmitEvent = events[m.reviewSubmitCursor]
 		next, cmd := m.openLocalEditor(editReviewBody, m.reviewDraft.Body, "review-submit")
-		next.reviewSubmitCursor = m.reviewSubmitCursor
+		next.reviewSubmitEvent, next.reviewSubmitCursor, next.reviewSubmitTyping = m.reviewSubmitEvent, m.reviewSubmitCursor, true
 		return next, cmd
-	case "d":
-		if len(m.reviewDraft.Comments) == 0 {
-			m.status = "review draft has no inline comments"
-			return m, nil
-		}
-		m.reviewDraft.Comments = m.reviewDraft.Comments[:len(m.reviewDraft.Comments)-1]
-		if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
-			m.status = err.Error()
-		} else {
-			m.notice = "Removed last inline review comment"
-		}
-		return m, nil
-	case "D":
-		if err := os.Remove(m.reviewDraftPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			m.status = err.Error()
-			return m, nil
-		}
-		m.reviewDraft, m.reviewSubmitEvent = gh.ReviewDraft{}, ""
-		m.notice = "Review draft discarded"
-		return m, nil
 	case "esc", "q", "n":
 		m.reviewSubmitEvent = ""
 		return m, nil
 	default:
 		return m, nil
 	}
-	if event == gh.ReviewRequestChangesEvent && strings.TrimSpace(m.reviewDraft.Body) == "" {
-		m.status = "request changes requires a general review body"
-		return m, nil
-	}
-	m.reviewSubmitEvent = ""
-	m.reviewSubmitting = true
-	m.status = ""
-	return m, tea.Batch(submitReview(m.reviewDraft, event), m.startSpinner())
 }
 
 func (m Model) handleReviewSubmitted(msg reviewSubmitted) (Model, tea.Cmd) {
@@ -181,9 +171,6 @@ func (m Model) renderReviewSubmitPopup() string {
 		"",
 		stFg.Render(fmt.Sprintf("%d inline comments", len(m.reviewDraft.Comments))),
 	}
-	if body := strings.TrimSpace(m.reviewDraft.Body); body != "" {
-		lines = append(lines, stMuted.Render("Body: ")+stFg.Render(body))
-	}
 	for i, comment := range m.reviewDraft.Comments {
 		lines = append(lines, stMuted.Render(fmt.Sprintf("%d. %s:%d %s", i+1, comment.Path, comment.Line, comment.Side)))
 	}
@@ -196,7 +183,12 @@ func (m Model) renderReviewSubmitPopup() string {
 		}
 		lines = append(lines, prefix+style.Render(label))
 	}
-	lines = append(lines, "", stMuted.Render("j/k select · Enter submit · c/a/x shortcut"), stMuted.Render("e edit comment · d remove last inline · D discard draft · Esc cancel"))
+	if m.reviewSubmitTyping {
+		lines = append(lines, "", stMuted.Render("Message"), m.localEditor.View())
+		lines = append(lines, "", stMuted.Render("type message · Enter submit · Esc back"))
+	} else {
+		lines = append(lines, "", stMuted.Render("j/k select · Enter write message · Esc cancel"))
+	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAttention)).
