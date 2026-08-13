@@ -1365,7 +1365,11 @@ func (m Model) detailStats() git.ChangeStats {
 func (m Model) renderHeader() string {
 	badgeText, badgeColor := "Local", cBorder
 	if m.cache.PR != nil {
-		badgeText, badgeColor = fmt.Sprintf("⇄ #%d %s", m.cache.PR.Number, strings.ToLower(m.cache.PR.State)), prStateBadgeColor(m.cache.PR.State)
+		state := strings.ToLower(m.cache.PR.State)
+		if m.cache.PR.IsDraft {
+			state = "draft"
+		}
+		badgeText, badgeColor = fmt.Sprintf("⇄ #%d %s", m.cache.PR.Number, state), prStateBadgeColor(state)
 	}
 	badge := lipgloss.NewStyle().
 		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color("#ffffff")).
