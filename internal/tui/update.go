@@ -12,6 +12,22 @@ func reservedReviewKey(msg tea.Msg) bool {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.statusPR.Number > 0 {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			next, cmd := m.handlePRStatusKey(keyMsg)
+			return next, cmd
+		}
+		if done, ok := msg.(prStatusDone); ok {
+			next, cmd := m.handlePRStatusDone(done)
+			return next, cmd
+		}
+		if tick, ok := msg.(bspinner.TickMsg); ok {
+			var cmd tea.Cmd
+			m.loadSpinner, cmd = m.loadSpinner.Update(tick)
+			return m, cmd
+		}
+		return m, nil
+	}
 	if m.reviewSubmitEvent != "" {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			next, cmd := m.handleReviewSubmitKey(keyMsg)
@@ -75,6 +91,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	case reviewSubmitted:
 		next, cmd := m.handleReviewSubmitted(msg)
+		return next, cmd
+	case prStatusDone:
+		next, cmd := m.handlePRStatusDone(msg)
 		return next, cmd
 	case remoteLoaded:
 		next, cmd := m.handleRemoteLoaded(msg)

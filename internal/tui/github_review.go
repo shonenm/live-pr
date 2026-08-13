@@ -89,7 +89,7 @@ func (m Model) openReviewSubmit() (Model, tea.Cmd) {
 		m.status = err.Error()
 		return m, nil
 	}
-	m.reviewSubmitEvent = gh.ReviewCommentEvent
+	m.reviewSubmitEvent, m.reviewSubmitCursor = gh.ReviewCommentEvent, 0
 	return m, nil
 }
 
@@ -101,8 +101,17 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.reviewSubmitEvent == "" {
 		return m, nil
 	}
+	events := []gh.ReviewEvent{gh.ReviewCommentEvent, gh.ReviewApproveEvent, gh.ReviewRequestChangesEvent}
 	var event gh.ReviewEvent
 	switch msg.String() {
+	case "up", "k":
+		m.reviewSubmitCursor = (m.reviewSubmitCursor + len(events) - 1) % len(events)
+		return m, nil
+	case "down", "j":
+		m.reviewSubmitCursor = (m.reviewSubmitCursor + 1) % len(events)
+		return m, nil
+	case "enter":
+		event = events[m.reviewSubmitCursor]
 	case "c":
 		event = gh.ReviewCommentEvent
 	case "a":
@@ -173,7 +182,16 @@ func (m Model) renderReviewSubmitPopup() string {
 	for i, comment := range m.reviewDraft.Comments {
 		lines = append(lines, stMuted.Render(fmt.Sprintf("%d. %s:%d %s", i+1, comment.Path, comment.Line, comment.Side)))
 	}
-	lines = append(lines, "", stMuted.Render("c comment · a approve · x request changes"), stMuted.Render("d remove last inline · D discard draft · Esc cancel"))
+	labels := []string{"Comment", "Approve", "Request changes"}
+	for i, label := range labels {
+		prefix := "  "
+		style := stFg
+		if i == m.reviewSubmitCursor {
+			prefix, style = "▸ ", stAccent.Bold(true)
+		}
+		lines = append(lines, prefix+style.Render(label))
+	}
+	lines = append(lines, "", stMuted.Render("j/k select · Enter submit · c/a/x shortcut"), stMuted.Render("d remove last inline · D discard draft · Esc cancel"))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAttention)).

@@ -312,6 +312,9 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	m.resetDetailCaches()
 	m.cache.PR = &msg.pr
+	if strings.TrimSpace(msg.pr.Title) != "" {
+		m.title = msg.pr.Title
+	}
 	if msg.commentsErr == nil {
 		m.cache.Comments = msg.comments
 	}
@@ -382,7 +385,14 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	}
 	m.ciPollFailures = 0
 	m.cache.PR.Checks = msg.pr.Checks
+	m.cache.PR.CheckRollupState = checkRollupState(msg.pr.Checks)
+	for i := range m.cache.PR.Commits {
+		if m.cache.PR.Commits[i].OID == msg.pr.HeadRefOID {
+			m.cache.PR.Commits[i].CheckRollupState = m.cache.PR.CheckRollupState
+		}
+	}
 	m.cache.PR.PreviewLoaded = true
+	m.invalidateConversation()
 	m.navigator.PRs = upsertPR(m.navigator.PRs, *m.cache.PR)
 	m.prRowCache = map[prRowCacheKey][]string{}
 	m.githubStatus = "GitHub: CI updated now"
@@ -408,6 +418,9 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	case msg.err == nil:
 		m.resetDetailCaches()
 		m.cache.PR = &msg.pr
+		if strings.TrimSpace(msg.pr.Title) != "" {
+			m.title = msg.pr.Title
+		}
 		m.localAvailable = false
 		m.cache.FetchedAt = now
 		m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)

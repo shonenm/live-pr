@@ -71,14 +71,14 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, AddComment, InlineReview, EditLocal, DeleteLocal, Review, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Status, k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -88,8 +88,8 @@ var keys = keyMap{
 	PreviewDown:  key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
 	Top:          key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
 	Bottom:       key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
-	PrevView:     key.NewBinding(key.WithKeys("["), key.WithHelp("[", "previous view")),
-	NextView:     key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next view")),
+	PrevView:     key.NewBinding(key.WithKeys("[", "h"), key.WithHelp("h/[", "previous view")),
+	NextView:     key.NewBinding(key.WithKeys("]", "l"), key.WithHelp("l/]", "next view")),
 	Filter:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 	ToggleStack:  key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
 	Focus:        key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
@@ -105,6 +105,7 @@ var keys = keyMap{
 	Merge:        key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge PR")),
 	Checkout:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
 	Close:        key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
+	Status:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "PR status")),
 	AddComment:   key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add comment/body")),
 	InlineReview: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "inline review")),
 	EditLocal:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
@@ -202,6 +203,12 @@ type reviewSubmitted struct {
 	err   error
 }
 
+type prStatusDone struct {
+	pr     gh.PR
+	target string
+	err    error
+}
+
 type prActionDone struct {
 	action prAction
 	pr     gh.PR
@@ -261,7 +268,7 @@ type prRowCacheKey struct {
 	number, width, additions, deletions, checkCount int
 	prefix, state, title, author, base, head        string
 	mergeable, mergeState, checkHealth, rollup      string
-	draft, previewLoaded                            bool
+	draft, previewLoaded, current                   bool
 }
 
 type conversationItem struct {
@@ -349,7 +356,11 @@ type Model struct {
 	reviewDraft               gh.ReviewDraft
 	reviewDraftPath           string
 	reviewSubmitEvent         gh.ReviewEvent
+	reviewSubmitCursor        int
 	reviewSubmitting          bool
+	statusPR                  gh.PR
+	statusCursor              int
+	statusRunning             bool
 	pendingPRAction           prAction
 	prActionRunning           prAction
 	prActionNumber            int
@@ -587,6 +598,9 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.remote = false
 	m.summary = string(conclusion)
 	m.title = prbody.Title(m.summary, st.Branch)
+	if cache.PR != nil && strings.TrimSpace(cache.PR.Title) != "" {
+		m.title = cache.PR.Title
+	}
 	m.localAvailable, m.localTitle = cache.PR == nil, m.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = stats, len(commits), dirty
 	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = base, diffBase, st.Branch, "HEAD", diffBase
@@ -641,7 +655,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
+	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.statusRunning || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {
@@ -1129,6 +1143,7 @@ func (m *Model) sync() tea.Cmd {
 		m.keys.Merge.SetEnabled(m.prListState == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && m.prActionRunning == noPRAction)
 		m.keys.Checkout.SetEnabled(pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && m.prActionRunning == noPRAction)
 		m.keys.Close.SetEnabled(m.prListState == openPRListState && pr != nil && pr.Number > 0 && m.prActionRunning == noPRAction)
+		m.keys.Status.SetEnabled(pr != nil && pr.Number > 0)
 		content, selectedLine := m.buildPRListRows()
 		m.list.SetContent(content)
 		m.detail.SetContent(m.buildPRPreview())
@@ -1154,6 +1169,7 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.Merge.SetEnabled(m.canMergeCurrentPR() && m.prActionRunning == noPRAction)
 	m.keys.Checkout.SetEnabled(false)
 	m.keys.Close.SetEnabled(false)
+	m.keys.Status.SetEnabled(m.cache.PR != nil && m.cache.PR.Number > 0)
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
 	keepLineVisible(&m.list, selectedLine)
@@ -1200,6 +1216,9 @@ func (m Model) View() string {
 	}
 	if m.reviewSubmitEvent != "" {
 		return overlayPopup(view, m.renderReviewSubmitPopup(), m.w)
+	}
+	if m.statusPR.Number > 0 {
+		return overlayPopup(view, m.renderPRStatusPopup(), m.w)
 	}
 	if m.localDeleteTarget != "" {
 		return overlayPopup(view, m.renderLocalDeletePopup(), m.w)
@@ -1258,7 +1277,11 @@ func (m Model) renderHeader() string {
 	badge := lipgloss.NewStyle().
 		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color("#ffffff")).
 		Padding(0, 1).Render(badgeText)
-	l1 := badge + "  " + stBold.Render(m.title)
+	title := m.title
+	if m.cache.PR != nil {
+		title = m.cache.PR.Title
+	}
+	l1 := badge + "  " + stBold.Render(title)
 	stats := m.detailStats()
 	scope := fmt.Sprintf("%d files", stats.Files) + " " + stGreenF.Render(fmt.Sprintf("+%d", stats.Additions)) + " " + stRedF.Render(fmt.Sprintf("-%d", stats.Deletions))
 	if m.reviewSHA != "" {

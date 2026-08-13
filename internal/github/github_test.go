@@ -290,6 +290,27 @@ func TestPRActionsUseExplicitNonInteractiveCommands(t *testing.T) {
 	}
 }
 
+func TestSetStatusUsesGitHubTransitions(t *testing.T) {
+	var calls [][]string
+	client := Client{run: func(args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		return nil, nil
+	}}
+	if err := client.SetStatus(PR{Number: 12, State: "CLOSED"}, "draft"); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetStatus(PR{Number: 13, State: "OPEN", IsDraft: true}, "open"); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"pr", "reopen", "12"}, {"pr", "ready", "12", "--undo"}, {"pr", "ready", "13"}}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("status calls = %#v, want %#v", calls, want)
+	}
+	if err := client.SetStatus(PR{Number: 14, State: "MERGED"}, "open"); err == nil {
+		t.Fatal("merged PR status change accepted")
+	}
+}
+
 func TestPRActionsReturnCommandOutput(t *testing.T) {
 	client := Client{run: func(args ...string) ([]byte, error) {
 		return []byte("merge blocked"), errors.New("exit 1")
