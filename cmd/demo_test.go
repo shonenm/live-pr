@@ -125,6 +125,12 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	if state, err := os.ReadFile(filepath.Join(stateDir, "pr-102")); err != nil || strings.TrimSpace(string(state)) != "CLOSED" {
 		t.Fatalf("close state = %q err=%v", state, err)
 	}
+	run("pr", "reopen", "102")
+	run("pr", "ready", "102", "--undo")
+	draft, err := gh.New().Find(102)
+	if err != nil || draft.State != "OPEN" || !draft.IsDraft {
+		t.Fatalf("draft state = %#v err=%v", draft, err)
+	}
 	run("pr", "checkout", "102")
 	branch := exec.Command("git", "-C", root, "branch", "--show-current")
 	out, err := branch.Output()

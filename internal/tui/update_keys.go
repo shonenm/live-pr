@@ -96,6 +96,8 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
+	case key.Matches(msg, m.keys.Status):
+		return m.openPRStatus(m.selectedPR())
 	case key.Matches(msg, m.keys.Merge):
 		if m.prListState == openPRListState {
 			if pr := m.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
@@ -207,6 +209,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.PRList) {
+		selected := m.currentPRNumber()
 		m.targetGeneration++
 		if m.diffTerminal != nil {
 			m.diffTerminal.Close()
@@ -218,7 +221,6 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.refreshing, m.publishing = false, false
 		m.active = conversationTab
 		m.status = ""
-		selected := m.selectedPRNumber()
 		m.layout()
 		return m, m.applyPRViewState(selected)
 	}
@@ -356,6 +358,8 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, tea.Batch(fetchRemotePR(*m.cache.PR, m.targetGeneration), m.startSpinner())
 		}
 		return m, tea.Batch(fetchGitHub(m.head, m.currentPRNumber(), m.targetGeneration), m.startSpinner())
+	case key.Matches(msg, m.keys.Status):
+		return m.openPRStatus(m.cache.PR)
 	case key.Matches(msg, m.keys.Merge):
 		if m.canMergeCurrentPR() {
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, m.cache.PR.Number, *m.cache.PR

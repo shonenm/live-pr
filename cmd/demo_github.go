@@ -143,6 +143,8 @@ pr_data() {
     *) exit 1 ;;
   esac
   state=$(tr -d '\n' < "$state_dir/pr-$1")
+  draft=false
+  if [ "$state" = DRAFT ]; then state=OPEN; draft=true; fi
 }
 
 commit_status_json() {
@@ -165,14 +167,14 @@ commit_status_json() {
 pr_json() {
   pr_data "$1"
   cat <<JSON
-{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","body":"%s","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","additions":24,"deletions":6,"changedFiles":3,"updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user","avatarUrl":"https://avatars.githubusercontent.com/shonenm"},"assignees":[{"login":"demo-user"}],"labels":[{"name":"demo","color":"1f6feb"}],"reviewRequests":[],"comments":[{"author":{"login":"reviewer"},"body":"This is mock review feedback.","createdAt":"2026-08-10T11:00:00Z","url":"https://example.invalid/pull/$1#comment"}],"statusCheckRollup":[{"name":"demo-check","status":"COMPLETED","conclusion":"SUCCESS"}]}
+{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","body":"%s","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":$draft,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","additions":24,"deletions":6,"changedFiles":3,"updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user","avatarUrl":"https://avatars.githubusercontent.com/shonenm"},"assignees":[{"login":"demo-user"}],"labels":[{"name":"demo","color":"1f6feb"}],"reviewRequests":[],"comments":[{"author":{"login":"reviewer"},"body":"This is mock review feedback.","createdAt":"2026-08-10T11:00:00Z","url":"https://example.invalid/pull/$1#comment"}],"statusCheckRollup":[{"name":"demo-check","status":"COMPLETED","conclusion":"SUCCESS"}]}
 JSON
 }
 
 list_json() {
   pr_data "$1"
   cat <<JSON
-{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":false,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user","avatarUrl":"https://avatars.githubusercontent.com/shonenm"},"assignees":{"nodes":[{"login":"demo-user"}]},"labels":{"nodes":[{"name":"demo","color":"1f6feb"}]},"reviewRequests":{"nodes":[]},"statusCheckRollup":{"state":"SUCCESS"}}
+{"number":$1,"url":"https://example.invalid/pull/$1","title":"$title","state":"$state","baseRefName":"main","headRefName":"$branch","headRefOid":"$oid","isDraft":$draft,"isCrossRepository":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","updatedAt":"2026-08-10T12:00:00Z","createdAt":"2026-08-10T10:00:00Z","author":{"login":"demo-user","avatarUrl":"https://avatars.githubusercontent.com/shonenm"},"assignees":{"nodes":[{"login":"demo-user"}]},"labels":{"nodes":[{"name":"demo","color":"1f6feb"}]},"reviewRequests":{"nodes":[]},"statusCheckRollup":{"state":"SUCCESS"}}
 JSON
 }
 
@@ -234,6 +236,16 @@ case "${1:-} ${2:-}" in
     ;;
   "pr close")
     printf 'CLOSED\n' > "$state_dir/pr-$number"
+    ;;
+  "pr reopen")
+    printf 'OPEN\n' > "$state_dir/pr-$number"
+    ;;
+  "pr ready")
+    if printf '%%s\n' "$*" | grep -q -- '--undo'; then
+      printf 'DRAFT\n' > "$state_dir/pr-$number"
+    else
+      printf 'OPEN\n' > "$state_dir/pr-$number"
+    fi
     ;;
   "pr checkout")
     pr_data "$number"
