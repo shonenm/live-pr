@@ -280,46 +280,7 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 		sourceNumbers[pr.Number] = true
 	}
 	m.allPRs = m.withLocalPR(source)
-	clear(m.viewCounts[:])
-	clear(m.viewCountKnown[:])
-	for view := assignedView; view < prViewCount; view++ {
-		state := openPRListState
-		if view == closedPRsView {
-			state = closedPRListState
-		}
-		if cached, ok := m.prPages[prPageKey(view, state, "")]; ok && cached.loaded {
-			m.viewCounts[view], m.viewCountKnown[view] = cached.total, true
-		} else if page.loaded {
-			for _, pr := range m.navigator.PRs {
-				if matchesListState(pr, state) && m.matchesView(pr, view) {
-					m.viewCounts[view]++
-				}
-			}
-		}
-	}
-	if !paged || !page.loaded {
-		for view := assignedView; view < prViewCount; view++ {
-			state := openPRListState
-			if view == closedPRsView {
-				state = closedPRListState
-			}
-			for _, pr := range m.allPRs {
-				if matchesListState(pr, state) && m.matchesView(pr, view) {
-					m.viewCounts[view]++
-				}
-			}
-			m.viewCountKnown[view] = true
-		}
-	}
-	if m.localAvailable && page.loaded {
-		local := gh.PR{State: "LOCAL", Author: gh.PRUser{Login: m.viewerLogin}}
-		for view := assignedView; view < closedPRsView; view++ {
-			if m.matchesView(local, view) || view == allPRsView {
-				m.viewCounts[view]++
-			}
-		}
-	}
-	m.viewCountsValid = true
+	m.recomputeViewCounts(page, paged)
 	m.filteredPRs = make([]gh.PR, 0, len(m.allPRs))
 	_, localFilter := splitPRFilter(m.filterQuery)
 	for _, pr := range m.allPRs {
@@ -350,6 +311,45 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 		}
 	}
 	m.restorePRSelection(selectedNumber)
+}
+
+// recomputeViewCounts refreshes the per-view PR counts shown in the tab bar,
+// preferring a loaded page's total, then the navigator, then the local set.
+func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
+	clear(m.viewCounts[:])
+	clear(m.viewCountKnown[:])
+	for view := assignedView; view < prViewCount; view++ {
+		state := standardPRListState(view)
+		if cached, ok := m.prPages[prPageKey(view, state, "")]; ok && cached.loaded {
+			m.viewCounts[view], m.viewCountKnown[view] = cached.total, true
+		} else if page.loaded {
+			for _, pr := range m.navigator.PRs {
+				if matchesListState(pr, state) && m.matchesView(pr, view) {
+					m.viewCounts[view]++
+				}
+			}
+		}
+	}
+	if !paged || !page.loaded {
+		for view := assignedView; view < prViewCount; view++ {
+			state := standardPRListState(view)
+			for _, pr := range m.allPRs {
+				if matchesListState(pr, state) && m.matchesView(pr, view) {
+					m.viewCounts[view]++
+				}
+			}
+			m.viewCountKnown[view] = true
+		}
+	}
+	if m.localAvailable && page.loaded {
+		local := gh.PR{State: "LOCAL", Author: gh.PRUser{Login: m.viewerLogin}}
+		for view := assignedView; view < closedPRsView; view++ {
+			if m.matchesView(local, view) || view == allPRsView {
+				m.viewCounts[view]++
+			}
+		}
+	}
+	m.viewCountsValid = true
 }
 
 func singlePRStacks(prs []gh.PR) []prStack {
