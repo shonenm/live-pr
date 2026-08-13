@@ -70,24 +70,19 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = u.(Model)
-	if m.reviewSubmitEvent == "" || !strings.Contains(m.renderReviewSubmitPopup(), "Request changes") || !strings.Contains(m.renderReviewSubmitPopup(), "e edit comment") {
-		t.Fatalf("submit popup not opened: event=%q popup=%q", m.reviewSubmitEvent, m.renderReviewSubmitPopup())
+	if m.reviewSubmitEvent == "" || m.reviewSubmitTyping || !strings.Contains(m.renderReviewSubmitPopup(), "Request changes") {
+		t.Fatalf("submit popup not opened: event=%q typing=%v popup=%q", m.reviewSubmitEvent, m.reviewSubmitTyping, m.renderReviewSubmitPopup())
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = u.(Model)
-	if m.localEditMode != editReviewBody || m.localEditor.Value() != "Changes required" {
-		t.Fatalf("submit popup did not open review comment editor: mode=%v value=%q", m.localEditMode, m.localEditor.Value())
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if !m.reviewSubmitTyping || m.localEditMode != editReviewBody {
+		t.Fatalf("did not enter message after choosing type: typing=%v mode=%v", m.reviewSubmitTyping, m.localEditMode)
 	}
 	m.localEditor.SetValue("Please fix this before approve")
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-	m = u.(Model)
-	if m.reviewDraft.Body != "Please fix this before approve" || m.reviewSubmitEvent == "" {
-		t.Fatalf("edited review comment not kept: body=%q event=%q", m.reviewDraft.Body, m.reviewSubmitEvent)
-	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m = u.(Model)
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	if cmd == nil || !m.reviewSubmitting {

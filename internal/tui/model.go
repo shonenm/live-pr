@@ -361,6 +361,7 @@ type Model struct {
 	reviewDraftPath           string
 	reviewSubmitEvent         gh.ReviewEvent
 	reviewSubmitCursor        int
+	reviewSubmitTyping        bool
 	reviewSubmitting          bool
 	statusPR                  gh.PR
 	statusCursor              int
