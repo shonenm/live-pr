@@ -1271,11 +1271,11 @@ func (m Model) View() string {
 		body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 	}
-	if m.localEditMode != noLocalEdit {
-		return overlayPopup(view, m.renderLocalEditorPopup(), m.w)
-	}
 	if m.reviewSubmitEvent != "" {
 		return overlayPopup(view, m.renderReviewSubmitPopup(), m.w)
+	}
+	if m.localEditMode != noLocalEdit {
+		return overlayPopup(view, m.renderLocalEditorPopup(), m.w)
 	}
 	if m.statusPR.Number > 0 {
 		return overlayPopup(view, m.renderPRStatusPopup(), m.w)
