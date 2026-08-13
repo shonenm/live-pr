@@ -66,7 +66,9 @@ func recentlySummarized(evs []event.Event, now time.Time, within time.Duration) 
 		}
 		ts, err := time.ParseInLocation(tsFormat, evs[i].TS, time.Local)
 		if err != nil {
-			return false
+			// An unreadable timestamp on a recent summary must not disable the
+			// throttle: treat it as recent so we do not append a duplicate.
+			return true
 		}
 		return now.Sub(ts) < within
 	}

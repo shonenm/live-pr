@@ -18,6 +18,15 @@ func TestTitle(t *testing.T) {
 	if got := Title("# <title>\n\n## Summary\n\nOutcome", "feat/x"); got != "feat/x" {
 		t.Errorf("unfilled PR template should fall back to branch, got %q", got)
 	}
+	// A bare heading marker has no text: fall through instead of returning an
+	// empty title. With no other content, that means the branch name.
+	if got := Title("#", "feat/x"); got != "feat/x" {
+		t.Errorf("bare # alone should fall back to branch, got %q", got)
+	}
+	// A bare # followed by real content falls through to that content.
+	if got := Title("#\n\nActual title", "feat/x"); got != "Actual title" {
+		t.Errorf("bare # then content should use the content, got %q", got)
+	}
 }
 
 func TestRenderPutsConclusionAboveTimeline(t *testing.T) {
