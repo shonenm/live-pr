@@ -179,19 +179,28 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 		if selected {
 			selectedLine = len(lines)
 		}
+		// Render each item without the accent bar; the selected item is shown
+		// by a full-width background band instead.
+		var itemLines []string
 		if item.summary != nil {
-			lines = append(lines, m.summaryLines(*item.summary, selected, m.list.Width)...)
+			itemLines = m.summaryLines(*item.summary, false, m.list.Width)
 		} else if item.pr != nil {
-			lines = append(lines, m.descriptionLines(*item.pr, selected, m.list.Width)...)
+			itemLines = m.descriptionLines(*item.pr, false, m.list.Width)
 		} else if item.comment != nil {
-			lines = append(lines, m.commentLines(*item.comment, selected, m.list.Width)...)
+			itemLines = m.commentLines(*item.comment, false, m.list.Width)
 		} else if item.activity != nil {
-			lines = append(lines, m.activityLines(*item.activity, selected)...)
+			itemLines = m.activityLines(*item.activity, false)
 		} else if item.prCommit != nil {
-			lines = append(lines, m.commitCIActivityLines(*item.prCommit, selected)...)
+			itemLines = m.commitCIActivityLines(*item.prCommit, false)
 		} else {
-			lines = append(lines, m.eventLines(*item.event, selected, m.list.Width)...)
+			itemLines = m.eventLines(*item.event, false, m.list.Width)
 		}
+		if selected {
+			for j := range itemLines {
+				itemLines[j] = highlightSelectedBg(itemLines[j], m.list.Width)
+			}
+		}
+		lines = append(lines, itemLines...)
 		compactActivity := item.activity != nil || item.prCommit != nil
 		nextCompactActivity := i+1 < len(items) && (items[i+1].activity != nil || items[i+1].prCommit != nil)
 		if !compactActivity || !nextCompactActivity {
