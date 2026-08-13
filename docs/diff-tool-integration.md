@@ -18,8 +18,8 @@ Equivalent behavior is built in; use the same keys in the global or per-reposito
 
 ```toml
 [diff]
-command = 'nvim -c "CodeDiff $LIVE_PR_BASE...$LIVE_PR_HEAD_REV"'
-commit_command = 'nvim -c "CodeReview $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
+command = 'nvim -c "CodeDiff --inline $LIVE_PR_BASE...$LIVE_PR_HEAD_REV"'
+commit_command = 'nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
 ```
 
 The command runs in a real embedded pseudoterminal (PTY), so full-screen tools such as Neovim work without suspending live-pr or opening another tmux pane. `command = ""` explicitly disables the built-in branch reviewer. The built-in commit behavior is deliberately supplied through the legacy top-level `reviewer` fallback, so an explicit `commit_command` takes precedence and existing `reviewer` overrides remain compatible.

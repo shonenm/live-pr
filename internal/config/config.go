@@ -50,7 +50,7 @@ func Default() Config {
 		Reviewer:                  `nvim -c "CodeDiff {sha}~1 {sha}"`,
 		SummaryMinIntervalMinutes: 10,
 		Diff: DiffConfig{
-			Command: `nvim -c "CodeDiff $LIVE_PR_RANGE"`,
+			Command: `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`,
 		},
 	}
 }
@@ -96,6 +96,10 @@ func Load(repoRoot string) (Config, error) {
 		if err := toml.Unmarshal(data, &cfg); err != nil {
 			return Config{}, fmt.Errorf("parse config %s: %w", p, err)
 		}
+	}
+	// Migrate the old built-in command while preserving explicit custom commands.
+	if cfg.Diff.Command == `nvim -c "CodeDiff $LIVE_PR_RANGE"` {
+		cfg.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`
 	}
 	return cfg, nil
 }
