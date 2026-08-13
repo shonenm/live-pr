@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -269,10 +270,11 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 		m.collapsedStacks = map[string]bool{}
 	}
 	page, paged := m.prPages[m.activePRPage]
-	source := m.navigator.PRs // legacy/cache fallback before the first page arrives
+	source := append([]gh.PR(nil), m.navigator.PRs...) // legacy/cache fallback before the first page arrives
 	if page.loaded {
-		source = page.prs
+		source = append([]gh.PR(nil), page.prs...)
 	}
+	slices.SortFunc(source, func(a, b gh.PR) int { return a.Number - b.Number })
 	sourceNumbers := make(map[int]bool, len(source))
 	for _, pr := range source {
 		sourceNumbers[pr.Number] = true
@@ -331,6 +333,7 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 			m.filteredPRs = append(m.filteredPRs, pr)
 		}
 	}
+	slices.SortFunc(m.filteredPRs, func(a, b gh.PR) int { return a.Number - b.Number })
 	if m.prListState == closedPRListState {
 		m.prStacks = singlePRStacks(m.filteredPRs)
 	} else {
@@ -889,7 +892,20 @@ func prCheckCounts(pr gh.PR) string {
 		return stMuted.Render("CI")
 	}
 	pending, failed, passed := checkCounts(pr.Checks)
-	return stMuted.Render("CI ") + stAttention.Render(strconv.Itoa(pending)) + stMuted.Render("/") + stRedF.Render(strconv.Itoa(failed)) + stMuted.Render("/") + stGreenF.Render(strconv.Itoa(passed))
+	counts := make([]string, 0, 3)
+	if pending > 0 {
+		counts = append(counts, stAttention.Render(strconv.Itoa(pending)))
+	}
+	if failed > 0 {
+		counts = append(counts, stRedF.Render(strconv.Itoa(failed)))
+	}
+	if passed > 0 {
+		counts = append(counts, stGreenF.Render(strconv.Itoa(passed)))
+	}
+	if len(counts) == 0 {
+		return stMuted.Render("CI")
+	}
+	return stMuted.Render("CI ") + strings.Join(counts, stMuted.Render("/"))
 }
 
 func prCheckState(pr gh.PR) (string, lipgloss.Style) {
