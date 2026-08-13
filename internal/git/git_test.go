@@ -312,3 +312,104 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 		t.Fatalf("explicit commits = %#v, err=%v", commits, err)
 	}
 }
+
+// gitRepo builds a temp repo, cd's into it, and returns a runner.
+func gitRepo(t *testing.T) func(args ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+	return run
+}
+
+func TestResolveBasePrefersOriginTrackingRef(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("f", []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+
+	// No origin ref yet: ResolveBase falls through to the bare name.
+	if got := ResolveBase("main"); got != "main" {
+		t.Fatalf("ResolveBase without origin ref = %q, want main", got)
+	}
+	// origin/main present: prefer it.
+	run("update-ref", "refs/remotes/origin/main", "HEAD")
+	if got := ResolveBase("main"); got != "origin/main" {
+		t.Fatalf("ResolveBase with origin ref = %q, want origin/main", got)
+	}
+	// Already-qualified names pass through untouched.
+	if got := ResolveBase("origin/release"); got != "origin/release" {
+		t.Fatalf("ResolveBase(origin/release) = %q", got)
+	}
+}
+
+func TestDefaultBaseFallsBackToLocalMain(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("f", []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	// No origin/HEAD: DefaultBase should resolve the local main branch.
+	if got := DefaultBase(); got != "main" {
+		t.Fatalf("DefaultBase = %q, want main", got)
+	}
+}
+
+func TestContentConflictsReportsModifyDelete(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("doomed", []byte("shared\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	// feature modifies the file.
+	run("switch", "-c", "feature")
+	if err := os.WriteFile("doomed", []byte("shared\nfeature edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "edit")
+	// main deletes it: modify on head, delete on base -> modify/delete conflict.
+	run("switch", "main")
+	run("rm", "doomed")
+	run("commit", "-m", "delete")
+
+	files, err := contentConflicts("main", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range files {
+		if f == "doomed" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("modify/delete overlap not reported: %v", files)
+	}
+}
