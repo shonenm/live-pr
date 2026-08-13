@@ -84,17 +84,19 @@ func (k keyMap) FullHelp() [][]key.Binding {
 }
 
 var keys = keyMap{
-	Up:           key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
-	Down:         key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	PreviewUp:    key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "page up")),
-	PreviewDown:  key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
-	Top:          key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
-	Bottom:       key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
-	PrevView:     key.NewBinding(key.WithKeys("[", "h"), key.WithHelp("h/[", "previous view")),
-	NextView:     key.NewBinding(key.WithKeys("]", "l"), key.WithHelp("l/]", "next view")),
-	Filter:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	ToggleStack:  key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
-	Focus:        key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
+	Up:          key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
+	Down:        key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
+	PreviewUp:   key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "page up")),
+	PreviewDown: key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
+	Top:         key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
+	Bottom:      key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
+	PrevView:    key.NewBinding(key.WithKeys("[", "h"), key.WithHelp("h/[", "previous view")),
+	NextView:    key.NewBinding(key.WithKeys("]", "l"), key.WithHelp("l/]", "next view")),
+	Filter:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	ToggleStack: key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
+	// Tab is the primary toggle: shift+tab (backtab / CSI Z) is unreliable
+	// over SSH and tmux, while plain Tab is delivered consistently.
+	Focus:        key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "toggle focus")),
 	FocusRight:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
 	FocusLeft:    key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
 	Commits:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commits")),
