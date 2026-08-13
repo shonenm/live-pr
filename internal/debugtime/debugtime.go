@@ -13,6 +13,17 @@ var (
 	output  sync.Mutex
 )
 
+// Logf writes a diagnostic line to stderr when LIVE_PR_DEBUG_TIMING is enabled.
+// Use it where an error is otherwise swallowed for UX reasons.
+func Logf(format string, args ...any) {
+	if !enabled {
+		return
+	}
+	output.Lock()
+	defer output.Unlock()
+	fmt.Fprintf(os.Stderr, "live-pr: "+format+"\n", args...)
+}
+
 // Start returns a completion logger when LIVE_PR_DEBUG_TIMING is enabled.
 func Start(name string) func() {
 	if !enabled {
