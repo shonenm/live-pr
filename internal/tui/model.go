@@ -677,10 +677,8 @@ func Run(version ...string) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	if len(m.loadSpinner.Spinner.Frames) == 0 {
-		m.loadSpinner = newLoadSpinner()
-	}
-	m.spinnerRunning = true
+	// loadSpinner and spinnerRunning are initialized in New(); the value
+	// receiver here would discard any mutation anyway.
 	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.activePRPage, prViewSearch(m.prView, m.prListState, m.filterQuery), "", false), m.loadSpinner.Tick}
 	if m.screen == prListScreen && m.localAvailable && m.autoOpenCurrent {
 		cmds = append(cmds, fetchCurrentBranchPR(m.currentBranch))

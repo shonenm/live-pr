@@ -2411,3 +2411,40 @@ func TestCommitSelectionStartsEmbeddedCommitCommandAndFocusesReview(t *testing.T
 		t.Fatalf("commit selection did not start/focus embedded review: sha=%q focus=%v terminal=%v", m.reviewSHA, m.focusDiff, m.diffTerminal != nil)
 	}
 }
+
+// TestOverloadedKeysDisambiguateByScreen locks the SetEnabled toggling that
+// keeps c/l from colliding: on the PR list c=Checkout and l=NextView; on the
+// detail screen c=Commits and l=FocusRight. A missed SetEnabled would surface
+// here as both bindings enabled on one screen.
+func TestOverloadedKeysDisambiguateByScreen(t *testing.T) {
+	m := testModel()
+	m.ready = true
+	m.w, m.h = 120, 40
+	m.list = viewport.New(80, 30)
+	m.detail = viewport.New(80, 30)
+
+	m.screen = prListScreen
+	m.sync()
+	if m.keys.FocusRight.Enabled() {
+		t.Error("PR list: l should be NextView, not FocusRight")
+	}
+	if m.keys.Commits.Enabled() {
+		t.Error("PR list: c should be Checkout, not Commits")
+	}
+	if !m.keys.NextView.Enabled() {
+		t.Error("PR list: NextView (l) should be enabled")
+	}
+
+	m.screen = detailScreen
+	m.active = conversationTab
+	m.sync()
+	if m.keys.NextView.Enabled() {
+		t.Error("detail: l should be FocusRight, not NextView")
+	}
+	if m.keys.Checkout.Enabled() {
+		t.Error("detail: c should be Commits, not Checkout")
+	}
+	if !m.keys.FocusRight.Enabled() {
+		t.Error("detail: FocusRight (l) should be enabled")
+	}
+}
