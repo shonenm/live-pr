@@ -62,6 +62,8 @@ const (
 const (
 	conversationTab tab = iota
 	commitsTab
+	conflictsTab
+	checksTab
 	tabCount
 )
 
@@ -71,14 +73,14 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, Help, Quit key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Status, k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Status, k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Help, k.Quit}
 }
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Select, k.Back, k.PRList}, {k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
+	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList}, {k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
 }
 
 var keys = keyMap{
@@ -95,7 +97,9 @@ var keys = keyMap{
 	Focus:        key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
 	FocusRight:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
 	FocusLeft:    key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
-	Commits:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commit/check")),
+	Commits:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commits")),
+	Conflicts:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "conflicts")),
+	Checks:       key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "CI checks")),
 	Select:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
 	Back:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
 	PRList:       key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
@@ -1141,6 +1145,8 @@ func (m *Model) sync() tea.Cmd {
 		m.keys.Focus.SetEnabled(false)
 		m.keys.FocusRight.SetEnabled(false)
 		m.keys.Commits.SetEnabled(false)
+		m.keys.Conflicts.SetEnabled(false)
+		m.keys.Checks.SetEnabled(false)
 		m.keys.Back.SetEnabled(false)
 		m.keys.PRList.SetEnabled(false)
 		m.keys.Browse.SetEnabled(false)
@@ -1166,10 +1172,12 @@ func (m *Model) sync() tea.Cmd {
 	m.keys.ToggleStack.SetEnabled(false)
 	m.keys.Focus.SetEnabled(true)
 	m.keys.FocusRight.SetEnabled(true)
-	m.keys.Commits.SetEnabled(m.fileExplorerMode() || m.active == conversationTab)
+	m.keys.Commits.SetEnabled(m.fileExplorerMode() || m.active != commitsTab)
+	m.keys.Conflicts.SetEnabled(m.active != conflictsTab)
+	m.keys.Checks.SetEnabled(m.cache.PR != nil && m.active != checksTab)
 	m.keys.PRList.SetEnabled(true)
 	m.keys.Select.SetEnabled(m.active == commitsTab)
-	m.keys.Back.SetEnabled(m.active == commitsTab)
+	m.keys.Back.SetEnabled(m.active != conversationTab)
 	m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
 	m.keys.Publish.SetEnabled(!m.remote)
 	m.keys.Merge.SetEnabled(m.canMergeCurrentPR() && m.prActionRunning == noPRAction)
@@ -1210,8 +1218,17 @@ func (m Model) View() string {
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
 	} else {
 		leftTitle := "Conversation"
-		if m.active == commitsTab {
+		switch m.active {
+		case commitsTab:
 			leftTitle = fmt.Sprintf("Commits · %d", len(m.commits))
+		case conflictsTab:
+			leftTitle = fmt.Sprintf("Conflicts · %d", len(m.mergeReadiness.ConflictFiles))
+		case checksTab:
+			count := 0
+			if m.cache.PR != nil {
+				count = len(m.cache.PR.Checks)
+			}
+			leftTitle = fmt.Sprintf("Checks · %d", count)
 		}
 		leftContent := m.list.View()
 		if m.active == conversationTab {
@@ -1340,6 +1357,10 @@ func (m Model) footerMode() string {
 		return "FILES"
 	case m.active == commitsTab:
 		return "COMMITS"
+	case m.active == conflictsTab:
+		return "CONFLICTS"
+	case m.active == checksTab:
+		return "CHECKS"
 	default:
 		return "CONV"
 	}

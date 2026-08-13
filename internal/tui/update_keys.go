@@ -396,14 +396,22 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.status = "select a commit and press Enter"
 		m.layout()
 		return m, m.sync()
+	case key.Matches(msg, m.keys.Conflicts):
+		m.active, m.status = conflictsTab, ""
+		m.layout()
+		return m, m.sync()
+	case key.Matches(msg, m.keys.Checks):
+		m.active, m.status = checksTab, ""
+		m.layout()
+		return m, m.sync()
 	case key.Matches(msg, m.keys.Back):
-		if m.active != commitsTab {
+		if m.active == conversationTab {
 			return m, nil
 		}
-		m.active = conversationTab
-		m.status = ""
+		wasCommitReview := m.active == commitsTab && m.reviewSHA != ""
+		m.active, m.status = conversationTab, ""
 		m.layout()
-		if m.reviewSHA == "" {
+		if !wasCommitReview {
 			return m, m.sync()
 		}
 		cmd := m.restartReview("", m.prURL())

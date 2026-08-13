@@ -53,7 +53,7 @@ export — is a genuine gap. No single tool does all three. Closest pieces:
 - Version-matched Agent Skill teaching coding agents when to record decisions—and when not to.
 - Bubble Tea TUI with GitHub-style open-PR lists, filters, saved navigation state, stack grouping, and cached previews.
 - Local and remote PR review without changing the worktree for remote browsing.
-- Conversation beside an interactive CodeDiff pane, with detail-header CI/review/size status, local uncommitted-change visibility, and commit-scoped CI/review support. Pending CI refreshes every 15 seconds while that PR detail remains open, then stops on completion.
+- Conversation beside an interactive CodeDiff pane, with left-pane Commit (`c`), Conflict (`f`), and CI Check (`i`) views, detail-header CI/review/size status, local uncommitted-change visibility, and commit-scoped CI/review support. Pending CI refreshes every 15 seconds while that PR detail remains open, then stops on completion.
 - Static `git diff`/`delta` review with a file Explorer, immediate file selection, reviewed checks, conflict-file markers, and independent Conversation/Diff scrolling.
 - Create or update GitHub PRs from the conclusion and timeline with `live-pr pr`.
 - Explicit checkout, close, and merge actions with centered confirmation popups and loading indicators.
