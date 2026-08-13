@@ -66,15 +66,10 @@ var prPublishCmd = &cobra.Command{
 }
 
 func init() {
-	prCmd.Flags().String("base", "", "base branch (default: repo default branch)")
-	prCmd.Flags().Bool("draft", false, "create as a draft PR")
+	prCmd.PersistentFlags().String("base", "", "base branch (default: repo default branch)")
+	prCmd.PersistentFlags().Bool("draft", false, "create as a draft PR")
+	prCmd.PersistentFlags().Bool("force-managed-body", false, "overwrite a conflicting live-pr managed block")
 	prCmd.Flags().Bool("dry-run", false, "print the assembled PR body instead of creating/updating")
-	prCmd.Flags().Bool("force-managed-body", false, "overwrite a conflicting live-pr managed block")
-
-	prPreviewCmd.Flags().String("base", "", "base branch (default: repo default branch)")
-	prPublishCmd.Flags().String("base", "", "base branch (default: repo default branch)")
-	prPublishCmd.Flags().Bool("draft", false, "create as a draft PR")
-	prPublishCmd.Flags().Bool("force-managed-body", false, "overwrite a conflicting live-pr managed block")
 	prCmd.AddCommand(prPreviewCmd, prPublishCmd)
 	rootCmd.AddCommand(prCmd)
 }
