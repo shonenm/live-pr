@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shonenm/live-pr/internal/debugtime"
@@ -167,11 +168,14 @@ func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
 			readiness.ConflictFiles = parseMergeTreeConflicts(stderr.Bytes())
 		}
 	}
+	if len(readiness.ConflictFiles) > 0 {
+		return readiness, nil
+	}
 	extra, err := contentConflicts(base, head)
-	if err != nil && len(readiness.ConflictFiles) == 0 {
+	if err != nil {
 		return readiness, err
 	}
-	readiness.ConflictFiles = unionPaths(readiness.ConflictFiles, extra)
+	readiness.ConflictFiles = extra
 	return readiness, nil
 }
 
@@ -189,6 +193,11 @@ func parseMergeTreeConflicts(out []byte) []string {
 	return files
 }
 
+const (
+	maxContentConflictFiles = 32
+	maxContentConflictBlob  = 1 << 20
+)
+
 func contentConflicts(base, head string) ([]string, error) {
 	mergeBase, err := MergeBase(base, head)
 	if err != nil {
@@ -202,20 +211,27 @@ func contentConflicts(base, head string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	overlap := make([]string, 0, min(len(baseFiles), len(headFiles)))
+	for path := range baseFiles {
+		if headFiles[path] {
+			overlap = append(overlap, path)
+		}
+	}
+	sort.Strings(overlap)
+	if len(overlap) > maxContentConflictFiles {
+		overlap = overlap[:maxContentConflictFiles]
+	}
 	dir, err := os.MkdirTemp("", "live-pr-merge-*")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
 	var files []string
-	for path := range baseFiles {
-		if !headFiles[path] {
-			continue
-		}
+	for _, path := range overlap {
 		ours, oursOK := blob(head, path)
 		theirs, theirsOK := blob(base, path)
 		ancestor, ancestorOK := blob(mergeBase, path)
-		if !oursOK || !theirsOK {
+		if !oursOK || !theirsOK || len(ours) > maxContentConflictBlob || len(theirs) > maxContentConflictBlob {
 			continue
 		}
 		if !ancestorOK {
@@ -265,19 +281,6 @@ func blob(rev, path string) ([]byte, bool) {
 		return nil, false
 	}
 	return out, true
-}
-
-func unionPaths(existing, extra []string) []string {
-	seen := map[string]bool{}
-	var files []string
-	for _, path := range append(existing, extra...) {
-		if path == "" || seen[path] {
-			continue
-		}
-		seen[path] = true
-		files = append(files, path)
-	}
-	return files
 }
 
 func looksLikeOID(value string) bool {
