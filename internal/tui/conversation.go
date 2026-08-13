@@ -105,17 +105,32 @@ func (m *Model) restoreConversationSelection(key string) {
 }
 
 func (m *Model) activeLen() int {
-	if m.active == commitsTab {
+	switch m.active {
+	case commitsTab:
 		return len(m.commits)
+	case conflictsTab:
+		return len(m.mergeReadiness.ConflictFiles)
+	case checksTab:
+		if m.cache.PR != nil {
+			return len(m.cache.PR.Checks)
+		}
+		return 0
+	default:
+		return len(m.conversationItems())
 	}
-	return len(m.conversationItems())
 }
 
 func (m *Model) buildList() (string, int) {
-	if m.active == commitsTab {
+	switch m.active {
+	case commitsTab:
 		return m.buildCommits()
+	case conflictsTab:
+		return m.buildConflicts()
+	case checksTab:
+		return m.buildChecks()
+	default:
+		return m.buildConversation()
 	}
-	return m.buildConversation()
 }
 
 func (m Model) conversationCounts() string {

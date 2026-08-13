@@ -262,6 +262,54 @@ func (m *Model) toggleFileCheck() tea.Cmd {
 	return m.sync()
 }
 
+func (m Model) buildConflicts() (string, int) {
+	if len(m.mergeReadiness.ConflictFiles) == 0 {
+		if m.mergeReadinessErr != nil {
+			return stMuted.Render("(conflict status unavailable)"), 0
+		}
+		return stGreenF.Render("✓ no conflicting files"), 0
+	}
+	lines := make([]string, 0, len(m.mergeReadiness.ConflictFiles))
+	for i, path := range m.mergeReadiness.ConflictFiles {
+		lines = append(lines, selectionBar(i == m.cursors[conflictsTab])+stRedF.Render("⚠ ")+stFg.Render(path))
+	}
+	return strings.Join(lines, "\n"), m.cursors[conflictsTab]
+}
+
+func (m Model) buildChecks() (string, int) {
+	if m.cache.PR == nil || len(m.cache.PR.Checks) == 0 {
+		return stMuted.Render("(no CI checks)"), 0
+	}
+	lines := make([]string, 0, len(m.cache.PR.Checks))
+	for i, check := range m.cache.PR.Checks {
+		icon, _, style := commitCIStatus(checkRollupState([]gh.PRCheck{check}))
+		name := check.Name
+		if name == "" {
+			name = check.Context
+		}
+		if name == "" {
+			name = "unnamed check"
+		}
+		workflow := ""
+		if check.WorkflowName != "" && check.WorkflowName != name {
+			workflow = stMuted.Render(" · " + check.WorkflowName)
+		}
+		state := check.Conclusion
+		if state == "" {
+			state = check.Status
+		}
+		if state == "" {
+			state = check.State
+		}
+		line := selectionBar(i == m.cursors[checksTab]) + style.Render(icon) + " " + stFg.Render(name) + workflow
+		if state != "" {
+			line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n"), m.cursors[checksTab]
+}
+
 func (m Model) buildCommits() (string, int) {
 	if len(m.commits) == 0 {
 		return stMuted.Render("(no commits in " + m.base + "..HEAD)"), 0
