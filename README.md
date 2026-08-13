@@ -153,11 +153,11 @@ In a demo, the current PR Conversation shows compact CI activity for two commits
 
 Review drafts live under repository XDG state, isolated by PR number and head commit. Submission rechecks the current GitHub head SHA and refuses stale line comments after a push. Press `A` from the left pane to comment on the currently selected changed file. With the static Explorer (`[diff].command = ""`), `a` on a selected file does the same to enter `path`, `line`, `side` (`RIGHT` for new code, `LEFT` for deleted code), and the body. In Conversation, `a` edits the general review body. Press `v` to inspect and submit the draft. External Neovim reviewers remain usable, but live-pr cannot infer their cursor line; use `live-pr review add` for explicit inline comments.
 
-The built-in right-side reviewer starts Neovim with `LIVE_PR_RANGE`: a merge-base-to-working-tree comparison for checked-out Local PRs, or the historical PR base-to-fetched-head three-dot range for remote PRs. Selected commits use `CodeDiff` with the commit's parent-to-commit range. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
+The built-in right-side reviewer starts Neovim CodeDiff in inline mode so changes remain readable inside the constrained embedded pane. `LIVE_PR_RANGE` is a merge-base-to-working-tree comparison for checked-out Local PRs, or the historical PR base-to-fetched-head three-dot range for remote PRs. Selected commits use `CodeDiff` with the commit's parent-to-commit range. Override it in `~/.config/live-pr/config.toml` (or per-repo `.live-pr.toml`):
 
 ```toml
 [diff]
-command = 'nvim -c "CodeDiff $LIVE_PR_RANGE"'
+command = 'nvim -c "CodeDiff --inline $LIVE_PR_RANGE"'
 commit_command = 'nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"'
 display = "delta --color-only" # fallback after CodeDiff exits
 ```
