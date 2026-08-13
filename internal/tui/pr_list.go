@@ -817,11 +817,7 @@ func mergeState(pr gh.PR) (string, lipgloss.Style) {
 	}
 }
 
-func checkHealth(checks []gh.PRCheck) (string, int) {
-	if len(checks) == 0 {
-		return "none", 0
-	}
-	failed, pending := 0, 0
+func checkCounts(checks []gh.PRCheck) (pending, failed, passed int) {
 	for _, check := range checks {
 		conclusion := strings.ToUpper(check.Conclusion)
 		state := strings.ToUpper(check.State)
@@ -831,15 +827,25 @@ func checkHealth(checks []gh.PRCheck) (string, int) {
 			failed++
 		case status != "COMPLETED" && conclusion == "" && state != "SUCCESS":
 			pending++
+		default:
+			passed++
 		}
 	}
-	if failed > 0 {
+	return pending, failed, passed
+}
+
+func checkHealth(checks []gh.PRCheck) (string, int) {
+	pending, failed, passed := checkCounts(checks)
+	switch {
+	case failed > 0:
 		return "failed", failed
-	}
-	if pending > 0 {
+	case pending > 0:
 		return "pending", pending
+	case passed > 0:
+		return "passed", passed
+	default:
+		return "none", 0
 	}
-	return "passed", len(checks)
 }
 
 func checkRollupState(checks []gh.PRCheck) string {
@@ -876,6 +882,14 @@ func prCIHealth(pr gh.PR) string {
 func prCheckSummary(pr gh.PR) string {
 	text, style := prCheckState(pr)
 	return style.Render(text)
+}
+
+func prCheckCounts(pr gh.PR) string {
+	if !pr.PreviewLoaded && len(pr.Checks) == 0 {
+		return stMuted.Render("CI")
+	}
+	pending, failed, passed := checkCounts(pr.Checks)
+	return stMuted.Render("CI ") + stAttention.Render(strconv.Itoa(pending)) + stMuted.Render("/") + stRedF.Render(strconv.Itoa(failed)) + stMuted.Render("/") + stGreenF.Render(strconv.Itoa(passed))
 }
 
 func prCheckState(pr gh.PR) (string, lipgloss.Style) {
@@ -1092,7 +1106,7 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		}
 		labels = stMuted.Render("🏷 ") + strings.Join(pills, " ")
 	}
-	line := "  " + prCheckSummary(pr) + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + reviewers + "   " + labels
+	line := "  " + prCheckCounts(pr) + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + reviewers + "   " + labels
 	if m.w > 0 {
 		return ansi.Truncate(line, m.w, "…")
 	}
