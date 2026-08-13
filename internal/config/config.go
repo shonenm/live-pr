@@ -42,6 +42,12 @@ type DiffConfig struct {
 	// Display receives raw diff on stdin and writes ANSI text to stdout when no
 	// interactive command is configured. Empty keeps the built-in Git output.
 	Display string `toml:"display"`
+
+	// SplitRatio is the left-pane share in percent.
+	SplitRatio int `toml:"split_ratio"`
+
+	// MinPaneWidth is the minimum width for either side of a split.
+	MinPaneWidth int `toml:"min_pane_width"`
 }
 
 // Default returns built-in settings, including legacy commit compatibility.
@@ -50,7 +56,9 @@ func Default() Config {
 		Reviewer:                  `nvim -c "CodeDiff {sha}~1 {sha}"`,
 		SummaryMinIntervalMinutes: 10,
 		Diff: DiffConfig{
-			Command: `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`,
+			Command:      `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`,
+			SplitRatio:   52,
+			MinPaneWidth: 24,
 		},
 	}
 }
@@ -100,6 +108,12 @@ func Load(repoRoot string) (Config, error) {
 	// Migrate the old built-in command while preserving explicit custom commands.
 	if cfg.Diff.Command == `nvim -c "CodeDiff $LIVE_PR_RANGE"` {
 		cfg.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`
+	}
+	if cfg.Diff.SplitRatio <= 0 {
+		cfg.Diff.SplitRatio = Default().Diff.SplitRatio
+	}
+	if cfg.Diff.MinPaneWidth <= 0 {
+		cfg.Diff.MinPaneWidth = Default().Diff.MinPaneWidth
 	}
 	return cfg, nil
 }
