@@ -1518,9 +1518,16 @@ func TestPRTitleAndCurrentCheckoutMarker(t *testing.T) {
 	if !strings.Contains(header, "Human title") || strings.Contains(header, "  feature\n") {
 		t.Fatalf("detail title = %q", header)
 	}
+	// Selection is shown by the row background (not visible after ansi.Strip);
+	// the current-checkout PR still keeps its ▌ marker.
 	plain := ansi.Strip(strings.Join(m.renderPRRow(pr, true, ""), "\n"))
-	if !strings.Contains(plain, "▌▌ ") {
-		t.Fatalf("selected/current markers = %q", plain)
+	if !strings.Contains(plain, "▌") {
+		t.Fatalf("current-checkout marker missing: %q", plain)
+	}
+	// An unselected, non-current PR shows no bar at all.
+	other := gh.PR{Number: 13, State: "OPEN", Title: "Other", HeadRefName: "other", BaseRefName: "main"}
+	if plainOther := ansi.Strip(strings.Join(m.renderPRRow(other, false, ""), "\n")); strings.Contains(plainOther, "▌") {
+		t.Fatalf("unexpected marker on plain row: %q", plainOther)
 	}
 }
 
