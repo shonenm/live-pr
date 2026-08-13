@@ -333,6 +333,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	if msg.activitiesErr == nil {
 		m.cache.Activities = msg.activities
 	}
+	m.cache.Reviews, m.cache.ReviewComments = msg.reviews, msg.reviewComments
 	m.cache.FetchedAt = now
 	m.invalidateConversation()
 	m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
@@ -458,6 +459,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		} else {
 			stale = append(stale, "activity")
 		}
+		m.cache.Reviews, m.cache.ReviewComments = msg.reviews, msg.reviewComments
 		m.githubStatus = "GitHub: updated now"
 		if len(stale) > 0 {
 			m.githubStatus = "GitHub: PR updated · " + strings.Join(stale, "/") + " stale"
@@ -467,6 +469,8 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		m.cache.PR = nil
 		m.cache.Comments = nil
 		m.cache.Activities = nil
+		m.cache.Reviews = nil
+		m.cache.ReviewComments = nil
 		m.cache.FetchedAt = now
 		m.githubStatus = "Local only · no GitHub PR"
 		m.applyPRFilters(0)

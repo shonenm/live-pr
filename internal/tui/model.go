@@ -142,17 +142,19 @@ type prPreviewLoaded struct {
 }
 
 type remoteLoaded struct {
-	generation    uint64
-	pr            gh.PR
-	headRef       string
-	comments      []gh.Comment
-	activities    []gh.Activity
-	readiness     git.MergeReadiness
-	refErr        error
-	previewErr    error
-	commentsErr   error
-	activitiesErr error
-	readinessErr  error
+	generation     uint64
+	pr             gh.PR
+	headRef        string
+	comments       []gh.Comment
+	activities     []gh.Activity
+	reviews        []gh.Review
+	reviewComments []gh.ReviewThreadComment
+	readiness      git.MergeReadiness
+	refErr         error
+	previewErr     error
+	commentsErr    error
+	activitiesErr  error
+	readinessErr   error
 }
 
 type ciPollTick struct {
@@ -167,13 +169,15 @@ type ciPolled struct {
 }
 
 type githubRefreshed struct {
-	generation    uint64
-	pr            gh.PR
-	comments      []gh.Comment
-	activities    []gh.Activity
-	err           error
-	commentsErr   error
-	activitiesErr error
+	generation     uint64
+	pr             gh.PR
+	comments       []gh.Comment
+	activities     []gh.Activity
+	reviews        []gh.Review
+	reviewComments []gh.ReviewThreadComment
+	err            error
+	commentsErr    error
+	activitiesErr  error
 }
 
 type publishDone struct {
@@ -280,14 +284,16 @@ type prRowCacheKey struct {
 }
 
 type conversationItem struct {
-	key      string
-	ts       string
-	summary  *string
-	pr       *gh.PR
-	event    *event.Event
-	comment  *gh.Comment
-	activity *gh.Activity
-	prCommit *gh.PRCommit
+	key           string
+	ts            string
+	summary       *string
+	pr            *gh.PR
+	event         *event.Event
+	comment       *gh.Comment
+	activity      *gh.Activity
+	prCommit      *gh.PRCommit
+	review        *gh.Review
+	reviewComment *gh.ReviewThreadComment
 }
 
 // Model holds the living-PR view state.
@@ -779,7 +785,7 @@ func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 			number = pr.Number
 		}
 		detail := client.LoadPRDetail(number)
-		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr}
+		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, reviews: detail.Reviews, reviewComments: detail.ReviewComments, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr}
 	}
 }
 
@@ -916,6 +922,8 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		var headRef string
 		var comments []gh.Comment
 		var activities []gh.Activity
+		var reviews []gh.Review
+		var reviewComments []gh.ReviewThreadComment
 		var refErr, previewErr, commentsErr, activitiesErr, readinessErr error
 		var readiness git.MergeReadiness
 		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
@@ -929,6 +937,7 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 			defer wg.Done()
 			detail := client.LoadPRDetail(number)
 			comments, activities = detail.Comments, detail.Activities
+			reviews, reviewComments = detail.Reviews, detail.ReviewComments
 			previewErr, commentsErr, activitiesErr = detail.PreviewErr, detail.CommentsErr, detail.ActivitiesErr
 			if previewErr == nil {
 				pr = detail.PR
@@ -938,7 +947,7 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		if refErr == nil {
 			readiness, readinessErr = git.CheckMergeReadiness(git.ResolveBase(pr.BaseRefName), headRef)
 		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
 	}
 }
 
