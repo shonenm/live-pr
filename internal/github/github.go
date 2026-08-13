@@ -108,12 +108,15 @@ type Comment struct {
 
 // PRDetail is one concurrently loaded pull-request detail snapshot.
 type PRDetail struct {
-	PR            PR
-	Comments      []Comment
-	Activities    []Activity
-	PreviewErr    error
-	CommentsErr   error
-	ActivitiesErr error
+	PR             PR
+	Comments       []Comment
+	Activities     []Activity
+	Reviews        []Review
+	ReviewComments []ReviewThreadComment
+	PreviewErr     error
+	CommentsErr    error
+	ActivitiesErr  error
+	ReviewsErr     error
 }
 
 // Activity is a non-comment PR timeline event from GitHub's issue events API.
@@ -489,6 +492,68 @@ func (c Client) IssueComments(number int) ([]Comment, error) {
 	return comments, nil
 }
 
+// Review is a submitted pull-request review (approve / request-changes /
+// comment) with its optional summary body.
+type Review struct {
+	ID          int64  `json:"id"`
+	Body        string `json:"body"`
+	State       string `json:"state"`
+	SubmittedAt string `json:"submitted_at"`
+	User        struct {
+		Login     string `json:"login"`
+		AvatarURL string `json:"avatar_url,omitempty"`
+	} `json:"user"`
+}
+
+// ReviewThreadComment is one inline review comment on a diff line.
+type ReviewThreadComment struct {
+	ID        int64  `json:"id"`
+	Body      string `json:"body"`
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	CreatedAt string `json:"created_at"`
+	User      struct {
+		Login     string `json:"login"`
+		AvatarURL string `json:"avatar_url,omitempty"`
+	} `json:"user"`
+}
+
+// Reviews returns the submitted reviews for a pull request.
+func (c Client) Reviews(number int) ([]Review, error) {
+	endpoint := fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews?per_page=100", number)
+	out, err := c.run("api", "--paginate", "--slurp", endpoint)
+	if err != nil {
+		return nil, commandError("gh api pull reviews", out, err)
+	}
+	var pages [][]Review
+	if err := json.Unmarshal(out, &pages); err != nil {
+		return nil, fmt.Errorf("decode reviews: %w", err)
+	}
+	var reviews []Review
+	for _, page := range pages {
+		reviews = append(reviews, page...)
+	}
+	return reviews, nil
+}
+
+// ReviewComments returns the inline review comments for a pull request.
+func (c Client) ReviewComments(number int) ([]ReviewThreadComment, error) {
+	endpoint := fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments?per_page=100", number)
+	out, err := c.run("api", "--paginate", "--slurp", endpoint)
+	if err != nil {
+		return nil, commandError("gh api pull review comments", out, err)
+	}
+	var pages [][]ReviewThreadComment
+	if err := json.Unmarshal(out, &pages); err != nil {
+		return nil, fmt.Errorf("decode review comments: %w", err)
+	}
+	var comments []ReviewThreadComment
+	for _, page := range pages {
+		comments = append(comments, page...)
+	}
+	return comments, nil
+}
+
 // IssueActivities returns non-comment activity from the PR timeline.
 func (c Client) IssueActivities(number int) ([]Activity, error) {
 	endpoint := fmt.Sprintf("repos/{owner}/{repo}/issues/%d/events?per_page=100", number)
@@ -537,7 +602,7 @@ func (c Client) IssueDetail(number int) IssueDetailResult {
 func (c Client) LoadPRDetail(number int) PRDetail {
 	var detail PRDetail
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		detail.PR, detail.PreviewErr = c.FindPreview(number)
@@ -547,6 +612,14 @@ func (c Client) LoadPRDetail(number int) PRDetail {
 		d := c.IssueDetail(number)
 		detail.Comments, detail.Activities = d.Comments, d.Activities
 		detail.CommentsErr, detail.ActivitiesErr = d.CommentsErr, d.ActivitiesErr
+	}()
+	go func() {
+		defer wg.Done()
+		var rwg sync.WaitGroup
+		rwg.Add(2)
+		go func() { defer rwg.Done(); detail.Reviews, detail.ReviewsErr = c.Reviews(number) }()
+		go func() { defer rwg.Done(); detail.ReviewComments, _ = c.ReviewComments(number) }()
+		rwg.Wait()
 	}()
 	wg.Wait()
 	return detail

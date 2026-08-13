@@ -2450,3 +2450,31 @@ func TestOverloadedKeysDisambiguateByScreen(t *testing.T) {
 		t.Error("detail: FocusRight (l) should be enabled")
 	}
 }
+
+func TestConversationShowsReviewsAndReviewComments(t *testing.T) {
+	m := testModel()
+	m.list.Width = 100
+	m.cache.PR = &gh.PR{Number: 12, URL: "u", CreatedAt: "2026-08-01T09:00:00Z"}
+	approve := gh.Review{ID: 1, State: "APPROVED", Body: "LGTM", SubmittedAt: "2026-08-01T10:00:00Z"}
+	approve.User.Login = "reviewer"
+	changes := gh.Review{ID: 2, State: "CHANGES_REQUESTED", Body: "please fix", SubmittedAt: "2026-08-01T11:00:00Z"}
+	changes.User.Login = "boss"
+	empty := gh.Review{ID: 3, State: "COMMENTED", SubmittedAt: "2026-08-01T12:00:00Z"} // no body → skipped
+	empty.User.Login = "noise"
+	m.cache.Reviews = []gh.Review{approve, changes, empty}
+	rc := gh.ReviewThreadComment{ID: 5, Body: "nit here", Path: "main.go", Line: 42, CreatedAt: "2026-08-01T10:30:00Z"}
+	rc.User.Login = "reviewer"
+	m.cache.ReviewComments = []gh.ReviewThreadComment{rc}
+	m.conversationDirty = true
+
+	out, _ := m.buildConversation()
+	plain := ansi.Strip(out)
+	for _, want := range []string{"@reviewer", "approved", "LGTM", "@boss", "requested changes", "please fix", "review comment", "main.go:42", "nit here"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("conversation missing %q:\n%s", want, plain)
+		}
+	}
+	if strings.Contains(plain, "@noise") {
+		t.Fatalf("empty COMMENTED review should be skipped:\n%s", plain)
+	}
+}

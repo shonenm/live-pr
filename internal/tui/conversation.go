@@ -21,7 +21,7 @@ func (m *Model) conversationItems() []conversationItem {
 	if m.cache.PR != nil {
 		commitStatuses = len(m.cache.PR.Commits)
 	}
-	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities)+commitStatuses+1)
+	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities)+len(m.cache.Reviews)+len(m.cache.ReviewComments)+commitStatuses+1)
 	if m.cache.PR == nil && strings.TrimSpace(m.summary) != "" {
 		items = append(items, conversationItem{key: "local-summary", summary: &m.summary})
 	} else if m.cache.PR != nil {
@@ -55,6 +55,19 @@ func (m *Model) conversationItems() []conversationItem {
 			key = fmt.Sprintf("%d", activity.ID)
 		}
 		items = append(items, conversationItem{key: "activity:" + key, ts: activity.CreatedAt, activity: activity})
+	}
+	for i := range m.cache.Reviews {
+		review := &m.cache.Reviews[i]
+		// A COMMENTED review with no body is just the wrapper for inline
+		// comments; skip it so only meaningful reviews show.
+		if strings.EqualFold(review.State, "COMMENTED") && strings.TrimSpace(review.Body) == "" {
+			continue
+		}
+		items = append(items, conversationItem{key: fmt.Sprintf("review:%d", review.ID), ts: review.SubmittedAt, review: review})
+	}
+	for i := range m.cache.ReviewComments {
+		rc := &m.cache.ReviewComments[i]
+		items = append(items, conversationItem{key: fmt.Sprintf("review-comment:%d", rc.ID), ts: rc.CreatedAt, reviewComment: rc})
 	}
 	if m.cache.PR != nil {
 		for i := range m.cache.PR.Commits {
@@ -188,6 +201,10 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 			itemLines = m.descriptionLines(*item.pr, false, m.list.Width)
 		} else if item.comment != nil {
 			itemLines = m.commentLines(*item.comment, false, m.list.Width)
+		} else if item.review != nil {
+			itemLines = m.reviewLines(*item.review, false, m.list.Width)
+		} else if item.reviewComment != nil {
+			itemLines = m.reviewCommentLines(*item.reviewComment, false, m.list.Width)
 		} else if item.activity != nil {
 			itemLines = m.activityLines(*item.activity, false)
 		} else if item.prCommit != nil {
@@ -244,6 +261,40 @@ func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
 	header := m.userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+shortTS(comment.CreatedAt))
 	return cardLines(header, md.Render(m.richBody(comment.Body), width-7), selected, width, cCloudBorder)
+}
+
+// reviewLines renders a submitted review verdict with GitHub's semantic color.
+func (m Model) reviewLines(review gh.Review, selected bool, width int) []string {
+	verdict, style := reviewVerdict(review.State)
+	header := m.userIcon(review.User.Login) + stMuted.Render(" @"+review.User.Login+" · ") + style.Render(verdict) + stMuted.Render(" · "+shortTS(review.SubmittedAt))
+	body := strings.TrimSpace(review.Body)
+	if body == "" {
+		return []string{selectionBar(selected) + header}
+	}
+	return cardLines(header, md.Render(m.richBody(body), width-7), selected, width, cCloudBorder)
+}
+
+func (m Model) reviewCommentLines(rc gh.ReviewThreadComment, selected bool, width int) []string {
+	loc := rc.Path
+	if rc.Line > 0 {
+		loc = fmt.Sprintf("%s:%d", rc.Path, rc.Line)
+	}
+	header := m.userIcon(rc.User.Login) + stMuted.Render(" @"+rc.User.Login+" · review comment · ") + stAccent.Render(loc) + stMuted.Render(" · "+shortTS(rc.CreatedAt))
+	return cardLines(header, md.Render(m.richBody(rc.Body), width-7), selected, width, cBorder)
+}
+
+// reviewVerdict maps a review state to its label and GitHub color.
+func reviewVerdict(state string) (string, lipgloss.Style) {
+	switch strings.ToUpper(state) {
+	case "APPROVED":
+		return "approved", stGreenF
+	case "CHANGES_REQUESTED":
+		return "requested changes", stRedF
+	case "DISMISSED":
+		return "review dismissed", stMuted
+	default:
+		return "reviewed", stMuted
+	}
 }
 
 func (m Model) richBody(body string) string {
