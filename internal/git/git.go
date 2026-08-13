@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/shonenm/live-pr/internal/debugtime"
@@ -151,24 +153,25 @@ func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, mergeErr := cmd.Output()
-	if mergeErr == nil {
-		return readiness, nil
-	}
-	var exitErr *exec.ExitError
-	if !errors.As(mergeErr, &exitErr) {
-		detail := strings.TrimSpace(stderr.String())
-		if detail != "" {
-			return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w: %s", base, head, mergeErr, detail)
+	if mergeErr != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(mergeErr, &exitErr) {
+			detail := strings.TrimSpace(stderr.String())
+			if detail != "" {
+				return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w: %s", base, head, mergeErr, detail)
+			}
+			return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w", base, head, mergeErr)
 		}
-		return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w", base, head, mergeErr)
+		readiness.ConflictFiles = parseMergeTreeConflicts(out)
+		if len(readiness.ConflictFiles) == 0 {
+			readiness.ConflictFiles = parseMergeTreeConflicts(stderr.Bytes())
+		}
 	}
-	readiness.ConflictFiles = parseMergeTreeConflicts(out)
-	if len(readiness.ConflictFiles) == 0 && exitErr.ExitCode() != 0 {
-		readiness.ConflictFiles = parseMergeTreeConflicts(stderr.Bytes())
+	extra, err := contentConflicts(base, head)
+	if err != nil && len(readiness.ConflictFiles) == 0 {
+		return readiness, err
 	}
-	if len(readiness.ConflictFiles) == 0 && exitErr.ExitCode() != 0 {
-		return readiness, fmt.Errorf("git merge-tree %s %s: conflict without file list", base, head)
-	}
+	readiness.ConflictFiles = unionPaths(readiness.ConflictFiles, extra)
 	return readiness, nil
 }
 
@@ -178,6 +181,97 @@ func parseMergeTreeConflicts(out []byte) []string {
 	for i, part := range bytes.Split(out, []byte{0}) {
 		path := strings.TrimSpace(string(part))
 		if path == "" || seen[path] || i == 0 && looksLikeOID(path) {
+			continue
+		}
+		seen[path] = true
+		files = append(files, path)
+	}
+	return files
+}
+
+func contentConflicts(base, head string) ([]string, error) {
+	mergeBase, err := MergeBase(base, head)
+	if err != nil {
+		return nil, err
+	}
+	baseFiles, err := changedPaths(mergeBase, base)
+	if err != nil {
+		return nil, err
+	}
+	headFiles, err := changedPaths(mergeBase, head)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp("", "live-pr-merge-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	var files []string
+	for path := range baseFiles {
+		if !headFiles[path] {
+			continue
+		}
+		ours, oursOK := blob(head, path)
+		theirs, theirsOK := blob(base, path)
+		ancestor, ancestorOK := blob(mergeBase, path)
+		if !oursOK || !theirsOK {
+			continue
+		}
+		if !ancestorOK {
+			ancestor = nil
+		}
+		oursPath := filepath.Join(dir, "ours")
+		basePath := filepath.Join(dir, "base")
+		theirsPath := filepath.Join(dir, "theirs")
+		if err := os.WriteFile(oursPath, ours, 0o600); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(basePath, ancestor, 0o600); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(theirsPath, theirs, 0o600); err != nil {
+			return nil, err
+		}
+		cmd := exec.Command("git", "merge-file", "--quiet", oursPath, basePath, theirsPath)
+		if err := cmd.Run(); err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
+				files = append(files, path)
+				continue
+			}
+		}
+	}
+	return files, nil
+}
+
+func changedPaths(from, to string) (map[string]bool, error) {
+	out, err := run("diff", "--name-only", "-z", from, to)
+	if err != nil {
+		return nil, err
+	}
+	paths := map[string]bool{}
+	for _, path := range strings.Split(out, "\x00") {
+		if path != "" {
+			paths[path] = true
+		}
+	}
+	return paths, nil
+}
+
+func blob(rev, path string) ([]byte, bool) {
+	out, err := exec.Command("git", "show", rev+":"+path).Output()
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+func unionPaths(existing, extra []string) []string {
+	seen := map[string]bool{}
+	var files []string
+	for _, path := range append(existing, extra...) {
+		if path == "" || seen[path] {
 			continue
 		}
 		seen[path] = true

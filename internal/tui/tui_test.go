@@ -1606,7 +1606,7 @@ func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
 func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
-	m.mergeReadiness.ConflictFiles = []string{"conflict.go", "nested/other.go"}
+	m.mergeReadiness = git.MergeReadiness{Behind: 3, ConflictFiles: []string{"conflict.go", "nested/other.go"}}
 	m.cache.PR = &gh.PR{Checks: []gh.PRCheck{
 		{Name: "unit", WorkflowName: "CI", Status: "COMPLETED", Conclusion: "SUCCESS"},
 		{Context: "lint", Status: "IN_PROGRESS"},
@@ -1625,7 +1625,7 @@ func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
 	m = updated.(Model)
 	plain = ansi.Strip(m.View())
-	for _, want := range []string{"Checks · 3", "✓ unit · CI · success", "◐ lint · in progress", "✗ deploy · failure"} {
+	for _, want := range []string{"Checks · 3", "out of date · 3 commits behind base", "✓ unit · CI · success", "◐ lint · in progress", "✗ deploy · failure"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("check view missing %q: %q", want, plain)
 		}
