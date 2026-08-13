@@ -142,6 +142,49 @@ func TestCheckMergeReadinessDoesNotTouchCheckout(t *testing.T) {
 	}
 }
 
+func TestCheckMergeReadinessFindsDivergentAppendConflicts(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "plan"), []byte("shared\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	run("switch", "-c", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "plan"), []byte("shared\nours\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "ours")
+	run("switch", "main")
+	if err := os.WriteFile(filepath.Join(dir, "plan"), []byte("shared\ntheirs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "theirs")
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+
+	readiness, err := CheckMergeReadiness("main", "feature")
+	if err != nil || readiness.Behind != 1 || len(readiness.ConflictFiles) != 1 || readiness.ConflictFiles[0] != "plan" {
+		t.Fatalf("divergent append readiness = %#v err=%v", readiness, err)
+	}
+}
+
 func TestChangedFilesAndFileDiff(t *testing.T) {
 	dir := t.TempDir()
 	runGit := func(args ...string) {
