@@ -301,6 +301,10 @@ type Model struct {
 	events                    []event.Event
 	conversationCache         []conversationItem
 	conversationDirty         bool
+	conversationRender        string
+	conversationRenderLine    int
+	conversationRenderKey     convRenderKey
+	conversationRenderValid   bool
 	richBodies                map[string]string
 	avatarColors              map[string]string
 	files                     []git.ChangedFile

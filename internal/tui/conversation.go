@@ -147,8 +147,28 @@ func (m Model) conversationCounts() string {
 	return stMuted.Render(fmt.Sprintf("%d events · %d comments · %d activity", eventCount, len(m.cache.Comments), activityCount))
 }
 
+type convRenderKey struct {
+	cursor int
+	width  int
+	items  int
+}
+
 func (m *Model) buildConversation() (string, int) {
+	// conversationItems() consumes the dirty flag, so capture it first: a
+	// content change forces a rebuild even when cursor/width are unchanged.
+	dirty := m.conversationDirty
 	items := m.conversationItems()
+	key := convRenderKey{cursor: m.cursors[conversationTab], width: m.list.Width, items: len(items)}
+	if !dirty && m.conversationRenderValid && m.conversationRenderKey == key {
+		return m.conversationRender, m.conversationRenderLine
+	}
+	out, selectedLine := m.renderConversation(items)
+	m.conversationRender, m.conversationRenderLine = out, selectedLine
+	m.conversationRenderKey, m.conversationRenderValid = key, true
+	return out, selectedLine
+}
+
+func (m *Model) renderConversation(items []conversationItem) (string, int) {
 	if len(items) == 0 {
 		return stMuted.Render("(no conversation yet — try `live-pr note …`)"), 0
 	}

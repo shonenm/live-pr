@@ -446,6 +446,7 @@ func (m Model) stackForPR(number int) (prStack, bool) {
 }
 
 func matchesPRFilter(pr gh.PR, query, viewer string) bool {
+	haystack, haystackBuilt := "", false
 	for _, token := range strings.Fields(strings.ToLower(query)) {
 		key, value, structured := strings.Cut(token, ":")
 		if structured {
@@ -517,9 +518,12 @@ func matchesPRFilter(pr gh.PR, query, viewer string) bool {
 				continue
 			}
 		}
-		haystack := strings.ToLower(fmt.Sprintf("#%d %s %s %s %s", pr.Number, pr.Title, pr.HeadRefName, pr.BaseRefName, pr.Author.Login))
-		for _, label := range pr.Labels {
-			haystack += " " + strings.ToLower(label.Name)
+		if !haystackBuilt {
+			haystack = strings.ToLower(fmt.Sprintf("#%d %s %s %s %s", pr.Number, pr.Title, pr.HeadRefName, pr.BaseRefName, pr.Author.Login))
+			for _, label := range pr.Labels {
+				haystack += " " + strings.ToLower(label.Name)
+			}
+			haystackBuilt = true
 		}
 		if !strings.Contains(haystack, token) {
 			return false

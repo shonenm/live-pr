@@ -101,7 +101,6 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.reviewSubmitEvent == "" {
 		return m, nil
 	}
-	events := []gh.ReviewEvent{gh.ReviewCommentEvent, gh.ReviewApproveEvent, gh.ReviewRequestChangesEvent}
 	if m.reviewSubmitTyping {
 		switch msg.String() {
 		case "esc":
@@ -129,6 +128,7 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
+	events := []gh.ReviewEvent{gh.ReviewCommentEvent, gh.ReviewApproveEvent, gh.ReviewRequestChangesEvent}
 	switch msg.String() {
 	case "up", "k":
 		m.reviewSubmitCursor = (m.reviewSubmitCursor + len(events) - 1) % len(events)
