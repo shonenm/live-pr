@@ -339,7 +339,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.reviewRange = m.diffBase + "..." + m.headRev
 	m.commits, _ = git.CommitsRange(m.diffBase, m.headRev)
 	m.files, _ = git.ChangedFilesRange(m.diffBase, m.headRev)
-	m.mergeReadiness, m.mergeReadinessErr = msg.readiness, msg.readinessErr
+	m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, msg.readinessErr, msg.pr)
 	m.fileCursor = 0
 	m.status = ""
 	stale := []string{}
@@ -434,6 +434,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 			m.status = "PR list cache: " + err.Error()
 		}
 		diffCmd = m.useBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL)
+		m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(m.mergeReadiness, m.mergeReadinessErr, msg.pr)
 		stale := []string{}
 		if msg.commentsErr == nil {
 			m.cache.Comments = msg.comments

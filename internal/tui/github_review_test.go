@@ -70,8 +70,19 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = u.(Model)
-	if m.reviewSubmitEvent == "" || !strings.Contains(m.renderReviewSubmitPopup(), "Request changes") {
-		t.Fatalf("submit popup not opened: event=%q", m.reviewSubmitEvent)
+	if m.reviewSubmitEvent == "" || !strings.Contains(m.renderReviewSubmitPopup(), "Request changes") || !strings.Contains(m.renderReviewSubmitPopup(), "e edit comment") {
+		t.Fatalf("submit popup not opened: event=%q popup=%q", m.reviewSubmitEvent, m.renderReviewSubmitPopup())
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m = u.(Model)
+	if m.localEditMode != editReviewBody || m.localEditor.Value() != "Changes required" {
+		t.Fatalf("submit popup did not open review comment editor: mode=%v value=%q", m.localEditMode, m.localEditor.Value())
+	}
+	m.localEditor.SetValue("Please fix this before approve")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = u.(Model)
+	if m.reviewDraft.Body != "Please fix this before approve" || m.reviewSubmitEvent == "" {
+		t.Fatalf("edited review comment not kept: body=%q event=%q", m.reviewDraft.Body, m.reviewSubmitEvent)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = u.(Model)

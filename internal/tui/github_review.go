@@ -118,6 +118,11 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		event = gh.ReviewApproveEvent
 	case "x":
 		event = gh.ReviewRequestChangesEvent
+	case "e":
+		m.reviewSubmitEvent = ""
+		next, cmd := m.openLocalEditor(editReviewBody, m.reviewDraft.Body, "review-submit")
+		next.reviewSubmitCursor = m.reviewSubmitCursor
+		return next, cmd
 	case "d":
 		if len(m.reviewDraft.Comments) == 0 {
 			m.status = "review draft has no inline comments"
@@ -191,7 +196,7 @@ func (m Model) renderReviewSubmitPopup() string {
 		}
 		lines = append(lines, prefix+style.Render(label))
 	}
-	lines = append(lines, "", stMuted.Render("j/k select · Enter submit · c/a/x shortcut"), stMuted.Render("d remove last inline · D discard draft · Esc cancel"))
+	lines = append(lines, "", stMuted.Render("j/k select · Enter submit · c/a/x shortcut"), stMuted.Render("e edit comment · d remove last inline · D discard draft · Esc cancel"))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAttention)).

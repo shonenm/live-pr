@@ -155,20 +155,47 @@ func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
 		return readiness, nil
 	}
 	var exitErr *exec.ExitError
-	if !errors.As(mergeErr, &exitErr) || exitErr.ExitCode() != 1 {
+	if !errors.As(mergeErr, &exitErr) {
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
 			return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w: %s", base, head, mergeErr, detail)
 		}
 		return MergeReadiness{}, fmt.Errorf("git merge-tree %s %s: %w", base, head, mergeErr)
 	}
-	parts := bytes.Split(out, []byte{0})
-	for _, path := range parts[1:] { // the first field is the synthetic merge tree
-		if len(path) > 0 {
-			readiness.ConflictFiles = append(readiness.ConflictFiles, string(path))
-		}
+	readiness.ConflictFiles = parseMergeTreeConflicts(out)
+	if len(readiness.ConflictFiles) == 0 && exitErr.ExitCode() != 0 {
+		readiness.ConflictFiles = parseMergeTreeConflicts(stderr.Bytes())
+	}
+	if len(readiness.ConflictFiles) == 0 && exitErr.ExitCode() != 0 {
+		return readiness, fmt.Errorf("git merge-tree %s %s: conflict without file list", base, head)
 	}
 	return readiness, nil
+}
+
+func parseMergeTreeConflicts(out []byte) []string {
+	var files []string
+	seen := map[string]bool{}
+	for i, part := range bytes.Split(out, []byte{0}) {
+		path := strings.TrimSpace(string(part))
+		if path == "" || seen[path] || i == 0 && looksLikeOID(path) {
+			continue
+		}
+		seen[path] = true
+		files = append(files, path)
+	}
+	return files
+}
+
+func looksLikeOID(value string) bool {
+	if len(value) < 16 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 // DiffStats returns file and line counts for the given range. An empty head

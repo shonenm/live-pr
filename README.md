@@ -138,8 +138,8 @@ live-pr init --hooks     # print the optional, significance-filtered Stop hook
 live-pr sync             # import base..HEAD commits
                         # list: h/l or [/] views; / filter + Enter; Space stack; j/k select; Enter open; s status; c checkout; x close; m merge; r refresh; q quit
                         # detail: Local PR: a/e/d local summary/comment; GitHub PR: a general review body
-                        #         Explorer: a/A inline review comment; v choose Comment/Approve/Request changes; s status
-                        #         Ctrl+S save; Esc cancel; b list; c commits; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
+                        #         Explorer: a/A inline review comment; v choose Comment/Approve/Request changes; e edit comment; s status
+                        #         Ctrl+S save; Esc cancel; b list; c commits; f conflicts; i CI; l review/Explorer; Ctrl+U/D scroll; m merge; q left/quit
 live-pr pr preview       # preview the generated managed PR body
 live-pr pr publish       # push and create or update the GitHub PR
                          # compatible aliases: live-pr pr --dry-run / live-pr pr
