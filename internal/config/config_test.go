@@ -18,7 +18,7 @@ func loadConfig(t *testing.T, repo string) Config {
 
 func TestDefaultStartsBranchAndCommitCodeDiff(t *testing.T) {
 	cfg := Default()
-	if cfg.Diff.Command != `nvim -c "CodeDiff $LIVE_PR_RANGE"` {
+	if cfg.Diff.Command != `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"` {
 		t.Fatalf("branch command = %q", cfg.Diff.Command)
 	}
 	if cfg.Diff.CommitCommand != "" {
