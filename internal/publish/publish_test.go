@@ -108,21 +108,25 @@ func TestBuildPreviewErrorsAndOptionalConclusion(t *testing.T) {
 }
 
 type fakeGitHub struct {
-	pr          gh.PR
-	missing     bool
-	created     bool
-	updated     bool
-	draft       bool
-	body        string
-	base        string
-	createCalls int
-	updateErr   error
-	createErr   error
+	pr                 gh.PR
+	missing            bool
+	created            bool
+	updated            bool
+	draft              bool
+	body               string
+	base               string
+	createCalls        int
+	updateErr          error
+	createErr          error
+	findAfterCreateErr error
 }
 
 func (f *fakeGitHub) FindOpen(string) (gh.PR, error) {
 	if f.missing && f.createCalls == 0 {
 		return gh.PR{}, gh.ErrPRNotFound
+	}
+	if f.findAfterCreateErr != nil && f.createCalls > 0 {
+		return gh.PR{}, f.findAfterCreateErr
 	}
 	return f.pr, nil
 }
@@ -254,5 +258,28 @@ func TestRunStopsBeforePushOnManagedBodyConflict(t *testing.T) {
 	_, err := run(Options{Base: "main"}, client, func(string) error { pushed = true; return nil })
 	if !errors.Is(err, prbody.ErrManagedConflict) || pushed || client.updated {
 		t.Fatalf("conflict was not fail-closed: err=%v pushed=%v updated=%v", err, pushed, client.updated)
+	}
+}
+
+func TestRunRecoversPRNumberWhenReadBackFails(t *testing.T) {
+	st := setupRepo(t)
+	client := &fakeGitHub{
+		missing:            true,
+		pr:                 gh.PR{Number: 12, URL: "https://github.com/o/r/pull/77", State: "OPEN"},
+		findAfterCreateErr: errors.New("read-back failed"),
+	}
+	result, err := run(Options{Base: "main"}, client, func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Created || result.PR.Number != 77 {
+		t.Fatalf("expected fabricated PR number 77 from URL, got %#v", result.PR)
+	}
+	cache, err := gh.LoadCache(st.GitHubCache(), "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache.PR == nil || cache.PR.Number != 77 {
+		t.Fatalf("cache did not record recovered PR number: %#v", cache.PR)
 	}
 }
