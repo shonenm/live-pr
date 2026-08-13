@@ -70,7 +70,11 @@ func (m *Model) useBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 		}
 	}
 	m.commits, _ = git.CommitsRange(diffBase, m.headRev)
-	m.files, _ = git.ChangedFilesRange(diffBase, m.headRev)
+	if m.remote {
+		m.files, _ = git.ChangedFilesRange(diffBase, m.headRev)
+	} else {
+		m.files, _ = git.ChangedFilesRange(diffBase, "")
+	}
 	m.fileCursor = 0
 	return m.restartReview(m.reviewSHA, prURL)
 }
