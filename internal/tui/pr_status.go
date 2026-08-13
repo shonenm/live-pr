@@ -14,6 +14,15 @@ import (
 
 var prStatusOptions = []string{"open", "closed", "draft"}
 
+// prStatusActionLabel is the label shown in the picker. The option value stays
+// the resulting GitHub state ("closed"), but the action reads as "Close".
+func prStatusActionLabel(option string) string {
+	if option == "closed" {
+		return "Close"
+	}
+	return strings.ToUpper(option[:1]) + option[1:]
+}
+
 func availablePRStatusOptions(pr gh.PR) []string {
 	current := strings.ToLower(pr.State)
 	if pr.IsDraft {
@@ -142,7 +151,7 @@ func (m Model) renderPRStatusPopup() string {
 		if i == m.statusCursor {
 			prefix, style = "▸ ", stAccent.Bold(true)
 		}
-		lines = append(lines, prefix+style.Render(strings.ToUpper(option[:1])+option[1:]))
+		lines = append(lines, prefix+style.Render(prStatusActionLabel(option)))
 	}
 	if strings.EqualFold(m.statusPR.State, "MERGED") {
 		lines = append(lines, "", stMuted.Render("Merged PRs cannot be reopened."))

@@ -341,8 +341,25 @@ func cardLines(header, body string, selected bool, width int, border string) []s
 }
 
 func (m Model) activityLines(activity gh.Activity, selected bool) []string {
-	line := m.userIcon(activity.Actor.Login) + stMuted.Render(" @"+activity.Actor.Login+" ") + stFg.Render(activitySummary(activity)) + stMuted.Render(" · "+shortTS(activity.CreatedAt))
+	glyph, style := activityGlyph(activity.Event)
+	summary := style.Render(glyph + " " + activitySummary(activity))
+	line := m.userIcon(activity.Actor.Login) + stMuted.Render(" @"+activity.Actor.Login+" ") + summary + stMuted.Render(" · "+shortTS(activity.CreatedAt))
 	return []string{selectionBar(selected) + line}
+}
+
+// activityGlyph gives lifecycle events GitHub's semantic color so merged /
+// closed / reopened stand out in the feed; other events stay muted.
+func activityGlyph(evt string) (string, lipgloss.Style) {
+	switch evt {
+	case "merged":
+		return "⬡", lipgloss.NewStyle().Foreground(lipgloss.Color(cDoneEmphasis))
+	case "closed":
+		return "⊘", stRedF
+	case "reopened":
+		return "↺", stGreenF
+	default:
+		return "•", stMuted
+	}
 }
 
 func (m Model) commitCIActivityLines(commit gh.PRCommit, selected bool) []string {
