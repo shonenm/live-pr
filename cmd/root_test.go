@@ -18,9 +18,18 @@ func TestCommandRegistration(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"base", "draft", "dry-run", "force-managed-body"} {
-		if prCmd.Flags().Lookup(name) == nil {
+	for _, name := range []string{"base", "draft", "force-managed-body"} {
+		if prCmd.PersistentFlags().Lookup(name) == nil {
 			t.Errorf("pr flag --%s is not registered", name)
+		}
+	}
+	if prCmd.Flags().Lookup("dry-run") == nil {
+		t.Errorf("pr flag --dry-run is not registered")
+	}
+	// Subcommands inherit the persistent flags.
+	for _, sub := range []*cobra.Command{prPreviewCmd, prPublishCmd} {
+		if sub.InheritedFlags().Lookup("base") == nil {
+			t.Errorf("pr %s did not inherit --base", sub.Name())
 		}
 	}
 	for path, want := range map[string]*cobra.Command{
