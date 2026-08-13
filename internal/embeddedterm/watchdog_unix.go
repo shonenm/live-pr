@@ -33,12 +33,15 @@ func init() {
 func runWatchdog(parent int, command string) int {
 	child := exec.Command("sh", "-c", "exec "+command)
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
-	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Inherit the watchdog's PTY foreground group. Creating a separate reviewer
+	// group stops interactive readers with SIGTTIN unless terminal ownership is
+	// transferred too; one watchdog-owned group gives cleanup the same boundary.
 	if err := child.Start(); err != nil {
 		return 1
 	}
+	group := os.Getpid()
 	if pidFile := os.Getenv(watchdogPIDFileEnv); pidFile != "" {
-		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(child.Process.Pid)), 0o600)
+		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(group)), 0o600)
 		defer os.Remove(pidFile)
 	}
 
@@ -58,13 +61,11 @@ func runWatchdog(parent int, command string) int {
 			}
 			return 1
 		case <-stopping:
-			killProcessGroup(child.Process.Pid)
-			<-done
+			killProcessGroup(group)
 			return 0
 		case <-ticker.C:
 			if !processAlive(parent) || os.Getppid() != parent {
-				killProcessGroup(child.Process.Pid)
-				<-done
+				killProcessGroup(group)
 				return 0
 			}
 		}
