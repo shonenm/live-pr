@@ -8,7 +8,18 @@ import (
 
 func reservedReviewKey(msg tea.Msg) bool {
 	keyMsg, ok := msg.(tea.KeyMsg)
-	return ok && (key.Matches(keyMsg, keys.FocusLeft) || key.Matches(keyMsg, keys.Focus))
+	return ok && (key.Matches(keyMsg, keys.Focus) || isShiftTab(keyMsg))
+}
+
+func isShiftTab(msg tea.KeyMsg) bool {
+	if msg.Type == tea.KeyShiftTab {
+		return true
+	}
+	switch msg.String() {
+	case "shift+tab", "backtab", "shift+tab+tab":
+		return true
+	}
+	return false
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -45,7 +56,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.diffTerminal.Err(); err != nil {
 				m.status = err.Error() + " · showing raw diff"
 			}
-			m.focusDiff = false
+			m.focusDiff, m.reviewWide = false, false
 			m.layout()
 			return m, tea.Batch(cmd, m.sync())
 		}
