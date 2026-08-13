@@ -101,7 +101,7 @@ var keys = keyMap{
 	Conflicts:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "conflicts")),
 	Checks:       key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "CI checks")),
 	Select:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
-	Back:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "branch review")),
+	Back:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "conversation")),
 	PRList:       key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
 	Browse:       key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open on GitHub")),
 	Refresh:      key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
@@ -609,6 +609,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	}
 	m.localAvailable, m.localTitle = cache.PR == nil, m.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = stats, len(commits), dirty
+	m.mergeReadiness, m.mergeReadinessErr = git.CheckMergeReadiness(base, "HEAD")
 	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = base, diffBase, st.Branch, "HEAD", diffBase
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
@@ -1264,15 +1265,6 @@ func (m Model) headerHeight() int { return logoHeight }
 // text to the wordmark's height. Narrow terminals drop the wordmark but keep
 // the height, so the layout never jumps.
 func (m Model) withLogo(text string) string {
-	if m.version != "" {
-		label := m.version
-		if label != "dev" && !strings.HasPrefix(label, "v") {
-			label = "v" + label
-		}
-		lines := strings.Split(text, "\n")
-		lines[0] = stMuted.Render(label+" · ") + lines[0]
-		text = strings.Join(lines, "\n")
-	}
 	width := m.w
 	if m.w >= logoWidth+40 {
 		width = m.w - logoWidth
@@ -1285,10 +1277,44 @@ func (m Model) withLogo(text string) string {
 		lines = append(lines, "")
 	}
 	block := strings.Join(lines, "\n")
-	if width == m.w {
+	if width != m.w {
+		block = lipgloss.JoinHorizontal(lipgloss.Top, renderLogo(), block)
+	}
+	return m.withVersion(block)
+}
+
+func (m Model) versionLabel() string {
+	if m.version == "" {
+		return ""
+	}
+	label := m.version
+	if label != "dev" && !strings.HasPrefix(label, "v") {
+		label = "v" + label
+	}
+	return label
+}
+
+func (m Model) withVersion(block string) string {
+	label := m.versionLabel()
+	if label == "" || m.w <= 0 {
 		return block
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, renderLogo(), block)
+	version := stMuted.Render(label)
+	vw := lipgloss.Width(version)
+	lines := strings.Split(block, "\n")
+	first := ""
+	if len(lines) > 0 {
+		first = lines[0]
+	} else {
+		lines = []string{""}
+	}
+	available := max(1, m.w-vw)
+	first = ansi.Truncate(first, available, "…")
+	if pad := m.w - lipgloss.Width(first) - vw; pad > 0 {
+		first += strings.Repeat(" ", pad)
+	}
+	lines[0] = first + version
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) detailStats() git.ChangeStats {
@@ -1328,7 +1354,7 @@ func (m Model) renderHeader() string {
 		dirty = "   " + stAttention.Render("● uncommitted changes")
 	}
 	readiness := ""
-	if m.remote && m.cache.PR != nil {
+	if m.cache.PR != nil || !m.remote {
 		readiness = stMuted.Render(fmt.Sprintf("   · %d behind", m.mergeReadiness.Behind))
 		if conflicts := len(m.mergeReadiness.ConflictFiles); conflicts > 0 {
 			readiness += "   " + stRedF.Render(fmt.Sprintf("⚠ %d conflict files", conflicts))

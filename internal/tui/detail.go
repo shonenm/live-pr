@@ -266,6 +266,16 @@ func (m *Model) toggleFileCheck() tea.Cmd {
 	return m.sync()
 }
 
+func applyGitHubConflictFallback(readiness git.MergeReadiness, err error, pr gh.PR) (git.MergeReadiness, error) {
+	if len(readiness.ConflictFiles) > 0 {
+		return readiness, err
+	}
+	if strings.EqualFold(pr.Mergeable, "CONFLICTING") || strings.EqualFold(pr.MergeStateStatus, "DIRTY") {
+		readiness.ConflictFiles = []string{"(GitHub reports conflicts; file list unavailable)"}
+	}
+	return readiness, err
+}
+
 func (m Model) buildConflicts() (string, int) {
 	if len(m.mergeReadiness.ConflictFiles) == 0 {
 		if m.mergeReadinessErr != nil {
