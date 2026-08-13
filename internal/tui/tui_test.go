@@ -2276,36 +2276,31 @@ func TestReviewFocusKeys(t *testing.T) {
 		t.Fatal("l should focus review")
 	}
 	footer := ansi.Strip(m.renderFooter())
-	if !strings.Contains(footer, "q / Shift+Tab: left pane") || strings.Contains(footer, "branch review") {
+	if !strings.Contains(footer, "Tab full width") || strings.Contains(footer, "branch review") {
 		t.Fatalf("focused footer is misleading: %q", footer)
 	}
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	// Tab expands to full width and keeps the review focused.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if cmd != nil || m.focusDiff {
-		t.Fatal("q should return focus to the left pane")
+	if !m.reviewWide || !m.focusDiff {
+		t.Fatal("Tab should make the review full width")
 	}
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
-		t.Fatal("q on the left pane should quit")
+	// Tab again restores the split, still focused on the review.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = u.(Model)
+	if m.reviewWide || !m.focusDiff {
+		t.Fatal("second Tab should restore the split")
+	}
+	// q leaves the review entirely.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(Model)
+	if m.focusDiff || m.reviewWide {
+		t.Fatalf("q should return to the conversation: focusDiff=%v reviewWide=%v", m.focusDiff, m.reviewWide)
+	}
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
+		t.Fatal("q on the conversation should quit")
 	} else if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatalf("left-pane q returned %T", cmd())
-	}
-
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	m = u.(Model)
-	if !m.focusDiff {
-		t.Fatal("Shift+Tab should focus review")
-	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	m = u.(Model)
-	if m.focusDiff {
-		t.Fatal("second Shift+Tab should return focus to the left pane")
-	}
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if cmd == nil {
-		t.Fatal("Ctrl+C should quit from the left pane")
-	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatalf("quit command returned %T", cmd())
+		t.Fatalf("conversation q returned %T", cmd())
 	}
 }
 

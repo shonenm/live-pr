@@ -213,16 +213,14 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.applyPRViewState(selected)
 	}
 	if key.Matches(msg, m.keys.Focus) {
-		if m.fileExplorerMode() {
-			if m.focusExplorer {
-				m.focusExplorer = false
-			} else {
-				m.focusDiff, m.focusExplorer = false, true
-			}
-		} else {
-			m.focusDiff = !m.focusDiff
+		// Tab expands the review to full width (and focuses it), and toggles
+		// back to the split. q / Esc leaves the review entirely.
+		m.reviewWide = !m.reviewWide
+		if m.reviewWide {
+			m.focusDiff, m.focusExplorer = true, false
 		}
-		return m, nil
+		m.layout()
+		return m, m.sync()
 	}
 	if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusRight) {
 		if !m.focusExplorer {
@@ -231,16 +229,18 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.fileExplorerMode() && (m.focusDiff || m.focusExplorer) && key.Matches(msg, m.keys.FocusLeft) {
-		m.focusDiff, m.focusExplorer = false, false
-		return m, nil
+		m.focusDiff, m.focusExplorer, m.reviewWide = false, false, false
+		m.layout()
+		return m, m.sync()
 	}
 	if !m.fileExplorerMode() && !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
 		m.focusDiff = true
 		return m, nil
 	}
 	if !m.fileExplorerMode() && m.focusDiff && key.Matches(msg, m.keys.FocusLeft) {
-		m.focusDiff = false
-		return m, nil
+		m.focusDiff, m.reviewWide = false, false
+		m.layout()
+		return m, m.sync()
 	}
 	if key.Matches(msg, m.keys.AddComment) {
 		if m.cache.PR != nil {
