@@ -130,7 +130,7 @@ func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
 
 	content, selected := m.buildFileExplorer()
 	plain := ansi.Strip(content)
-	for _, want := range []string{"Files · 2 changed", "□ M internal/tui/tui.go", "□ A internal/tui/explorer.go"} {
+	for _, want := range []string{"2 changed", "□ M internal/tui/tui.go", "□ A internal/tui/explorer.go"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("explorer missing %q: %q", want, plain)
 		}
@@ -217,8 +217,14 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 }
 
 func TestReservedReviewKeysStayWithLivePR(t *testing.T) {
-	if !reservedReviewKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}) {
-		t.Fatal("q should stay with live-pr")
+	if !reservedReviewKey(tea.KeyMsg{Type: tea.KeyTab}) {
+		t.Fatal("tab should stay with live-pr")
+	}
+	if !reservedReviewKey(tea.KeyMsg{Type: tea.KeyShiftTab}) {
+		t.Fatal("shift+tab should stay with live-pr")
+	}
+	if !isShiftTab(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+tab")}) && !isShiftTab(tea.KeyMsg{Type: tea.KeyShiftTab}) {
+		t.Fatal("shift+tab matcher missed KeyShiftTab")
 	}
 	if reservedReviewKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) {
 		t.Fatal("j should be forwarded to the reviewer")
@@ -241,10 +247,20 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 	if m.focusDiff || !m.focusExplorer {
 		t.Fatalf("second l focus = diff:%v explorer:%v", m.focusDiff, m.focusExplorer)
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if m.focusDiff || m.focusExplorer {
-		t.Fatal("q did not return focus to Conversation")
+	if !m.reviewWide || !m.focusDiff || m.focusExplorer {
+		t.Fatal("tab did not make review full width")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = u.(Model)
+	if m.reviewWide {
+		t.Fatal("second tab did not restore the split")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if m.focusDiff || m.focusExplorer || m.reviewWide {
+		t.Fatal("shift+tab did not return to conversation")
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	if cmd == nil {
@@ -2276,31 +2292,26 @@ func TestReviewFocusKeys(t *testing.T) {
 		t.Fatal("l should focus review")
 	}
 	footer := ansi.Strip(m.renderFooter())
-	if !strings.Contains(footer, "q / Shift+Tab: left pane") || strings.Contains(footer, "branch review") {
+	if !strings.Contains(footer, "Tab full width") || strings.Contains(footer, "branch review") {
 		t.Fatalf("focused footer is misleading: %q", footer)
 	}
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if cmd != nil || m.focusDiff {
-		t.Fatal("q should return focus to the left pane")
+	if !m.reviewWide || !m.focusDiff {
+		t.Fatal("Tab should make review full width")
 	}
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
-		t.Fatal("q on the left pane should quit")
-	} else if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatalf("left-pane q returned %T", cmd())
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = u.(Model)
+	if m.reviewWide || !m.focusDiff {
+		t.Fatal("second Tab should restore the split")
 	}
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
-	if !m.focusDiff {
-		t.Fatal("Shift+Tab should focus review")
+	if m.focusDiff || m.reviewWide {
+		t.Fatal("Shift+Tab should move to conversation")
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	m = u.(Model)
-	if m.focusDiff {
-		t.Fatal("second Shift+Tab should return focus to the left pane")
-	}
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("Ctrl+C should quit from the left pane")
 	}
@@ -2319,10 +2330,15 @@ func TestStaticReviewFocusKeys(t *testing.T) {
 	if !m.focusDiff {
 		t.Fatal("l should focus the static review fallback")
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if m.focusDiff {
-		t.Fatal("q should return from the static review fallback")
+	if !m.reviewWide {
+		t.Fatal("Tab should make the static review full width")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if m.focusDiff || m.reviewWide {
+		t.Fatal("Shift+Tab should move back to conversation")
 	}
 }
 

@@ -75,6 +75,10 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		scrollQuarter(&m.detail, true)
 		return m, nil
 	}
+	if key.Matches(msg, m.keys.Back) && (m.focusDiff || m.focusExplorer) {
+		m.focusDiff, m.focusExplorer = false, false
+		return m, nil
+	}
 	if handled, cmd := m.handleVimNavigation(msg); handled {
 		return m, cmd
 	}
@@ -183,6 +187,14 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) cycleReviewPane() {
+	if m.focusDiff {
+		m.focusDiff, m.focusExplorer, m.reviewWide = false, false, false
+		return
+	}
+	m.focusDiff, m.focusExplorer = true, false
+}
+
 func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	if m.pendingPRAction != noPRAction {
@@ -225,16 +237,17 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.applyPRViewState(selected)
 	}
 	if key.Matches(msg, m.keys.Focus) {
-		if m.fileExplorerMode() {
-			if m.focusExplorer {
-				m.focusExplorer = false
-			} else {
-				m.focusDiff, m.focusExplorer = false, true
-			}
-		} else {
-			m.focusDiff = !m.focusDiff
+		m.reviewWide = !m.reviewWide
+		if m.reviewWide {
+			m.focusDiff, m.focusExplorer = true, false
 		}
-		return m, nil
+		m.layout()
+		return m, m.sync()
+	}
+	if key.Matches(msg, m.keys.FocusLeft) || isShiftTab(msg) {
+		m.cycleReviewPane()
+		m.layout()
+		return m, m.sync()
 	}
 	if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusRight) {
 		if !m.focusExplorer {
@@ -242,16 +255,8 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.fileExplorerMode() && (m.focusDiff || m.focusExplorer) && key.Matches(msg, m.keys.FocusLeft) {
-		m.focusDiff, m.focusExplorer = false, false
-		return m, nil
-	}
 	if !m.fileExplorerMode() && !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
 		m.focusDiff = true
-		return m, nil
-	}
-	if !m.fileExplorerMode() && m.focusDiff && key.Matches(msg, m.keys.FocusLeft) {
-		m.focusDiff = false
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.AddComment) {

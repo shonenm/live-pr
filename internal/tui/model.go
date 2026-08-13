@@ -94,9 +94,9 @@ var keys = keyMap{
 	NextView:     key.NewBinding(key.WithKeys("]", "l"), key.WithHelp("l/]", "next view")),
 	Filter:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 	ToggleStack:  key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
-	Focus:        key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "toggle focus")),
+	Focus:        key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "toggle full review")),
 	FocusRight:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
-	FocusLeft:    key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
+	FocusLeft:    key.NewBinding(key.WithKeys("shift+tab", "backtab"), key.WithHelp("shift+tab", "move pane")),
 	Commits:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commits")),
 	Conflicts:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "conflicts")),
 	Checks:       key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "CI checks")),
@@ -382,6 +382,7 @@ type Model struct {
 	diffTerminal      *embeddedterm.Terminal
 	focusDiff         bool
 	focusExplorer     bool
+	reviewWide        bool
 	fileCursor        int
 	detailKey         string
 	rawDetailCache    map[string]string
@@ -1022,14 +1023,21 @@ func (m *Model) layout() {
 	if minPaneW > m.w/2 {
 		minPaneW = max(8, m.w/2)
 	}
-	leftPaneW := max(minPaneW, m.w*ratio/100)
-	rightPaneW := m.w - leftPaneW
-	if rightPaneW < minPaneW {
-		rightPaneW = minPaneW
-		leftPaneW = max(minPaneW, m.w-minPaneW)
+	var leftPaneW, rightPaneW int
+	if m.reviewWide {
+		leftPaneW, rightPaneW = 0, m.w
+	} else {
+		leftPaneW = max(minPaneW, m.w*ratio/100)
+		rightPaneW = m.w - leftPaneW
+		if rightPaneW < minPaneW {
+			rightPaneW = minPaneW
+			leftPaneW = max(minPaneW, m.w-minPaneW)
+		}
 	}
-	listW := max(4, leftPaneW-paneChromeW)
-	rightW := max(4, rightPaneW-paneChromeW)
+	listW, rightW := 0, max(4, rightPaneW-paneChromeW)
+	if leftPaneW > 0 {
+		listW = max(4, leftPaneW-paneChromeW)
+	}
 	bodyH := m.h - m.headerHeight() - footerLines - paneChromeH
 	if bodyH < 3 {
 		bodyH = 3
@@ -1284,13 +1292,18 @@ func (m Model) View() string {
 			}
 			leftTitle = fmt.Sprintf("Checks · %d", count)
 		}
-		leftContent := m.list.View()
-		if m.active == conversationTab {
-			leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
+		if m.reviewWide {
+			body := m.renderReviewPane()
+			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
+		} else {
+			leftContent := m.list.View()
+			if m.active == conversationTab {
+				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
+			}
+			left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
+			body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
+			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 		}
-		left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
-		body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
-		view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 	}
 	if m.localEditMode != noLocalEdit {
 		return overlayPopup(view, m.renderLocalEditorPopup(), m.w)
@@ -1430,10 +1443,8 @@ func (m Model) footerMode() string {
 		return "PRS"
 	}
 	switch {
-	case m.focusDiff:
+	case m.focusDiff, m.focusExplorer:
 		return "REVIEW"
-	case m.focusExplorer:
-		return "FILES"
 	case m.active == commitsTab:
 		return "COMMITS"
 	case m.active == conflictsTab:
@@ -1466,7 +1477,7 @@ func (m Model) footerContent() string {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}
 	if m.focusDiff {
-		hint := stMuted.Render("Review focused · q / Shift+Tab: left pane")
+		hint := stMuted.Render("Review focused · Tab full width · Shift+Tab conversation")
 		if m.githubStatus != "" {
 			return stMuted.Render(m.githubStatus) + "  " + hint
 		}
