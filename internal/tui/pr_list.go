@@ -1076,6 +1076,14 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		}
 		assignees = stMuted.Render("assigned ") + strings.Join(users, " ")
 	}
+	reviewers := ""
+	if len(pr.ReviewRequests) > 0 {
+		users := make([]string, 0, len(pr.ReviewRequests))
+		for _, user := range pr.ReviewRequests {
+			users = append(users, m.userLabel(user))
+		}
+		reviewers = "   " + stMuted.Render("review requested ") + strings.Join(users, " ")
+	}
 	labels := stMuted.Render("🏷 no labels")
 	if len(pr.Labels) > 0 {
 		pills := make([]string, 0, len(pr.Labels))
@@ -1084,7 +1092,7 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		}
 		labels = stMuted.Render("🏷 ") + strings.Join(pills, " ")
 	}
-	line := "  " + prCheckSummary(pr) + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + "   " + labels
+	line := "  " + prCheckSummary(pr) + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + reviewers + "   " + labels
 	if m.w > 0 {
 		return ansi.Truncate(line, m.w, "…")
 	}
