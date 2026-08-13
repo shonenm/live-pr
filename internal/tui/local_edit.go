@@ -40,11 +40,23 @@ func (m Model) startLocalComment() (Model, tea.Cmd) {
 }
 
 func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
-	if m.remote || m.active != conversationTab || m.focusDiff || m.focusExplorer {
+	if m.active != conversationTab || m.focusDiff || m.focusExplorer {
 		return m, nil
 	}
 	item := m.selectedConversationItem()
 	if item == nil {
+		return m, nil
+	}
+	// A GitHub conversation comment can be edited if the viewer authored it.
+	if item.comment != nil {
+		if m.viewerLogin == "" || !strings.EqualFold(item.comment.User.Login, m.viewerLogin) {
+			m.status = "only your own GitHub comments can be edited"
+			return m, nil
+		}
+		m.remoteCommentID = item.comment.ID
+		return m.openLocalEditor(editRemoteComment, item.comment.Body, "")
+	}
+	if m.remote {
 		return m, nil
 	}
 	if item.summary != nil {
@@ -102,6 +114,29 @@ func parseLocalComment(value string, allowSummary bool) (event.Kind, string, str
 }
 
 func (m Model) saveLocalEdit() (Model, tea.Cmd) {
+	// GitHub conversation comments are posted/edited over the network, so they
+	// return early with an async command instead of the local save path below.
+	if m.localEditMode == addRemoteComment || m.localEditMode == editRemoteComment {
+		body := strings.TrimSpace(m.localEditor.Value())
+		if body == "" {
+			m.localEditError = "comment must not be empty"
+			return m, nil
+		}
+		if m.cache.PR == nil {
+			m.localEditError = "no pull request for this comment"
+			return m, nil
+		}
+		editID := int64(0)
+		if m.localEditMode == editRemoteComment {
+			editID = m.remoteCommentID
+		}
+		number := m.cache.PR.Number
+		m.localEditor.Blur()
+		m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
+		m.remoteCommentID, m.remoteCommentBusy = 0, true
+		m.status = "sending comment…"
+		return m, tea.Batch(postRemoteComment(number, body, editID, m.targetGeneration), m.startSpinner())
+	}
 	st := store.ForBranch(m.root, m.currentBranch)
 	selectedKey := "local-summary"
 	switch m.localEditMode {
@@ -253,6 +288,12 @@ func (m Model) renderLocalEditorPopup() string {
 	}
 	if m.localEditMode == addInlineReviewComment {
 		title, hint = "Add inline review comment", "RIGHT = new code; LEFT = deleted code"
+	}
+	if m.localEditMode == addRemoteComment {
+		title, hint = "Add comment", "posts a GitHub conversation comment"
+	}
+	if m.localEditMode == editRemoteComment {
+		title, hint = "Edit comment", "updates your GitHub conversation comment"
 	}
 	lines := []string{stBold.Render(title), stMuted.Render(hint), "", m.localEditor.View()}
 	if m.localEditError != "" {

@@ -22,7 +22,7 @@ func TestParseInlineReviewComment(t *testing.T) {
 	}
 }
 
-func TestTUIAddsGeneralAndInlineReviewDraft(t *testing.T) {
+func TestCommentKeysSplitConversationAndInlineReview(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	m := testModel()
 	m.root = t.TempDir()
@@ -30,20 +30,17 @@ func TestTUIAddsGeneralAndInlineReviewDraft(t *testing.T) {
 	m.files = []git.ChangedFile{{Path: "main.go", Status: "M"}}
 	m.diffCommand, m.diffTerminal = "", nil
 
+	// a opens a GitHub conversation comment (not the review body, which is now on v).
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	m = u.(Model)
-	if m.localEditMode != editReviewBody {
-		t.Fatalf("general review editor = %v", m.localEditMode)
+	if got := u.(Model).localEditMode; got != addRemoteComment {
+		t.Fatalf("a editor = %v, want addRemoteComment", got)
 	}
-	m.localEditor.SetValue("Overall review body")
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-	m = u.(Model)
 
-	m.focusExplorer = true
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	// A adds an inline review comment on the selected file.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
 	m = u.(Model)
 	if m.localEditMode != addInlineReviewComment || !strings.Contains(m.localEditor.Value(), "path: main.go") {
-		t.Fatalf("inline review editor = %v value=%q", m.localEditMode, m.localEditor.Value())
+		t.Fatalf("A inline editor = %v value=%q", m.localEditMode, m.localEditor.Value())
 	}
 	m.localEditor.SetValue("path: main.go\nline: 3\nside: RIGHT\n\nFix this.")
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
@@ -51,7 +48,7 @@ func TestTUIAddsGeneralAndInlineReviewDraft(t *testing.T) {
 
 	path := store.PullRequestReviewDraft(m.root, 12)
 	draft, err := gh.LoadReviewDraft(path, 12, "abc123")
-	if err != nil || draft.Body != "Overall review body" || len(draft.Comments) != 1 || draft.Comments[0].Line != 3 {
+	if err != nil || len(draft.Comments) != 1 || draft.Comments[0].Line != 3 {
 		t.Fatalf("saved draft = %#v err=%v", draft, err)
 	}
 }
@@ -95,5 +92,41 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("submitted draft remains: %v", err)
+	}
+}
+
+func TestEditRemoteCommentOwnershipGate(t *testing.T) {
+	m := testModel()
+	m.viewerLogin = "me"
+	m.cache.PR = &gh.PR{Number: 12, URL: "u"}
+	own := gh.Comment{ID: 99, Body: "mine"}
+	own.User.Login = "me"
+	other := gh.Comment{ID: 100, Body: "theirs"}
+	other.User.Login = "you"
+	m.cache.Comments = []gh.Comment{own, other}
+	m.conversationDirty = true
+
+	items := m.conversationItems()
+	idxOf := func(id int64) int {
+		for i, it := range items {
+			if it.comment != nil && it.comment.ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+
+	// Own comment: e opens the remote editor targeting its id.
+	m.cursors[conversationTab] = idxOf(99)
+	edited, _ := m.editSelectedLocalItem()
+	if edited.localEditMode != editRemoteComment || edited.remoteCommentID != 99 || edited.localEditor.Value() != "mine" {
+		t.Fatalf("own comment edit = mode:%v id:%d value:%q", edited.localEditMode, edited.remoteCommentID, edited.localEditor.Value())
+	}
+
+	// Someone else's comment: rejected.
+	m.cursors[conversationTab] = idxOf(100)
+	rejected, _ := m.editSelectedLocalItem()
+	if rejected.localEditMode == editRemoteComment {
+		t.Fatal("edited someone else's comment")
 	}
 }
