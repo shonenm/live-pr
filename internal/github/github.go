@@ -218,7 +218,10 @@ func (node prListNode) pullRequest(viewerReviewRequested bool) PR {
 	return pr
 }
 
-var repositoryIdentities sync.Map
+// sharedRepositoryIdentity caches the resolved repository name for the whole
+// process. live-pr operates within a single repository, so one shared identity
+// suffices — and it avoids a cwd-keyed map that would never be evicted.
+var sharedRepositoryIdentity = &repositoryIdentity{}
 
 // Client runs GitHub operations through gh.
 type Client struct {
@@ -228,19 +231,14 @@ type Client struct {
 
 // New returns a GitHub CLI client.
 func New() Client {
-	var repo *repositoryIdentity
-	if cwd, err := os.Getwd(); err == nil {
-		value, _ := repositoryIdentities.LoadOrStore(cwd, &repositoryIdentity{})
-		repo = value.(*repositoryIdentity)
-	}
-	return Client{run: func(args ...string) ([]byte, error) {
+	return Client{repo: sharedRepositoryIdentity, run: func(args ...string) ([]byte, error) {
 		if done := debugtime.Start("github gh " + args[0]); done != nil {
 			defer done()
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return exec.CommandContext(ctx, "gh", args...).CombinedOutput()
-	}, repo: repo}
+	}}
 }
 
 func (c Client) repositoryName() (string, error) {
@@ -509,23 +507,30 @@ func (c Client) IssueActivities(number int) ([]Activity, error) {
 	return activities, nil
 }
 
+// IssueDetailResult bundles the concurrently-loaded comment and activity
+// collections with their independent errors.
+type IssueDetailResult struct {
+	Comments      []Comment
+	Activities    []Activity
+	CommentsErr   error
+	ActivitiesErr error
+}
+
 // IssueDetail loads independent comment and activity collections concurrently.
-func (c Client) IssueDetail(number int) ([]Comment, []Activity, error, error) {
-	var comments []Comment
-	var activities []Activity
-	var commentsErr, activitiesErr error
+func (c Client) IssueDetail(number int) IssueDetailResult {
+	var r IssueDetailResult
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		comments, commentsErr = c.IssueComments(number)
+		r.Comments, r.CommentsErr = c.IssueComments(number)
 	}()
 	go func() {
 		defer wg.Done()
-		activities, activitiesErr = c.IssueActivities(number)
+		r.Activities, r.ActivitiesErr = c.IssueActivities(number)
 	}()
 	wg.Wait()
-	return comments, activities, commentsErr, activitiesErr
+	return r
 }
 
 // LoadPRDetail loads preview metadata, comments, and activity concurrently.
@@ -539,7 +544,9 @@ func (c Client) LoadPRDetail(number int) PRDetail {
 	}()
 	go func() {
 		defer wg.Done()
-		detail.Comments, detail.Activities, detail.CommentsErr, detail.ActivitiesErr = c.IssueDetail(number)
+		d := c.IssueDetail(number)
+		detail.Comments, detail.Activities = d.Comments, d.Activities
+		detail.CommentsErr, detail.ActivitiesErr = d.CommentsErr, d.ActivitiesErr
 	}()
 	wg.Wait()
 	return detail

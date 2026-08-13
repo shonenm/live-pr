@@ -130,9 +130,9 @@ func TestIssueDetailStartsIndependentRequestsConcurrently(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _, commentsErr, activitiesErr := client.IssueDetail(12)
-		if commentsErr != nil || activitiesErr != nil {
-			t.Errorf("IssueDetail errors = %v, %v", commentsErr, activitiesErr)
+		d := client.IssueDetail(12)
+		if d.CommentsErr != nil || d.ActivitiesErr != nil {
+			t.Errorf("IssueDetail errors = %v, %v", d.CommentsErr, d.ActivitiesErr)
 		}
 	}()
 	for range 2 {
