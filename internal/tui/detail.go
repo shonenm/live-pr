@@ -291,10 +291,25 @@ func (m Model) buildConflicts() (string, int) {
 }
 
 func (m Model) buildChecks() (string, int) {
-	if m.cache.PR == nil || len(m.cache.PR.Checks) == 0 {
-		return stMuted.Render("(no CI checks)"), 0
+	checkCount := 0
+	if m.cache.PR != nil {
+		checkCount = len(m.cache.PR.Checks)
 	}
-	lines := make([]string, 0, len(m.cache.PR.Checks))
+	lines := make([]string, 0, 4+checkCount)
+	behind := m.mergeReadiness.Behind
+	switch {
+	case behind > 0:
+		lines = append(lines, stAttention.Render(fmt.Sprintf("⚠ out of date · %d commit%s behind base", behind, plural(behind))))
+	case m.mergeReadinessErr != nil:
+		lines = append(lines, stMuted.Render("base freshness unavailable"))
+	default:
+		lines = append(lines, stGreenF.Render("✓ up to date with base"))
+	}
+	if m.cache.PR == nil || len(m.cache.PR.Checks) == 0 {
+		lines = append(lines, "", stMuted.Render("(no CI checks)"))
+		return strings.Join(lines, "\n"), 0
+	}
+	lines = append(lines, "")
 	for i, check := range m.cache.PR.Checks {
 		icon, _, style := commitCIStatus(checkRollupState([]gh.PRCheck{check}))
 		name := check.Name
@@ -322,6 +337,13 @@ func (m Model) buildChecks() (string, int) {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), m.cursors[checksTab]
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func (m Model) buildCommits() (string, int) {
