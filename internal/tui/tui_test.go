@@ -422,6 +422,9 @@ func TestHeaderCarriesWordmarkAndVersionUntilTheTerminalIsNarrow(t *testing.T) {
 	if !strings.Contains(wide, "┗━╸╹┗┛ ┗━╸") || !strings.Contains(wide, "v0.2.4") {
 		t.Fatalf("wide header missing the wordmark or version: %q", wide)
 	}
+	if first := strings.Split(wide, "\n")[0]; !strings.HasSuffix(strings.TrimRight(first, " "), "v0.2.4") {
+		t.Fatalf("version is not pinned to the top-right: %q", first)
+	}
 	for _, line := range strings.Split(wide, "\n") {
 		if width := lipgloss.Width(line); width > m.w {
 			t.Fatalf("header line overflows %d: %d %q", m.w, width, line)
@@ -1632,6 +1635,17 @@ func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 	m = updated.(Model)
 	if m.active != conversationTab {
 		t.Fatalf("Esc active = %v, want Conversation", m.active)
+	}
+}
+
+func TestGitHubConflictingKeepsConflictView(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote = detailScreen, true
+	m.cache.PR = &gh.PR{Number: 8, Mergeable: "CONFLICTING"}
+	m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(git.MergeReadiness{}, nil, *m.cache.PR)
+	out, _ := m.buildConflicts()
+	if !strings.Contains(ansi.Strip(out), "GitHub reports conflicts") {
+		t.Fatalf("conflicting PR hid conflicts: %q", ansi.Strip(out))
 	}
 }
 
