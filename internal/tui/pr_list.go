@@ -331,7 +331,11 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 			m.filteredPRs = append(m.filteredPRs, pr)
 		}
 	}
-	m.prStacks = buildPRStacks(m.filteredPRs)
+	if m.prListState == closedPRListState {
+		m.prStacks = singlePRStacks(m.filteredPRs)
+	} else {
+		m.prStacks = buildPRStacks(m.filteredPRs)
+	}
 	m.openPRs = make([]gh.PR, 0, len(m.filteredPRs))
 	for _, stack := range m.prStacks {
 		entries := stack.entries
@@ -343,6 +347,14 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 		}
 	}
 	m.restorePRSelection(selectedNumber)
+}
+
+func singlePRStacks(prs []gh.PR) []prStack {
+	stacks := make([]prStack, len(prs))
+	for i, pr := range prs {
+		stacks[i] = prStack{id: fmt.Sprintf("pr:%d", pr.Number), order: i, entries: []stackEntry{{pr: pr}}}
+	}
+	return stacks
 }
 
 func buildPRStacks(prs []gh.PR) []prStack {
@@ -830,6 +842,20 @@ func checkHealth(checks []gh.PRCheck) (string, int) {
 	return "passed", len(checks)
 }
 
+func checkRollupState(checks []gh.PRCheck) string {
+	health, _ := checkHealth(checks)
+	switch health {
+	case "passed":
+		return "SUCCESS"
+	case "failed":
+		return "FAILURE"
+	case "pending":
+		return "PENDING"
+	default:
+		return ""
+	}
+}
+
 func prCIHealth(pr gh.PR) string {
 	if pr.PreviewLoaded || len(pr.Checks) > 0 {
 		health, _ := checkHealth(pr.Checks)
@@ -959,7 +985,7 @@ func (m *Model) cachedPRRow(pr gh.PR, prefix string) []string {
 		number: pr.Number, width: max(10, m.list.Width), additions: pr.Additions, deletions: pr.Deletions, checkCount: count,
 		prefix: prefix, state: pr.State, title: pr.Title, author: pr.Author.Login, base: pr.BaseRefName, head: pr.HeadRefName,
 		mergeable: pr.Mergeable, mergeState: pr.MergeStateStatus, checkHealth: health, rollup: pr.CheckRollupState,
-		draft: pr.IsDraft, previewLoaded: pr.PreviewLoaded,
+		draft: pr.IsDraft, previewLoaded: pr.PreviewLoaded, current: m.isCurrentTargetPR(pr),
 	}
 	if rows, ok := m.prRowCache[key]; ok {
 		return rows
@@ -995,8 +1021,12 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	width := max(10, m.list.Width)
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	glyph, glyphStyle := stateGlyph(state)
+	currentBar := " "
+	if m.isCurrentTargetPR(pr) {
+		currentBar = stAttention.Render("▌")
+	}
 	if !selected {
-		line := "  " + glyphStyle.Render(glyph) + " " + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
+		line := "  " + currentBar + " " + glyphStyle.Render(glyph) + " " + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
 		meta := "    " + indent + glyphStyle.Render(state)
 		if pr.Number > 0 {
 			if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
@@ -1014,7 +1044,11 @@ func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	rowSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Background(bg)
 	mutedSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted)).Background(bg)
 	bar := lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent)).Background(bg).Render("▌")
-	line := bar + rowSt.Render(" ") + glyphStyle.Background(bg).Render(glyph) + mutedSt.Render(" "+prefix+identifier+" ") + rowSt.Bold(true).Render(pr.Title)
+	checkoutBar := rowSt.Render(" ")
+	if m.isCurrentTargetPR(pr) {
+		checkoutBar = lipgloss.NewStyle().Foreground(lipgloss.Color(cAttention)).Background(bg).Render("▌")
+	}
+	line := bar + checkoutBar + rowSt.Render(" ") + glyphStyle.Background(bg).Render(glyph) + mutedSt.Render(" "+prefix+identifier+" ") + rowSt.Bold(true).Render(pr.Title)
 	meta := bar + mutedSt.Render("   "+indent) + glyphStyle.Background(bg).Render(state)
 	if pr.Number > 0 {
 		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {

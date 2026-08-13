@@ -617,6 +617,42 @@ func (c Client) Close(number int) error {
 	return nil
 }
 
+// SetStatus changes a pull request to open, closed, or draft.
+func (c Client) SetStatus(pr PR, target string) error {
+	if strings.EqualFold(pr.State, "MERGED") {
+		return errors.New("merged pull requests cannot change status")
+	}
+	if target == "closed" {
+		return c.Close(pr.Number)
+	}
+	if strings.EqualFold(pr.State, "CLOSED") {
+		out, err := c.run("pr", "reopen", strconv.Itoa(pr.Number))
+		if err != nil {
+			return commandError("gh pr reopen", out, err)
+		}
+	}
+	var args []string
+	switch target {
+	case "open":
+		if !pr.IsDraft {
+			return nil
+		}
+		args = []string{"pr", "ready", strconv.Itoa(pr.Number)}
+	case "draft":
+		if pr.IsDraft && !strings.EqualFold(pr.State, "CLOSED") {
+			return nil
+		}
+		args = []string{"pr", "ready", strconv.Itoa(pr.Number), "--undo"}
+	default:
+		return fmt.Errorf("unsupported pull request status %q", target)
+	}
+	out, err := c.run(args...)
+	if err != nil {
+		return commandError("gh pr status", out, err)
+	}
+	return nil
+}
+
 // Checkout checks out a pull request using GitHub CLI's native branch handling.
 func (c Client) Checkout(number int) error {
 	out, err := c.run("pr", "checkout", strconv.Itoa(number))

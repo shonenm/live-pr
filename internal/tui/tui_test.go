@@ -944,6 +944,21 @@ func TestPRListLoadsClosedFromView(t *testing.T) {
 	}
 }
 
+func TestClosedPRsDoNotRenderAsStacks(t *testing.T) {
+	m := testModel()
+	m.prListState = closedPRListState
+	m.filteredPRs = []gh.PR{
+		{Number: 1, State: "CLOSED", HeadRefName: "one", BaseRefName: "main"},
+		{Number: 2, State: "CLOSED", HeadRefName: "two", BaseRefName: "one"},
+	}
+	m.applyPRFilters(0)
+	for _, stack := range m.prStacks {
+		if len(stack.entries) != 1 {
+			t.Fatalf("closed stack = %#v", stack)
+		}
+	}
+}
+
 func TestPRListLoadsClosedFromSearch(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
@@ -1419,6 +1434,22 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	}
 }
 
+func TestPRStatusPopupOpensFromListAndDetail(t *testing.T) {
+	for _, screen := range []screen{prListScreen, detailScreen} {
+		m := testModel()
+		m.screen = screen
+		pr := gh.PR{Number: 12, State: "OPEN", Title: "status"}
+		m.cache.PR = &pr
+		m.openPRs = []gh.PR{pr}
+		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+		m = u.(Model)
+		popup := ansi.Strip(m.renderPRStatusPopup())
+		if m.statusPR.Number != 12 || strings.Contains(popup, "\n   Open\n") || !strings.Contains(popup, "Closed") || !strings.Contains(popup, "Draft") {
+			t.Fatalf("screen %v status popup = %q", screen, popup)
+		}
+	}
+}
+
 func TestDetailBReturnsToPRList(t *testing.T) {
 	m := testModel()
 	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
@@ -1432,6 +1463,37 @@ func TestDetailBReturnsToPRList(t *testing.T) {
 	m = u.(Model)
 	if m.screen != prListScreen || m.diffTerminal != nil || !strings.Contains(ansi.Strip(m.View()), "Local PR") {
 		t.Fatalf("b did not return to local PR list: screen=%v terminal=%v view=%q", m.screen, m.diffTerminal, ansi.Strip(m.View()))
+	}
+}
+
+func TestDetailBRestoresRemotePRSelection(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote = detailScreen, true
+	m.cache.PR = &gh.PR{Number: 22, State: "OPEN", Title: "selected"}
+	m.prView, m.prListState = allPRsView, openPRListState
+	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{{Number: 11}, {Number: 22}}, loaded: true, fresh: true}}
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m = u.(Model)
+	if m.screen != prListScreen || m.selectedPRNumber() != 22 {
+		t.Fatalf("restored selection = screen:%v PR:%d", m.screen, m.selectedPRNumber())
+	}
+}
+
+func TestPRTitleAndCurrentCheckoutMarker(t *testing.T) {
+	m := testModel()
+	m.w, m.list.Width = 160, 120
+	m.currentBranch = "feature"
+	pr := gh.PR{Number: 12, State: "OPEN", Title: "Human title", HeadRefName: "feature", BaseRefName: "main"}
+	m.cache.PR = &pr
+	m.title = "feature"
+	header := ansi.Strip(m.renderHeader())
+	if !strings.Contains(header, "Human title") || strings.Contains(header, "  feature\n") {
+		t.Fatalf("detail title = %q", header)
+	}
+	plain := ansi.Strip(strings.Join(m.renderPRRow(pr, true, ""), "\n"))
+	if !strings.Contains(plain, "▌▌ ") {
+		t.Fatalf("selected/current markers = %q", plain)
 	}
 }
 
@@ -2045,6 +2107,18 @@ func TestCIPollDoesNotOverlapManualRefresh(t *testing.T) {
 	}
 }
 
+func TestCIPollUpdatesHeadCommitActivity(t *testing.T) {
+	m := testModel()
+	m.screen, m.targetGeneration = detailScreen, 2
+	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true, Commits: []gh.PRCommit{{OID: "head", CheckRollupState: "PENDING"}}}
+	m.conversationDirty = false
+	u, _ := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "head", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
+	m = u.(Model)
+	if m.cache.PR.Commits[0].CheckRollupState != "SUCCESS" || !m.conversationDirty {
+		t.Fatalf("commit CI = %#v dirty=%v", m.cache.PR.Commits, m.conversationDirty)
+	}
+}
+
 func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
@@ -2087,6 +2161,23 @@ func TestTranslateDiffMouseUsesContentBounds(t *testing.T) {
 		if _, ok := translateDiffMouse(outside, 40, 80, 20, headerHeight); ok {
 			t.Fatalf("outside event accepted: %+v", outside)
 		}
+	}
+}
+
+func TestPRViewNavigationSupportsHL(t *testing.T) {
+	m := testModel()
+	m.screen, m.prView = prListScreen, allPRsView
+	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.prPages = map[string]prPageState{}
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = u.(Model)
+	if m.prView != authoredView {
+		t.Fatalf("l view = %v", m.prView)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	m = u.(Model)
+	if m.prView != allPRsView {
+		t.Fatalf("h view = %v", m.prView)
 	}
 }
 

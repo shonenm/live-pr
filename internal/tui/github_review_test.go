@@ -70,10 +70,14 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = u.(Model)
-	if m.reviewSubmitEvent == "" || !strings.Contains(m.renderReviewSubmitPopup(), "request changes") {
+	if m.reviewSubmitEvent == "" || !strings.Contains(m.renderReviewSubmitPopup(), "Request changes") {
 		t.Fatalf("submit popup not opened: event=%q", m.reviewSubmitEvent)
 	}
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = u.(Model)
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	if cmd == nil || !m.reviewSubmitting {
 		t.Fatalf("changes request not scheduled: submitting=%v cmd=%v", m.reviewSubmitting, cmd)
