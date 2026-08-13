@@ -171,10 +171,15 @@ func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
 	return readiness, nil
 }
 
-// DiffStats returns file and line counts for base...head. Binary files count
-// toward Files but not line totals.
+// DiffStats returns file and line counts for the given range. An empty head
+// compares the working tree against base. Binary files count toward Files but
+// not line totals.
 func DiffStats(base, head string) (ChangeStats, error) {
-	out, err := run("diff", "--numstat", base+"..."+head)
+	rangeSpec := base
+	if head != "" {
+		rangeSpec = base + "..." + head
+	}
+	out, err := run("diff", "--numstat", rangeSpec)
 	if err != nil {
 		return ChangeStats{}, err
 	}
@@ -240,9 +245,14 @@ type ChangedFile struct {
 // ChangedFiles returns changed paths in base...HEAD order.
 func ChangedFiles(base string) ([]ChangedFile, error) { return ChangedFilesRange(base, "HEAD") }
 
-// ChangedFilesRange returns changed paths in base...head order.
+// ChangedFilesRange returns changed paths in the given range. An empty head
+// compares the working tree against base.
 func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
-	out, err := run("diff", "--name-status", "-z", base+"..."+head)
+	rangeSpec := base
+	if head != "" {
+		rangeSpec = base + "..." + head
+	}
+	out, err := run("diff", "--name-status", "-z", rangeSpec)
 	if err != nil {
 		return nil, err
 	}
