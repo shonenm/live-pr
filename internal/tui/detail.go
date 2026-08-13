@@ -55,11 +55,11 @@ func (m *Model) reloadLocalConversation() {
 
 func (m *Model) useBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	base = git.ResolveBase(base)
-	diffBase := localReviewBase(base, pr)
-	if diffBase == "" || (base == m.base && diffBase == m.diffBase && m.reviewRange == diffBase) {
+	diffBase, headRev, reviewRange := localReviewRange(base, pr, m.headRev, m.remote)
+	if diffBase == "" || (base == m.base && diffBase == m.diffBase && m.reviewRange == reviewRange && m.headRev == headRev) {
 		return nil
 	}
-	m.base, m.diffBase, m.reviewRange = base, diffBase, diffBase
+	m.base, m.diffBase, m.headRev, m.reviewRange = base, diffBase, headRev, reviewRange
 	m.resetDetailCaches()
 	if !m.remote {
 		_, _ = timeline.SyncCommits(m.timelinePath, diffBase)
@@ -70,10 +70,10 @@ func (m *Model) useBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 		}
 	}
 	m.commits, _ = git.CommitsRange(diffBase, m.headRev)
-	if m.remote {
-		m.files, _ = git.ChangedFilesRange(diffBase, m.headRev)
-	} else {
+	if publishedReviewHead(pr) == "" && !m.remote {
 		m.files, _ = git.ChangedFilesRange(diffBase, "")
+	} else {
+		m.files, _ = git.ChangedFilesRange(diffBase, m.headRev)
 	}
 	m.fileCursor = 0
 	return m.restartReview(m.reviewSHA, prURL)

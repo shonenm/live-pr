@@ -73,6 +73,18 @@ func TestReviewRangesUseLocalMergeBaseAndRemoteHistoricalBase(t *testing.T) {
 	}
 }
 
+func TestPublishedCheckoutUsesGitHubHeadNotWorktree(t *testing.T) {
+	pr := &gh.PR{Number: 12, BaseRefOID: "baseoid", HeadRefOID: "pushedhead"}
+	diffBase, headRev, reviewRange := localReviewRange("main", pr, "HEAD", false)
+	if diffBase != "baseoid" || headRev != "pushedhead" || reviewRange != "baseoid...pushedhead" {
+		t.Fatalf("published range = %q %q %q", diffBase, headRev, reviewRange)
+	}
+	diffBase, headRev, reviewRange = localReviewRange("main", nil, "HEAD", false)
+	if headRev != "HEAD" || reviewRange != diffBase {
+		t.Fatalf("unpublished local range = %q %q %q", diffBase, headRev, reviewRange)
+	}
+}
+
 func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a POSIX fake executable")
