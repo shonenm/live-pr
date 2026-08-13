@@ -176,22 +176,34 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 			break
 		}
 	}
-	for key, page := range m.prPages {
+	// A PR number lives on exactly one page, so stop scanning once found.
+	// page.prs shares its backing array with the map entry, so the in-place
+	// write is visible without reassigning m.prPages[key].
+	for _, page := range m.prPages {
+		done := false
 		for i := range page.prs {
 			if page.prs[i].Number == msg.number {
-				copy := msg.pr
-				copy.ViewerReviewRequested = page.prs[i].ViewerReviewRequested
-				page.prs[i] = copy
+				c := msg.pr
+				c.ViewerReviewRequested = page.prs[i].ViewerReviewRequested
+				page.prs[i] = c
+				done = true
+				break
 			}
 		}
-		m.prPages[key] = page
+		if done {
+			break
+		}
 	}
 	m.applyPRFilters(selectedNumber)
-	if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
-		m.status = "PR list cache: " + err.Error()
-	}
-	if m.selectedPRNumber() == msg.number {
-		m.status = ""
+	// Only persist when the visible row's preview loads; background prefetches
+	// stay in memory and ride the next page-load/refresh save.
+	onSelected := m.selectedPRNumber() == msg.number
+	if onSelected {
+		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
+			m.status = "PR list cache: " + err.Error()
+		} else {
+			m.status = ""
+		}
 	}
 	return m, tea.Batch(m.sync(), loadListAvatarColors(m.prListGeneration, []gh.PR{msg.pr}))
 
