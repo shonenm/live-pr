@@ -157,17 +157,20 @@ func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight, 
 // read as one region rather than two separate boxes.
 func (m Model) renderReviewPane() string {
 	if !m.fileExplorerMode() {
-		title, content := "Diff", m.detail.View()
+		title, content := "Review", m.detail.View()
+		width := m.detail.Width + paneChromeW
+		height := m.detail.Height + paneChromeH
+		if m.reviewWide {
+			width = m.w
+			height = max(3, m.h-m.headerHeight()-footerLines)
+		}
 		if m.reviewSHA != "" {
-			title = "Commit · " + m.reviewSHA
+			title = "Review · " + m.reviewSHA
 		}
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			title, content = "Review", m.diffTerminal.View(m.detail.Width, m.detail.Height)
-			if m.reviewSHA != "" {
-				title = "Review · " + m.reviewSHA
-			}
+			content = m.diffTerminal.View(m.detail.Width, m.detail.Height)
 		}
-		return renderPane(title, content, m.detail.Width+paneChromeW, m.detail.Height+paneChromeH, m.focusDiff)
+		return renderPane(title, content, width, height, m.focusDiff)
 	}
 	title := "Files"
 	if file := m.selectedFile(); file != nil {
