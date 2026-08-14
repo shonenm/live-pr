@@ -27,23 +27,59 @@ func (m *Model) loadReviewDraft() error {
 	return nil
 }
 
-func (m Model) startReviewComment() (Model, tea.Cmd) {
+// startAddComment (a) posts a conversation comment: a GitHub issue comment when
+// the branch has a PR, otherwise a local timeline note. Inline review comments
+// live on A; the review verdict + body live on v.
+func (m Model) startAddComment() (Model, tea.Cmd) {
+	if m.active != conversationTab || m.focusDiff || m.focusExplorer {
+		return m, nil
+	}
+	if m.cache.PR != nil {
+		return m.openLocalEditor(addRemoteComment, "", "")
+	}
+	return m.startLocalComment()
+}
+
+type remoteCommentDone struct {
+	generation uint64
+	edited     bool
+	err        error
+}
+
+// postRemoteComment posts a new conversation comment, or edits one when editID
+// is set.
+func postRemoteComment(number int, body string, editID int64, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if editID > 0 {
+			err = gh.New().EditIssueComment(editID, body)
+		} else {
+			err = gh.New().PostIssueComment(number, body)
+		}
+		return remoteCommentDone{generation: generation, edited: editID > 0, err: err}
+	}
+}
+
+func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
+	m.remoteCommentBusy = false
+	if msg.generation != m.targetGeneration {
+		return m, nil
+	}
+	if msg.err != nil {
+		m.status = "comment: " + msg.err.Error()
+		return m, nil
+	}
+	if msg.edited {
+		m.notice = "Comment updated"
+	} else {
+		m.notice = "Comment posted"
+	}
+	m.status = ""
 	if m.cache.PR == nil {
-		m.status = "publish the Local PR before adding a GitHub review"
-		return m, nil
+		return m, m.sync()
 	}
-	if err := m.loadReviewDraft(); err != nil {
-		m.status = err.Error()
-		return m, nil
-	}
-	if m.fileExplorerMode() && m.focusExplorer {
-		return m.startInlineReviewComment()
-	}
-	if m.focusDiff || m.focusExplorer {
-		m.status = "inline comments require the built-in Explorer; set [diff].command = \"\""
-		return m, nil
-	}
-	return m.openLocalEditor(editReviewBody, m.reviewDraft.Body, "")
+	m.targetGeneration++
+	return m, tea.Batch(fetchGitHub(m.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
 }
 
 func (m Model) startInlineReviewComment() (Model, tea.Cmd) {

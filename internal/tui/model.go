@@ -112,11 +112,11 @@ var keys = keyMap{
 	Checkout:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
 	Close:        key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "close PR")),
 	Status:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "PR status")),
-	AddComment:   key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add comment/body")),
-	InlineReview: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "inline review")),
+	AddComment:   key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "comment")),
+	InlineReview: key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "inline review comment")),
 	EditLocal:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
 	DeleteLocal:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete comment")),
-	Review:       key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "review draft/submit")),
+	Review:       key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "review (verdict+body)")),
 	Help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:         key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
@@ -142,17 +142,19 @@ type prPreviewLoaded struct {
 }
 
 type remoteLoaded struct {
-	generation    uint64
-	pr            gh.PR
-	headRef       string
-	comments      []gh.Comment
-	activities    []gh.Activity
-	readiness     git.MergeReadiness
-	refErr        error
-	previewErr    error
-	commentsErr   error
-	activitiesErr error
-	readinessErr  error
+	generation     uint64
+	pr             gh.PR
+	headRef        string
+	comments       []gh.Comment
+	activities     []gh.Activity
+	reviews        []gh.Review
+	reviewComments []gh.ReviewThreadComment
+	readiness      git.MergeReadiness
+	refErr         error
+	previewErr     error
+	commentsErr    error
+	activitiesErr  error
+	readinessErr   error
 }
 
 type ciPollTick struct {
@@ -167,13 +169,15 @@ type ciPolled struct {
 }
 
 type githubRefreshed struct {
-	generation    uint64
-	pr            gh.PR
-	comments      []gh.Comment
-	activities    []gh.Activity
-	err           error
-	commentsErr   error
-	activitiesErr error
+	generation     uint64
+	pr             gh.PR
+	comments       []gh.Comment
+	activities     []gh.Activity
+	reviews        []gh.Review
+	reviewComments []gh.ReviewThreadComment
+	err            error
+	commentsErr    error
+	activitiesErr  error
 }
 
 type publishDone struct {
@@ -195,6 +199,8 @@ const (
 	editLocalSummary
 	editReviewBody
 	addInlineReviewComment
+	addRemoteComment
+	editRemoteComment
 )
 
 const (
@@ -278,14 +284,16 @@ type prRowCacheKey struct {
 }
 
 type conversationItem struct {
-	key      string
-	ts       string
-	summary  *string
-	pr       *gh.PR
-	event    *event.Event
-	comment  *gh.Comment
-	activity *gh.Activity
-	prCommit *gh.PRCommit
+	key           string
+	ts            string
+	summary       *string
+	pr            *gh.PR
+	event         *event.Event
+	comment       *gh.Comment
+	activity      *gh.Activity
+	prCommit      *gh.PRCommit
+	review        *gh.Review
+	reviewComment *gh.ReviewThreadComment
 }
 
 // Model holds the living-PR view state.
@@ -361,6 +369,8 @@ type Model struct {
 	localEditor               textarea.Model
 	localEditTarget           string
 	localEditError            string
+	remoteCommentID           int64
+	remoteCommentBusy         bool
 	localDeleteTarget         string
 	localDeleteTitle          string
 	reviewDraft               gh.ReviewDraft
@@ -703,7 +713,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.statusRunning || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
+	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.statusRunning || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {
@@ -775,7 +785,7 @@ func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 			number = pr.Number
 		}
 		detail := client.LoadPRDetail(number)
-		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr}
+		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, reviews: detail.Reviews, reviewComments: detail.ReviewComments, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr}
 	}
 }
 
@@ -912,6 +922,8 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		var headRef string
 		var comments []gh.Comment
 		var activities []gh.Activity
+		var reviews []gh.Review
+		var reviewComments []gh.ReviewThreadComment
 		var refErr, previewErr, commentsErr, activitiesErr, readinessErr error
 		var readiness git.MergeReadiness
 		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
@@ -925,6 +937,7 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 			defer wg.Done()
 			detail := client.LoadPRDetail(number)
 			comments, activities = detail.Comments, detail.Activities
+			reviews, reviewComments = detail.Reviews, detail.ReviewComments
 			previewErr, commentsErr, activitiesErr = detail.PreviewErr, detail.CommentsErr, detail.ActivitiesErr
 			if previewErr == nil {
 				pr = detail.PR
@@ -934,7 +947,7 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		if refErr == nil {
 			readiness, readinessErr = git.CheckMergeReadiness(git.ResolveBase(pr.BaseRefName), headRef)
 		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
 	}
 }
 

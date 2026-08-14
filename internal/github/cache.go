@@ -13,14 +13,16 @@ const CacheVersion = 1
 // Cache is branch-local mutable GitHub state. Remote resources intentionally
 // stay separate from the append-only local timeline.
 type Cache struct {
-	Version                      int        `json:"version"`
-	Head                         string     `json:"head,omitempty"`
-	PR                           *PR        `json:"pr,omitempty"`
-	ExplicitCheckout             bool       `json:"explicit_checkout,omitempty"`
-	Comments                     []Comment  `json:"comments,omitempty"`
-	Activities                   []Activity `json:"activities,omitempty"`
-	FetchedAt                    string     `json:"fetched_at,omitempty"`
-	LastPublishedManagedBodyHash string     `json:"last_published_managed_body_hash,omitempty"`
+	Version                      int                   `json:"version"`
+	Head                         string                `json:"head,omitempty"`
+	PR                           *PR                   `json:"pr,omitempty"`
+	ExplicitCheckout             bool                  `json:"explicit_checkout,omitempty"`
+	Comments                     []Comment             `json:"comments,omitempty"`
+	Activities                   []Activity            `json:"activities,omitempty"`
+	Reviews                      []Review              `json:"reviews,omitempty"`
+	ReviewComments               []ReviewThreadComment `json:"review_comments,omitempty"`
+	FetchedAt                    string                `json:"fetched_at,omitempty"`
+	LastPublishedManagedBodyHash string                `json:"last_published_managed_body_hash,omitempty"`
 }
 
 // NewCache returns an initialized empty cache.
