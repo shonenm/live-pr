@@ -374,6 +374,8 @@ type Model struct {
 	remoteCommentBusy         bool
 	localDeleteTarget         string
 	localDeleteTitle          string
+	remoteDeleteID            int64
+	remoteDeleteTitle         string
 	reviewDraft               gh.ReviewDraft
 	reviewDraftPath           string
 	reviewSubmitEvent         gh.ReviewEvent
@@ -1365,6 +1367,9 @@ func (m Model) View() string {
 	}
 	if m.localDeleteTarget != "" {
 		return overlayPopup(view, m.renderLocalDeletePopup(), m.w)
+	}
+	if m.remoteDeleteID > 0 {
+		return overlayPopup(view, m.renderRemoteDeletePopup(), m.w)
 	}
 	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
 		return overlayPopup(view, m.renderActionPopup(), m.w)
