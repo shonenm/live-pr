@@ -412,10 +412,11 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	m.prRowCache = map[prRowCacheKey][]string{}
 	m.githubStatus = "GitHub: CI updated now"
 	m.layout()
+	cmd := m.sync()
 	if prCIHealth(*m.cache.PR) == "pending" {
-		return m, scheduleCIPoll(msg.generation, msg.pr.Number, 0)
+		return m, tea.Batch(cmd, scheduleCIPoll(msg.generation, msg.pr.Number, 0))
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
