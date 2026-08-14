@@ -4,6 +4,8 @@ package tui
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1610,20 +1612,37 @@ func browserCommand(url string) *exec.Cmd {
 }
 
 func copyToClipboard(text string) error {
+	// Try native clipboard tools first (they work when a display is available).
+	if err := nativeClipboard(text); err == nil {
+		return nil
+	}
+	// Fall back to OSC 52, which writes to the terminal's clipboard over SSH
+	// and tmux without needing a display server.
+	return osc52Clipboard(text)
+}
+
+func nativeClipboard(text string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
 		cmd = exec.Command("pbcopy")
 	default:
-		// Try xclip first, fall back to xsel.
 		if _, err := exec.LookPath("xclip"); err == nil {
 			cmd = exec.Command("xclip", "-selection", "clipboard")
-		} else {
+		} else if _, err := exec.LookPath("xsel"); err == nil {
 			cmd = exec.Command("xsel", "--clipboard", "--input")
+		} else {
+			return errors.New("no clipboard tool")
 		}
 	}
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
+}
+
+func osc52Clipboard(text string) error {
+	encoded := base64.StdEncoding.EncodeToString([]byte(text))
+	_, err := fmt.Fprintf(os.Stderr, "\x1b]52;c;%s\x07", encoded)
+	return err
 }
 
 func shortTS(ts string) string { return strings.Replace(ts, "T", " ", 1) }
