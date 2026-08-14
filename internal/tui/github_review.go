@@ -82,6 +82,26 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 	return m, tea.Batch(fetchGitHub(m.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
 }
 
+func updatePRDescription(number int, head, body string, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		file, err := os.CreateTemp("", "live-pr-body-*.md")
+		if err != nil {
+			return remoteCommentDone{generation: generation, err: err}
+		}
+		name := file.Name()
+		defer os.Remove(name)
+		if _, err := file.WriteString(body); err != nil {
+			_ = file.Close()
+			return remoteCommentDone{generation: generation, err: err}
+		}
+		if err := file.Close(); err != nil {
+			return remoteCommentDone{generation: generation, err: err}
+		}
+		err = gh.New().UpdateBody(head, name)
+		return remoteCommentDone{generation: generation, edited: true, err: err}
+	}
+}
+
 func (m Model) startInlineReviewComment() (Model, tea.Cmd) {
 	if m.cache.PR == nil {
 		m.status = "inline review requires a GitHub PR"
