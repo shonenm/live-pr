@@ -409,7 +409,7 @@ type Model struct {
 	rawDetailCache    map[string]string
 	diffCache         map[string]string
 	diffPending       map[string]bool
-	checkedFiles      map[string]bool
+	checkedFiles      map[string]string
 
 	list     viewport.Model
 	explorer viewport.Model

@@ -5,6 +5,8 @@ package git
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -375,6 +377,10 @@ type ChangedFile struct {
 	Status  string
 	Path    string
 	OldPath string
+	// Fingerprint identifies this file's diff content. It changes only when
+	// this file's own diff changes, so reviewed marks survive commits that
+	// touch other files.
+	Fingerprint string
 }
 
 // ChangedFiles returns changed paths in base...HEAD order.
@@ -387,30 +393,53 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 	if head != "" {
 		rangeSpec = base + "..." + head
 	}
-	out, err := run("diff", "--name-status", "-z", "--end-of-options", rangeSpec)
+	// --raw carries the pre/post blob IDs alongside the status, which gives
+	// each file a diff fingerprint at no extra cost.
+	out, err := run("diff", "--raw", "-z", "--end-of-options", rangeSpec)
 	if err != nil {
 		return nil, err
 	}
 	parts := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
 	var files []ChangedFile
 	for i := 0; i < len(parts) && parts[i] != ""; {
-		status := parts[i]
+		meta := strings.Fields(strings.TrimPrefix(parts[i], ":"))
 		i++
-		if i >= len(parts) {
+		// :<srcmode> <dstmode> <srcblob> <dstblob> <status>
+		if len(meta) < 5 || i >= len(parts) {
 			break
 		}
+		srcBlob, dstBlob, status := meta[2], meta[3], meta[4]
+		file := ChangedFile{Status: status, Path: parts[i]}
+		i++
 		if strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C") {
-			if i+1 >= len(parts) {
+			if i >= len(parts) {
 				break
 			}
-			files = append(files, ChangedFile{Status: status, OldPath: parts[i], Path: parts[i+1]})
-			i += 2
-			continue
+			file.OldPath, file.Path = file.Path, parts[i]
+			i++
 		}
-		files = append(files, ChangedFile{Status: status, Path: parts[i]})
-		i++
+		file.Fingerprint = fileFingerprint(srcBlob, dstBlob, file.Path)
+		files = append(files, file)
 	}
 	return files, nil
+}
+
+// zeroBlob is git's null object ID, reported for the post-image of a file that
+// only exists in the working tree.
+const zeroBlob = "0000000000000000000000000000000000000000"
+
+// fileFingerprint identifies a file's diff content. Blob IDs alone cover
+// committed revisions; an uncommitted post-image has no blob, so the working
+// tree's content is hashed instead. An unreadable file (a deletion) keeps the
+// null ID, which is still stable for that state.
+func fileFingerprint(srcBlob, dstBlob, path string) string {
+	if strings.Trim(dstBlob, "0") == "" {
+		if data, err := os.ReadFile(path); err == nil {
+			sum := sha256.Sum256(data)
+			dstBlob = hex.EncodeToString(sum[:])
+		}
+	}
+	return srcBlob + ":" + dstBlob
 }
 
 // FileDiff returns the colorized base...HEAD patch for the selected paths.
