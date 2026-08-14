@@ -711,6 +711,15 @@ func (c Client) PostIssueComment(number int, body string) error {
 	return c.writeCommentBody("POST", fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments", number), body, "gh api post issue comment")
 }
 
+// DeleteIssueComment removes a conversation comment by its ID.
+func (c Client) DeleteIssueComment(id int64) error {
+	out, err := c.run("api", "--method", "DELETE", fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", id))
+	if err != nil {
+		return commandError("gh api delete issue comment", out, err)
+	}
+	return nil
+}
+
 // EditIssueComment updates an existing conversation comment by its ID.
 func (c Client) EditIssueComment(id int64, body string) error {
 	return c.writeCommentBody("PATCH", fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", id), body, "gh api edit issue comment")

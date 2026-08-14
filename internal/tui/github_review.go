@@ -43,6 +43,7 @@ func (m Model) startAddComment() (Model, tea.Cmd) {
 type remoteCommentDone struct {
 	generation uint64
 	edited     bool
+	deleted    bool
 	err        error
 }
 
@@ -69,9 +70,12 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 		m.status = "comment: " + msg.err.Error()
 		return m, nil
 	}
-	if msg.edited {
+	switch {
+	case msg.deleted:
+		m.notice = "Comment deleted"
+	case msg.edited:
 		m.notice = "Comment updated"
-	} else {
+	default:
 		m.notice = "Comment posted"
 	}
 	m.status = ""
@@ -80,6 +84,13 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 	}
 	m.targetGeneration++
 	return m, tea.Batch(fetchGitHub(m.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
+}
+
+func deleteRemoteComment(id int64, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		err := gh.New().DeleteIssueComment(id)
+		return remoteCommentDone{generation: generation, deleted: true, err: err}
+	}
 }
 
 func updatePRDescription(number int, head, body string, generation uint64) tea.Cmd {

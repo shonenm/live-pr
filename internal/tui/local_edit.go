@@ -89,11 +89,40 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 }
 
 func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
-	if m.remote || m.active != conversationTab || m.focusDiff || m.focusExplorer {
+	if m.active != conversationTab || m.focusDiff || m.focusExplorer {
 		return m, nil
 	}
 	item := m.selectedConversationItem()
-	if item == nil || item.event == nil || item.event.Kind == event.Commit {
+	if item == nil {
+		m.status = "select a comment to delete"
+		return m, nil
+	}
+	// GitHub issue comment: allow deleting your own.
+	if item.comment != nil {
+		if m.viewerLogin != "" && !strings.EqualFold(item.comment.User.Login, m.viewerLogin) {
+			m.status = "only your own GitHub comments can be deleted"
+			return m, nil
+		}
+		m.remoteDeleteID = item.comment.ID
+		m.remoteDeleteTitle = item.comment.Body
+		if len(m.remoteDeleteTitle) > 60 {
+			m.remoteDeleteTitle = m.remoteDeleteTitle[:60] + "…"
+		}
+		m.status = ""
+		return m, nil
+	}
+	if item.review != nil || item.reviewComment != nil {
+		m.status = "review comments cannot be deleted here; use GitHub"
+		return m, nil
+	}
+	if item.pr != nil || item.activity != nil || item.prCommit != nil {
+		m.status = "this item cannot be deleted"
+		return m, nil
+	}
+	if m.remote {
+		return m, nil
+	}
+	if item.event == nil || item.event.Kind == event.Commit {
 		m.status = "select a local comment to delete"
 		return m, nil
 	}
@@ -291,6 +320,22 @@ func (m Model) handleLocalOverlay(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.remoteDeleteID > 0 {
+		if !ok {
+			return m, nil
+		}
+		switch key.String() {
+		case "y":
+			id := m.remoteDeleteID
+			m.remoteDeleteID, m.remoteDeleteTitle = 0, ""
+			m.remoteCommentBusy = true
+			m.status = "deleting comment…"
+			return m, tea.Batch(deleteRemoteComment(id, m.targetGeneration), m.startSpinner())
+		case "n", "esc", "q":
+			m.remoteDeleteID, m.remoteDeleteTitle = 0, ""
+		}
+		return m, nil
+	}
 	if m.localEditMode == noLocalEdit {
 		return m, nil
 	}
@@ -350,4 +395,14 @@ func (m Model) renderLocalDeletePopup() string {
 		Padding(1, 3).
 		Width(max(24, min(60, m.w-14))).
 		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(m.localDeleteTitle) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
+}
+
+func (m Model) renderRemoteDeletePopup() string {
+	preview := strings.ReplaceAll(m.remoteDeleteTitle, "\n", " ")
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(cDangerEmphasis)).
+		Padding(1, 3).
+		Width(max(24, min(60, m.w-14))).
+		Render(stRedF.Bold(true).Render("Delete GitHub comment?") + "\n\n" + stFg.Render(preview) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
 }
