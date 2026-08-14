@@ -63,6 +63,30 @@ func Default() Config {
 	}
 }
 
+// ApplyDiffPreset overrides the diff section with a named preset or a raw
+// command string. Known presets: git, delta, codediff, codereview.
+func (c *Config) ApplyDiffPreset(name string) {
+	switch name {
+	case "git":
+		c.Diff.Command, c.Diff.CommitCommand, c.Diff.Display = "", "", ""
+	case "delta":
+		c.Diff.Command, c.Diff.CommitCommand = "", ""
+		c.Diff.Display = "delta --color-only --paging=never --line-numbers"
+	case "codediff":
+		c.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`
+		c.Diff.CommitCommand = `nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"`
+		c.Diff.Display = ""
+	case "codereview":
+		c.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`
+		c.Diff.CommitCommand = `nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"`
+		c.Diff.Display = ""
+	default:
+		c.Diff.Command = name
+		c.Diff.CommitCommand = ""
+		c.Diff.Display = ""
+	}
+}
+
 // CommitReviewCommand returns the embedded commit command, falling back to
 // the legacy reviewer template for existing configurations.
 func (c Config) CommitReviewCommand() string {
