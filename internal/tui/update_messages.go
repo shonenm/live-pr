@@ -282,6 +282,8 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 func (m Model) handleBrowserDone(msg browserDone) (Model, tea.Cmd) {
 	if msg.err != nil {
 		m.status = "browser: " + msg.err.Error()
+	} else if msg.copied {
+		m.notice = "URL copied to clipboard"
 	} else if strings.HasPrefix(m.status, "browser:") {
 		m.status = ""
 	}

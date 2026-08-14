@@ -2277,33 +2277,47 @@ func TestReviewFocusKeys(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	// Tab from conversation focuses the review.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
 	if !m.focusDiff {
-		t.Fatal("l should focus review")
+		t.Fatal("Tab should focus review")
 	}
 	footer := ansi.Strip(m.renderFooter())
-	if !strings.Contains(footer, "Tab full width") || strings.Contains(footer, "branch review") {
+	if !strings.Contains(footer, "Tab conversation") {
 		t.Fatalf("focused footer is misleading: %q", footer)
 	}
-	// Tab expands to full width and keeps the review focused.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	// Shift+Tab expands the review to full width.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
 	if !m.reviewWide || !m.focusDiff {
-		t.Fatal("Tab should make the review full width")
+		t.Fatal("Shift+Tab should make the review full width")
 	}
-	// Tab again restores the split, still focused on the review.
+	// Shift+Tab again restores the split.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if m.reviewWide {
+		t.Fatal("second Shift+Tab should restore the split")
+	}
+	// Tab from review returns to conversation.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if m.reviewWide || !m.focusDiff {
-		t.Fatal("second Tab should restore the split")
-	}
-	// q leaves the review entirely.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	m = u.(Model)
 	if m.focusDiff || m.reviewWide {
-		t.Fatalf("q should return to the conversation: focusDiff=%v reviewWide=%v", m.focusDiff, m.reviewWide)
+		t.Fatal("Tab from review should return to conversation")
 	}
+	// Shift+Tab from conversation expands conversation to full width.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if !m.reviewWide || m.focusDiff {
+		t.Fatal("Shift+Tab from conversation should expand conversation full width")
+	}
+	// Shift+Tab again restores the split.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if m.reviewWide {
+		t.Fatal("Shift+Tab should restore the split")
+	}
+	// q quits from conversation.
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
 		t.Fatal("q on the conversation should quit")
 	} else if _, ok := cmd().(tea.QuitMsg); !ok {

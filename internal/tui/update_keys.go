@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -212,11 +214,23 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.layout()
 		return m, m.applyPRViewState(selected)
 	}
+	// Tab cycles focus: conversation → review (→ explorer if available) → conversation.
 	if key.Matches(msg, m.keys.Focus) {
-		// Tab expands the review to full width (and focuses it), and toggles
-		// back to the split. q / Esc leaves the review entirely.
+		if m.focusDiff {
+			m.focusDiff, m.focusExplorer, m.reviewWide = false, false, false
+		} else {
+			m.focusDiff, m.focusExplorer = true, false
+		}
+		m.layout()
+		return m, m.sync()
+	}
+	// Shift-Tab toggles the focused pane to full width. From conversation it
+	// expands conversation; from review/explorer it expands the review side.
+	if isShiftTab(msg) {
 		m.reviewWide = !m.reviewWide
-		if m.reviewWide {
+		if m.reviewWide && !m.focusDiff && !m.focusExplorer {
+			m.focusDiff = false // conversation full-width: hide review
+		} else if m.reviewWide {
 			m.focusDiff, m.focusExplorer = true, false
 		}
 		m.layout()
@@ -228,19 +242,14 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.fileExplorerMode() && (m.focusDiff || m.focusExplorer) && key.Matches(msg, m.keys.FocusLeft) {
+	if (m.focusDiff || m.focusExplorer) && key.Matches(msg, m.keys.FocusLeft) {
 		m.focusDiff, m.focusExplorer, m.reviewWide = false, false, false
 		m.layout()
 		return m, m.sync()
 	}
-	if !m.fileExplorerMode() && !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
+	if !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
 		m.focusDiff = true
 		return m, nil
-	}
-	if !m.fileExplorerMode() && m.focusDiff && key.Matches(msg, m.keys.FocusLeft) {
-		m.focusDiff, m.reviewWide = false, false
-		m.layout()
-		return m, m.sync()
 	}
 	if key.Matches(msg, m.keys.AddComment) {
 		return m.startAddComment()
@@ -372,7 +381,15 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if url == "" {
 			return m, nil
 		}
-		return m, func() tea.Msg { return browserDone{err: openURL(url)} }
+		return m, func() tea.Msg {
+			if err := browserCommand(url).Run(); err == nil {
+				return browserDone{}
+			}
+			if clipErr := copyToClipboard(url); clipErr == nil {
+				return browserDone{copied: true}
+			}
+			return browserDone{err: errors.New("cannot open browser or copy URL")}
+		}
 	case key.Matches(msg, m.keys.Commits):
 		if m.fileExplorerMode() && m.focusExplorer {
 			return m, m.toggleFileCheck()

@@ -6,9 +6,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+func isShiftTab(msg tea.KeyMsg) bool {
+	return msg.Type == tea.KeyShiftTab || msg.String() == "shift+tab" || msg.String() == "backtab"
+}
+
 func reservedReviewKey(msg tea.Msg) bool {
 	keyMsg, ok := msg.(tea.KeyMsg)
-	return ok && (key.Matches(keyMsg, keys.FocusLeft) || key.Matches(keyMsg, keys.Focus))
+	return ok && (key.Matches(keyMsg, keys.FocusLeft) || key.Matches(keyMsg, keys.Focus) || isShiftTab(keyMsg))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

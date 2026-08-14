@@ -84,19 +84,17 @@ func (k keyMap) FullHelp() [][]key.Binding {
 }
 
 var keys = keyMap{
-	Up:          key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
-	Down:        key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	PreviewUp:   key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "page up")),
-	PreviewDown: key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
-	Top:         key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
-	Bottom:      key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
-	PrevView:    key.NewBinding(key.WithKeys("[", "h"), key.WithHelp("h/[", "previous view")),
-	NextView:    key.NewBinding(key.WithKeys("]", "l"), key.WithHelp("l/]", "next view")),
-	Filter:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	ToggleStack: key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
-	// Tab toggles the full-width review. shift+tab (backtab / CSI Z) is
-	// unreliable over SSH and tmux, so Tab is the primary key.
-	Focus:        key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "toggle full review")),
+	Up:           key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
+	Down:         key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
+	PreviewUp:    key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "page up")),
+	PreviewDown:  key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "page down")),
+	Top:          key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "top")),
+	Bottom:       key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
+	PrevView:     key.NewBinding(key.WithKeys("[", "h"), key.WithHelp("h/[", "previous view")),
+	NextView:     key.NewBinding(key.WithKeys("]", "l"), key.WithHelp("l/]", "next view")),
+	Filter:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	ToggleStack:  key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
+	Focus:        key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "move focus")),
 	FocusRight:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
 	FocusLeft:    key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
 	Commits:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commits")),
@@ -186,7 +184,10 @@ type publishDone struct {
 	err        error
 }
 
-type browserDone struct{ err error }
+type browserDone struct {
+	err    error
+	copied bool
+}
 
 type prAction uint8
 
@@ -1042,7 +1043,10 @@ func (m *Model) layout() {
 		minPaneW = max(8, m.w/2)
 	}
 	var leftPaneW, rightPaneW int
-	if m.reviewWide {
+	conversationWide := m.reviewWide && !m.focusDiff && !m.focusExplorer
+	if conversationWide {
+		leftPaneW, rightPaneW = m.w, 0
+	} else if m.reviewWide {
 		leftPaneW, rightPaneW = 0, m.w
 	} else {
 		leftPaneW = max(minPaneW, m.w*ratio/100)
@@ -1182,6 +1186,12 @@ func (m Model) navigationCursor() int {
 }
 
 func (m Model) selectedBrowseURL() string {
+	if m.screen == prListScreen {
+		if pr := m.selectedPR(); pr != nil && pr.URL != "" {
+			return pr.URL
+		}
+		return ""
+	}
 	if m.active != conversationTab {
 		return ""
 	}
@@ -1229,7 +1239,7 @@ func (m *Model) sync() tea.Cmd {
 		m.keys.Checks.SetEnabled(false)
 		m.keys.Back.SetEnabled(false)
 		m.keys.PRList.SetEnabled(false)
-		m.keys.Browse.SetEnabled(false)
+		m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
 		m.keys.Publish.SetEnabled(false)
 		pr := m.selectedPR()
 		m.keys.Merge.SetEnabled(m.prListState == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && m.prActionRunning == noPRAction)
@@ -1310,9 +1320,17 @@ func (m Model) View() string {
 			}
 			leftTitle = fmt.Sprintf("Checks · %d", count)
 		}
-		if m.reviewWide {
+		if m.reviewWide && m.focusDiff {
 			body := m.renderReviewPane()
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
+		} else if m.reviewWide && !m.focusDiff {
+			leftContent := m.list.View()
+			if m.active == conversationTab {
+				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
+			}
+			height := max(3, m.h-m.headerHeight()-footerLines)
+			left := renderPane(leftTitle, leftContent, m.w, height, true)
+			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), left, m.renderFooter())
 		} else {
 			leftContent := m.list.View()
 			if m.active == conversationTab {
@@ -1499,7 +1517,7 @@ func (m Model) footerContent() string {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}
 	if m.focusDiff {
-		hint := stMuted.Render("Review focused · Tab full width · q conversation")
+		hint := stMuted.Render("Review focused · Tab conversation · Shift+Tab full width · q back")
 		if m.githubStatus != "" {
 			return stMuted.Render(m.githubStatus) + "  " + hint
 		}
@@ -1573,7 +1591,22 @@ func browserCommand(url string) *exec.Cmd {
 	}
 }
 
-func openURL(url string) error { return browserCommand(url).Run() }
+func copyToClipboard(text string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	default:
+		// Try xclip first, fall back to xsel.
+		if _, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		} else {
+			cmd = exec.Command("xsel", "--clipboard", "--input")
+		}
+	}
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
+}
 
 func shortTS(ts string) string { return strings.Replace(ts, "T", " ", 1) }
 
