@@ -23,8 +23,17 @@ func prStatusActionLabel(option string) string {
 	return strings.ToUpper(option[:1]) + option[1:]
 }
 
+// availablePRStatusOptions returns only the status transitions that make sense
+// from the PR's current state. A merged PR is terminal; a closed PR can only be
+// reopened; an open/draft PR can move between the remaining states.
 func availablePRStatusOptions(pr gh.PR) []string {
-	current := strings.ToLower(pr.State)
+	if strings.EqualFold(pr.State, "MERGED") {
+		return nil
+	}
+	if strings.EqualFold(pr.State, "CLOSED") {
+		return []string{"open"}
+	}
+	current := "open"
 	if pr.IsDraft {
 		current = "draft"
 	}
@@ -66,9 +75,13 @@ func (m Model) handlePRStatusKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	options := availablePRStatusOptions(m.statusPR)
 	switch msg.String() {
 	case "up", "k":
-		m.statusCursor = (m.statusCursor + len(options) - 1) % len(options)
+		if len(options) > 0 {
+			m.statusCursor = (m.statusCursor + len(options) - 1) % len(options)
+		}
 	case "down", "j":
-		m.statusCursor = (m.statusCursor + 1) % len(options)
+		if len(options) > 0 {
+			m.statusCursor = (m.statusCursor + 1) % len(options)
+		}
 	case "o":
 		return m.submitPRStatusTarget("open", options)
 	case "c":
@@ -84,7 +97,11 @@ func (m Model) handlePRStatusKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) submitPRStatus() (Model, tea.Cmd) {
-	return m.submitPRStatusTarget(availablePRStatusOptions(m.statusPR)[m.statusCursor], nil)
+	options := availablePRStatusOptions(m.statusPR)
+	if m.statusCursor < 0 || m.statusCursor >= len(options) {
+		return m, nil
+	}
+	return m.submitPRStatusTarget(options[m.statusCursor], nil)
 }
 
 func (m Model) submitPRStatusTarget(target string, options []string) (Model, tea.Cmd) {
