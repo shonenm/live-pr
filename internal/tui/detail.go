@@ -204,7 +204,7 @@ func (m Model) buildFileExplorer() (string, int) {
 			selectedLine = len(lines)
 		}
 		mark := stMuted.Render("□")
-		if m.checkedFiles[m.fileKey(file)] {
+		if m.fileChecked(file) {
 			mark = stGreenF.Render("✓")
 		}
 		path := file.Path
@@ -244,8 +244,13 @@ func (m Model) selectedFile() *git.ChangedFile {
 	return &m.files[m.fileCursor]
 }
 
-func (m Model) fileKey(file git.ChangedFile) string {
-	return m.diffBase + "..." + m.headRev + "\x00" + file.Status + "\x00" + file.OldPath + "\x00" + file.Path
+// fileChecked reports whether the file is still marked reviewed. Marks are
+// keyed by path and remember the diff fingerprint they were made against, so a
+// new commit only clears the files whose own diff changed — like GitHub's
+// "viewed" state, which a commit elsewhere in the PR leaves alone.
+func (m Model) fileChecked(file git.ChangedFile) bool {
+	mark, ok := m.checkedFiles[file.Path]
+	return ok && mark == file.Fingerprint
 }
 
 func (m Model) fileExplorerMode() bool {
@@ -258,14 +263,14 @@ func (m *Model) toggleFileCheck() tea.Cmd {
 		return nil
 	}
 	if m.checkedFiles == nil {
-		m.checkedFiles = map[string]bool{}
+		m.checkedFiles = map[string]string{}
 	}
-	key := m.fileKey(*file)
-	m.checkedFiles[key] = !m.checkedFiles[key]
-	if m.checkedFiles[key] {
-		m.notice = "checked " + file.Path
-	} else {
+	if m.fileChecked(*file) {
+		delete(m.checkedFiles, file.Path)
 		m.notice = "unchecked " + file.Path
+	} else {
+		m.checkedFiles[file.Path] = file.Fingerprint
+		m.notice = "checked " + file.Path
 	}
 	return m.sync()
 }

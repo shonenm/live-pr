@@ -312,3 +312,123 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 		t.Fatalf("explicit commits = %#v, err=%v", commits, err)
 	}
 }
+
+// gitRepo creates a temp repository, chdir's into it, and returns a git runner.
+func gitRepo(t *testing.T) func(args ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+	return run
+}
+
+func TestChangedFilesRangeFingerprints(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	for _, name := range []string{"kept.go", "edited.go", "renamed.go"} {
+		if err := os.WriteFile(name, []byte("package a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	run("switch", "-c", "feature")
+	if err := os.WriteFile("kept.go", []byte("package a\n// kept\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("edited.go", []byte("package a\n// first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("mv", "renamed.go", "moved.go")
+	run("commit", "-am", "first")
+
+	before, err := ChangedFilesRange("main", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprints := map[string]string{}
+	for _, f := range before {
+		if f.Fingerprint == "" {
+			t.Fatalf("%s has no fingerprint: %#v", f.Path, f)
+		}
+		fingerprints[f.Path] = f.Fingerprint
+	}
+	if len(fingerprints) != 3 {
+		t.Fatalf("changed files = %#v", before)
+	}
+	for _, f := range before {
+		if f.Path == "moved.go" && f.OldPath != "renamed.go" {
+			t.Fatalf("rename lost its old path: %#v", f)
+		}
+	}
+
+	// A second commit touches only edited.go.
+	if err := os.WriteFile("edited.go", []byte("package a\n// second\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "second")
+	after, err := ChangedFilesRange("main", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range after {
+		switch f.Path {
+		case "edited.go":
+			if f.Fingerprint == fingerprints[f.Path] {
+				t.Error("edited.go kept its fingerprint after its content changed")
+			}
+		default:
+			if f.Fingerprint != fingerprints[f.Path] {
+				t.Errorf("%s changed fingerprint despite an untouched diff", f.Path)
+			}
+		}
+	}
+}
+
+func TestChangedFilesRangeHashesWorkingTree(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("f.go", []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+
+	// Uncommitted edits have no post-image blob, so the fingerprint must come
+	// from the file's content and still track further edits.
+	if err := os.WriteFile("f.go", []byte("package a\n// one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first, err := ChangedFilesRange("HEAD", "")
+	if err != nil || len(first) != 1 {
+		t.Fatalf("changed files = %#v err=%v", first, err)
+	}
+	if err := os.WriteFile("f.go", []byte("package a\n// two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := ChangedFilesRange("HEAD", "")
+	if err != nil || len(second) != 1 {
+		t.Fatalf("changed files = %#v err=%v", second, err)
+	}
+	if first[0].Fingerprint == second[0].Fingerprint {
+		t.Fatal("working-tree edits produced the same fingerprint")
+	}
+}

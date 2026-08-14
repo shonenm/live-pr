@@ -211,7 +211,7 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
-	if !m.checkedFiles[m.fileKey(m.files[m.fileCursor])] {
+	if !m.fileChecked(m.files[m.fileCursor]) {
 		t.Fatal("c did not check the selected file from Diff")
 	}
 }
@@ -2493,5 +2493,39 @@ func TestMultiplePRsSameBranchSelectByNumber(t *testing.T) {
 	// PR #20 shares the same branch but has a different number → not current target.
 	if m.isCurrentTargetPR(pr20) {
 		t.Fatal("PR #20 should NOT be the current target when #10 is loaded")
+	}
+}
+
+// A new commit changes the review range and the head revision, but GitHub only
+// clears "viewed" for files whose own diff changed. Marks are therefore keyed
+// by path and validated against the file's diff fingerprint.
+func TestReviewedMarksSurviveCommitsThatTouchOtherFiles(t *testing.T) {
+	m := testModel()
+	m.files = []git.ChangedFile{
+		{Status: "M", Path: "kept.go", Fingerprint: "aaa:bbb"},
+		{Status: "M", Path: "edited.go", Fingerprint: "ccc:ddd"},
+	}
+	m.fileCursor = 0
+	m.toggleFileCheck()
+	m.fileCursor = 1
+	m.toggleFileCheck()
+	for _, file := range m.files {
+		if !m.fileChecked(file) {
+			t.Fatalf("%s was not checked", file.Path)
+		}
+	}
+
+	// A commit lands: the range moves and edited.go's diff changes, while
+	// kept.go's diff is untouched.
+	m.diffBase, m.headRev = "newbase", "newhead"
+	m.files = []git.ChangedFile{
+		{Status: "M", Path: "kept.go", Fingerprint: "aaa:bbb"},
+		{Status: "M", Path: "edited.go", Fingerprint: "ccc:eee"},
+	}
+	if !m.fileChecked(m.files[0]) {
+		t.Error("kept.go lost its reviewed mark even though its diff is unchanged")
+	}
+	if m.fileChecked(m.files[1]) {
+		t.Error("edited.go stayed reviewed even though its diff changed")
 	}
 }
