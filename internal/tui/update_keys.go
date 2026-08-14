@@ -242,11 +242,6 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if (m.focusDiff || m.focusExplorer) && key.Matches(msg, m.keys.FocusLeft) {
-		m.focusDiff, m.focusExplorer, m.reviewWide = false, false, false
-		m.layout()
-		return m, m.sync()
-	}
 	if !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
 		m.focusDiff = true
 		return m, nil
@@ -267,6 +262,9 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.deleteSelectedLocalComment()
 	}
 	if m.focusDiff {
+		if key.Matches(msg, m.keys.Quit) {
+			return m, tea.Quit
+		}
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			return m, m.diffTerminal.Update(msg)
 		}

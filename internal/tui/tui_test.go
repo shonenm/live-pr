@@ -241,14 +241,10 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 	if m.focusDiff || !m.focusExplorer {
 		t.Fatalf("second l focus = diff:%v explorer:%v", m.focusDiff, m.focusExplorer)
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	m = u.(Model)
-	if m.focusDiff || m.focusExplorer {
-		t.Fatal("q did not return focus to Conversation")
-	}
+	// q from the explorer should quit (Tab cycles focus instead).
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	if cmd == nil {
-		t.Fatal("q from Conversation should quit")
+		t.Fatal("q from explorer should quit")
 	}
 }
 
@@ -2335,10 +2331,10 @@ func TestStaticReviewFocusKeys(t *testing.T) {
 	if !m.focusDiff {
 		t.Fatal("l should focus the static review fallback")
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	m = u.(Model)
-	if m.focusDiff {
-		t.Fatal("q should return from the static review fallback")
+	// q from the review should quit (not return to conversation — use Tab).
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("q from the focused review should quit")
 	}
 }
 
