@@ -64,8 +64,12 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 		return m, nil
 	}
 	if item.pr != nil {
-		m.status = "edit the PR description on GitHub"
-		return m, nil
+		if m.cache.PR == nil || m.cache.PR.Number <= 0 {
+			m.status = "no PR to edit"
+			return m, nil
+		}
+		m.remoteCommentID = 0
+		return m.openLocalEditor(editRemoteComment, item.pr.Body, "pr-description")
 	}
 	if item.activity != nil || item.prCommit != nil {
 		m.status = "activity and CI events are not editable"
@@ -131,6 +135,21 @@ func parseLocalComment(value string, allowSummary bool) (event.Kind, string, str
 func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 	// GitHub conversation comments are posted/edited over the network, so they
 	// return early with an async command instead of the local save path below.
+	// PR description edit: update title + body via gh pr edit.
+	if m.localEditMode == editRemoteComment && m.localEditTarget == "pr-description" {
+		body := m.localEditor.Value()
+		if m.cache.PR == nil {
+			m.localEditError = "no pull request"
+			return m, nil
+		}
+		number := m.cache.PR.Number
+		m.localEditor.Blur()
+		m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
+		m.remoteCommentBusy = true
+		m.status = "updating PR description…"
+		gen := m.targetGeneration
+		return m, tea.Batch(updatePRDescription(number, m.head, body, gen), m.startSpinner())
+	}
 	if m.localEditMode == addRemoteComment || m.localEditMode == editRemoteComment {
 		body := strings.TrimSpace(m.localEditor.Value())
 		if body == "" {
@@ -307,7 +326,9 @@ func (m Model) renderLocalEditorPopup() string {
 	if m.localEditMode == addRemoteComment {
 		title, hint = "Add comment", "posts a GitHub conversation comment"
 	}
-	if m.localEditMode == editRemoteComment {
+	if m.localEditMode == editRemoteComment && m.localEditTarget == "pr-description" {
+		title, hint = "Edit PR description", "updates the pull request body on GitHub"
+	} else if m.localEditMode == editRemoteComment {
 		title, hint = "Edit comment", "updates your GitHub conversation comment"
 	}
 	lines := []string{stBold.Render(title), stMuted.Render(hint), "", m.localEditor.View()}
