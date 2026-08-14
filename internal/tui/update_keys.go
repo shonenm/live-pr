@@ -214,7 +214,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.layout()
 		return m, m.applyPRViewState(selected)
 	}
-	// Tab cycles focus: conversation → review (→ explorer if available) → conversation.
+	// Tab cycles focus: conversation → review → conversation.
 	if key.Matches(msg, m.keys.Focus) {
 		if m.focusDiff {
 			m.focusDiff, m.focusExplorer, m.reviewWide = false, false, false
@@ -246,20 +246,24 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.focusDiff = true
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.AddComment) {
-		return m.startAddComment()
-	}
-	if key.Matches(msg, m.keys.InlineReview) {
-		return m.startInlineReviewComment()
-	}
-	if key.Matches(msg, m.keys.Review) {
-		return m.openReviewSubmit()
-	}
-	if key.Matches(msg, m.keys.EditLocal) {
-		return m.editSelectedLocalItem()
-	}
-	if key.Matches(msg, m.keys.DeleteLocal) {
-		return m.deleteSelectedLocalComment()
+	// Comment/review/edit keys only apply when the conversation pane is focused;
+	// when the embedded reviewer (nvim) has focus, forward them to the terminal.
+	if !m.focusDiff && !m.focusExplorer {
+		if key.Matches(msg, m.keys.AddComment) {
+			return m.startAddComment()
+		}
+		if key.Matches(msg, m.keys.InlineReview) {
+			return m.startInlineReviewComment()
+		}
+		if key.Matches(msg, m.keys.Review) {
+			return m.openReviewSubmit()
+		}
+		if key.Matches(msg, m.keys.EditLocal) {
+			return m.editSelectedLocalItem()
+		}
+		if key.Matches(msg, m.keys.DeleteLocal) {
+			return m.deleteSelectedLocalComment()
+		}
 	}
 	if m.focusDiff {
 		if key.Matches(msg, m.keys.Quit) {
