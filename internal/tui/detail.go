@@ -321,7 +321,11 @@ func (m Model) buildConflicts() (string, int) {
 		offset = 2
 	}
 	for i, path := range m.mergeReadiness.ConflictFiles {
-		lines = append(lines, selectionBar(i == m.cursors[conflictsTab])+stRedF.Render("⚠ ")+stFg.Render(path))
+		line := stRedF.Render("⚠ ") + stFg.Render(path)
+		if i == m.cursors[conflictsTab] {
+			line = highlightSelectedBg(line, m.list.Width)
+		}
+		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), m.cursors[conflictsTab] + offset
 }
@@ -366,12 +370,15 @@ func (m Model) buildChecks() (string, int) {
 		if state == "" {
 			state = check.State
 		}
-		line := selectionBar(i == m.cursors[checksTab]) + style.Render(icon) + " " + stFg.Render(name) + workflow
+		line := style.Render(icon) + " " + stFg.Render(name) + workflow
 		if state != "" {
 			line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
 		}
 		if dur := checkDuration(check); dur != "" {
 			line += stMuted.Render(" · " + dur)
+		}
+		if i == m.cursors[checksTab] {
+			line = highlightSelectedBg(line, m.list.Width)
 		}
 		lines = append(lines, line)
 	}
@@ -420,7 +427,10 @@ func (m Model) buildCommits() (string, int) {
 		if m.cache.PR != nil {
 			icon, _, style = commitCIStatus(ciStates[c.SHA])
 		}
-		line := selectionBar(i == m.cursors[commitsTab]) + style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+shortTS(c.Date))
+		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+shortTS(c.Date))
+		if i == m.cursors[commitsTab] {
+			line = highlightSelectedBg(line, m.list.Width)
+		}
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), m.cursors[commitsTab]
