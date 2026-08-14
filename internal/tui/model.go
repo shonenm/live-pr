@@ -697,10 +697,34 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 }
 
 // Run launches the TUI.
-func Run(version ...string) error {
-	m, err := New(version...)
+// Option configures the TUI before launch.
+type Option func(*Model)
+
+// WithDiff overrides the diff viewer by preset name or command.
+func WithDiff(name string) Option {
+	return func(m *Model) {
+		if name == "" {
+			return
+		}
+		cfg := config.Config{Diff: config.DiffConfig{
+			Command:       m.diffCommand,
+			CommitCommand: m.diffCommitCommand,
+			Display:       m.diffDisplay,
+		}}
+		cfg.ApplyDiffPreset(name)
+		m.diffCommand = cfg.Diff.Command
+		m.diffCommitCommand = cfg.Diff.CommitCommand
+		m.diffDisplay = cfg.Diff.Display
+	}
+}
+
+func Run(version string, opts ...Option) error {
+	m, err := New(version)
 	if err != nil {
 		return err
+	}
+	for _, opt := range opts {
+		opt(&m)
 	}
 	final, runErr := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	if model, ok := final.(Model); ok {

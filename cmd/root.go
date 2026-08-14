@@ -27,13 +27,15 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	// No subcommand → open the TUI for the current branch.
-	RunE: func(_ *cobra.Command, _ []string) error {
-		return tui.Run(version)
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		diff, _ := cmd.Flags().GetString("diff")
+		return tui.Run(version, tui.WithDiff(diff))
 	},
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringP("cwd", "C", "", "run as if started in this directory")
+	rootCmd.Flags().String("diff", "", "diff viewer: git, delta, codediff, codereview, or a command")
 }
 
 // Execute runs the root command.
