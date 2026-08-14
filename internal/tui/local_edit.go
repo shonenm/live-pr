@@ -341,7 +341,7 @@ func (m Model) handleLocalOverlay(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	if ok {
 		switch key.String() {
-		case "ctrl+s":
+		case "ctrl+s", "ctrl+enter":
 			return m.saveLocalEdit()
 		case "esc":
 			m.localEditor.Blur()
@@ -380,7 +380,7 @@ func (m Model) renderLocalEditorPopup() string {
 	if m.localEditError != "" {
 		lines = append(lines, "", stRedF.Render(m.localEditError))
 	}
-	lines = append(lines, "", stMuted.Render("Ctrl+S save · Esc cancel"))
+	lines = append(lines, "", stMuted.Render("Ctrl+Enter send · Esc cancel"))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAccent)).
