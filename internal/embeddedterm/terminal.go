@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	portalis "github.com/Starframe/portalis"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/shonenm/live-pr/internal/clipboard"
 )
 
 // Terminal embeds one interactive process and its VT screen.
@@ -22,6 +24,7 @@ type Terminal struct {
 	exited    bool
 	closed    bool
 	err       error
+	osc52     osc52Scanner
 }
 
 // New prepares command for execution in cwd. Environment values are appended
@@ -115,9 +118,18 @@ func (t *Terminal) Update(msg tea.Msg) tea.Cmd {
 	}
 	cmd := t.emulator.Update(msg)
 	if output, ok := msg.(portalis.PtyOutputMsg); ok && output.SessionID == t.sessionID {
+		t.copyClipboardWrites(output.Data)
 		t.drainOutput()
 	}
 	return cmd
+}
+
+// copyClipboardWrites honors OSC 52 from the embedded process. The emulator
+// only interprets OSC 7, so a reviewer's yank would otherwise go nowhere.
+func (t *Terminal) copyClipboardWrites(data []byte) {
+	for _, text := range t.osc52.scan(data) {
+		_ = clipboard.Write(text)
+	}
 }
 
 // drainOutput applies a small burst of already-buffered PTY output before the
@@ -134,6 +146,7 @@ func (t *Terminal) drainOutput() {
 			if len(data) == 0 {
 				return
 			}
+			t.copyClipboardWrites(data)
 			t.emulator.Update(portalis.PtyOutputMsg{SessionID: t.sessionID, Data: data})
 		default:
 			return
