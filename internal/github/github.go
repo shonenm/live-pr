@@ -289,27 +289,57 @@ func (c Client) FindOpen(head string) (PR, error) {
 }
 
 // FindForHead prefers an open PR, then returns the newest PR in any state.
+// When multiple PRs share the same head branch, the newest (highest number) wins.
 func (c Client) FindForHead(head string) (PR, error) {
-	pr, err := c.FindOpen(head)
-	if !errors.Is(err, ErrPRNotFound) {
-		return pr, err
+	prs, err := c.findAllHead(head, "open")
+	if err != nil && !errors.Is(err, ErrPRNotFound) {
+		return PR{}, err
 	}
-	return c.findHead(head, "all")
+	if len(prs) == 0 {
+		prs, err = c.findAllHead(head, "all")
+		if err != nil {
+			return PR{}, err
+		}
+	}
+	return newestPR(prs), nil
 }
 
-func (c Client) findHead(head, state string) (PR, error) {
-	out, err := c.run("pr", "list", "--head", head, "--state", state, "--limit", "1", "--json", prFields)
+// FindAllForHead returns every PR (any state) whose head is the given branch.
+func (c Client) FindAllForHead(head string) ([]PR, error) {
+	return c.findAllHead(head, "all")
+}
+
+func (c Client) findAllHead(head, state string) ([]PR, error) {
+	out, err := c.run("pr", "list", "--head", head, "--state", state, "--json", prFields)
 	if err != nil {
-		return PR{}, commandError("gh pr list", out, err)
+		return nil, commandError("gh pr list", out, err)
 	}
 	var prs []PR
 	if err := json.Unmarshal(out, &prs); err != nil {
-		return PR{}, fmt.Errorf("decode gh pr list: %w", err)
+		return nil, fmt.Errorf("decode gh pr list: %w", err)
 	}
 	if len(prs) == 0 {
-		return PR{}, ErrPRNotFound
+		return nil, ErrPRNotFound
 	}
-	return prs[0], nil
+	return prs, nil
+}
+
+func newestPR(prs []PR) PR {
+	best := prs[0]
+	for _, pr := range prs[1:] {
+		if pr.Number > best.Number {
+			best = pr
+		}
+	}
+	return best
+}
+
+func (c Client) findHead(head, state string) (PR, error) {
+	prs, err := c.findAllHead(head, state)
+	if err != nil {
+		return PR{}, err
+	}
+	return newestPR(prs), nil
 }
 
 // SearchPRs returns exactly one page. Callers decide when to request PageInfo.EndCursor.
