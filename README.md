@@ -12,6 +12,8 @@ Capture the **decision / iteration timeline** of an AI coding session — not ju
 the final diff — in a local, GitHub-PR-style TUI, and export it to a real pull
 request that reflects that timeline.
 
+![demo](assets/demo.gif)
+
 ## Why
 
 A GitHub PR records only the compressed *final* conclusion. The actual
