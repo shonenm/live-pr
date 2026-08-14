@@ -78,6 +78,8 @@ type PRCheck struct {
 	Conclusion   string `json:"conclusion,omitempty"`
 	State        string `json:"state,omitempty"`
 	WorkflowName string `json:"workflowName,omitempty"`
+	StartedAt    string `json:"startedAt,omitempty"`
+	CompletedAt  string `json:"completedAt,omitempty"`
 }
 
 // PRUser is a GitHub account attached to PR metadata.
