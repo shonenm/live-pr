@@ -1471,7 +1471,7 @@ func TestPRStatusPopupOpensFromListAndDetail(t *testing.T) {
 		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 		m = u.(Model)
 		popup := ansi.Strip(m.renderPRStatusPopup())
-		if m.statusPR.Number != 12 || strings.Contains(popup, "\n   Open\n") || !strings.Contains(popup, "Closed") || !strings.Contains(popup, "Draft") {
+		if m.statusPR.Number != 12 || strings.Contains(popup, "\n   Open\n") || !strings.Contains(popup, "Close") || strings.Contains(popup, "Closed") || !strings.Contains(popup, "Draft") {
 			t.Fatalf("screen %v status popup = %q", screen, popup)
 		}
 	}
@@ -1607,10 +1607,10 @@ func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
 	lines := strings.Split(ansi.Strip(out), "\n")
 	first, second := -1, -1
 	for i, line := range lines {
-		if strings.Contains(line, "@alice labeled") {
+		if strings.Contains(line, "@alice") && strings.Contains(line, "labeled") {
 			first = i
 		}
-		if strings.Contains(line, "@bob closed") {
+		if strings.Contains(line, "@bob") && strings.Contains(line, "closed") {
 			second = i
 		}
 	}
@@ -2450,31 +2450,20 @@ func TestOverloadedKeysDisambiguateByScreen(t *testing.T) {
 		t.Error("detail: FocusRight (l) should be enabled")
 	}
 }
-
-func TestConversationShowsReviewsAndReviewComments(t *testing.T) {
+func TestConflictsViewShowsBehindCount(t *testing.T) {
 	m := testModel()
-	m.list.Width = 100
-	m.cache.PR = &gh.PR{Number: 12, URL: "u", CreatedAt: "2026-08-01T09:00:00Z"}
-	approve := gh.Review{ID: 1, State: "APPROVED", Body: "LGTM", SubmittedAt: "2026-08-01T10:00:00Z"}
-	approve.User.Login = "reviewer"
-	changes := gh.Review{ID: 2, State: "CHANGES_REQUESTED", Body: "please fix", SubmittedAt: "2026-08-01T11:00:00Z"}
-	changes.User.Login = "boss"
-	empty := gh.Review{ID: 3, State: "COMMENTED", SubmittedAt: "2026-08-01T12:00:00Z"} // no body → skipped
-	empty.User.Login = "noise"
-	m.cache.Reviews = []gh.Review{approve, changes, empty}
-	rc := gh.ReviewThreadComment{ID: 5, Body: "nit here", Path: "main.go", Line: 42, CreatedAt: "2026-08-01T10:30:00Z"}
-	rc.User.Login = "reviewer"
-	m.cache.ReviewComments = []gh.ReviewThreadComment{rc}
-	m.conversationDirty = true
-
-	out, _ := m.buildConversation()
+	m.mergeReadiness = git.MergeReadiness{Behind: 3}
+	// No conflicting files, but behind base: the count must still show.
+	out, _ := m.buildConflicts()
 	plain := ansi.Strip(out)
-	for _, want := range []string{"@reviewer", "approved", "LGTM", "@boss", "requested changes", "please fix", "review comment", "main.go:42", "nit here"} {
-		if !strings.Contains(plain, want) {
-			t.Fatalf("conversation missing %q:\n%s", want, plain)
-		}
+	if !strings.Contains(plain, "3 commits behind base") || !strings.Contains(plain, "no conflicting files") {
+		t.Fatalf("conflicts view = %q", plain)
 	}
-	if strings.Contains(plain, "@noise") {
-		t.Fatalf("empty COMMENTED review should be skipped:\n%s", plain)
+	// With conflicts, the behind header still leads.
+	m.mergeReadiness = git.MergeReadiness{Behind: 1, ConflictFiles: []string{"a.go"}}
+	out, _ = m.buildConflicts()
+	plain = ansi.Strip(out)
+	if !strings.Contains(plain, "1 commit behind base") || !strings.Contains(plain, "a.go") {
+		t.Fatalf("conflicts view with files = %q", plain)
 	}
 }

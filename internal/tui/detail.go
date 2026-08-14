@@ -280,17 +280,30 @@ func applyGitHubConflictFallback(readiness git.MergeReadiness, err error, pr gh.
 }
 
 func (m Model) buildConflicts() (string, int) {
-	if len(m.mergeReadiness.ConflictFiles) == 0 {
-		if m.mergeReadinessErr != nil {
-			return stMuted.Render("(conflict status unavailable)"), 0
-		}
-		return stGreenF.Render("✓ no conflicting files"), 0
+	// Lead with base freshness so "behind by N commits" is visible whether or
+	// not there are content conflicts (GitHub's "out-of-date with base").
+	var header string
+	switch {
+	case m.mergeReadiness.Behind > 0:
+		header = stAttention.Render(fmt.Sprintf("⚠ out of date · %d commit%s behind base", m.mergeReadiness.Behind, plural(m.mergeReadiness.Behind)))
+	case m.mergeReadinessErr != nil:
+		header = stMuted.Render("base freshness unavailable")
+	default:
+		header = stGreenF.Render("✓ up to date with base")
 	}
-	lines := make([]string, 0, len(m.mergeReadiness.ConflictFiles))
+	if len(m.mergeReadiness.ConflictFiles) == 0 {
+		conflicts := stGreenF.Render("✓ no conflicting files")
+		if m.mergeReadinessErr != nil {
+			conflicts = stMuted.Render("(conflict status unavailable)")
+		}
+		return header + "\n\n" + conflicts, 0
+	}
+	lines := make([]string, 0, len(m.mergeReadiness.ConflictFiles)+2)
+	lines = append(lines, header, "")
 	for i, path := range m.mergeReadiness.ConflictFiles {
 		lines = append(lines, selectionBar(i == m.cursors[conflictsTab])+stRedF.Render("⚠ ")+stFg.Render(path))
 	}
-	return strings.Join(lines, "\n"), m.cursors[conflictsTab]
+	return strings.Join(lines, "\n"), m.cursors[conflictsTab] + 2
 }
 
 func (m Model) buildChecks() (string, int) {
