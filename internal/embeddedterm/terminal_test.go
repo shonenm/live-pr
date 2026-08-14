@@ -208,3 +208,40 @@ func TestReplacementRejectsOldTerminalMessages(t *testing.T) {
 		t.Fatal("replacement accepted old terminal exit")
 	}
 }
+
+// TestKillTreeReachesGroupEscapedDescendants reproduces the nvim leak: the
+// TUI client re-spawns itself as an --embed server in its own process group,
+// which a plain group SIGKILL misses. killTree must reach it via the PPID walk.
+func TestKillTreeReachesGroupEscapedDescendants(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix process groups")
+	}
+	// sh spawns a child that escapes into its own process group (like nvim's
+	// embedded server), then keeps a same-group child alive too.
+	cmd := exec.Command("sh", "-c", `perl -e 'setpgrp(0,0); sleep 30' & sleep 30 & wait`)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() }()
+	root := cmd.Process.Pid
+
+	var kids []int
+	for range 40 { // wait for both children to appear
+		kids = descendants(root)
+		if len(kids) >= 2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if len(kids) < 2 {
+		t.Fatalf("descendants(%d) = %v, want the escaped perl and the sleep", root, kids)
+	}
+
+	killTree(root)
+	time.Sleep(200 * time.Millisecond)
+	for _, pid := range kids {
+		if err := syscall.Kill(pid, 0); err == nil {
+			t.Fatalf("descendant %d survived killTree", pid)
+		}
+	}
+}

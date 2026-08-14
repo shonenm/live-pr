@@ -180,7 +180,7 @@ func (t *Terminal) Close() {
 	t.exited = true
 	if data, err := os.ReadFile(t.pidFile); err == nil {
 		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			killProcessGroup(pid)
+			killTree(pid)
 		}
 		_ = os.Remove(t.pidFile)
 	}
