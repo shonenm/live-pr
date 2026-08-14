@@ -543,8 +543,21 @@ func currentBranchPR(prs []gh.PR, branch string) *gh.PR {
 	return nil
 }
 
+// isCurrentTargetPR reports whether the PR matches what's already loaded in the
+// detail screen — either by branch (non-remote, current branch) or by explicit
+// checkout number. Matching by branch alone is insufficient when multiple PRs
+// share the same head, so we also require the PR number to match if one is known.
 func (m Model) isCurrentTargetPR(pr gh.PR) bool {
-	return isCurrentPR(pr, m.currentBranch) || (!m.remote && m.cache.ExplicitCheckout && m.cache.PR != nil && m.cache.PR.Number == pr.Number)
+	if !m.remote && m.cache.ExplicitCheckout && m.cache.PR != nil && m.cache.PR.Number == pr.Number {
+		return true
+	}
+	if !isCurrentPR(pr, m.currentBranch) {
+		return false
+	}
+	if m.cache.PR != nil && pr.Number > 0 && m.cache.PR.Number != pr.Number {
+		return false
+	}
+	return true
 }
 
 func (m Model) currentPRNumber() int {

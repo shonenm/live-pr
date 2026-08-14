@@ -2477,3 +2477,21 @@ func TestConflictsViewShowsBehindCount(t *testing.T) {
 		t.Fatalf("conflicts view with files = %q", plain)
 	}
 }
+
+func TestMultiplePRsSameBranchSelectByNumber(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.currentBranch = "feature/x"
+	pr10 := gh.PR{Number: 10, State: "CLOSED", HeadRefName: "feature/x", BaseRefName: "main", URL: "u10"}
+	pr20 := gh.PR{Number: 20, State: "OPEN", HeadRefName: "feature/x", BaseRefName: "main", URL: "u20"}
+	m.cache.PR = &pr10 // already loaded PR #10
+
+	// PR #10 is already loaded → is current target.
+	if !m.isCurrentTargetPR(pr10) {
+		t.Fatal("PR #10 should be the current target")
+	}
+	// PR #20 shares the same branch but has a different number → not current target.
+	if m.isCurrentTargetPR(pr20) {
+		t.Fatal("PR #20 should NOT be the current target when #10 is loaded")
+	}
+}
