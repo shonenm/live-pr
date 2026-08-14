@@ -39,7 +39,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.localEditMode != noLocalEdit || m.localDeleteTarget != "" {
+	if m.localEditMode != noLocalEdit || m.localDeleteTarget != "" || m.remoteDeleteID > 0 {
 		next, cmd := m.handleLocalOverlay(msg)
 		return next, cmd
 	}
