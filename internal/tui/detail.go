@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -369,9 +370,36 @@ func (m Model) buildChecks() (string, int) {
 		if state != "" {
 			line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
 		}
+		if dur := checkDuration(check); dur != "" {
+			line += stMuted.Render(" · " + dur)
+		}
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), checksStart + m.cursors[checksTab]
+}
+
+func checkDuration(check gh.PRCheck) string {
+	if check.StartedAt == "" {
+		return ""
+	}
+	start, err := time.Parse(time.RFC3339, check.StartedAt)
+	if err != nil {
+		return ""
+	}
+	var end time.Time
+	if check.CompletedAt != "" {
+		end, err = time.Parse(time.RFC3339, check.CompletedAt)
+		if err != nil {
+			return ""
+		}
+	} else {
+		end = time.Now()
+	}
+	d := end.Sub(start).Truncate(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 func plural(n int) string {
