@@ -48,8 +48,10 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 		return m, nil
 	}
 	// A GitHub conversation comment can be edited if the viewer authored it.
+	// When viewerLogin is unknown (detail opened before the PR list loaded it),
+	// allow the attempt — GitHub's API will reject edits to others' comments.
 	if item.comment != nil {
-		if m.viewerLogin == "" || !strings.EqualFold(item.comment.User.Login, m.viewerLogin) {
+		if m.viewerLogin != "" && !strings.EqualFold(item.comment.User.Login, m.viewerLogin) {
 			m.status = "only your own GitHub comments can be edited"
 			return m, nil
 		}

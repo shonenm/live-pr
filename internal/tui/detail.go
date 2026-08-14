@@ -279,31 +279,50 @@ func applyGitHubConflictFallback(readiness git.MergeReadiness, err error, pr gh.
 	return readiness, err
 }
 
-func (m Model) buildConflicts() (string, int) {
-	// Lead with base freshness so "behind by N commits" is visible whether or
-	// not there are content conflicts (GitHub's "out-of-date with base").
-	var header string
+// prIsDone reports whether the bound PR is merged or closed, where base
+// freshness and merge readiness no longer apply.
+func (m Model) prIsDone() bool {
+	return m.cache.PR != nil && (strings.EqualFold(m.cache.PR.State, "MERGED") || strings.EqualFold(m.cache.PR.State, "CLOSED"))
+}
+
+// baseFreshnessHeader summarizes how far behind base the branch is, or "" when
+// the PR is already done (merged/closed), where the count is meaningless.
+func (m Model) baseFreshnessHeader() string {
+	if m.prIsDone() {
+		return ""
+	}
 	switch {
 	case m.mergeReadiness.Behind > 0:
-		header = stAttention.Render(fmt.Sprintf("⚠ out of date · %d commit%s behind base", m.mergeReadiness.Behind, plural(m.mergeReadiness.Behind)))
+		return stAttention.Render(fmt.Sprintf("⚠ out of date · %d commit%s behind base", m.mergeReadiness.Behind, plural(m.mergeReadiness.Behind)))
 	case m.mergeReadinessErr != nil:
-		header = stMuted.Render("base freshness unavailable")
+		return stMuted.Render("base freshness unavailable")
 	default:
-		header = stGreenF.Render("✓ up to date with base")
+		return stGreenF.Render("✓ up to date with base")
 	}
+}
+
+func (m Model) buildConflicts() (string, int) {
+	header := m.baseFreshnessHeader()
 	if len(m.mergeReadiness.ConflictFiles) == 0 {
 		conflicts := stGreenF.Render("✓ no conflicting files")
 		if m.mergeReadinessErr != nil {
 			conflicts = stMuted.Render("(conflict status unavailable)")
 		}
+		if header == "" {
+			return conflicts, 0
+		}
 		return header + "\n\n" + conflicts, 0
 	}
 	lines := make([]string, 0, len(m.mergeReadiness.ConflictFiles)+2)
-	lines = append(lines, header, "")
+	offset := 0
+	if header != "" {
+		lines = append(lines, header, "")
+		offset = 2
+	}
 	for i, path := range m.mergeReadiness.ConflictFiles {
 		lines = append(lines, selectionBar(i == m.cursors[conflictsTab])+stRedF.Render("⚠ ")+stFg.Render(path))
 	}
-	return strings.Join(lines, "\n"), m.cursors[conflictsTab] + 2
+	return strings.Join(lines, "\n"), m.cursors[conflictsTab] + offset
 }
 
 func (m Model) buildChecks() (string, int) {
@@ -312,20 +331,20 @@ func (m Model) buildChecks() (string, int) {
 		checkCount = len(m.cache.PR.Checks)
 	}
 	lines := make([]string, 0, 4+checkCount)
-	behind := m.mergeReadiness.Behind
-	switch {
-	case behind > 0:
-		lines = append(lines, stAttention.Render(fmt.Sprintf("⚠ out of date · %d commit%s behind base", behind, plural(behind))))
-	case m.mergeReadinessErr != nil:
-		lines = append(lines, stMuted.Render("base freshness unavailable"))
-	default:
-		lines = append(lines, stGreenF.Render("✓ up to date with base"))
+	if header := m.baseFreshnessHeader(); header != "" {
+		lines = append(lines, header)
 	}
 	if m.cache.PR == nil || len(m.cache.PR.Checks) == 0 {
-		lines = append(lines, "", stMuted.Render("(no CI checks)"))
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, stMuted.Render("(no CI checks)"))
 		return strings.Join(lines, "\n"), 0
 	}
-	lines = append(lines, "")
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	checksStart := len(lines)
 	for i, check := range m.cache.PR.Checks {
 		icon, _, style := commitCIStatus(checkRollupState([]gh.PRCheck{check}))
 		name := check.Name
@@ -352,7 +371,7 @@ func (m Model) buildChecks() (string, int) {
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n"), m.cursors[checksTab]
+	return strings.Join(lines, "\n"), checksStart + m.cursors[checksTab]
 }
 
 func plural(n int) string {
