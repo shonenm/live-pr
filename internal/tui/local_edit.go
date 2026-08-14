@@ -58,6 +58,19 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 		m.remoteCommentID = item.comment.ID
 		return m.openLocalEditor(editRemoteComment, item.comment.Body, "")
 	}
+	// Items that are not editable from the TUI: give specific feedback.
+	if item.review != nil || item.reviewComment != nil {
+		m.status = "review comments cannot be edited here; use GitHub"
+		return m, nil
+	}
+	if item.pr != nil {
+		m.status = "edit the PR description on GitHub"
+		return m, nil
+	}
+	if item.activity != nil || item.prCommit != nil {
+		m.status = "activity and CI events are not editable"
+		return m, nil
+	}
 	if m.remote {
 		return m, nil
 	}
