@@ -793,6 +793,15 @@ func (c Client) Update(head, title, bodyFile string) error {
 	return nil
 }
 
+// UpdateBody replaces only the body of an existing PR, preserving the title.
+func (c Client) UpdateBody(head, bodyFile string) error {
+	out, err := c.run("pr", "edit", head, "--body-file", bodyFile)
+	if err != nil {
+		return commandError("gh pr edit body", out, err)
+	}
+	return nil
+}
+
 // Create creates a PR and returns gh's output (normally its URL).
 func (c Client) Create(base, head, title, bodyFile string, draft bool) (string, error) {
 	args := []string{"pr", "create", "--base", base, "--head", head, "--title", title, "--body-file", bodyFile}
