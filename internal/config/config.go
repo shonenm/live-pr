@@ -27,6 +27,73 @@ type Config struct {
 
 	// Diff controls the optional right-pane diff display filter.
 	Diff DiffConfig `toml:"diff"`
+
+	// Views are the PR list tabs, in display order. A config that sets any
+	// view replaces the built-in set entirely, so tabs can be removed,
+	// renamed, reordered, or added.
+	Views []View `toml:"views"`
+}
+
+// View is one PR list tab: a display name and the GitHub search query behind
+// it. The open/closed bucket is read from the query, so "is:closed" is all
+// that separates a closed tab from an open one.
+type View struct {
+	Name  string `toml:"name"`
+	Query string `toml:"query"`
+}
+
+// Closed reports whether the view lists closed pull requests.
+func (v View) Closed() bool {
+	for _, token := range strings.Fields(strings.ToLower(v.Query)) {
+		key, value, ok := strings.Cut(token, ":")
+		if !ok || (key != "is" && key != "state") {
+			continue
+		}
+		switch value {
+		case "closed":
+			return true
+		case "open":
+			return false
+		}
+	}
+	return false
+}
+
+// DefaultViews are the tabs shipped with live-pr.
+func DefaultViews() []View {
+	return []View{
+		{Name: "Assigned", Query: "assignee:@me"},
+		{Name: "Review requested", Query: "review-requested:@me"},
+		{Name: "All", Query: ""},
+		{Name: "Authored", Query: "author:@me"},
+		{Name: "Needs me", Query: "(assignee:@me OR review-requested:@me)"},
+		{Name: "Closed", Query: "is:closed"},
+	}
+}
+
+// NormalizeViews drops unusable entries and makes names unique, since a view
+// keys its cache by name. An empty result falls back to the built-in set:
+// a PR list with no tabs has nothing to show.
+func NormalizeViews(views []View) []View {
+	seen := map[string]bool{}
+	result := make([]View, 0, len(views))
+	for _, view := range views {
+		view.Name = strings.TrimSpace(view.Name)
+		view.Query = strings.TrimSpace(view.Query)
+		if view.Name == "" {
+			continue
+		}
+		key := strings.ToLower(view.Name)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, view)
+	}
+	if len(result) == 0 {
+		return DefaultViews()
+	}
+	return result
 }
 
 // DiffConfig customizes how raw Git diff is rendered in the right pane.
@@ -60,6 +127,7 @@ func Default() Config {
 			SplitRatio:   52,
 			MinPaneWidth: 24,
 		},
+		Views: DefaultViews(),
 	}
 }
 
@@ -135,6 +203,7 @@ func Load(repoRoot string) (Config, error) {
 	if cfg.Diff.MinPaneWidth <= 0 {
 		cfg.Diff.MinPaneWidth = Default().Diff.MinPaneWidth
 	}
+	cfg.Views = NormalizeViews(cfg.Views)
 	return cfg, nil
 }
 
