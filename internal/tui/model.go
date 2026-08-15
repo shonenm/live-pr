@@ -207,6 +207,23 @@ type browserDone struct {
 	copied bool
 }
 
+type navigatorCacheSaved struct {
+	err error
+}
+
+// saveNavigatorCacheCmd persists the navigator cache off the Update goroutine.
+// The clone happens here, on the Update goroutine, so the write never races
+// with later handler mutations; only failures produce a message.
+func saveNavigatorCacheCmd(path string, navigator gh.NavigatorCache) tea.Cmd {
+	snapshot := navigator.Clone()
+	return func() tea.Msg {
+		if err := gh.SaveNavigatorCache(path, snapshot); err != nil {
+			return navigatorCacheSaved{err: err}
+		}
+		return nil
+	}
+}
+
 type prAction uint8
 
 type localEditMode uint8
