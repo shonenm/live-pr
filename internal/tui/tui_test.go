@@ -1439,7 +1439,7 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	m.cache.PR = &pr
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
-	u, cmd := m.Update(remoteLoaded{pr: pr, headRef: "HEAD", comments: []gh.Comment{{ID: 1, Body: "cached"}}})
+	u, cmd := m.Update(remoteLoaded{pr: pr, headRef: "HEAD", base: "main", diffBase: "historical-base", commits: []git.Commit{{SHA: "abc1234"}}, files: []git.ChangedFile{{Status: "M", Path: "a.go"}}, comments: []gh.Comment{{ID: 1, Body: "cached"}}})
 	m = u.(Model)
 	defer m.close()
 	if cmd == nil || m.diffTerminal == nil || m.refreshing || len(m.cache.Comments) != 1 {
@@ -1447,6 +1447,11 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	}
 	if m.diffBase != "historical-base" || m.reviewRange != "historical-base...HEAD" {
 		t.Fatalf("remote review range = base:%q range:%q", m.diffBase, m.reviewRange)
+	}
+	// The handler applies the ranges gathered by fetchRemotePR instead of
+	// spawning git itself.
+	if len(m.commits) != 1 || len(m.files) != 1 || m.files[0].Path != "a.go" {
+		t.Fatalf("remote ranges not applied: commits=%d files=%#v", len(m.commits), m.files)
 	}
 	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
 	if err != nil {
