@@ -475,6 +475,7 @@ type Model struct {
 	collapsedStacks           map[string]bool
 	prCursor                  int
 	convItemCache             map[string][]string
+	previewedPR               int
 	localAvailable            bool
 	localTitle                string
 	localStats                git.ChangeStats
@@ -1504,7 +1505,12 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 	content, selectedLine := m.buildPRListRows()
 	m.list.SetContent(content)
 	m.detail.SetContent(m.buildPRPreview())
-	m.detail.GotoTop()
+	// Background arrivals (previews, avatars) re-sync constantly; only a
+	// selection change may reset the preview scroll position.
+	if selected := m.selectedPRNumber(); selected != m.previewedPR {
+		m.previewedPR = selected
+		m.detail.GotoTop()
+	}
 	keepLineVisible(&m.list, selectedLine)
 	preview := m.ensureSelectedPRPreview()
 	return tea.Batch(start, preview, m.startSpinner())

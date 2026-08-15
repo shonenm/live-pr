@@ -121,7 +121,9 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	}
 	m.localAvailable = false
 	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
-	if matchesListState(msg.pr, closedPRListState) {
+	// Only the PR list screen may switch views; arriving on the detail
+	// screen this would silently rewrite the list state behind it.
+	if m.screen == prListScreen && matchesListState(msg.pr, closedPRListState) {
 		m.prView, m.prListState, m.listRefreshing = closedPRsView, closedPRListState, false
 		m.prListGeneration++
 		m.activePRPage = prPageKey(m.prView, m.prListState, "")
