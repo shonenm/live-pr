@@ -80,7 +80,13 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 		t.Fatalf("did not enter message after choosing type: typing=%v mode=%v", m.reviewSubmitTyping, m.localEditMode)
 	}
 	m.localEditor.SetValue("Please fix this before approve")
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	// Enter stays in the editor as a newline; only Ctrl+S submits.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if !m.reviewSubmitTyping || m.reviewSubmitting || !strings.Contains(m.localEditor.Value(), "\n") {
+		t.Fatalf("enter did not insert newline: typing=%v submitting=%v value=%q", m.reviewSubmitTyping, m.reviewSubmitting, m.localEditor.Value())
+	}
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	m = u.(Model)
 	if cmd == nil || !m.reviewSubmitting {
 		t.Fatalf("changes request not scheduled: submitting=%v cmd=%v", m.reviewSubmitting, cmd)
