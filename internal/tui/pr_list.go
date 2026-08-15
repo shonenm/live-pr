@@ -1029,77 +1029,105 @@ func (m *Model) cachedPRRow(pr gh.PR, prefix string) []string {
 	return rows
 }
 
-func prDiffStat(pr gh.PR) string {
-	if pr.Additions == 0 && pr.Deletions == 0 {
-		return ""
-	}
-	return " · " + stGreenF.Render(fmt.Sprintf("+%d", pr.Additions)) + " " + stRedF.Render(fmt.Sprintf("-%d", pr.Deletions))
+// rowSegment is one styled span of a PR row; login segments render the user
+// icon, which weaves the selection background into its own colors.
+type rowSegment struct {
+	text  string
+	style lipgloss.Style
+	login string
 }
 
-func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
+func (m Model) renderSegments(segments []rowSegment, background string) string {
+	var b strings.Builder
+	for _, segment := range segments {
+		if segment.login != "" {
+			b.WriteString(m.userIconOn(segment.login, background))
+			continue
+		}
+		style := segment.style
+		if background != "" {
+			style = style.Background(lipgloss.Color(background))
+		}
+		b.WriteString(style.Render(segment.text))
+	}
+	return b.String()
+}
+
+// prRowSegments assembles the two content lines of a PR row once; selection
+// only changes the background and padding, never the content.
+func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) {
 	state := strings.ToLower(pr.State)
 	if state == "" {
 		state = "open"
 	}
 	identifier := fmt.Sprintf("#%d", pr.Number)
-	owner := ""
-	if pr.Author.Login != "" {
-		owner = " · " + m.userIcon(pr.Author.Login) + " @" + pr.Author.Login
-	}
 	if pr.IsDraft && state == "open" {
 		state = "draft"
 	}
 	if pr.Number == 0 {
-		state, identifier, owner = "local", "Local PR", ""
+		state, identifier = "local", "Local PR"
 	}
-	width := max(10, m.list.Width)
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	glyph, glyphStyle := stateGlyph(state)
-	currentBar := " "
-	if m.isCurrentTargetPR(pr) {
-		currentBar = stAttention.Render("▌")
+	line = []rowSegment{
+		{text: glyph, style: glyphStyle},
+		{text: " " + prefix + identifier + " ", style: stMuted},
+		{text: pr.Title, style: stBold},
 	}
-	if !selected {
-		line := "  " + currentBar + " " + glyphStyle.Render(glyph) + " " + stMuted.Render(prefix+identifier) + " " + stBold.Render(pr.Title)
-		meta := "    " + indent + glyphStyle.Render(state)
-		if pr.Number > 0 {
-			if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
-				meta += " · " + mergeStyle.Render(mergeText)
-			}
-			meta += " · " + prCheckSummary(pr)
+	meta = []rowSegment{
+		{text: "   " + indent, style: stMuted},
+		{text: state, style: glyphStyle},
+	}
+	if pr.Number > 0 {
+		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
+			meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: mergeText, style: mergeStyle})
 		}
-		meta += prDiffStat(pr)
-		meta += stMuted.Render(fmt.Sprintf(" · %s ← %s", pr.BaseRefName, pr.HeadRefName)) + owner
+		checkText, checkStyle := prCheckState(pr)
+		meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: checkText, style: checkStyle})
+	}
+	if pr.Additions != 0 || pr.Deletions != 0 {
+		meta = append(meta,
+			rowSegment{text: " · ", style: stMuted},
+			rowSegment{text: fmt.Sprintf("+%d", pr.Additions), style: stGreenF},
+			rowSegment{text: " ", style: stMuted},
+			rowSegment{text: fmt.Sprintf("-%d", pr.Deletions), style: stRedF})
+	}
+	meta = append(meta, rowSegment{text: fmt.Sprintf(" · %s ← %s", pr.BaseRefName, pr.HeadRefName), style: stMuted})
+	if pr.Number > 0 && pr.Author.Login != "" {
+		meta = append(meta,
+			rowSegment{text: " · ", style: stMuted},
+			rowSegment{login: pr.Author.Login},
+			rowSegment{text: " @" + pr.Author.Login, style: stMuted})
+	}
+	return line, meta
+}
+
+func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
+	lineSegments, metaSegments := m.prRowSegments(pr, prefix)
+	width := max(10, m.list.Width)
+	current := m.isCurrentTargetPR(pr)
+	if !selected {
+		currentBar := " "
+		if current {
+			currentBar = stAttention.Render("▌")
+		}
+		line := "  " + currentBar + " " + m.renderSegments(lineSegments, "")
+		meta := " " + m.renderSegments(metaSegments, "")
 		return []string{ansi.Truncate(line, width, "…"), ansi.Truncate(meta, width, "…"), ""}
 	}
 	// Selected rows collapse to one highlight style, lazygit-style; the state
-	// glyph keeps its color on the selection background.
+	// glyph keeps its color on the selection background, which paints the
+	// whole row instead of an accent bar.
 	bg := lipgloss.Color(cSelectedBg)
 	rowSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Background(bg)
 	mutedSt := lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted)).Background(bg)
-	// Selection is shown by the full-row background, not an accent bar.
 	bar := rowSt.Render(" ")
 	checkoutBar := rowSt.Render(" ")
-	if m.isCurrentTargetPR(pr) {
+	if current {
 		checkoutBar = lipgloss.NewStyle().Foreground(lipgloss.Color(cAttention)).Background(bg).Render("▌")
 	}
-	line := bar + checkoutBar + rowSt.Render(" ") + glyphStyle.Background(bg).Render(glyph) + mutedSt.Render(" "+prefix+identifier+" ") + rowSt.Bold(true).Render(pr.Title)
-	meta := bar + mutedSt.Render("   "+indent) + glyphStyle.Background(bg).Render(state)
-	if pr.Number > 0 {
-		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
-			meta += mutedSt.Render(" · ") + mergeStyle.Background(bg).Render(mergeText)
-		}
-		checkText, checkStyle := prCheckState(pr)
-		meta += mutedSt.Render(" · ") + checkStyle.Background(bg).Render(checkText)
-	}
-	if pr.Additions != 0 || pr.Deletions != 0 {
-		meta += mutedSt.Render(" · ") + stGreenF.Background(bg).Render(fmt.Sprintf("+%d", pr.Additions)) + mutedSt.Render(" ") + stRedF.Background(bg).Render(fmt.Sprintf("-%d", pr.Deletions))
-	}
-	meta += mutedSt.Render(fmt.Sprintf(" · %s ← %s", pr.BaseRefName, pr.HeadRefName))
-	if pr.Author.Login != "" {
-		meta += mutedSt.Render(" · ")
-		meta += m.userIconOn(pr.Author.Login, cSelectedBg) + mutedSt.Render(" @"+pr.Author.Login)
-	}
+	line := bar + checkoutBar + rowSt.Render(" ") + m.renderSegments(lineSegments, cSelectedBg)
+	meta := bar + m.renderSegments(metaSegments, cSelectedBg)
 	return []string{padRow(line, width, rowSt), padRow(meta, width, mutedSt), ""}
 }
 func (m Model) renderPRMeta(pr gh.PR) string {
