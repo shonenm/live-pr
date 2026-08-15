@@ -407,6 +407,7 @@ type Model struct {
 	fileCursor        int
 	detailKey         string
 	rawDetailCache    map[string]string
+	rawPending        map[string]bool
 	diffCache         map[string]string
 	diffPending       map[string]bool
 	checkedFiles      map[string]string
@@ -1326,8 +1327,9 @@ func (m *Model) sync() tea.Cmd {
 		keepLineVisible(&m.explorer, selectedFileLine)
 	}
 
-	detailCmd := m.syncDetail(m.loadDetail())
-	return tea.Batch(start, detailCmd, m.startSpinner())
+	detail, rawCmd := m.loadDetail()
+	detailCmd := m.syncDetail(detail)
+	return tea.Batch(start, rawCmd, detailCmd, m.startSpinner())
 }
 
 func (m Model) View() string {

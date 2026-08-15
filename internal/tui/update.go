@@ -84,6 +84,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diffRendered:
 		next, cmd := m.handleDiffRendered(msg)
 		return next, cmd
+	case rawDetailLoaded:
+		next, cmd := m.handleRawDetailLoaded(msg)
+		return next, cmd
 	case prActionDone:
 		next, cmd := m.handlePRActionDone(msg)
 		return next, cmd
