@@ -106,3 +106,20 @@ func TestStateRootFallsBackByGOOSWithoutXDG(t *testing.T) {
 		t.Fatalf("stateRoot() = %q, want it to contain %q", root, wantSeg)
 	}
 }
+
+func TestBranchSlugSeparatesSlashAndDash(t *testing.T) {
+	slash := branchSlug("feat/x")
+	dash := branchSlug("feat-x")
+	if slash == dash {
+		t.Fatalf("feat/x and feat-x share state: %q", slash)
+	}
+	if dash != "feat-x" {
+		t.Fatalf("safe name gained a suffix: %q", dash)
+	}
+	if branchSlug("feat/x") == branchSlug("feat:x") {
+		t.Fatal("distinct replaced names still collide")
+	}
+	if !strings.HasPrefix(slash, "feat-x-") {
+		t.Fatalf("replaced name lost readability: %q", slash)
+	}
+}
