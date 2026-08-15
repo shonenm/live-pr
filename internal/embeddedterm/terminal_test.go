@@ -75,8 +75,8 @@ func TestWatchdogKillsReviewerWhenParentIsSIGKILLed(t *testing.T) {
 }
 
 func TestEnvironment(t *testing.T) {
-	env := Environment("base-sha...head-ref", "main", "feature/x", "refs/live-pr/pulls/1/head", "https://example.test/pr/1", "abc123")
-	want := []string{"LIVE_PR_REVIEW=1", "LIVE_PR_RANGE=base-sha...head-ref", "LIVE_PR_BASE=main", "LIVE_PR_HEAD=feature/x", "LIVE_PR_HEAD_REV=refs/live-pr/pulls/1/head", "LIVE_PR_PR_URL=https://example.test/pr/1", "LIVE_PR_SHA=abc123"}
+	env := Environment("base-sha...head-ref", "main", "feature/x", "refs/live-pr/pulls/1/head", "https://example.test/pr/1", "abc123", "/state/reviewed/1.json")
+	want := []string{"LIVE_PR_REVIEW=1", "LIVE_PR_RANGE=base-sha...head-ref", "LIVE_PR_BASE=main", "LIVE_PR_HEAD=feature/x", "LIVE_PR_HEAD_REV=refs/live-pr/pulls/1/head", "LIVE_PR_PR_URL=https://example.test/pr/1", "LIVE_PR_SHA=abc123", "LIVE_PR_REVIEWED_FILE=/state/reviewed/1.json"}
 	if strings.Join(env, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("env = %#v", env)
 	}
@@ -90,7 +90,7 @@ func TestEmptyCommandIsDisabled(t *testing.T) {
 
 func TestTerminalStartsInRepoWithContextAndRendersOutput(t *testing.T) {
 	dir := t.TempDir()
-	terminal := New(`printf '%s|%s' "$PWD" "$LIVE_PR_BASE"; sleep 1`, dir, Environment("main", "main", "feature", "HEAD", "", ""))
+	terminal := New(`printf '%s|%s' "$PWD" "$LIVE_PR_BASE"; sleep 1`, dir, Environment("main", "main", "feature", "HEAD", "", "", ""))
 	terminal.Resize(80, 10)
 	defer terminal.Close()
 
