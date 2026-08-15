@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -90,7 +91,7 @@ func TestLoadDiffDisplayWithRepoOverride(t *testing.T) {
 func TestLoadMissingFilesUsesDefaults(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	got, err := Load(t.TempDir())
-	if err != nil || got != Default() {
+	if err != nil || !reflect.DeepEqual(got, Default()) {
 		t.Fatalf("missing config = %+v, err=%v", got, err)
 	}
 }
@@ -127,5 +128,70 @@ func TestLoadReportsReadErrors(t *testing.T) {
 	}
 	if _, err := Load(t.TempDir()); err == nil || !strings.Contains(err.Error(), "read config "+path) {
 		t.Fatalf("read config error = %v", err)
+	}
+}
+
+func TestDefaultViewsMatchShippedTabs(t *testing.T) {
+	views := Default().Views
+	var names, queries []string
+	for _, v := range views {
+		names = append(names, v.Name)
+		queries = append(queries, v.Query)
+	}
+	wantNames := []string{"Assigned", "Review requested", "All", "Authored", "Needs me", "Closed"}
+	if strings.Join(names, "|") != strings.Join(wantNames, "|") {
+		t.Fatalf("default view names = %v", names)
+	}
+	wantQueries := []string{"assignee:@me", "review-requested:@me", "", "author:@me", "(assignee:@me OR review-requested:@me)", "is:closed"}
+	if strings.Join(queries, "|") != strings.Join(wantQueries, "|") {
+		t.Fatalf("default view queries = %v", queries)
+	}
+	// Only the Closed tab lists closed PRs.
+	for _, v := range views {
+		if want := v.Name == "Closed"; v.Closed() != want {
+			t.Fatalf("%s Closed() = %v", v.Name, v.Closed())
+		}
+	}
+	if !(View{Query: "state:closed label:x"}).Closed() || (View{Query: "is:open is:closed"}).Closed() {
+		t.Fatal("Closed() must read the first is:/state: token")
+	}
+}
+
+func TestLoadViewsReplaceDefaultsEntirely(t *testing.T) {
+	global := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", global)
+	if err := os.MkdirAll(filepath.Join(global, "live-pr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	views := "[[views]]\nname = 'Mine'\nquery = 'author:@me'\n\n[[views]]\nname = 'Stale'\nquery = 'is:open updated:<2026-01-01'\n"
+	if err := os.WriteFile(filepath.Join(global, "live-pr", "config.toml"), []byte(views), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := loadConfig(t, repo).Views
+	if len(got) != 2 || got[0].Name != "Mine" || got[1].Name != "Stale" {
+		t.Fatalf("configured views did not replace the defaults: %#v", got)
+	}
+
+	// A repo config replaces the global set in turn.
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[[views]]\nname = 'Repo'\nquery = ''\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).Views; len(got) != 1 || got[0].Name != "Repo" {
+		t.Fatalf("repo views = %#v", got)
+	}
+}
+
+func TestNormalizeViewsDropsUnusableEntries(t *testing.T) {
+	got := NormalizeViews([]View{
+		{Name: "  Keep  ", Query: "  author:@me  "},
+		{Name: "", Query: "orphan"},
+		{Name: "keep", Query: "duplicate name, different case"},
+	})
+	if len(got) != 1 || got[0].Name != "Keep" || got[0].Query != "author:@me" {
+		t.Fatalf("normalized = %#v", got)
+	}
+	if len(NormalizeViews(nil)) != len(DefaultViews()) {
+		t.Fatal("an empty view set must fall back to the defaults")
 	}
 }
