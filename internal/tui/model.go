@@ -1466,6 +1466,24 @@ func (m Model) navigationCursor() int {
 	return m.cursors[m.active]
 }
 
+// isDefaultBranch reports whether ref names the repository's default branch.
+// Local revisions carry the origin/ prefix that GitHub's ref names lack.
+func (m Model) isDefaultBranch(ref string) bool {
+	if m.defaultBranch == "" || ref == "" {
+		return false
+	}
+	return strings.EqualFold(strings.TrimPrefix(ref, "origin/"), m.defaultBranch)
+}
+
+// baseBranchStyle marks a merge target that is the repository's default
+// branch, so a PR stacked on another branch stands out at a glance.
+func (m Model) baseBranchStyle(ref string) lipgloss.Style {
+	if m.isDefaultBranch(ref) {
+		return stAccent.Bold(true)
+	}
+	return stBold
+}
+
 func (m Model) selectedBrowseURL() string {
 	if m.screen == prListScreen {
 		if pr := m.selectedPR(); pr != nil && pr.URL != "" {
@@ -1789,7 +1807,7 @@ func (m Model) renderHeader() string {
 			readiness += "   " + stMuted.Render("merge readiness unavailable")
 		}
 	}
-	l2 := stMuted.Render("⎇ ") + stBold.Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty + readiness
+	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.base).Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty + readiness
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
