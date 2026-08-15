@@ -458,97 +458,120 @@ func (m Model) stackForPR(number int) (prStack, bool) {
 	return prStack{}, false
 }
 
+// matchesPRFilter evaluates a GitHub-search-like query against one PR.
+// Parenthesized alternatives — "(assignee:@me OR review-requested:@me)" —
+// match when any alternative matches; everything else is ANDed.
 func matchesPRFilter(pr gh.PR, query, viewer string) bool {
-	haystack, haystackBuilt := "", false
-	for _, token := range strings.Fields(strings.ToLower(query)) {
-		key, value, structured := strings.Cut(token, ":")
-		if structured {
-			me := value == "@me"
-			if me {
-				if viewer == "" {
-					return false
-				}
-				value = strings.ToLower(viewer)
+	matcher := prFilterMatcher{pr: pr, viewer: viewer}
+	tokens := strings.Fields(strings.ToLower(query))
+	for i := 0; i < len(tokens); i++ {
+		if !strings.HasPrefix(tokens[i], "(") {
+			if !matcher.token(tokens[i]) {
+				return false
 			}
-			switch key {
-			case "is", "state":
-				switch value {
-				case "open":
-					if !strings.EqualFold(pr.State, "OPEN") {
-						return false
-					}
-				case "closed":
-					// Match GitHub search semantics: is:closed covers merged
-					// PRs too, like matchesListState's closed bucket.
-					if !strings.EqualFold(pr.State, "CLOSED") && !strings.EqualFold(pr.State, "MERGED") {
-						return false
-					}
-				case "draft":
-					if key != "is" || !pr.IsDraft {
-						return false
-					}
-				case "pr":
-					if key != "is" {
-						return false
-					}
-				default:
-					return false
-				}
-				continue
-			case "author":
-				if !strings.EqualFold(pr.Author.Login, value) {
-					return false
-				}
-				continue
-			case "assignee":
-				if !hasLogin(pr.Assignees, value) {
-					return false
-				}
-				continue
-			case "review-requested":
-				if !(me && pr.ViewerReviewRequested) && !hasLogin(pr.ReviewRequests, value) {
-					return false
-				}
-				continue
-			case "label":
-				matched := false
-				for _, label := range pr.Labels {
-					matched = matched || strings.EqualFold(label.Name, value)
-				}
-				if !matched {
-					return false
-				}
-				continue
-			case "draft":
-				if (value == "true") != pr.IsDraft {
-					return false
-				}
-				continue
-			case "ci":
-				if prCIHealth(pr) != value {
-					return false
-				}
-				continue
-			case "merge":
-				conflicting := pr.Mergeable == "CONFLICTING" || pr.MergeStateStatus == "DIRTY"
-				if value != "conflicting" || !conflicting {
-					return false
-				}
-				continue
+			continue
+		}
+		alternatives, next := filterGroup(tokens, i)
+		i = next
+		matched := false
+		for _, alternative := range alternatives {
+			if matcher.token(alternative) {
+				matched = true
+				break
 			}
 		}
-		if !haystackBuilt {
-			haystack = strings.ToLower(fmt.Sprintf("#%d %s %s %s %s", pr.Number, pr.Title, pr.HeadRefName, pr.BaseRefName, pr.Author.Login))
-			for _, label := range pr.Labels {
-				haystack += " " + strings.ToLower(label.Name)
-			}
-			haystackBuilt = true
-		}
-		if !strings.Contains(haystack, token) {
+		if !matched {
 			return false
 		}
 	}
 	return true
+}
+
+// filterGroup collects the alternatives of a parenthesized group starting at
+// tokens[i], returning them and the index of its last token. An unclosed
+// group runs to the end of the query.
+func filterGroup(tokens []string, i int) ([]string, int) {
+	var alternatives []string
+	for ; i < len(tokens); i++ {
+		token := strings.TrimPrefix(tokens[i], "(")
+		closed := strings.HasSuffix(token, ")")
+		token = strings.TrimSuffix(token, ")")
+		if token != "" && token != "or" {
+			alternatives = append(alternatives, token)
+		}
+		if closed {
+			break
+		}
+	}
+	return alternatives, min(i, len(tokens)-1)
+}
+
+// prFilterMatcher evaluates single filter tokens, building the free-text
+// haystack only when a token needs it.
+type prFilterMatcher struct {
+	pr            gh.PR
+	viewer        string
+	haystack      string
+	haystackBuilt bool
+}
+
+func (f *prFilterMatcher) token(token string) bool {
+	pr, viewer := f.pr, f.viewer
+	key, value, structured := strings.Cut(token, ":")
+	if structured {
+		me := value == "@me"
+		if me {
+			if viewer == "" {
+				return false
+			}
+			value = strings.ToLower(viewer)
+		}
+		switch key {
+		case "is", "state":
+			switch value {
+			case "open":
+				return strings.EqualFold(pr.State, "OPEN")
+			case "closed":
+				// Match GitHub search semantics: is:closed covers merged
+				// PRs too, like matchesListState's closed bucket.
+				return strings.EqualFold(pr.State, "CLOSED") || strings.EqualFold(pr.State, "MERGED")
+			case "draft":
+				return key == "is" && pr.IsDraft
+			case "pr":
+				return key == "is"
+			default:
+				return false
+			}
+		case "author":
+			return strings.EqualFold(pr.Author.Login, value)
+		case "assignee":
+			return hasLogin(pr.Assignees, value)
+		case "review-requested":
+			return me && pr.ViewerReviewRequested || hasLogin(pr.ReviewRequests, value)
+		case "label":
+			for _, label := range pr.Labels {
+				if strings.EqualFold(label.Name, value) {
+					return true
+				}
+			}
+			return false
+		case "draft":
+			return (value == "true") == pr.IsDraft
+		case "ci":
+			return prCIHealth(pr) == value
+		case "merge":
+			conflicting := pr.Mergeable == "CONFLICTING" || pr.MergeStateStatus == "DIRTY"
+			return value == "conflicting" && conflicting
+		}
+	}
+	if !f.haystackBuilt {
+		f.haystack = strings.ToLower(fmt.Sprintf("#%d %s %s %s %s", pr.Number, pr.Title, pr.HeadRefName, pr.BaseRefName, pr.Author.Login))
+		for _, label := range pr.Labels {
+			f.haystack += " " + strings.ToLower(label.Name)
+		}
+		f.haystackBuilt = true
+	}
+	return strings.Contains(f.haystack, token)
 }
 
 func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
