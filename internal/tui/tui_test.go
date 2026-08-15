@@ -574,9 +574,11 @@ func TestPRRowCacheReusesUnselectedRowsAndInvalidatesWithFilters(t *testing.T) {
 	if len(m.prRowCache) != 3 {
 		t.Fatalf("selection change cached rows = %d, want 3", len(m.prRowCache))
 	}
+	// Rows key on their full render inputs, so a data refresh keeps them;
+	// eviction only happens past maxPRRowCacheEntries.
 	m.applyPRFilters(0)
-	if len(m.prRowCache) != 0 {
-		t.Fatalf("filter update retained %d stale rows", len(m.prRowCache))
+	if len(m.prRowCache) != 3 {
+		t.Fatalf("data refresh dropped still-valid rows: %d", len(m.prRowCache))
 	}
 }
 
@@ -2921,5 +2923,22 @@ func TestRemoteDeleteTitleTruncatesOnRuneBoundary(t *testing.T) {
 	}
 	if !strings.HasSuffix(title, "…") || strings.Contains(title, "�") {
 		t.Fatalf("title = %q", title)
+	}
+}
+
+func TestApplyPRFiltersKeepsRowCacheWithinBound(t *testing.T) {
+	m := testModel()
+	m.navigator = gh.NewNavigatorCache()
+	m.prRowCache = map[prRowCacheKey][]string{{number: 1}: {"row"}}
+	m.applyPRFilters(0)
+	if len(m.prRowCache) != 1 {
+		t.Fatal("data refresh dropped still-valid row renders")
+	}
+	for i := 0; i <= maxPRRowCacheEntries; i++ {
+		m.prRowCache[prRowCacheKey{number: i}] = []string{"row"}
+	}
+	m.applyPRFilters(0)
+	if len(m.prRowCache) != 0 {
+		t.Fatalf("over-cap cache not evicted: %d", len(m.prRowCache))
 	}
 }

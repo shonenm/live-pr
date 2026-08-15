@@ -260,19 +260,27 @@ func hasLogin(users []gh.PRUser, login string) bool {
 	return false
 }
 
+// maxPRRowCacheEntries bounds the render cache; rows key on their full render
+// inputs, so stale entries are merely unused, never wrong.
+const maxPRRowCacheEntries = 512
+
 func (m *Model) applyPRFilters(selectedNumber int) {
 	if m.prRowCache == nil {
 		m.prRowCache = map[prRowCacheKey][]string{}
-	} else {
+	} else if len(m.prRowCache) > maxPRRowCacheEntries {
+		// ponytail: full reset over LRU — refilling a screenful is cheap.
 		clear(m.prRowCache)
 	}
 	if m.collapsedStacks == nil {
 		m.collapsedStacks = map[string]bool{}
 	}
 	page, paged := m.prPages[m.activePRPage]
-	source := append([]gh.PR(nil), m.navigator.PRs...) // legacy/cache fallback before the first page arrives
+	var source []gh.PR
 	if page.loaded {
 		source = append([]gh.PR(nil), page.prs...)
+	} else {
+		// Legacy/cache fallback before the first page arrives.
+		source = append([]gh.PR(nil), m.navigator.PRs...)
 	}
 	slices.SortFunc(source, func(a, b gh.PR) int { return a.Number - b.Number })
 	sourceNumbers := make(map[int]bool, len(source))
@@ -948,6 +956,11 @@ func checkState(checks []gh.PRCheck) (string, lipgloss.Style) {
 }
 
 func previewMarkdown(text string, width, maxLines int) string {
+	// Pre-truncate before the glamour render: its cost scales with the whole
+	// body, and everything past a few times the visible lines is cut anyway.
+	if raw := strings.Split(text, "\n"); len(raw) > maxLines*3 {
+		text = strings.Join(raw[:maxLines*3], "\n")
+	}
 	lines := strings.Split(md.Render(text, width), "\n")
 	if len(lines) > maxLines {
 		lines = append(lines[:maxLines], stMuted.Render("…"))
