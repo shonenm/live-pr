@@ -118,6 +118,7 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.listRefreshing {
 			return m, nil
 		}
+		m.notice = ""
 		m.prListGeneration++
 		if m.prPages == nil {
 			m.prPages = map[string]prPageState{}
@@ -330,6 +331,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshing = true
+		m.notice = ""
 		m.githubStatus = "GitHub: refreshing…"
 		if m.remote && m.cache.PR != nil {
 			m.targetGeneration++

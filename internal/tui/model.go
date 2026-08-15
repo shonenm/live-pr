@@ -1814,7 +1814,9 @@ func (m Model) footerContent() string {
 	if m.prActionRunning != noPRAction {
 		return m.busyStatus("")
 	}
-	if m.notice != "" {
+	// While work is in flight the progress line wins over a lingering
+	// notice, so a reload after "Checked out PR #N" is visibly running.
+	if m.notice != "" && !m.isLoading() {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}
 	if m.focusDiff {
