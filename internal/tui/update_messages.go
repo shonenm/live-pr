@@ -139,15 +139,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	st := store.ForBranch(m.root, m.currentBranch)
 	cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
 	cache.PR = &msg.pr
-	if err := m.loadLocal(st, cache, &msg.pr); err != nil {
-		m.status = err.Error()
-		return m, nil
-	}
-	cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync()}
-	if m.diffTerminal != nil {
-		cmds = append(cmds, m.diffTerminal.Init())
-	}
-	return m, tea.Batch(cmds...)
+	return m, tea.Batch(m.startLocalLoad(st, cache, &msg.pr), m.startSpinner())
 
 }
 
@@ -314,6 +306,23 @@ func (m Model) handlePublishDone(msg publishDone) (Model, tea.Cmd) {
 	m.restoreConversationSelection(selectedKey)
 	return m, m.sync()
 
+}
+
+func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
+	if msg.generation != m.targetGeneration {
+		return m, nil
+	}
+	if msg.err != nil {
+		m.refreshing = false
+		m.status = msg.err.Error()
+		return m, nil
+	}
+	m.applyLocal(msg.st, msg.data)
+	cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync()}
+	if m.diffTerminal != nil {
+		cmds = append(cmds, m.diffTerminal.Init())
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
