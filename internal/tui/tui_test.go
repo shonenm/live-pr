@@ -2829,3 +2829,42 @@ func TestRemoteLoadedKeepsCachedReviewsOnFetchFailure(t *testing.T) {
 		t.Fatalf("stale reviews not reported: %q", m.githubStatus)
 	}
 }
+
+func TestBackgroundSyncKeepsPreviewScroll(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.navigator = gh.NewNavigatorCache()
+	m.openPRs = []gh.PR{
+		{Number: 1, State: "OPEN", Title: "one", Body: strings.Repeat("line\n", 80)},
+		{Number: 2, State: "OPEN", Title: "two"},
+	}
+	m.prCursor = 0
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 90, Height: 8})
+	m = u.(Model)
+	m.detail.SetYOffset(1)
+	// A re-sync with the same selection (background preview/avatar arrivals)
+	// must not reset the preview scroll.
+	m.sync()
+	if m.detail.YOffset == 0 {
+		t.Fatal("background sync reset the preview scroll")
+	}
+	// Changing the selection resets it.
+	m.prCursor = 1
+	m.sync()
+	if m.detail.YOffset != 0 {
+		t.Fatalf("selection change kept stale scroll offset %d", m.detail.YOffset)
+	}
+}
+
+func TestCurrentBranchPRLoadedKeepsListStateOnDetailScreen(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.currentBranch, m.defaultBranch = "feature/x", "main"
+	m.prView, m.prListState = assignedView, openPRListState
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+	u, _ := m.Update(currentBranchPRLoaded{pr: gh.PR{Number: 9, State: "MERGED", HeadRefName: "feature/x"}})
+	m = u.(Model)
+	if m.prView != assignedView || m.prListState != openPRListState {
+		t.Fatalf("detail screen rewrote list state: view=%v state=%v", m.prView, m.prListState)
+	}
+}
