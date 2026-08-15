@@ -165,6 +165,30 @@ func LoadNavigatorCache(path string) (NavigatorCache, error) {
 	return c, nil
 }
 
+// Clone returns a copy that is safe to marshal while the original keeps
+// mutating: the PRs backing array is rewritten in place by preview updates and
+// the maps by SetView/SetSnapshot, but their values are only ever replaced
+// wholesale, so element copies suffice.
+func (c NavigatorCache) Clone() NavigatorCache {
+	c.PRs = append([]PR(nil), c.PRs...)
+	states := make(map[string]bool, len(c.FetchedStates))
+	for k, v := range c.FetchedStates {
+		states[k] = v
+	}
+	c.FetchedStates = states
+	views := make(map[string]PRViewCache, len(c.Views))
+	for k, v := range c.Views {
+		views[k] = v
+	}
+	c.Views = views
+	snapshots := make(map[string]PRSnapshot, len(c.Snapshots))
+	for k, v := range c.Snapshots {
+		snapshots[k] = v
+	}
+	c.Snapshots = snapshots
+	return c
+}
+
 func SaveNavigatorCache(path string, c NavigatorCache) error {
 	if done := debugtime.Start("navigator cache save"); done != nil {
 		defer done()
