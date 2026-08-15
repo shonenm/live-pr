@@ -43,6 +43,28 @@ func RepoRoot() (string, error) {
 	return run("rev-parse", "--show-toplevel")
 }
 
+// CommonDir returns the absolute path of the repository's common .git
+// directory for the checkout at dir. Linked worktrees share it with their
+// main checkout, so it identifies the repository across worktrees.
+func CommonDir(dir string) (string, error) {
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return "", fmt.Errorf("git rev-parse --git-common-dir: %w: %s", err, detail)
+		}
+		return "", fmt.Errorf("git rev-parse --git-common-dir: %w", err)
+	}
+	path := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	return filepath.Clean(path), nil
+}
+
 // CurrentBranch returns the checked-out branch name (e.g. "main", "feature/x").
 func CurrentBranch() (string, error) {
 	return run("rev-parse", "--abbrev-ref", "HEAD")
