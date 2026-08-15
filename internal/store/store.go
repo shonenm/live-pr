@@ -53,7 +53,7 @@ func Discover() (*Store, error) {
 
 // ForBranch resolves branch paths without creating files or directories.
 func ForBranch(root, branch string) *Store {
-	return &Store{Root: root, Branch: branch, Dir: filepath.Join(repoStateRoot(root), slug(branch))}
+	return &Store{Root: root, Branch: branch, Dir: filepath.Join(repoStateRoot(root), branchSlug(branch))}
 }
 
 // Ensure creates the branch data directory.
@@ -200,12 +200,25 @@ func slug(branch string) string {
 	return strings.NewReplacer("/", "-", " ", "-", ":", "-").Replace(branch)
 }
 
+// branchSlug disambiguates branch names that needed character replacement:
+// feat/x and feat-x collapse to the same replacer output and must not share
+// a state directory, so replaced names carry a short content hash. Names
+// that survive slug() unchanged keep their plain directory.
+func branchSlug(branch string) string {
+	cleaned := slug(branch)
+	if cleaned == branch {
+		return cleaned
+	}
+	hash := sha256.Sum256([]byte(branch))
+	return cleaned + "-" + hex.EncodeToString(hash[:])[:8]
+}
+
 // ReviewedMarksPath locates the reviewed-file marks for one review scope: the
 // pull request when its number is known, else the local branch. Marks are
 // per-scope files so moving between PRs (stacked ones included) never leaks
 // another review's progress.
 func ReviewedMarksPath(root string, prNumber int, branch string) string {
-	name := "branch-" + slug(branch)
+	name := "branch-" + branchSlug(branch)
 	if prNumber > 0 {
 		name = strconv.Itoa(prNumber)
 	}
