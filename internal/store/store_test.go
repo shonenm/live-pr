@@ -1,7 +1,10 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -121,5 +124,42 @@ func TestBranchSlugSeparatesSlashAndDash(t *testing.T) {
 	}
 	if !strings.HasPrefix(slash, "feat-x-") {
 		t.Fatalf("replaced name lost readability: %q", slash)
+	}
+}
+
+func TestWorktreesShareRepositoryState(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	base := t.TempDir()
+	main := filepath.Join(base, "repo")
+	linked := filepath.Join(base, "repo-wt")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run(base, "init", "-b", "main", main)
+	run(main, "config", "user.email", "t@e")
+	run(main, "config", "user.name", "t")
+	run(main, "commit", "--allow-empty", "-m", "base")
+	run(main, "worktree", "add", "-b", "feature", linked)
+
+	fromMain := repoStateRoot(main)
+	fromWorktree := repoStateRoot(linked)
+	if fromMain != fromWorktree {
+		t.Fatalf("worktree state split: main=%q worktree=%q", fromMain, fromWorktree)
+	}
+	// The main checkout keeps its historical identity: the hash of its own
+	// absolute path, so existing state directories stay valid.
+	clean, err := filepath.Abs(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte(clean))
+	want := filepath.Join(stateRoot(), "repos", slug(filepath.Base(clean))+"-"+hex.EncodeToString(hash[:])[:12])
+	if fromMain != want {
+		t.Fatalf("main checkout identity changed: got %q want %q", fromMain, want)
 	}
 }
