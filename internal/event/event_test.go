@@ -120,3 +120,25 @@ func TestDeleteUnknownIDErrors(t *testing.T) {
 		t.Fatalf("Delete(unknown) = %v, want not-found error", err)
 	}
 }
+
+func TestLoadSkipsTornAndUnknownRecords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.jsonl")
+	lines := strings.Join([]string{
+		`{"id":"aaa","ts":"2026-08-15T10:00","kind":"note","title":"first"}`,
+		`{"ts":"2026-08-15T10:01","kind":"no`, // torn concurrent append
+		`{"op":"update","target":"ghost","ts":"2026-08-15T10:02","kind":"note","title":"x"}`,
+		`{"op":"delete","target":"ghost"}`,
+		`{"op":"merge","target":"aaa"}`,
+		`{"id":"bbb","ts":"2026-08-15T10:03","kind":"note","title":"second"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	events, err := Load(path)
+	if err != nil {
+		t.Fatalf("recoverable records still failed the load: %v", err)
+	}
+	if len(events) != 2 || events[0].Title != "first" || events[1].Title != "second" {
+		t.Fatalf("events = %#v", events)
+	}
+}
