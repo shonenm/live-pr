@@ -23,6 +23,7 @@ import (
 
 func (m *Model) resetDetailCaches() {
 	m.rawDetailCache = map[string]string{}
+	m.rawPending = map[string]bool{}
 	m.diffCache = map[string]string{}
 	m.diffPending = map[string]bool{}
 	m.richBodies = map[string]string{}
@@ -492,19 +493,48 @@ func commitCIStatus(state string) (string, string, lipgloss.Style) {
 	}
 }
 
-func (m *Model) cachedRawDetail(key string, load func() string) string {
+type rawDetailLoaded struct {
+	generation uint64
+	key        string
+	raw        string
+}
+
+// cachedRawDetail resolves a raw diff from the cache, or dispatches a Cmd to
+// gather it: the git subprocess used to run synchronously on every cache miss,
+// which happens per keystroke while browsing files or commits.
+func (m *Model) cachedRawDetail(key string, load func() string) (string, bool, tea.Cmd) {
 	if m.rawDetailCache == nil {
 		m.rawDetailCache = map[string]string{}
 	}
 	if raw, ok := m.rawDetailCache[key]; ok {
-		return raw
+		return raw, true, nil
 	}
-	raw := load()
-	m.rawDetailCache[key] = raw
-	return raw
+	if m.rawPending == nil {
+		m.rawPending = map[string]bool{}
+	}
+	if m.rawPending[key] {
+		return "", false, nil
+	}
+	m.rawPending[key] = true
+	generation := m.targetGeneration
+	return "", false, func() tea.Msg {
+		return rawDetailLoaded{generation: generation, key: key, raw: load()}
+	}
 }
 
-func (m *Model) loadDetail() detailContent {
+func (m Model) handleRawDetailLoaded(msg rawDetailLoaded) (Model, tea.Cmd) {
+	// rawPending is the ticket: resetDetailCaches clears it, so results
+	// computed against a discarded review range are dropped and the next
+	// sync re-dispatches against the fresh state.
+	if msg.generation != m.targetGeneration || !m.rawPending[msg.key] {
+		return m, nil
+	}
+	delete(m.rawPending, msg.key)
+	m.rawDetailCache[msg.key] = msg.raw
+	return m, m.sync()
+}
+
+func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 	if m.reviewSHA != "" {
 		return m.loadCommitDetail(m.reviewSHA)
 	}
@@ -515,26 +545,38 @@ func (m *Model) loadDetail() detailContent {
 				paths = append(paths, file.OldPath)
 			}
 			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.diffBase, m.headRev, file.Status, file.OldPath, file.Path)
-			if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev, paths...) }); d != "" {
-				return detailContent{key: key, raw: d, renderable: true}
+			d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev, paths...) })
+			if d != "" {
+				return detailContent{key: key, raw: d, renderable: true}, nil
+			}
+			if !cached {
+				return detailContent{raw: stMuted.Render("(loading diff…)")}, cmd
 			}
 		}
-		return detailContent{raw: stMuted.Render("(no changes in selected file)")}
+		return detailContent{raw: stMuted.Render("(no changes in selected file)")}, nil
 	}
 	key := "range:" + m.diffBase + "..." + m.headRev
-	if d := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev) }); d != "" {
-		return detailContent{key: key, raw: d, renderable: true}
+	d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev) })
+	if d != "" {
+		return detailContent{key: key, raw: d, renderable: true}, nil
 	}
-	return detailContent{raw: stMuted.Render("(no changes in " + m.base + "..." + m.headRev + ")")}
+	if !cached {
+		return detailContent{raw: stMuted.Render("(loading diff…)")}, cmd
+	}
+	return detailContent{raw: stMuted.Render("(no changes in " + m.base + "..." + m.headRev + ")")}, nil
 }
 
-func (m *Model) loadCommitDetail(sha string) detailContent {
+func (m *Model) loadCommitDetail(sha string) (detailContent, tea.Cmd) {
 	if sha == "" {
-		return detailContent{raw: stMuted.Render("no commit selected")}
+		return detailContent{raw: stMuted.Render("no commit selected")}, nil
 	}
 	key := "commit:" + sha
-	if d := m.cachedRawDetail(key, func() string { return git.Show(sha) }); d != "" {
-		return detailContent{key: key, raw: d, renderable: true}
+	d, cached, cmd := m.cachedRawDetail(key, func() string { return git.Show(sha) })
+	if d != "" {
+		return detailContent{key: key, raw: d, renderable: true}, nil
 	}
-	return detailContent{raw: stMuted.Render("(commit " + sha + " not found in this repo)")}
+	if !cached {
+		return detailContent{raw: stMuted.Render("(loading commit…)")}, cmd
+	}
+	return detailContent{raw: stMuted.Render("(commit " + sha + " not found in this repo)")}, nil
 }

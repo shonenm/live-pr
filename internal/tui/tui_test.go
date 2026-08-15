@@ -100,16 +100,30 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	m.screen, m.base, m.headRev = detailScreen, "main", "HEAD"
 	m.diffCommand, m.diffTerminal = "", nil
 
-	first, second := m.loadDetail(), m.loadDetail()
+	// A cache miss dispatches the git work as a Cmd instead of blocking.
+	first, cmd := m.loadDetail()
+	if cmd == nil || first.renderable {
+		t.Fatalf("cache miss did not dispatch: %#v cmd=%v", first, cmd)
+	}
+	if again, dup := m.loadDetail(); dup != nil || again.renderable {
+		t.Fatalf("pending key dispatched twice: %#v cmd=%v", again, dup)
+	}
+	u, _ := m.Update(cmd().(rawDetailLoaded))
+	m = u.(Model)
+	second, hitCmd := m.loadDetail()
 	calls, err := os.ReadFile(counter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.raw != "cached diff" || second.raw != first.raw || string(calls) != "1" {
-		t.Fatalf("details = %#v / %#v, calls=%q", first, second, calls)
+	if second.raw != "cached diff" || hitCmd != nil || string(calls) != "1" {
+		t.Fatalf("detail = %#v cmd=%v calls=%q", second, hitCmd, calls)
 	}
 	m.resetDetailCaches()
-	_ = m.loadDetail()
+	_, missCmd := m.loadDetail()
+	if missCmd == nil {
+		t.Fatal("cache reset did not re-dispatch")
+	}
+	_ = missCmd()
 	calls, _ = os.ReadFile(counter)
 	if string(calls) != "2" {
 		t.Fatalf("cache reset calls=%q", calls)
