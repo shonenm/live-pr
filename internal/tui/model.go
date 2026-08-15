@@ -1328,56 +1328,77 @@ func (m *Model) sync() tea.Cmd {
 	}
 	start := m.startSpinner()
 	if m.screen == prListScreen {
-		m.keys.Select.SetEnabled(true)
-		m.keys.PreviewUp.SetEnabled(true)
-		m.keys.PreviewDown.SetEnabled(true)
-		m.keys.PrevView.SetEnabled(true)
-		m.keys.NextView.SetEnabled(true)
-		m.keys.Filter.SetEnabled(true)
-		_, stacked := m.stackForPR(m.selectedPRNumber())
-		m.keys.ToggleStack.SetEnabled(stacked)
-		m.keys.Focus.SetEnabled(false)
-		m.keys.FocusRight.SetEnabled(false)
-		m.keys.Commits.SetEnabled(false)
-		m.keys.Conflicts.SetEnabled(false)
-		m.keys.Checks.SetEnabled(false)
-		m.keys.Back.SetEnabled(false)
-		m.keys.PRList.SetEnabled(false)
-		m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
-		m.keys.Publish.SetEnabled(false)
-		pr := m.selectedPR()
-		m.keys.Merge.SetEnabled(m.prListState == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && m.prActionRunning == noPRAction)
-		m.keys.Checkout.SetEnabled(pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && m.prActionRunning == noPRAction)
-		m.keys.Close.SetEnabled(m.prListState == openPRListState && pr != nil && pr.Number > 0 && m.prActionRunning == noPRAction)
-		m.keys.Status.SetEnabled(pr != nil && pr.Number > 0)
-		content, selectedLine := m.buildPRListRows()
-		m.list.SetContent(content)
-		m.detail.SetContent(m.buildPRPreview())
-		m.detail.GotoTop()
-		keepLineVisible(&m.list, selectedLine)
-		preview := m.ensureSelectedPRPreview()
-		return tea.Batch(start, preview, m.startSpinner())
+		return m.syncPRListScreen(start)
 	}
-	m.keys.PreviewUp.SetEnabled(true)
-	m.keys.PreviewDown.SetEnabled(true)
-	m.keys.PrevView.SetEnabled(false)
-	m.keys.NextView.SetEnabled(false)
-	m.keys.Filter.SetEnabled(false)
-	m.keys.ToggleStack.SetEnabled(false)
-	m.keys.Focus.SetEnabled(true)
-	m.keys.FocusRight.SetEnabled(true)
-	m.keys.Commits.SetEnabled(m.fileExplorerMode() || m.active != commitsTab)
-	m.keys.Conflicts.SetEnabled(m.active != conflictsTab)
-	m.keys.Checks.SetEnabled(m.cache.PR != nil && m.active != checksTab)
-	m.keys.PRList.SetEnabled(true)
-	m.keys.Select.SetEnabled(m.active == commitsTab)
-	m.keys.Back.SetEnabled(m.active != conversationTab)
-	m.keys.Browse.SetEnabled(m.selectedBrowseURL() != "")
-	m.keys.Publish.SetEnabled(!m.remote)
-	m.keys.Merge.SetEnabled(m.canMergeCurrentPR() && m.prActionRunning == noPRAction)
-	m.keys.Checkout.SetEnabled(false)
-	m.keys.Close.SetEnabled(false)
-	m.keys.Status.SetEnabled(m.cache.PR != nil && m.cache.PR.Number > 0)
+	return m.syncDetailScreen(start)
+}
+
+// applyKeyStates flips every listed binding at once, so each screen declares
+// its keys as a predicate table instead of forty ordered SetEnabled calls.
+func applyKeyStates(states map[*key.Binding]bool) {
+	for binding, enabled := range states {
+		binding.SetEnabled(enabled)
+	}
+}
+
+func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
+	pr := m.selectedPR()
+	_, stacked := m.stackForPR(m.selectedPRNumber())
+	idle := m.prActionRunning == noPRAction
+	applyKeyStates(map[*key.Binding]bool{
+		&m.keys.Select:      true,
+		&m.keys.PreviewUp:   true,
+		&m.keys.PreviewDown: true,
+		&m.keys.PrevView:    true,
+		&m.keys.NextView:    true,
+		&m.keys.Filter:      true,
+		&m.keys.ToggleStack: stacked,
+		&m.keys.Focus:       false,
+		&m.keys.FocusRight:  false,
+		&m.keys.Commits:     false,
+		&m.keys.Conflicts:   false,
+		&m.keys.Checks:      false,
+		&m.keys.Back:        false,
+		&m.keys.PRList:      false,
+		&m.keys.Browse:      m.selectedBrowseURL() != "",
+		&m.keys.Publish:     false,
+		&m.keys.Merge:       m.prListState == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
+		&m.keys.Checkout:    pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
+		&m.keys.Close:       m.prListState == openPRListState && pr != nil && pr.Number > 0 && idle,
+		&m.keys.Status:      pr != nil && pr.Number > 0,
+	})
+	content, selectedLine := m.buildPRListRows()
+	m.list.SetContent(content)
+	m.detail.SetContent(m.buildPRPreview())
+	m.detail.GotoTop()
+	keepLineVisible(&m.list, selectedLine)
+	preview := m.ensureSelectedPRPreview()
+	return tea.Batch(start, preview, m.startSpinner())
+}
+
+func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
+	applyKeyStates(map[*key.Binding]bool{
+		&m.keys.Select:      m.active == commitsTab,
+		&m.keys.PreviewUp:   true,
+		&m.keys.PreviewDown: true,
+		&m.keys.PrevView:    false,
+		&m.keys.NextView:    false,
+		&m.keys.Filter:      false,
+		&m.keys.ToggleStack: false,
+		&m.keys.Focus:       true,
+		&m.keys.FocusRight:  true,
+		&m.keys.Commits:     m.fileExplorerMode() || m.active != commitsTab,
+		&m.keys.Conflicts:   m.active != conflictsTab,
+		&m.keys.Checks:      m.cache.PR != nil && m.active != checksTab,
+		&m.keys.Back:        m.active != conversationTab,
+		&m.keys.PRList:      true,
+		&m.keys.Browse:      m.selectedBrowseURL() != "",
+		&m.keys.Publish:     !m.remote,
+		&m.keys.Merge:       m.canMergeCurrentPR() && m.prActionRunning == noPRAction,
+		&m.keys.Checkout:    false,
+		&m.keys.Close:       false,
+		&m.keys.Status:      m.cache.PR != nil && m.cache.PR.Number > 0,
+	})
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
 	keepLineVisible(&m.list, selectedLine)
