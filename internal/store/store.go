@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/shonenm/live-pr/internal/git"
 )
@@ -158,11 +159,33 @@ func MigrateLegacy(root string) error {
 	return nil
 }
 
-func repoStateRoot(root string) string {
+// sharedRoots caches the per-checkout repository identity: resolving it runs
+// one git subprocess, and repoStateRoot sits on hot paths.
+var sharedRoots sync.Map // absolute checkout root -> shared identity path
+
+// sharedRepoPath identifies the repository regardless of which worktree is
+// open: the parent of the common .git directory. For the main checkout that
+// is the checkout root itself (so existing state directories keep working);
+// linked worktrees map to the main checkout instead of getting their own
+// duplicated caches. Non-repository roots (tests) fall back to the path.
+func sharedRepoPath(root string) string {
 	clean, err := filepath.Abs(root)
 	if err != nil {
 		clean = root
 	}
+	if cached, ok := sharedRoots.Load(clean); ok {
+		return cached.(string)
+	}
+	path := clean
+	if common, err := git.CommonDir(clean); err == nil {
+		path = filepath.Dir(common)
+	}
+	sharedRoots.Store(clean, path)
+	return path
+}
+
+func repoStateRoot(root string) string {
+	clean := sharedRepoPath(root)
 	hash := sha256.Sum256([]byte(clean))
 	name := filepath.Base(filepath.Clean(clean))
 	return filepath.Join(stateRoot(), "repos", slug(name)+"-"+hex.EncodeToString(hash[:])[:12])
