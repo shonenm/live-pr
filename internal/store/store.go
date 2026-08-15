@@ -94,16 +94,7 @@ func (s *Store) WriteConclusion(body string) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	// Rename is atomic on POSIX; on Windows it fails if the target exists, so
-	// remove and retry there.
-	err = os.Rename(name, path)
-	if err != nil && runtime.GOOS == "windows" {
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return err
-		}
-		return os.Rename(name, path)
-	}
-	return err
+	return replaceFile(name, path)
 }
 
 // GitHubCache is the path to mutable remote state kept separate from the timeline.
