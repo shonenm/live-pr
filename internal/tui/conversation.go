@@ -195,22 +195,25 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 		// Render each item without the accent bar; the selected item is shown
 		// by a full-width background band instead.
 		var itemLines []string
-		if item.summary != nil {
+		switch item.kind() {
+		case itemSummary:
 			itemLines = m.summaryLines(*item.summary, false, m.list.Width)
-		} else if item.pr != nil {
+		case itemPRDescription:
 			itemLines = m.descriptionLines(*item.pr, false, m.list.Width)
-		} else if item.comment != nil {
+		case itemComment:
 			itemLines = m.commentLines(*item.comment, false, m.list.Width)
-		} else if item.review != nil {
+		case itemReview:
 			itemLines = m.reviewLines(*item.review, false, m.list.Width)
-		} else if item.reviewComment != nil {
+		case itemReviewComment:
 			itemLines = m.reviewCommentLines(*item.reviewComment, false, m.list.Width)
-		} else if item.activity != nil {
+		case itemActivity:
 			itemLines = m.activityLines(*item.activity, false)
-		} else if item.prCommit != nil {
+		case itemPRCommit:
 			itemLines = m.commitCIActivityLines(*item.prCommit, false)
-		} else {
+		case itemEvent:
 			itemLines = m.eventLines(*item.event, false, m.list.Width)
+		default:
+			itemLines = []string{stMuted.Render("(unrenderable item)")}
 		}
 		if selected {
 			for j := range itemLines {
@@ -218,9 +221,8 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 			}
 		}
 		lines = append(lines, itemLines...)
-		compactActivity := item.activity != nil || item.prCommit != nil
-		nextCompactActivity := i+1 < len(items) && (items[i+1].activity != nil || items[i+1].prCommit != nil)
-		if !compactActivity || !nextCompactActivity {
+		nextCompactActivity := i+1 < len(items) && items[i+1].compactActivity()
+		if !item.compactActivity() || !nextCompactActivity {
 			lines = append(lines, "")
 		}
 	}
