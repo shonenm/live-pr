@@ -2651,3 +2651,34 @@ func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
 		t.Fatal("render cache served stale conversation content")
 	}
 }
+
+func TestConversationCursorMoveReusesUnselectedCardRenders(t *testing.T) {
+	m := testModel()
+	m.list.Width = 80
+	one := gh.Comment{ID: 1, Body: "first"}
+	two := gh.Comment{ID: 2, Body: "second"}
+	m.cache.Comments = []gh.Comment{one, two}
+	m.conversationDirty = true
+	items := m.conversationItems()
+	if len(items) < 2 {
+		t.Fatalf("need 2+ items, got %d", len(items))
+	}
+	m.cursors[conversationTab] = 0
+	_, _ = m.buildConversation()
+	cached := len(m.convItemCache)
+	if cached == 0 {
+		t.Fatal("no unselected cards cached")
+	}
+	// Cursor move: previously-selected card renders once, the rest come from
+	// the cache.
+	m.cursors[conversationTab] = 1
+	_, _ = m.buildConversation()
+	if len(m.convItemCache) != cached+1 {
+		t.Fatalf("cursor move cache growth = %d, want %d", len(m.convItemCache), cached+1)
+	}
+	// Content changes flush the card cache.
+	m.invalidateConversation()
+	if len(m.convItemCache) != 0 {
+		t.Fatal("invalidation kept stale card renders")
+	}
+}

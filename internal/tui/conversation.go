@@ -189,34 +189,7 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 		if selected {
 			selectedLine = len(lines)
 		}
-		// Render each item without the accent bar; the selected item is shown
-		// by a full-width background band instead.
-		var itemLines []string
-		switch item.kind() {
-		case itemSummary:
-			itemLines = m.summaryLines(*item.summary, false, m.list.Width)
-		case itemPRDescription:
-			itemLines = m.descriptionLines(*item.pr, false, m.list.Width)
-		case itemComment:
-			itemLines = m.commentLines(*item.comment, false, m.list.Width)
-		case itemReview:
-			itemLines = m.reviewLines(*item.review, false, m.list.Width)
-		case itemReviewComment:
-			itemLines = m.reviewCommentLines(*item.reviewComment, false, m.list.Width)
-		case itemActivity:
-			itemLines = m.activityLines(*item.activity, false)
-		case itemPRCommit:
-			itemLines = m.commitCIActivityLines(*item.prCommit, false)
-		case itemEvent:
-			itemLines = m.eventLines(*item.event, false, m.list.Width)
-		default:
-			itemLines = []string{stMuted.Render("(unrenderable item)")}
-		}
-		if selected {
-			for j := range itemLines {
-				itemLines[j] = highlightSelectedBg(itemLines[j], m.list.Width)
-			}
-		}
+		itemLines := m.conversationItemLines(item, selected)
 		lines = append(lines, itemLines...)
 		nextCompactActivity := i+1 < len(items) && items[i+1].compactActivity()
 		if !item.compactActivity() || !nextCompactActivity {
@@ -224,6 +197,53 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 		}
 	}
 	return strings.TrimSuffix(strings.Join(lines, "\n"), "\n"), selectedLine
+}
+
+// conversationItemLines renders one card. Unselected renders are cached by
+// (item key, width): invalidateConversation clears the cache on content
+// changes, so cursor moves re-render only the selected card instead of every
+// card in the conversation.
+func (m *Model) conversationItemLines(item conversationItem, selected bool) []string {
+	cacheKey := fmt.Sprintf("%s\x00%d", item.key, m.list.Width)
+	if !selected {
+		if cached, ok := m.convItemCache[cacheKey]; ok {
+			return cached
+		}
+	}
+	// Render without the accent bar; the selected item is shown by a
+	// full-width background band instead.
+	var itemLines []string
+	switch item.kind() {
+	case itemSummary:
+		itemLines = m.summaryLines(*item.summary, false, m.list.Width)
+	case itemPRDescription:
+		itemLines = m.descriptionLines(*item.pr, false, m.list.Width)
+	case itemComment:
+		itemLines = m.commentLines(*item.comment, false, m.list.Width)
+	case itemReview:
+		itemLines = m.reviewLines(*item.review, false, m.list.Width)
+	case itemReviewComment:
+		itemLines = m.reviewCommentLines(*item.reviewComment, false, m.list.Width)
+	case itemActivity:
+		itemLines = m.activityLines(*item.activity, false)
+	case itemPRCommit:
+		itemLines = m.commitCIActivityLines(*item.prCommit, false)
+	case itemEvent:
+		itemLines = m.eventLines(*item.event, false, m.list.Width)
+	default:
+		itemLines = []string{stMuted.Render("(unrenderable item)")}
+	}
+	if selected {
+		for j := range itemLines {
+			itemLines[j] = highlightSelectedBg(itemLines[j], m.list.Width)
+		}
+		return itemLines
+	}
+	if m.convItemCache == nil {
+		m.convItemCache = map[string][]string{}
+	}
+	m.convItemCache[cacheKey] = itemLines
+	return itemLines
 }
 
 func (m Model) eventLines(e event.Event, selected bool, width int) []string {

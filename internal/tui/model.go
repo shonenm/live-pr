@@ -420,6 +420,7 @@ type Model struct {
 	prRowCache                map[prRowCacheKey][]string
 	collapsedStacks           map[string]bool
 	prCursor                  int
+	convItemCache             map[string][]string
 	localAvailable            bool
 	localTitle                string
 	localStats                git.ChangeStats
@@ -860,11 +861,12 @@ func (m *Model) advanceAsyncGenerations(previous Model) {
 
 func (m *Model) invalidateConversation() {
 	m.conversationDirty = true
-	// The render cache must drop too: conversationItems() consumes the dirty
+	// The render caches must drop too: conversationItems() consumes the dirty
 	// flag, and callers like restoreConversationSelection do that before
 	// buildConversation runs — the stale render would otherwise survive a
 	// refresh whenever cursor, width, and item count all stayed the same.
 	m.conversationRenderValid = false
+	m.convItemCache = map[string][]string{}
 }
 
 func fetchPRList(generation uint64, key, query, cursor string, appendPage bool) tea.Cmd {
