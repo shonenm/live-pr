@@ -77,12 +77,25 @@ type keyMap struct {
 	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, Help, Quit key.Binding
 }
 
+// helpGroups is the single source of help ordering; ShortHelp flattens it and
+// FullHelp shows it as-is, so a binding can no longer drop out of one of the
+// three hand-maintained lists (FocusLeft already had).
+func (k keyMap) helpGroups() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.FocusLeft, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList},
+		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit},
+	}
+}
+
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Status, k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Help, k.Quit}
+	var all []key.Binding
+	for _, group := range k.helpGroups() {
+		all = append(all, group...)
+	}
+	return all
 }
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList}, {k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit}}
-}
+
+func (k keyMap) FullHelp() [][]key.Binding { return k.helpGroups() }
 
 var keys = keyMap{
 	Up:           key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
