@@ -154,23 +154,25 @@ type prPreviewLoaded struct {
 }
 
 type remoteLoaded struct {
-	generation     uint64
-	pr             gh.PR
-	headRef        string
-	base           string
-	diffBase       string
-	commits        []git.Commit
-	files          []git.ChangedFile
-	comments       []gh.Comment
-	activities     []gh.Activity
-	reviews        []gh.Review
-	reviewComments []gh.ReviewThreadComment
-	readiness      git.MergeReadiness
-	refErr         error
-	previewErr     error
-	commentsErr    error
-	activitiesErr  error
-	readinessErr   error
+	generation        uint64
+	pr                gh.PR
+	headRef           string
+	base              string
+	diffBase          string
+	commits           []git.Commit
+	files             []git.ChangedFile
+	comments          []gh.Comment
+	activities        []gh.Activity
+	reviews           []gh.Review
+	reviewComments    []gh.ReviewThreadComment
+	readiness         git.MergeReadiness
+	refErr            error
+	previewErr        error
+	commentsErr       error
+	activitiesErr     error
+	reviewsErr        error
+	reviewCommentsErr error
+	readinessErr      error
 }
 
 type ciPollTick struct {
@@ -185,15 +187,17 @@ type ciPolled struct {
 }
 
 type githubRefreshed struct {
-	generation     uint64
-	pr             gh.PR
-	comments       []gh.Comment
-	activities     []gh.Activity
-	reviews        []gh.Review
-	reviewComments []gh.ReviewThreadComment
-	err            error
-	commentsErr    error
-	activitiesErr  error
+	generation        uint64
+	pr                gh.PR
+	comments          []gh.Comment
+	activities        []gh.Activity
+	reviews           []gh.Review
+	reviewComments    []gh.ReviewThreadComment
+	err               error
+	commentsErr       error
+	activitiesErr     error
+	reviewsErr        error
+	reviewCommentsErr error
 }
 
 type publishDone struct {
@@ -1023,7 +1027,7 @@ func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
 			number = pr.Number
 		}
 		detail := client.LoadPRDetail(number)
-		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, reviews: detail.Reviews, reviewComments: detail.ReviewComments, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr}
+		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, reviews: detail.Reviews, reviewComments: detail.ReviewComments, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr, reviewsErr: detail.ReviewsErr, reviewCommentsErr: detail.ReviewCommentsErr}
 	}
 }
 
@@ -1162,7 +1166,7 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 		var activities []gh.Activity
 		var reviews []gh.Review
 		var reviewComments []gh.ReviewThreadComment
-		var refErr, previewErr, commentsErr, activitiesErr, readinessErr error
+		var refErr, previewErr, commentsErr, activitiesErr, reviewsErr, reviewCommentsErr, readinessErr error
 		var readiness git.MergeReadiness
 		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
 		var wg sync.WaitGroup
@@ -1177,6 +1181,7 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 			comments, activities = detail.Comments, detail.Activities
 			reviews, reviewComments = detail.Reviews, detail.ReviewComments
 			previewErr, commentsErr, activitiesErr = detail.PreviewErr, detail.CommentsErr, detail.ActivitiesErr
+			reviewsErr, reviewCommentsErr = detail.ReviewsErr, detail.ReviewCommentsErr
 			if previewErr == nil {
 				pr = detail.PR
 			}
@@ -1194,7 +1199,7 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 			commits, _ = git.CommitsRange(diffBase, headRef)
 			files, _ = git.ChangedFilesRange(diffBase, headRef)
 		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
 	}
 }
 
