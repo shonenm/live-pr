@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	bspinner "github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -129,6 +131,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "PR list cache: " + msg.err.Error()
 		}
 		return m, nil
+	case cacheSaved:
+		if msg.err != nil {
+			m.status = "GitHub cache: " + msg.err.Error()
+		} else if strings.HasPrefix(m.status, "GitHub cache") {
+			m.status = ""
+		}
+		return m, nil
+	case baseResolved:
+		next, cmd := m.handleBaseResolved(msg)
+		return next, cmd
 	case ciPollTick:
 		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && prCIHealth(*m.cache.PR) == "pending" {
 			return m, pollCI(msg.generation, msg.number)

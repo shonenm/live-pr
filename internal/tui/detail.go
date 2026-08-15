@@ -55,30 +55,58 @@ func (m *Model) reloadLocalConversation() {
 	m.invalidateConversation()
 }
 
-func (m *Model) useBase(base string, pr *gh.PR, prURL string) tea.Cmd {
-	base = git.ResolveBase(base)
-	diffBase, headRev, reviewRange := localReviewRange(base, pr, m.headRev, m.remote)
-	if diffBase == "" || (base == m.base && diffBase == m.diffBase && m.reviewRange == reviewRange && m.headRev == headRev) {
-		return nil
+// resolveBase recomputes the review range off the Update goroutine: the merge
+// base, timeline sync, and range scans all spawn git. handleBaseResolved
+// applies the result only when the range actually changed.
+func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
+	generation := m.targetGeneration
+	headRev, remote, timelinePath := m.headRev, m.remote, m.timelinePath
+	var prCopy *gh.PR
+	if pr != nil {
+		c := *pr
+		prCopy = &c
 	}
-	m.base, m.diffBase, m.headRev, m.reviewRange = base, diffBase, headRev, reviewRange
-	m.resetDetailCaches()
-	if !m.remote {
-		_, _ = timeline.SyncCommits(m.timelinePath, diffBase)
-		if events, err := event.Load(m.timelinePath); err == nil {
-			m.events = events
-			sort.SliceStable(m.events, func(i, j int) bool { return m.events[i].TS < m.events[j].TS })
-			m.invalidateConversation()
+	return func() tea.Msg {
+		msg := baseResolved{generation: generation, prURL: prURL}
+		resolved := git.ResolveBase(base)
+		diffBase, newHead, reviewRange := localReviewRange(resolved, prCopy, headRev, remote)
+		msg.base, msg.diffBase, msg.headRev, msg.reviewRange = resolved, diffBase, newHead, reviewRange
+		if diffBase == "" {
+			return msg
 		}
+		if !remote {
+			_, _ = timeline.SyncCommits(timelinePath, diffBase)
+			if events, err := event.Load(timelinePath); err == nil {
+				sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
+				msg.events, msg.eventsOK = events, true
+			}
+		}
+		msg.commits, _ = git.CommitsRange(diffBase, newHead)
+		if publishedReviewHead(prCopy) == "" && !remote {
+			msg.files, _ = git.ChangedFilesRange(diffBase, "")
+		} else {
+			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
+		}
+		return msg
 	}
-	m.commits, _ = git.CommitsRange(diffBase, m.headRev)
-	if publishedReviewHead(pr) == "" && !m.remote {
-		m.files, _ = git.ChangedFilesRange(diffBase, "")
-	} else {
-		m.files, _ = git.ChangedFilesRange(diffBase, m.headRev)
+}
+
+func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
+	if msg.generation != m.targetGeneration {
+		return m, nil
 	}
+	if msg.diffBase == "" || (msg.base == m.base && msg.diffBase == m.diffBase && m.reviewRange == msg.reviewRange && m.headRev == msg.headRev) {
+		return m, nil
+	}
+	m.base, m.diffBase, m.headRev, m.reviewRange = msg.base, msg.diffBase, msg.headRev, msg.reviewRange
+	m.resetDetailCaches()
+	if msg.eventsOK {
+		m.events = msg.events
+		m.invalidateConversation()
+	}
+	m.commits, m.files = msg.commits, msg.files
 	m.fileCursor = 0
-	return m.restartReview(m.reviewSHA, prURL)
+	return m, tea.Batch(m.restartReview(m.reviewSHA, msg.prURL), m.sync())
 }
 
 func (m *Model) restartReview(sha, prURL string) tea.Cmd {
