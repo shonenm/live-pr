@@ -3262,3 +3262,42 @@ func TestViewManagerEditsReorderAndSave(t *testing.T) {
 		t.Fatalf("config on disk = %#v", reloaded.Views)
 	}
 }
+
+func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote = detailScreen, true
+	m.currentBranch = "main"
+	pr := gh.PR{Number: 14, HeadRefName: "feature", BaseRefName: "main", HeadRefOID: "abc"}
+	m.cache.PR = &pr
+
+	// c still switches to the commits tab on the detail screen.
+	m.active = conversationTab
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if got := u.(Model); got.active != commitsTab || got.pendingPRAction != noPRAction {
+		t.Fatalf("c = tab:%v pending:%v", got.active, got.pendingPRAction)
+	}
+
+	// C asks to check the shown PR out.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = u.(Model)
+	if m.pendingPRAction != checkoutPR || m.prActionNumber != 14 {
+		t.Fatalf("C = pending:%v number:%d", m.pendingPRAction, m.prActionNumber)
+	}
+	if popup := ansi.Strip(m.renderActionPopup()); !strings.Contains(popup, "Checkout feature?") {
+		t.Fatalf("confirm popup = %q", popup)
+	}
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if got := u.(Model); got.prActionRunning != checkoutPR || cmd == nil {
+		t.Fatalf("confirm = running:%v cmd:%v", got.prActionRunning, cmd)
+	}
+
+	// The PR already checked out offers nothing to do.
+	current := testModel()
+	current.screen, current.currentBranch = detailScreen, "feature"
+	currentPR := gh.PR{Number: 14, HeadRefName: "feature"}
+	current.cache.PR = &currentPR
+	u, _ = current.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	if got := u.(Model); got.pendingPRAction != noPRAction {
+		t.Fatal("offered to check out the branch already checked out")
+	}
+}
