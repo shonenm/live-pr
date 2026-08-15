@@ -68,6 +68,8 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		selected := m.selectedPRNumber()
 		m.filterQuery = ""
 		return m, m.applyPRViewState(selected)
+	case key.Matches(msg, m.keys.ManageViews):
+		return m.openViewManager()
 	case key.Matches(msg, m.keys.PrevView):
 		selected := m.selectedPRNumber()
 		m.prView = m.stepView(-1)

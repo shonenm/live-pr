@@ -36,10 +36,15 @@ func asyncCompletion(msg tea.Msg) bool {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Modal popups own the keyboard only; async completions fall through to
 	// the main switch below so background work keeps landing.
-	modal := m.statusPR.Number > 0 || m.reviewSubmitEvent != "" ||
+	modal := m.statusPR.Number > 0 || m.reviewSubmitEvent != "" || m.viewManager ||
 		m.localEditMode != noLocalEdit || m.localDeleteTarget != "" || m.remoteDeleteID > 0
 	if modal && !asyncCompletion(msg) {
 		switch {
+		case m.viewManager:
+			if keyMsg, ok := msg.(tea.KeyMsg); ok {
+				return m.handleViewManagerKey(keyMsg)
+			}
+			return m, nil
 		case m.statusPR.Number > 0:
 			if keyMsg, ok := msg.(tea.KeyMsg); ok {
 				return m.handlePRStatusKey(keyMsg)
