@@ -2897,8 +2897,23 @@ func TestRichContentKeyIncludesWidthAndSkipsZeroWidth(t *testing.T) {
 	if richContentKey(80, pr, nil, nil) == richContentKey(40, pr, nil, nil) {
 		t.Fatal("resize does not invalidate rendered mermaid")
 	}
-	if loadRichContent(1, 0, pr, nil, nil) != nil || loadRichContent(1, -7, pr, nil, nil) != nil {
+	m := testModel()
+	m.cache.PR = pr
+	m.list.Width = 0 // pre-layout: width-7 is negative
+	if m.richContentCmd() != nil {
 		t.Fatal("zero/negative width still dispatched a render")
+	}
+	m.list.Width = 87
+	if m.richContentCmd() == nil {
+		t.Fatal("first dispatch skipped")
+	}
+	// Same content and width: no re-render, no avatar re-download.
+	if m.richContentCmd() != nil {
+		t.Fatal("unchanged content dispatched again")
+	}
+	m.list.Width = 47
+	if m.richContentCmd() == nil {
+		t.Fatal("width change did not re-dispatch")
 	}
 }
 
