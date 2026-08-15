@@ -2,6 +2,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -242,8 +243,30 @@ func New() Client {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return exec.CommandContext(ctx, "gh", args...).CombinedOutput()
+		// stdout and stderr must stay separate: gh prints warnings (update
+		// notices, deprecations) on stderr, and mixing them into stdout made
+		// every JSON decode fail inscrutably.
+		cmd := exec.CommandContext(ctx, "gh", args...)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		return stdout.Bytes(), runError(err, ctx.Err() == context.DeadlineExceeded, stderr.String())
 	}}
+}
+
+// runError folds the timeout cause and stderr detail into a run failure:
+// "signal: killed" alone says nothing, and gh's stderr carries the reason.
+func runError(err error, timedOut bool, stderr string) error {
+	if err == nil {
+		return nil
+	}
+	if timedOut {
+		err = fmt.Errorf("timed out after 30s: %w", err)
+	}
+	if detail := strings.TrimSpace(stderr); detail != "" {
+		err = fmt.Errorf("%w: %s", err, detail)
+	}
+	return err
 }
 
 func (c Client) repositoryName() (string, error) {
