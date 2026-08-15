@@ -374,7 +374,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	if len(stale) > 0 {
 		m.githubStatus += " · " + strings.Join(stale, "/") + " stale"
 	}
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, msg.pr.URL, ""))
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, msg.pr.URL, "", m.reviewedMarksPath))
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
 	cmds := []tea.Cmd{m.sync(), m.nextCIPoll(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities)}

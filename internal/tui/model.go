@@ -410,6 +410,7 @@ type Model struct {
 	diffCache         map[string]string
 	diffPending       map[string]bool
 	checkedFiles      map[string]string
+	reviewedMarksPath string
 
 	list     viewport.Model
 	explorer viewport.Model
@@ -683,13 +684,14 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = base, diffBase, st.Branch, headRev, reviewRange
 	m.events, m.files, m.commits = events, files, commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
+	m.loadReviewedMarks(m.currentPRNumber(), st.Branch)
 	m.invalidateConversation()
 	m.githubStatus = "Local only · checking for PR…"
 	if cache.PR != nil {
 		m.githubStatus = "GitHub: cached · refreshing…"
 	}
 	m.refreshing, m.publishing = true, false
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, diffBase, st.Branch, "HEAD", prURL, ""))
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, diffBase, st.Branch, "HEAD", prURL, "", m.reviewedMarksPath))
 	m.focusDiff, m.focusExplorer, m.fileCursor, m.active, m.reviewSHA = false, false, 0, conversationTab, ""
 	m.layout()
 	return nil
@@ -1010,6 +1012,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.timelinePath, m.cachePath = "", ""
 	m.cache = gh.NewCache(pr.HeadRefName)
 	m.cache.PR = &pr
+	m.loadReviewedMarks(pr.Number, pr.HeadRefName)
 	if snapshot, ok := m.navigator.Snapshot(pr.Number); ok {
 		m.cache.Comments = snapshot.Comments
 		m.cache.Activities = snapshot.Activities
