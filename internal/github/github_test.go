@@ -402,3 +402,21 @@ func TestCreateArguments(t *testing.T) {
 		t.Fatalf("args=%v url=%q", got, url)
 	}
 }
+
+func TestRunErrorFoldsTimeoutAndStderr(t *testing.T) {
+	if runError(nil, false, "warning: ignored") != nil {
+		t.Fatal("nil error must stay nil")
+	}
+	base := errors.New("signal: killed")
+	got := runError(base, true, "  gh: request timed out\n")
+	if !errors.Is(got, base) {
+		t.Fatal("wrapped error must keep the cause")
+	}
+	want := "timed out after 30s: signal: killed: gh: request timed out"
+	if got.Error() != want {
+		t.Fatalf("got %q, want %q", got.Error(), want)
+	}
+	if msg := runError(base, false, "").Error(); msg != "signal: killed" {
+		t.Fatalf("no timeout, no stderr: got %q", msg)
+	}
+}
