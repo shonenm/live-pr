@@ -2790,3 +2790,20 @@ func TestCacheSavedUpdatesStatus(t *testing.T) {
 		t.Fatalf("stale cache error kept: %q", got)
 	}
 }
+
+func TestCheckoutReloadRunsAsCommandAndKeepsModelOnFailure(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	u, cmd := m.Update(prActionDone{action: checkoutPR, number: 14, pr: gh.PR{Number: 14}})
+	m = u.(Model)
+	// The rebuild (New + local hydration) runs in the Cmd, not the handler.
+	if cmd == nil || !m.refreshing || !strings.Contains(m.status, "reloading") {
+		t.Fatalf("checkout rebuild not deferred: cmd=%v refreshing=%v status=%q", cmd, m.refreshing, m.status)
+	}
+	// A failed rebuild keeps the old model alive instead of a closed husk.
+	u, _ = m.Update(checkoutReloaded{number: 14, err: errors.New("checkout reload: boom")})
+	m = u.(Model)
+	if m.refreshing || m.status != "checkout reload: boom" || m.screen != prListScreen {
+		t.Fatalf("failure did not keep old model: refreshing=%v status=%q", m.refreshing, m.status)
+	}
+}
