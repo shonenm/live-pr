@@ -1215,6 +1215,10 @@ func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 	if len(m.openPRs) != 2 || m.openPRs[m.prCursor].Number != 2 {
 		t.Fatalf("successful refresh lost selection: prs=%v cursor=%d", m.openPRs, m.prCursor)
 	}
+	// Persisting rides an async Cmd; run it here to check the payload.
+	if msg := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
+		t.Fatalf("navigator save failed: %#v", msg)
+	}
 	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
 	if err != nil || len(cached.PRs) != 2 {
 		t.Fatalf("navigator cache not saved: %#v err=%v", cached, err)
@@ -1467,6 +1471,14 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	// spawning git itself.
 	if len(m.commits) != 1 || len(m.files) != 1 || m.files[0].Path != "a.go" {
 		t.Fatalf("remote ranges not applied: commits=%d files=%#v", len(m.commits), m.files)
+	}
+	// The snapshot lands in memory synchronously; the disk write rides an
+	// async Cmd so the Update goroutine never blocks on MarshalIndent + IO.
+	if snapshot, ok := m.navigator.Snapshot(14); !ok || len(snapshot.Comments) != 1 {
+		t.Fatalf("in-memory snapshot = %#v ok=%v", snapshot, ok)
+	}
+	if msg := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
+		t.Fatalf("navigator save failed: %#v", msg)
 	}
 	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
 	if err != nil {
