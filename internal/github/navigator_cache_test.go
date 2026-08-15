@@ -88,3 +88,24 @@ func TestNavigatorCacheDoesNotContainPublishBaseline(t *testing.T) {
 		t.Fatal("snapshot missing")
 	}
 }
+
+func TestCloneIsolatesFromLaterMutations(t *testing.T) {
+	c := NewNavigatorCache()
+	c.PRs = []PR{{Number: 1, Title: "one"}}
+	c.SetView("all", c.PRs, 1, "t1")
+	clone := c.Clone()
+
+	c.PRs[0].Title = "mutated"
+	c.SetView("all", nil, 0, "t2")
+	c.SetSnapshot(PRSnapshot{PR: PR{Number: 2}})
+
+	if clone.PRs[0].Title != "one" {
+		t.Fatalf("clone PR mutated: %q", clone.PRs[0].Title)
+	}
+	if view, ok := clone.Views["all"]; !ok || view.TotalCount != 1 {
+		t.Fatalf("clone view mutated: %#v ok=%v", view, ok)
+	}
+	if len(clone.Snapshots) != 0 {
+		t.Fatalf("clone snapshots mutated: %d", len(clone.Snapshots))
+	}
+}

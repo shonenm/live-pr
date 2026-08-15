@@ -92,18 +92,16 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 		}
 	}
 	m.applyPRFilters(selectedNumber)
+	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prListGeneration, msg.page.PRs)}
 	if cacheUpdated {
-		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
-			m.status = "PR list cache: " + err.Error()
-		}
+		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
 	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.prView.String())
 	_, localFilter := splitPRFilter(m.filterQuery)
-	avatars := loadListAvatarColors(m.prListGeneration, msg.page.PRs)
 	if page.hasNext && (len(msg.page.PRs) == 0 || localFilter != "" && len(m.openPRs) == 0) {
-		return m, tea.Batch(m.sync(), avatars, m.requestPRPage(false))
+		cmds = append(cmds, m.requestPRPage(false))
 	}
-	return m, tea.Batch(m.sync(), avatars)
+	return m, tea.Batch(cmds...)
 
 }
 
@@ -129,17 +127,15 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 		m.activePRPage = prPageKey(m.prView, m.prListState, "")
 	}
 	m.applyPRFilters(msg.pr.Number)
-	if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
-		m.status = "PR list cache: " + err.Error()
-	}
+	saveCmd := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
 	if m.screen != prListScreen || !m.autoOpenCurrent {
-		return m, m.sync()
+		return m, tea.Batch(saveCmd, m.sync())
 	}
 	m.autoOpenCurrent = false
 	st := store.ForBranch(m.root, m.currentBranch)
 	cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
 	cache.PR = &msg.pr
-	return m, tea.Batch(m.startLocalLoad(st, cache, &msg.pr), m.startSpinner())
+	return m, tea.Batch(saveCmd, m.startLocalLoad(st, cache, &msg.pr), m.startSpinner())
 
 }
 
@@ -186,17 +182,14 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 		}
 	}
 	m.applyPRFilters(selectedNumber)
+	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prListGeneration, []gh.PR{msg.pr})}
 	// Only persist when the visible row's preview loads; background prefetches
 	// stay in memory and ride the next page-load/refresh save.
-	onSelected := m.selectedPRNumber() == msg.number
-	if onSelected {
-		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
-			m.status = "PR list cache: " + err.Error()
-		} else {
-			m.status = ""
-		}
+	if m.selectedPRNumber() == msg.number {
+		m.status = ""
+		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
-	return m, tea.Batch(m.sync(), loadListAvatarColors(m.prListGeneration, []gh.PR{msg.pr}))
+	return m, tea.Batch(cmds...)
 
 }
 
@@ -347,14 +340,12 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.cache.FetchedAt = now
 	m.invalidateConversation()
 	m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
-	if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
-		m.status = "PR list cache: " + err.Error()
-	}
+	saveCmd := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
 	if msg.refErr != nil {
 		m.status = msg.refErr.Error()
 		m.githubStatus = "GitHub: Conversation updated · review ref unavailable"
 		m.restoreConversationSelection(selectedKey)
-		return m, m.sync()
+		return m, tea.Batch(saveCmd, m.sync())
 	}
 	m.headRev = msg.headRef
 	m.base, m.diffBase = msg.base, msg.diffBase
@@ -383,7 +374,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, msg.pr.URL, "", m.reviewedMarksPath))
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	cmds := []tea.Cmd{m.sync(), m.nextCIPoll(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities)}
+	cmds := []tea.Cmd{saveCmd, m.sync(), m.nextCIPoll(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities)}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
@@ -453,10 +444,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 			m.activePRPage = prPageKey(m.prView, m.prListState, "")
 		}
 		m.applyPRFilters(msg.pr.Number)
-		if err := gh.SaveNavigatorCache(m.navigatorPath, m.navigator); err != nil {
-			m.status = "PR list cache: " + err.Error()
-		}
-		diffCmd = m.useBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL)
+		diffCmd = tea.Batch(m.useBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 		m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(m.mergeReadiness, m.mergeReadinessErr, msg.pr)
 		stale := []string{}
 		if msg.commentsErr == nil {
