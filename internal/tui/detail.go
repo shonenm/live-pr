@@ -89,6 +89,13 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 		} else {
 			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
 		}
+		if !remote {
+			// Conflict files and the behind count go stale even when the
+			// range string is unchanged: the base ref keeps moving. The
+			// remote path recomputes this in fetchRemotePR instead.
+			msg.readiness, msg.readinessErr = git.CheckMergeReadiness(resolved, newHead)
+			msg.readinessOK = true
+		}
 		return msg
 	}
 }
@@ -97,8 +104,24 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
 	}
-	if msg.diffBase == "" || (msg.base == m.base && msg.diffBase == m.diffBase && m.reviewRange == msg.reviewRange && m.headRev == msg.headRev) {
+	if msg.diffBase == "" {
 		return m, nil
+	}
+	if msg.readinessOK {
+		readiness, readinessErr := msg.readiness, msg.readinessErr
+		if m.cache.PR != nil {
+			readiness, readinessErr = applyGitHubConflictFallback(readiness, readinessErr, *m.cache.PR)
+		}
+		m.mergeReadiness, m.mergeReadinessErr = readiness, readinessErr
+	}
+	if msg.base == m.base && msg.diffBase == m.diffBase && m.reviewRange == msg.reviewRange && m.headRev == msg.headRev {
+		// Same range names, but the refs behind them move: refresh the scans
+		// without dropping caches or restarting the review terminal.
+		m.commits, m.files = msg.commits, msg.files
+		if m.fileCursor >= len(m.files) {
+			m.fileCursor = 0
+		}
+		return m, m.sync()
 	}
 	m.base, m.diffBase, m.headRev, m.reviewRange = msg.base, msg.diffBase, msg.headRev, msg.reviewRange
 	m.resetDetailCaches()

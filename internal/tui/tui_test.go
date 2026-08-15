@@ -2957,3 +2957,31 @@ func TestApplyPRFiltersKeepsRowCacheWithinBound(t *testing.T) {
 		t.Fatalf("over-cap cache not evicted: %d", len(m.prRowCache))
 	}
 }
+
+func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
+	m := testModel()
+	m.targetGeneration = 3
+	m.base, m.diffBase, m.headRev, m.reviewRange = "main", "origin/main", "HEAD", "origin/main"
+	m.mergeReadiness = git.MergeReadiness{Behind: 0}
+	m.commits = []git.Commit{{SHA: "old"}}
+
+	// The range string is unchanged, but the base ref moved underneath it:
+	// behind count, conflicts, and the scans must still refresh.
+	u, _ := m.Update(baseResolved{
+		generation: 3, base: "main", diffBase: "origin/main", headRev: "HEAD", reviewRange: "origin/main",
+		commits:     []git.Commit{{SHA: "new1"}, {SHA: "new2"}},
+		files:       []git.ChangedFile{{Status: "M", Path: "a.go"}},
+		readiness:   git.MergeReadiness{Behind: 4, ConflictFiles: []string{"a.go"}},
+		readinessOK: true,
+	})
+	m = u.(Model)
+	if m.mergeReadiness.Behind != 4 || len(m.mergeReadiness.ConflictFiles) != 1 {
+		t.Fatalf("stale readiness kept: %#v", m.mergeReadiness)
+	}
+	if len(m.commits) != 2 || len(m.files) != 1 {
+		t.Fatalf("stale scans kept: commits=%d files=%d", len(m.commits), len(m.files))
+	}
+	if m.diffTerminal != nil {
+		t.Fatal("unchanged range must not restart the review terminal")
+	}
+}
