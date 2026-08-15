@@ -173,24 +173,13 @@ type PRPage struct {
 	PageInfo    PageInfo
 }
 
+// prListNode is a GraphQL list row. The scalar leaves decode straight into
+// the embedded PR (same json tags); only the GraphQL connection shapes need
+// their own fields, which shadow the PR slices of the same name during
+// decoding and are copied over in pullRequest.
 type prListNode struct {
-	Number            int    `json:"number"`
-	URL               string `json:"url"`
-	Title             string `json:"title"`
-	State             string `json:"state"`
-	BaseRefName       string `json:"baseRefName"`
-	BaseRefOID        string `json:"baseRefOid"`
-	HeadRefName       string `json:"headRefName"`
-	HeadRefOID        string `json:"headRefOid"`
-	IsDraft           bool   `json:"isDraft"`
-	IsCrossRepository bool   `json:"isCrossRepository"`
-	Mergeable         string `json:"mergeable"`
-	MergeStateStatus  string `json:"mergeStateStatus"`
-	ReviewDecision    string `json:"reviewDecision"`
-	UpdatedAt         string `json:"updatedAt"`
-	CreatedAt         string `json:"createdAt"`
-	Author            PRUser `json:"author"`
-	Assignees         struct {
+	PR
+	Assignees struct {
 		Nodes []PRUser `json:"nodes"`
 	} `json:"assignees"`
 	Labels struct {
@@ -207,15 +196,11 @@ type prListNode struct {
 }
 
 func (node prListNode) pullRequest(viewerReviewRequested bool) PR {
-	pr := PR{
-		Number: node.Number, URL: node.URL, Title: node.Title, State: node.State,
-		BaseRefName: node.BaseRefName, BaseRefOID: node.BaseRefOID, HeadRefName: node.HeadRefName, HeadRefOID: node.HeadRefOID,
-		IsDraft: node.IsDraft, IsCrossRepository: node.IsCrossRepository,
-		Mergeable: node.Mergeable, MergeStateStatus: node.MergeStateStatus, ReviewDecision: node.ReviewDecision,
-		UpdatedAt: node.UpdatedAt, CreatedAt: node.CreatedAt, Author: node.Author,
-		Assignees: node.Assignees.Nodes, Labels: node.Labels.Nodes,
-		ViewerReviewRequested: viewerReviewRequested, CheckRollupState: node.StatusCheckRollup.State,
-	}
+	pr := node.PR
+	pr.Assignees, pr.Labels = node.Assignees.Nodes, node.Labels.Nodes
+	pr.CheckRollupState = node.StatusCheckRollup.State
+	pr.ViewerReviewRequested = viewerReviewRequested
+	pr.ReviewRequests = nil
 	for _, request := range node.ReviewRequests.Nodes {
 		if request.RequestedReviewer.Login != "" {
 			pr.ReviewRequests = append(pr.ReviewRequests, request.RequestedReviewer)
