@@ -2807,3 +2807,25 @@ func TestCheckoutReloadRunsAsCommandAndKeepsModelOnFailure(t *testing.T) {
 		t.Fatalf("failure did not keep old model: refreshing=%v status=%q", m.refreshing, m.status)
 	}
 }
+
+func TestRemoteLoadedKeepsCachedReviewsOnFetchFailure(t *testing.T) {
+	m := testModel()
+	m.remote, m.screen = true, detailScreen
+	m.cache = gh.NewCache("feature")
+	m.cache.Reviews = []gh.Review{{ID: 1}}
+	m.cache.ReviewComments = []gh.ReviewThreadComment{{ID: 2}}
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+
+	u, _ := m.Update(remoteLoaded{
+		pr: gh.PR{Number: 5}, headRef: "HEAD",
+		reviewsErr:        errors.New("api down"),
+		reviewCommentsErr: errors.New("api down"),
+	})
+	m = u.(Model)
+	if len(m.cache.Reviews) != 1 || len(m.cache.ReviewComments) != 1 {
+		t.Fatalf("failed fetch wiped cached reviews: %#v", m.cache)
+	}
+	if !strings.Contains(m.githubStatus, "reviews") {
+		t.Fatalf("stale reviews not reported: %q", m.githubStatus)
+	}
+}

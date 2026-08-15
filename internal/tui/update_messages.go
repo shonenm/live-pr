@@ -357,7 +357,14 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	if msg.activitiesErr == nil {
 		m.cache.Activities = msg.activities
 	}
-	m.cache.Reviews, m.cache.ReviewComments = msg.reviews, msg.reviewComments
+	// A failed fetch keeps the cached reviews: nil here means "unavailable",
+	// not "no reviews".
+	if msg.reviewsErr == nil {
+		m.cache.Reviews = msg.reviews
+	}
+	if msg.reviewCommentsErr == nil {
+		m.cache.ReviewComments = msg.reviewComments
+	}
 	m.cache.FetchedAt = now
 	m.invalidateConversation()
 	m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
@@ -384,6 +391,9 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	}
 	if msg.activitiesErr != nil {
 		stale = append(stale, "activity")
+	}
+	if msg.reviewsErr != nil || msg.reviewCommentsErr != nil {
+		stale = append(stale, "reviews")
 	}
 	if msg.readinessErr != nil {
 		stale = append(stale, "merge readiness")
@@ -478,7 +488,15 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		} else {
 			stale = append(stale, "activity")
 		}
-		m.cache.Reviews, m.cache.ReviewComments = msg.reviews, msg.reviewComments
+		if msg.reviewsErr == nil {
+			m.cache.Reviews = msg.reviews
+		}
+		if msg.reviewCommentsErr == nil {
+			m.cache.ReviewComments = msg.reviewComments
+		}
+		if msg.reviewsErr != nil || msg.reviewCommentsErr != nil {
+			stale = append(stale, "reviews")
+		}
 		m.githubStatus = "GitHub: updated now"
 		if len(stale) > 0 {
 			m.githubStatus = "GitHub: PR updated · " + strings.Join(stale, "/") + " stale"
