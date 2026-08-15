@@ -88,7 +88,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == detailScreen {
 			// Mermaid diagrams are rendered at the pane width; re-render them
 			// for the new size.
-			return m, tea.Batch(m.sync(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities))
+			return m, tea.Batch(m.sync(), m.richContentCmd())
 		}
 		return m, m.sync()
 

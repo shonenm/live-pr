@@ -476,6 +476,7 @@ type Model struct {
 	prCursor                  int
 	convItemCache             map[string][]string
 	previewedPR               int
+	lastRichContentKey        [sha256.Size]byte
 	localAvailable            bool
 	localTitle                string
 	localStats                git.ChangeStats
@@ -941,7 +942,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, fetchGitHub(m.head, m.currentPRNumber(), m.targetGeneration))
 	}
 	if m.screen == detailScreen {
-		cmds = append(cmds, loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities))
+		cmds = append(cmds, m.richContentCmd())
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
@@ -1121,12 +1122,30 @@ func loadListAvatarColors(generation uint64, prs []gh.PR) tea.Cmd {
 	}
 }
 
-func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity) tea.Cmd {
+// richContentCmd dispatches mermaid rendering and avatar resolution only when
+// the content key (bodies + width) changed since the last dispatch: refreshes
+// with unchanged conversations re-rendered every diagram and re-downloaded
+// every avatar otherwise.
+func (m *Model) richContentCmd() tea.Cmd {
+	width := m.list.Width - 7
 	if width <= 0 {
 		// Init can run before the first WindowSizeMsg; rendering mermaid at a
 		// negative width wastes the work and caches garbage.
 		return nil
 	}
+	key := richContentKey(width, m.cache.PR, m.cache.Comments, m.cache.Activities)
+	if key == m.lastRichContentKey {
+		return nil
+	}
+	m.lastRichContentKey = key
+	resolved := make(map[string]bool, len(m.avatarColors))
+	for login := range m.avatarColors {
+		resolved[login] = true
+	}
+	return loadRichContent(m.targetGeneration, width, m.cache.PR, m.cache.Comments, m.cache.Activities, resolved)
+}
+
+func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity, resolved map[string]bool) tea.Cmd {
 	key := richContentKey(width, pr, comments, activities)
 	bodies := make([]string, 0, len(comments)+1)
 	avatars := map[string]string{}
@@ -1140,6 +1159,9 @@ func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comm
 	}
 	for _, activity := range activities {
 		avatars[activity.Actor.Login] = activity.Actor.AvatarURL
+	}
+	for login := range resolved {
+		delete(avatars, login)
 	}
 	return tea.Batch(
 		func() tea.Msg {
