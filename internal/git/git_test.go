@@ -432,3 +432,34 @@ func TestChangedFilesRangeHashesWorkingTree(t *testing.T) {
 		t.Fatal("working-tree edits produced the same fingerprint")
 	}
 }
+
+func TestChangedFilesRangeHashesFromSubdirectory(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.MkdirAll("sub", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("f.go", []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	if err := os.WriteFile("f.go", []byte("package a\n// edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Launching from a subdirectory must still hash the uncommitted file:
+	// --raw paths are repo-root relative, not cwd relative.
+	if err := os.Chdir("sub"); err != nil {
+		t.Fatal(err)
+	}
+	files, err := ChangedFilesRange("HEAD", "")
+	if err != nil || len(files) != 1 {
+		t.Fatalf("changed files = %#v err=%v", files, err)
+	}
+	_, dst, _ := strings.Cut(files[0].Fingerprint, ":")
+	if strings.Trim(dst, "0") == "" {
+		t.Fatalf("uncommitted file kept the null post-image: %q", files[0].Fingerprint)
+	}
+}
