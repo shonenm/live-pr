@@ -789,11 +789,6 @@ func reviewSummary(decision string) string {
 	}
 }
 
-func mergeSummary(pr gh.PR) string {
-	text, style := mergeState(pr)
-	return style.Render(text)
-}
-
 func mergeState(pr gh.PR) (string, lipgloss.Style) {
 	if pr.Number == 0 {
 		return "local", stMuted
@@ -928,11 +923,6 @@ func prCheckState(pr gh.PR) (string, lipgloss.Style) {
 	return checkState(pr.Checks)
 }
 
-func checkSummary(checks []gh.PRCheck) string {
-	text, style := checkState(checks)
-	return style.Render(text)
-}
-
 func checkState(checks []gh.PRCheck) (string, lipgloss.Style) {
 	health, count := checkHealth(checks)
 	switch health {
@@ -968,10 +958,9 @@ func (m *Model) buildPRListRows() (string, int) {
 		}
 		return lipgloss.Place(max(1, m.list.Width), max(1, m.list.Height), lipgloss.Center, lipgloss.Center, message), 0
 	}
+	// openPRs is derived from prStacks in applyPRFilters, so a non-empty
+	// list always has stacks.
 	stacks := m.prStacks
-	if len(stacks) == 0 {
-		stacks = buildPRStacks(m.openPRs)
-	}
 	lines := make([]string, 0, len(m.openPRs)*3+len(stacks))
 	selectedLine, openIndex := 0, 0
 	for _, stack := range stacks {

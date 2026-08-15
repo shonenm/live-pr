@@ -72,11 +72,7 @@ func (c *Config) ApplyDiffPreset(name string) {
 	case "delta":
 		c.Diff.Command, c.Diff.CommitCommand = "", ""
 		c.Diff.Display = "delta --color-only --paging=never --line-numbers"
-	case "codediff":
-		c.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`
-		c.Diff.CommitCommand = `nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"`
-		c.Diff.Display = ""
-	case "codereview":
+	case "codediff", "codereview":
 		c.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`
 		c.Diff.CommitCommand = `nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"`
 		c.Diff.Display = ""

@@ -1163,12 +1163,8 @@ func (m *Model) handleVimNavigation(msg tea.KeyMsg) (bool, tea.Cmd) {
 	if key.Matches(msg, m.keys.Bottom) {
 		return true, m.moveCursorTo(m.navigationLength() - 1)
 	}
-	if key.Matches(msg, m.keys.PreviewUp) {
-		return true, m.moveCursorBy(-m.navigationPage())
-	}
-	if key.Matches(msg, m.keys.PreviewDown) {
-		return true, m.moveCursorBy(m.navigationPage())
-	}
+	// PreviewUp/PreviewDown never reach here: every caller scrolls the
+	// preview viewport on those keys before delegating.
 	return false, nil
 }
 
@@ -1180,17 +1176,6 @@ func (m *Model) navigationLength() int {
 		return len(m.files)
 	}
 	return m.activeLen()
-}
-
-func (m Model) navigationPage() int {
-	height := m.list.Height
-	if m.focusDiff || m.focusExplorer {
-		height = m.detail.Height
-	}
-	if m.screen == prListScreen {
-		height /= 3 // each PR row occupies three terminal lines
-	}
-	return max(1, height/4)
 }
 
 func scrollQuarter(v *viewport.Model, down bool) {

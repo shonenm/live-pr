@@ -443,24 +443,18 @@ func (c Client) FindPreview(number int) (PR, error) {
 	if err != nil {
 		return PR{}, commandError("gh pr view", out, err)
 	}
-	var preview struct {
-		PR
-		Conversation []PRConversationComment `json:"comments"`
-		Checks       []PRCheck               `json:"statusCheckRollup"`
-	}
+	var preview PR
 	if err := json.Unmarshal(out, &preview); err != nil {
 		return PR{}, fmt.Errorf("decode gh pr preview: %w", err)
 	}
-	preview.PR.Conversation = preview.Conversation
-	preview.PR.CommentCount = len(preview.Conversation)
+	preview.CommentCount = len(preview.Conversation)
 	commits, err := c.commitStatusRollups(number)
 	if err != nil {
 		return PR{}, err
 	}
-	preview.PR.CommitCount, preview.PR.Commits = len(commits), commits
-	preview.PR.Checks = preview.Checks
-	preview.PR.PreviewLoaded = true
-	return preview.PR, nil
+	preview.CommitCount, preview.Commits = len(commits), commits
+	preview.PreviewLoaded = true
+	return preview, nil
 }
 
 func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
