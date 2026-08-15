@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -90,6 +91,8 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case key.Matches(msg, m.keys.CopyURL):
+		return m, m.copySelectedURL()
 	case key.Matches(msg, m.keys.Checkout):
 		if pr := m.selectedPR(); pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = checkoutPR, pr.Number, *pr
@@ -364,6 +367,8 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			result, err := publish.Run(publish.Options{Base: base})
 			return publishDone{generation: generation, result: result, err: err}
 		}, m.startSpinner())
+	case key.Matches(msg, m.keys.CopyURL):
+		return m, m.copySelectedURL()
 	case key.Matches(msg, m.keys.Browse):
 		url := m.selectedBrowseURL()
 		if url == "" {
@@ -456,4 +461,20 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.detail, cmd = m.detail.Update(msg)
 	return m, cmd
+}
+
+// copySelectedURL copies the selected pull request or comment URL. The
+// clipboard write can block on a helper process, so it rides a Cmd and
+// reports through the same message as browsing.
+func (m Model) copySelectedURL() tea.Cmd {
+	url := m.selectedBrowseURL()
+	if url == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := copyToClipboard(url); err != nil {
+			return browserDone{err: fmt.Errorf("copy URL: %w", err)}
+		}
+		return browserDone{copied: true}
+	}
 }

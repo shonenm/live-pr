@@ -3301,3 +3301,46 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 		t.Fatal("offered to check out the branch already checked out")
 	}
 }
+
+func TestCopyURLKeyOnListAndDetail(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.openPRs = []gh.PR{{Number: 7, URL: "https://example/pr/7", Title: "seven"}}
+	m.prStacks = buildPRStacks(m.openPRs)
+	m.prCursor = 0
+
+	// y copies the selected row's URL without opening a browser.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if cmd == nil {
+		t.Fatal("y produced no command on the PR list")
+	}
+	if m.selectedBrowseURL() != "https://example/pr/7" {
+		t.Fatalf("selected URL = %q", m.selectedBrowseURL())
+	}
+	// The result reports through browserDone, which the footer already words.
+	done, _ := m.Update(browserDone{copied: true})
+	if got := done.(Model).notice; got != "URL copied to clipboard" {
+		t.Fatalf("notice = %q", got)
+	}
+
+	// A row without a URL (the synthetic local PR) copies nothing.
+	local := testModel()
+	local.screen = prListScreen
+	local.openPRs = []gh.PR{{Number: 0, Title: "local"}}
+	local.prStacks = buildPRStacks(local.openPRs)
+	if local.copySelectedURL() != nil {
+		t.Fatal("local PR offered a URL to copy")
+	}
+
+	// Detail screen: y copies the focused conversation item's URL.
+	detail := testModel()
+	detail.screen, detail.active = detailScreen, conversationTab
+	detail.cache.PR = &gh.PR{Number: 7, URL: "https://example/pr/7"}
+	detail.conversationDirty = true
+	if url := detail.selectedBrowseURL(); url == "" {
+		t.Fatal("detail conversation exposed no URL")
+	}
+	if _, cmd := detail.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}); cmd == nil {
+		t.Fatal("y produced no command on the detail screen")
+	}
+}
