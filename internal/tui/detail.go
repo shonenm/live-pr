@@ -26,7 +26,9 @@ func (m *Model) resetDetailCaches() {
 	m.rawPending = map[string]bool{}
 	m.diffCache = map[string]string{}
 	m.diffPending = map[string]bool{}
-	m.richBodies = map[string]string{}
+	// richBodies survives: it is keyed by body content, so stale entries are
+	// unused rather than wrong, and wiping it here would blank rendered
+	// mermaid on refreshes whose content (and thus dispatch key) is unchanged.
 }
 
 func (m *Model) reloadLocalConversation() {
