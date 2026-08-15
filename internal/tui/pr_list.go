@@ -726,7 +726,7 @@ func (m Model) buildPRPreview() string {
 	statusLine := "  " + strings.Join(statusParts, "   ")
 	lines := []string{
 		stMuted.Render(identifier) + "  " + stBold.Render(pr.Title),
-		stMuted.Render("⎇ " + pr.BaseRefName + " ← " + pr.HeadRefName),
+		stMuted.Render("⎇ ") + m.baseBranchStyle(pr.BaseRefName).Render(pr.BaseRefName) + stMuted.Render(" ← "+pr.HeadRefName),
 		"",
 		stBold.Render("Status"),
 		statusLine,

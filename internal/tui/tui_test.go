@@ -3344,3 +3344,46 @@ func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 		t.Fatal("y produced no command on the detail screen")
 	}
 }
+
+func TestDefaultBaseBranchIsAccented(t *testing.T) {
+	m := testModel()
+	m.defaultBranch = "main"
+
+	// origin/ prefixed local revisions still name the default branch.
+	for _, ref := range []string{"main", "origin/main", "MAIN"} {
+		if !m.isDefaultBranch(ref) {
+			t.Fatalf("%q not recognized as the default branch", ref)
+		}
+	}
+	for _, ref := range []string{"", "feat/x", "mainline"} {
+		if m.isDefaultBranch(ref) {
+			t.Fatalf("%q wrongly treated as the default branch", ref)
+		}
+	}
+	// Rendering in tests strips color, so assert on the style itself.
+	if got := m.baseBranchStyle("origin/main").GetForeground(); got != lipgloss.Color(cAccent) {
+		t.Fatalf("default base foreground = %v, want the accent", got)
+	}
+	if got := m.baseBranchStyle("feat/parent").GetForeground(); got == lipgloss.Color(cAccent) {
+		t.Fatal("a stacked base must not use the accent")
+	}
+	empty := testModel()
+	if got := empty.baseBranchStyle("main").GetForeground(); got == lipgloss.Color(cAccent) {
+		t.Fatal("unknown default branch must not accent anything")
+	}
+
+	// Both surfaces keep showing base ← head.
+	m.screen, m.w, m.h = detailScreen, 120, 40
+	m.base, m.head = "origin/main", "feat/x"
+	if header := ansi.Strip(m.renderHeader()); !strings.Contains(header, "origin/main ← feat/x") {
+		t.Fatalf("detail header = %q", header)
+	}
+	list := testModel()
+	list.defaultBranch = "main"
+	list.screen, list.w = prListScreen, 120
+	list.openPRs = []gh.PR{{Number: 1, Title: "one", BaseRefName: "main", HeadRefName: "feat/x", URL: "u"}}
+	list.prStacks = buildPRStacks(list.openPRs)
+	if preview := ansi.Strip(list.buildPRPreview()); !strings.Contains(preview, "main ← feat/x") {
+		t.Fatalf("preview = %q", preview)
+	}
+}
