@@ -420,3 +420,23 @@ func TestRunErrorFoldsTimeoutAndStderr(t *testing.T) {
 		t.Fatalf("no timeout, no stderr: got %q", msg)
 	}
 }
+
+func TestFindPreviewSurvivesCommitRollupFailure(t *testing.T) {
+	client := Client{run: func(args ...string) ([]byte, error) {
+		switch args[0] {
+		case "pr":
+			return []byte(`{"number":12,"body":"body","comments":[],"statusCheckRollup":[]}`), nil
+		case "repo":
+			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
+		default:
+			return nil, errors.New("graphql down")
+		}
+	}}
+	pr, err := client.FindPreview(12)
+	if err != nil {
+		t.Fatalf("rollup failure discarded the preview: %v", err)
+	}
+	if pr.Number != 12 || !pr.PreviewLoaded || len(pr.Commits) != 0 {
+		t.Fatalf("partial preview = %#v", pr)
+	}
+}
