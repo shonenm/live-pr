@@ -2687,3 +2687,22 @@ func TestLocalLoadRunsOffTheUpdateGoroutine(t *testing.T) {
 		t.Fatalf("localLoaded not applied: screen=%v title=%q", m.screen, m.title)
 	}
 }
+
+func TestRecomputeViewCountsDoesNotDoubleCountCachedViews(t *testing.T) {
+	m := testModel()
+	m.allPRs = []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}}
+	// A cached page holds the exact server-side total for the all view.
+	m.prPages = map[string]prPageState{
+		prPageKey(allPRsView, openPRListState, ""): {total: 5, loaded: true},
+	}
+
+	m.recomputeViewCounts(prPageState{}, false)
+
+	if m.viewCounts[allPRsView] != 5 {
+		t.Fatalf("all view count = %d, want cached total 5", m.viewCounts[allPRsView])
+	}
+	// Views without a cached page still fall back to counting allPRs.
+	if m.viewCounts[closedPRsView] != 0 || !m.viewCountKnown[closedPRsView] {
+		t.Fatalf("closed view = %d known=%v", m.viewCounts[closedPRsView], m.viewCountKnown[closedPRsView])
+	}
+}
