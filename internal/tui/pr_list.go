@@ -332,6 +332,11 @@ func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
 	}
 	if !paged || !page.loaded {
 		for view := assignedView; view < prViewCount; view++ {
+			// A cached page already produced this view's exact total; adding
+			// the allPRs fallback on top would double-count it.
+			if m.viewCountKnown[view] {
+				continue
+			}
 			state := standardPRListState(view)
 			for _, pr := range m.allPRs {
 				if matchesListState(pr, state) && m.matchesView(pr, view) {
