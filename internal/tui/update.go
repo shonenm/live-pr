@@ -15,33 +15,43 @@ func reservedReviewKey(msg tea.Msg) bool {
 	return ok && (key.Matches(keyMsg, keys.FocusLeft) || key.Matches(keyMsg, keys.Focus) || isShiftTab(keyMsg))
 }
 
+// asyncCompletion reports messages that must reach their handlers even while a
+// modal popup owns the keyboard. Dropping them used to leave in-flight state
+// stuck: reviewSubmitting had no recovery path until restart, refreshing and
+// remoteCommentBusy stalled, and the CI polling chain died.
+func asyncCompletion(msg tea.Msg) bool {
+	switch msg.(type) {
+	case prListRefreshed, currentBranchPRLoaded, prPreviewLoaded, remoteLoaded,
+		githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
+		prStatusDone, prActionDone, ciPolled, ciPollTick, diffRendered,
+		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
+		browserDone, tea.WindowSizeMsg, bspinner.TickMsg:
+		return true
+	}
+	return false
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.statusPR.Number > 0 {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			next, cmd := m.handlePRStatusKey(keyMsg)
-			return next, cmd
+	// Modal popups own the keyboard only; async completions fall through to
+	// the main switch below so background work keeps landing.
+	modal := m.statusPR.Number > 0 || m.reviewSubmitEvent != "" ||
+		m.localEditMode != noLocalEdit || m.localDeleteTarget != "" || m.remoteDeleteID > 0
+	if modal && !asyncCompletion(msg) {
+		switch {
+		case m.statusPR.Number > 0:
+			if keyMsg, ok := msg.(tea.KeyMsg); ok {
+				return m.handlePRStatusKey(keyMsg)
+			}
+			return m, nil
+		case m.reviewSubmitEvent != "":
+			if keyMsg, ok := msg.(tea.KeyMsg); ok {
+				return m.handleReviewSubmitKey(keyMsg)
+			}
+			return m, nil
+		default:
+			// The editor overlay also needs non-key messages (cursor blink).
+			return m.handleLocalOverlay(msg)
 		}
-		if done, ok := msg.(prStatusDone); ok {
-			next, cmd := m.handlePRStatusDone(done)
-			return next, cmd
-		}
-		if tick, ok := msg.(bspinner.TickMsg); ok {
-			var cmd tea.Cmd
-			m.loadSpinner, cmd = m.loadSpinner.Update(tick)
-			return m, cmd
-		}
-		return m, nil
-	}
-	if m.reviewSubmitEvent != "" {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			next, cmd := m.handleReviewSubmitKey(keyMsg)
-			return next, cmd
-		}
-		return m, nil
-	}
-	if m.localEditMode != noLocalEdit || m.localDeleteTarget != "" || m.remoteDeleteID > 0 {
-		next, cmd := m.handleLocalOverlay(msg)
-		return next, cmd
 	}
 	if m.diffTerminal != nil && m.diffTerminal.Handles(msg) && !reservedReviewKey(msg) {
 		cmd := m.diffTerminal.Update(msg)
@@ -69,6 +79,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.help.Width = msg.Width
+		if m.localEditMode != noLocalEdit {
+			m.sizeLocalEditor() // keep the open editor overlay fitting the new size
+		}
 		m.layout()
 		return m, m.sync()
 
