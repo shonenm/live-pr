@@ -47,45 +47,44 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 	if item == nil {
 		return m, nil
 	}
-	// A GitHub conversation comment can be edited if the viewer authored it.
-	// When viewerLogin is unknown (detail opened before the PR list loaded it),
-	// allow the attempt — GitHub's API will reject edits to others' comments.
-	if item.comment != nil {
+	switch item.kind() {
+	case itemComment:
+		// A GitHub conversation comment can be edited if the viewer authored
+		// it. When viewerLogin is unknown (detail opened before the PR list
+		// loaded it), allow the attempt — GitHub's API rejects others' edits.
 		if m.viewerLogin != "" && !strings.EqualFold(item.comment.User.Login, m.viewerLogin) {
 			m.status = "only your own GitHub comments can be edited"
 			return m, nil
 		}
 		m.remoteCommentID = item.comment.ID
 		return m.openLocalEditor(editRemoteComment, item.comment.Body, "")
-	}
-	// Items that are not editable from the TUI: give specific feedback.
-	if item.review != nil || item.reviewComment != nil {
+	case itemReview, itemReviewComment:
 		m.status = "review comments cannot be edited here; use GitHub"
 		return m, nil
-	}
-	if item.pr != nil {
+	case itemPRDescription:
 		if m.cache.PR == nil || m.cache.PR.Number <= 0 {
 			m.status = "no PR to edit"
 			return m, nil
 		}
 		m.remoteCommentID = 0
 		return m.openLocalEditor(editRemoteComment, item.pr.Body, "pr-description")
-	}
-	if item.activity != nil || item.prCommit != nil {
+	case itemActivity, itemPRCommit:
 		m.status = "activity and CI events are not editable"
 		return m, nil
 	}
 	if m.remote {
 		return m, nil
 	}
-	if item.summary != nil {
+	switch item.kind() {
+	case itemSummary:
 		return m.openLocalEditor(editLocalSummary, *item.summary, "")
+	case itemEvent:
+		if item.event.Kind != event.Commit {
+			return m.openLocalEditor(editLocalComment, formatLocalComment(*item.event), item.event.ID)
+		}
 	}
-	if item.event == nil || item.event.Kind == event.Commit {
-		m.status = "only local summary and comments can be edited"
-		return m, nil
-	}
-	return m.openLocalEditor(editLocalComment, formatLocalComment(*item.event), item.event.ID)
+	m.status = "only local summary and comments can be edited"
+	return m, nil
 }
 
 func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
@@ -97,8 +96,9 @@ func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
 		m.status = "select a comment to delete"
 		return m, nil
 	}
-	// GitHub issue comment: allow deleting your own.
-	if item.comment != nil {
+	switch item.kind() {
+	case itemComment:
+		// GitHub issue comment: allow deleting your own.
 		if m.viewerLogin != "" && !strings.EqualFold(item.comment.User.Login, m.viewerLogin) {
 			m.status = "only your own GitHub comments can be deleted"
 			return m, nil
@@ -110,19 +110,17 @@ func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
 		}
 		m.status = ""
 		return m, nil
-	}
-	if item.review != nil || item.reviewComment != nil {
+	case itemReview, itemReviewComment:
 		m.status = "review comments cannot be deleted here; use GitHub"
 		return m, nil
-	}
-	if item.pr != nil || item.activity != nil || item.prCommit != nil {
+	case itemPRDescription, itemActivity, itemPRCommit:
 		m.status = "this item cannot be deleted"
 		return m, nil
 	}
 	if m.remote {
 		return m, nil
 	}
-	if item.event == nil || item.event.Kind == event.Commit {
+	if item.kind() != itemEvent || item.event.Kind == event.Commit {
 		m.status = "select a local comment to delete"
 		return m, nil
 	}
