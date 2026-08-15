@@ -61,7 +61,7 @@ func BenchmarkViewCounts(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				for view := assignedView; view < prViewCount; view++ {
+				for view := prView(0); int(view) < len(m.views); view++ {
 					_ = m.viewCount(view)
 				}
 			}

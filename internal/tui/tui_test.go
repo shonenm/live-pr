@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
@@ -25,8 +26,21 @@ import (
 	"github.com/shonenm/live-pr/internal/store"
 )
 
+// The default view order, named for readability in tests. Production code
+// indexes Model.views, which config supplies.
+const (
+	assignedView prView = iota
+	reviewRequestedView
+	allPRsView
+	authoredView
+	needsMeView
+	closedPRsView
+	prViewCount
+)
+
 func testModel() Model {
 	return Model{
+		views:       config.DefaultViews(),
 		title:       "CodeDiff review mode",
 		prView:      allPRsView,
 		diffCommand: "",
@@ -318,7 +332,7 @@ func TestLocalPRAppearsInEveryOpenView(t *testing.T) {
 	local := gh.PR{}
 	for _, view := range []prView{assignedView, reviewRequestedView, allPRsView, authoredView, needsMeView} {
 		if !m.matchesView(local, view) {
-			t.Fatalf("local PR missing from %s", view)
+			t.Fatalf("local PR missing from %s", m.viewName(view))
 		}
 	}
 	if m.matchesView(local, closedPRsView) || !matchesListState(gh.PR{State: "MERGED", Number: 1}, closedPRListState) {
@@ -852,13 +866,13 @@ func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 			got[i] = m.openPRs[i].Number
 		}
 		if !reflect.DeepEqual(got, numbers) {
-			t.Fatalf("view %s = %v, want %v", view, got, numbers)
+			t.Fatalf("view %s = %v, want %v", m.viewName(view), got, numbers)
 		}
 	}
 }
 
 func TestPRViewSearchAndLocalOnlyFilters(t *testing.T) {
-	query := prViewSearch(needsMeView, openPRListState, "label:bug ci:failed merge:conflicting")
+	query := testModel().prViewSearch(needsMeView, openPRListState, "label:bug ci:failed merge:conflicting")
 	if query != "is:open (assignee:@me OR review-requested:@me) label:bug" {
 		t.Fatalf("needs-me query = %q", query)
 	}
@@ -3071,5 +3085,64 @@ func TestPRFilterOrGroups(t *testing.T) {
 	// Plain queries keep working, free text included.
 	if !matchesPRFilter(neither, "someone", "me") || matchesPRFilter(neither, "nobody", "me") {
 		t.Fatal("free-text matching regressed")
+	}
+}
+
+func TestConfiguredViewsDriveTabsSearchAndCounts(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.viewerLogin = "me"
+	m.views = []config.View{
+		{Name: "Mine", Query: "author:@me"},
+		{Name: "Bugs", Query: "label:bug"},
+		{Name: "Done", Query: "is:closed"},
+	}
+	mine := gh.PR{Number: 1, State: "OPEN", Author: gh.PRUser{Login: "me"}}
+	bug := gh.PR{Number: 2, State: "OPEN", Author: gh.PRUser{Login: "you"}, Labels: []gh.PRLabel{{Name: "bug"}}}
+	done := gh.PR{Number: 3, State: "MERGED", Author: gh.PRUser{Login: "you"}}
+	m.navigator = gh.NewNavigatorCache()
+	m.navigator.PRs = []gh.PR{mine, bug, done}
+	m.allPRs = m.navigator.PRs
+
+	// The tab's own query decides membership and its open/closed bucket.
+	for _, tc := range []struct {
+		view prView
+		pr   gh.PR
+		want bool
+	}{{0, mine, true}, {0, bug, false}, {1, bug, true}, {1, mine, false}, {2, done, true}} {
+		if got := m.matchesView(tc.pr, tc.view); got != tc.want {
+			t.Fatalf("%s matches #%d = %v, want %v", m.viewName(tc.view), tc.pr.Number, got, tc.want)
+		}
+	}
+	if m.standardPRListState(2) != closedPRListState || m.standardPRListState(0) != openPRListState {
+		t.Fatal("view state not derived from the query")
+	}
+
+	// The search sends the tab's query alongside the state and user filter.
+	if got := m.prViewSearch(1, openPRListState, "ci:failed rebase"); got != "is:open label:bug rebase" {
+		t.Fatalf("search = %q", got)
+	}
+
+	// Counts and the tab bar follow the configured names and order.
+	m.recomputeViewCounts(prPageState{}, false)
+	if m.viewCount(0) != 1 || m.viewCount(1) != 1 || m.viewCount(2) != 1 {
+		t.Fatalf("counts = %v", m.viewCounts)
+	}
+	m.w = 200
+	header := ansi.Strip(m.renderPRListHeader())
+	if !strings.Contains(header, "[ Mine 1 ]") || !strings.Contains(header, "[ Done 1 ]") {
+		t.Fatalf("tab bar = %q", header)
+	}
+	if strings.Contains(header, "Assigned") {
+		t.Fatal("tab bar still shows a built-in view")
+	}
+
+	// [ ] cycle over the configured list, not a fixed count of six.
+	m.prView = 2
+	if next := m.stepView(1); next != 0 {
+		t.Fatalf("wrap-around landed on %d", next)
+	}
+	if prev := m.stepView(-1); prev != 1 {
+		t.Fatalf("previous view = %d", prev)
 	}
 }
