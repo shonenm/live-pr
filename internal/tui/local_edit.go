@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -15,8 +16,16 @@ import (
 	"github.com/shonenm/live-pr/internal/store"
 )
 
+// editorWidth is the widest the editor may be and still fit the popups that
+// host it. The review popup declares min(80, w-14) and pads 2 on each side,
+// so anything wider gets re-wrapped by the popup and shows breaks the text
+// does not contain.
+func (m Model) editorWidth() int {
+	return max(24, min(80, m.w-14)-4)
+}
+
 func (m *Model) sizeLocalEditor() {
-	m.localEditor.SetWidth(max(24, min(82, m.w-16)))
+	m.localEditor.SetWidth(m.editorWidth())
 	m.localEditor.SetHeight(max(6, min(18, m.h-12)))
 }
 
@@ -27,6 +36,13 @@ func (m Model) openLocalEditor(mode localEditMode, value, target string) (Model,
 	editor.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	editor.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	editor.CharLimit = 65536
+	// Terminals disagree on Shift+Enter: most send CR (already a newline
+	// here), some send LF, which bubbletea reports as ctrl+j. Accept both,
+	// plus Option/Alt+Enter, so the key inserts a newline either way.
+	editor.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("enter", "ctrl+m", "ctrl+j", "alt+enter"),
+		key.WithHelp("enter", "insert newline"),
+	)
 	editor.SetValue(value)
 	m.localEditor = editor
 	m.localEditMode, m.localEditTarget, m.localEditError = mode, target, ""
@@ -399,7 +415,7 @@ func (m Model) renderLocalEditorPopup() string {
 	if m.localEditError != "" {
 		lines = append(lines, "", stRedF.Render(m.localEditError))
 	}
-	lines = append(lines, "", stMuted.Render("Ctrl+S send · Esc cancel"))
+	lines = append(lines, "", stMuted.Render("Enter/Shift+Enter newline · Ctrl+S send · Esc cancel"))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAccent)).
