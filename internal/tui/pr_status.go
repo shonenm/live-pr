@@ -55,14 +55,27 @@ func (m Model) openPRStatus(pr *gh.PR) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// optimisticStatus predicts the PR state after a successful transition.
+// Reopening keeps draftness; only the explicit draft -> open clears it.
+func optimisticStatus(pr gh.PR, target string) gh.PR {
+	reopened := strings.EqualFold(pr.State, "CLOSED")
+	pr.State = strings.ToUpper(target)
+	switch target {
+	case "draft":
+		pr.State, pr.IsDraft = "OPEN", true
+	case "open":
+		if !reopened {
+			pr.IsDraft = false
+		}
+	}
+	return pr
+}
+
 func runPRStatus(pr gh.PR, target string) tea.Cmd {
 	return func() tea.Msg {
 		err := gh.New().SetStatus(pr, target)
 		if err == nil {
-			pr.State, pr.IsDraft = strings.ToUpper(target), target == "draft"
-			if target == "draft" {
-				pr.State = "OPEN"
-			}
+			pr = optimisticStatus(pr, target)
 		}
 		return prStatusDone{pr: pr, target: target, err: err}
 	}

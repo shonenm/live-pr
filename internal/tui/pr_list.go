@@ -465,8 +465,14 @@ func matchesPRFilter(pr gh.PR, query, viewer string) bool {
 			switch key {
 			case "is", "state":
 				switch value {
-				case "open", "closed":
-					if !strings.EqualFold(pr.State, value) {
+				case "open":
+					if !strings.EqualFold(pr.State, "OPEN") {
+						return false
+					}
+				case "closed":
+					// Match GitHub search semantics: is:closed covers merged
+					// PRs too, like matchesListState's closed bucket.
+					if !strings.EqualFold(pr.State, "CLOSED") && !strings.EqualFold(pr.State, "MERGED") {
 						return false
 					}
 				case "draft":
