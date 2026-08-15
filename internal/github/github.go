@@ -270,8 +270,7 @@ func (c Client) repositoryName() (string, error) {
 	return repo.NameWithOwner, nil
 }
 
-// FindOpen finds the open PR for head. Operational errors are returned as-is;
-// only a successful empty list becomes ErrPRNotFound.
+// prFields is the gh pr view field list shared by the single-PR lookups.
 const prFields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,author,createdAt,assignees,labels"
 
 func (c Client) Find(number int) (PR, error) {
@@ -286,6 +285,8 @@ func (c Client) Find(number int) (PR, error) {
 	return pr, nil
 }
 
+// FindOpen finds the open PR for head. Operational errors are returned as-is;
+// only a successful empty list becomes ErrPRNotFound.
 func (c Client) FindOpen(head string) (PR, error) {
 	return c.findHead(head, "open")
 }
@@ -506,22 +507,26 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
 	}
 }
 
-// IssueComments returns every top-level Conversation comment for a PR.
-func (c Client) IssueComments(number int) ([]Comment, error) {
-	endpoint := fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments?per_page=100", number)
+// paginatedList runs a --paginate --slurp endpoint and flattens the pages.
+func paginatedList[T any](c Client, endpoint, label string) ([]T, error) {
 	out, err := c.run("api", "--paginate", "--slurp", endpoint)
 	if err != nil {
-		return nil, commandError("gh api issue comments", out, err)
+		return nil, commandError(label, out, err)
 	}
-	var pages [][]Comment
+	var pages [][]T
 	if err := json.Unmarshal(out, &pages); err != nil {
-		return nil, fmt.Errorf("decode issue comments: %w", err)
+		return nil, fmt.Errorf("decode %s: %w", label, err)
 	}
-	var comments []Comment
+	var items []T
 	for _, page := range pages {
-		comments = append(comments, page...)
+		items = append(items, page...)
 	}
-	return comments, nil
+	return items, nil
+}
+
+// IssueComments returns every top-level Conversation comment for a PR.
+func (c Client) IssueComments(number int) ([]Comment, error) {
+	return paginatedList[Comment](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments?per_page=100", number), "gh api issue comments")
 }
 
 // Review is a submitted pull-request review (approve / request-changes /
@@ -552,56 +557,17 @@ type ReviewThreadComment struct {
 
 // Reviews returns the submitted reviews for a pull request.
 func (c Client) Reviews(number int) ([]Review, error) {
-	endpoint := fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews?per_page=100", number)
-	out, err := c.run("api", "--paginate", "--slurp", endpoint)
-	if err != nil {
-		return nil, commandError("gh api pull reviews", out, err)
-	}
-	var pages [][]Review
-	if err := json.Unmarshal(out, &pages); err != nil {
-		return nil, fmt.Errorf("decode reviews: %w", err)
-	}
-	var reviews []Review
-	for _, page := range pages {
-		reviews = append(reviews, page...)
-	}
-	return reviews, nil
+	return paginatedList[Review](c, fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews?per_page=100", number), "gh api pull reviews")
 }
 
 // ReviewComments returns the inline review comments for a pull request.
 func (c Client) ReviewComments(number int) ([]ReviewThreadComment, error) {
-	endpoint := fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments?per_page=100", number)
-	out, err := c.run("api", "--paginate", "--slurp", endpoint)
-	if err != nil {
-		return nil, commandError("gh api pull review comments", out, err)
-	}
-	var pages [][]ReviewThreadComment
-	if err := json.Unmarshal(out, &pages); err != nil {
-		return nil, fmt.Errorf("decode review comments: %w", err)
-	}
-	var comments []ReviewThreadComment
-	for _, page := range pages {
-		comments = append(comments, page...)
-	}
-	return comments, nil
+	return paginatedList[ReviewThreadComment](c, fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments?per_page=100", number), "gh api pull review comments")
 }
 
 // IssueActivities returns non-comment activity from the PR timeline.
 func (c Client) IssueActivities(number int) ([]Activity, error) {
-	endpoint := fmt.Sprintf("repos/{owner}/{repo}/issues/%d/events?per_page=100", number)
-	out, err := c.run("api", "--paginate", "--slurp", endpoint)
-	if err != nil {
-		return nil, commandError("gh api issue events", out, err)
-	}
-	var pages [][]Activity
-	if err := json.Unmarshal(out, &pages); err != nil {
-		return nil, fmt.Errorf("decode issue events: %w", err)
-	}
-	var activities []Activity
-	for _, page := range pages {
-		activities = append(activities, page...)
-	}
-	return activities, nil
+	return paginatedList[Activity](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/events?per_page=100", number), "gh api issue events")
 }
 
 // IssueDetailResult bundles the concurrently-loaded comment and activity
@@ -684,26 +650,32 @@ func (c Client) SubmitReview(draft ReviewDraft, event ReviewEvent) error {
 		Event    ReviewEvent     `json:"event"`
 		Comments []ReviewComment `json:"comments,omitempty"`
 	}{CommitID: draft.Commit, Body: draft.Body, Event: event, Comments: draft.Comments}
+	return c.runWithJSONInput("POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", draft.PR), payload, "gh api submit pull request review")
+}
+
+// runWithJSONInput sends a JSON payload through a temp file so arbitrary text
+// (newlines, quotes) passes safely to gh api --input.
+func (c Client) runWithJSONInput(method, endpoint string, payload any, label string) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("encode pull request review: %w", err)
+		return fmt.Errorf("encode %s: %w", label, err)
 	}
-	file, err := os.CreateTemp("", "live-pr-review-*.json")
+	file, err := os.CreateTemp("", "live-pr-input-*.json")
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", label, err)
 	}
 	name := file.Name()
 	defer os.Remove(name)
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
-		return err
+		return fmt.Errorf("%s: %w", label, err)
 	}
 	if err := file.Close(); err != nil {
-		return err
+		return fmt.Errorf("%s: %w", label, err)
 	}
-	out, err := c.run("api", "--method", "POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", draft.PR), "--input", name)
+	out, err := c.run("api", "--method", method, endpoint, "--input", name)
 	if err != nil {
-		return commandError("gh api submit pull request review", out, err)
+		return commandError(label, out, err)
 	}
 	return nil
 }
@@ -727,36 +699,14 @@ func (c Client) EditIssueComment(id int64, body string) error {
 	return c.writeCommentBody("PATCH", fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", id), body, "gh api edit issue comment")
 }
 
-// writeCommentBody sends {"body": ...} to a comment endpoint via a temp file so
-// arbitrary comment text (newlines, quotes) is passed safely.
+// writeCommentBody sends {"body": ...} to a comment endpoint.
 func (c Client) writeCommentBody(method, endpoint, body, label string) error {
 	if strings.TrimSpace(body) == "" {
 		return errors.New("comment body must not be empty")
 	}
-	payload, err := json.Marshal(struct {
+	return c.runWithJSONInput(method, endpoint, struct {
 		Body string `json:"body"`
-	}{Body: body})
-	if err != nil {
-		return err
-	}
-	file, err := os.CreateTemp("", "live-pr-comment-*.json")
-	if err != nil {
-		return err
-	}
-	name := file.Name()
-	defer os.Remove(name)
-	if _, err := file.Write(payload); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	out, err := c.run("api", "--method", method, endpoint, "--input", name)
-	if err != nil {
-		return commandError(label, out, err)
-	}
-	return nil
+	}{Body: body}, label)
 }
 
 // Merge merges a pull request with a merge commit.
