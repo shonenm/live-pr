@@ -15,7 +15,10 @@ func nextSessionID() string {
 type StateMsg struct{ SessionID string }
 
 // Environment builds the context exposed to an embedded diff command.
-func Environment(reviewRange, base, head, headRev, prURL, sha string) []string {
+// reviewedFile is the per-PR reviewed-marks JSON (path → fingerprint); an
+// external reviewer that honors it shares live-pr's per-PR review progress
+// instead of keeping its own global state.
+func Environment(reviewRange, base, head, headRev, prURL, sha, reviewedFile string) []string {
 	return []string{
 		"LIVE_PR_REVIEW=1",
 		"LIVE_PR_RANGE=" + reviewRange,
@@ -24,5 +27,6 @@ func Environment(reviewRange, base, head, headRev, prURL, sha string) []string {
 		"LIVE_PR_HEAD_REV=" + headRev,
 		"LIVE_PR_PR_URL=" + prURL,
 		"LIVE_PR_SHA=" + sha,
+		"LIVE_PR_REVIEWED_FILE=" + reviewedFile,
 	}
 }

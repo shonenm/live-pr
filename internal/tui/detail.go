@@ -89,7 +89,7 @@ func (m *Model) restartReview(sha, prURL string) tea.Cmd {
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
-	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, prURL, sha))
+	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, prURL, sha, m.reviewedMarksPath))
 	m.focusDiff, m.focusExplorer = false, false
 	m.layout()
 	if m.diffTerminal != nil {
@@ -244,6 +244,19 @@ func (m Model) selectedFile() *git.ChangedFile {
 	return &m.files[m.fileCursor]
 }
 
+// loadReviewedMarks switches the in-memory marks to the given review scope.
+// Each PR (or unpublished branch) owns its own persisted set, so moving
+// between PRs — stacked ones included — never carries progress across.
+func (m *Model) loadReviewedMarks(prNumber int, branch string) {
+	m.reviewedMarksPath = store.ReviewedMarksPath(m.root, prNumber, branch)
+	marks, err := store.LoadReviewedMarks(m.reviewedMarksPath)
+	if err != nil {
+		m.status = "reviewed marks: " + err.Error()
+		marks = map[string]string{}
+	}
+	m.checkedFiles = marks
+}
+
 // fileChecked reports whether the file is still marked reviewed. Marks are
 // keyed by path and remember the diff fingerprint they were made against, so a
 // new commit only clears the files whose own diff changed — like GitHub's
@@ -271,6 +284,11 @@ func (m *Model) toggleFileCheck() tea.Cmd {
 	} else {
 		m.checkedFiles[file.Path] = file.Fingerprint
 		m.notice = "checked " + file.Path
+	}
+	if m.reviewedMarksPath != "" {
+		if err := store.SaveReviewedMarks(m.reviewedMarksPath, m.checkedFiles); err != nil {
+			m.status = "reviewed marks: " + err.Error()
+		}
 	}
 	return m.sync()
 }
