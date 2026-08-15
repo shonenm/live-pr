@@ -872,13 +872,61 @@ func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 }
 
 func TestPRViewSearchAndLocalOnlyFilters(t *testing.T) {
+	// GitHub's issue search cannot evaluate OR groups — it matches them as
+	// free text and returns nothing — so they stay out of the server query
+	// and are applied locally instead.
 	query := testModel().prViewSearch(needsMeView, openPRListState, "label:bug ci:failed merge:conflicting")
-	if query != "is:open (assignee:@me OR review-requested:@me) label:bug" {
+	if query != "is:open label:bug" {
 		t.Fatalf("needs-me query = %q", query)
 	}
 	server, local := splitPRFilter("is:closed author:me ci:failed merge:conflicting")
 	if server != "author:me" || local != "ci:failed merge:conflicting" {
 		t.Fatalf("split filter = server:%q local:%q", server, local)
+	}
+	server, local = splitPRFilter("(review-requested:@me OR assignee:@me OR author:@me) label:bug")
+	if server != "label:bug" || local != "(review-requested:@me OR assignee:@me OR author:@me)" {
+		t.Fatalf("group split = server:%q local:%q", server, local)
+	}
+	// An unclosed group still lands on the local side rather than leaking.
+	if server, local := splitPRFilter("(a OR b"); server != "" || local != "(a OR b" {
+		t.Fatalf("unclosed group = server:%q local:%q", server, local)
+	}
+}
+
+// A view whose query GitHub cannot evaluate must still list and count the
+// right pull requests: the server returns a superset and the tab narrows it.
+func TestOrGroupViewFiltersAndCountsLocally(t *testing.T) {
+	m := testModel()
+	m.screen, m.viewerLogin = prListScreen, "me"
+	m.views = []config.View{{Name: "Needs me", Query: "(review-requested:@me OR assignee:@me OR author:@me)"}}
+	m.prView, m.prListState = 0, openPRListState
+	m.activePRPage = prPageKey(0, openPRListState, "")
+	m.navigator = gh.NewNavigatorCache()
+
+	// What reaches GitHub carries no group, so the search is answerable.
+	if got := m.prViewSearch(0, openPRListState, ""); got != "is:open" {
+		t.Fatalf("server query = %q", got)
+	}
+
+	mine := gh.PR{Number: 1, State: "OPEN", Author: gh.PRUser{Login: "me"}}
+	assigned := gh.PR{Number: 2, State: "OPEN", Assignees: []gh.PRUser{{Login: "me"}}}
+	reviewing := gh.PR{Number: 3, State: "OPEN", ViewerReviewRequested: true}
+	other := gh.PR{Number: 4, State: "OPEN", Author: gh.PRUser{Login: "you"}}
+	superset := []gh.PR{mine, assigned, reviewing, other}
+	m.prPages = map[string]prPageState{m.activePRPage: {prs: superset, total: len(superset), loaded: true, fresh: true}}
+	m.navigator.PRs = superset
+
+	m.applyPRFilters(0)
+	var listed []int
+	for _, pr := range m.openPRs {
+		listed = append(listed, pr.Number)
+	}
+	if !reflect.DeepEqual(listed, []int{1, 2, 3}) {
+		t.Fatalf("listed = %v, want the three that involve me", listed)
+	}
+	// The server total counts the superset, so the tab counts loaded rows.
+	if got := m.viewCount(0); got != 3 {
+		t.Fatalf("view count = %d, want 3", got)
 	}
 }
 

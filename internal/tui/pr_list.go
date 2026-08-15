@@ -114,7 +114,18 @@ func prPageKey(view prView, state prListState, filter string) string {
 
 func splitPRFilter(query string) (server, local string) {
 	serverTokens, localTokens := []string{}, []string{}
-	for _, token := range strings.Fields(query) {
+	tokens := strings.Fields(query)
+	for i := 0; i < len(tokens); i++ {
+		token := tokens[i]
+		if strings.HasPrefix(token, "(") {
+			// GitHub's issue search understands neither OR nor grouping: it
+			// matches the punctuation as free text and returns nothing, so
+			// groups are evaluated locally instead.
+			end := groupEnd(tokens, i)
+			localTokens = append(localTokens, tokens[i:end+1]...)
+			i = end
+			continue
+		}
 		key, value, structured := strings.Cut(strings.ToLower(token), ":")
 		if structured && (key == "ci" || key == "merge") {
 			localTokens = append(localTokens, token)
@@ -126,6 +137,17 @@ func splitPRFilter(query string) (server, local string) {
 		serverTokens = append(serverTokens, token)
 	}
 	return strings.Join(serverTokens, " "), strings.Join(localTokens, " ")
+}
+
+// groupEnd returns the index of the token closing the parenthesized group
+// that starts at i, or the last token when the group is never closed.
+func groupEnd(tokens []string, i int) int {
+	for ; i < len(tokens); i++ {
+		if strings.HasSuffix(tokens[i], ")") {
+			return i
+		}
+	}
+	return len(tokens) - 1
 }
 
 // prViewSearch builds the GitHub search for a tab: the requested state, the
@@ -225,8 +247,11 @@ func (m Model) matchesView(pr gh.PR, view prView) bool {
 		// The synthetic local PR belongs to every open tab.
 		return !m.viewDef(view).Closed()
 	}
-	query, _ := splitPRFilter(m.viewDef(view).Query)
-	if strings.TrimSpace(query) == "" {
+	// Evaluate the whole query, not just the server half: the parts GitHub
+	// cannot express (OR groups, ci:, merge:) are exactly the ones that have
+	// to be decided here.
+	query := strings.TrimSpace(m.viewDef(view).Query)
+	if query == "" {
 		return true
 	}
 	return matchesPRFilter(pr, query, m.viewerLogin)
@@ -275,8 +300,14 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 	m.recomputeViewCounts(page, paged)
 	m.filteredPRs = make([]gh.PR, 0, len(m.allPRs))
 	_, localFilter := splitPRFilter(m.filterQuery)
+	// Server rows are trusted for the qualifiers GitHub ran; whatever it
+	// could not evaluate (OR groups, ci:, merge:) is still ours to apply.
+	_, viewLocal := splitPRFilter(m.viewDef(m.prView).Query)
 	for _, pr := range m.allPRs {
 		if page.loaded && pr.Number > 0 && sourceNumbers[pr.Number] {
+			if viewLocal != "" && !matchesPRFilter(pr, viewLocal, m.viewerLogin) {
+				continue
+			}
 			if localFilter == "" || matchesPRFilter(pr, localFilter, m.viewerLogin) {
 				m.filteredPRs = append(m.filteredPRs, pr)
 			}
@@ -312,9 +343,21 @@ func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
 	m.viewCountKnown = make([]bool, len(m.views))
 	for view := prView(0); int(view) < len(m.views); view++ {
 		state := m.standardPRListState(view)
-		if cached, ok := m.prPages[prPageKey(view, state, "")]; ok && cached.loaded {
+		_, localOnly := splitPRFilter(m.viewDef(view).Query)
+		cached, ok := m.prPages[prPageKey(view, state, "")]
+		switch {
+		case ok && cached.loaded && localOnly == "":
 			m.viewCounts[view], m.viewCountKnown[view] = cached.total, true
-		} else if page.loaded {
+		case ok && cached.loaded:
+			// The server could not evaluate part of this view, so its total
+			// counts rows the tab filters out. Count what was loaded.
+			for _, pr := range cached.prs {
+				if matchesListState(pr, state) && m.matchesView(pr, view) {
+					m.viewCounts[view]++
+				}
+			}
+			m.viewCountKnown[view] = true
+		case page.loaded:
 			for _, pr := range m.navigator.PRs {
 				if matchesListState(pr, state) && m.matchesView(pr, view) {
 					m.viewCounts[view]++
@@ -475,19 +518,15 @@ func matchesPRFilter(pr gh.PR, query, viewer string) bool {
 // tokens[i], returning them and the index of its last token. An unclosed
 // group runs to the end of the query.
 func filterGroup(tokens []string, i int) ([]string, int) {
+	end := groupEnd(tokens, i)
 	var alternatives []string
-	for ; i < len(tokens); i++ {
-		token := strings.TrimPrefix(tokens[i], "(")
-		closed := strings.HasSuffix(token, ")")
-		token = strings.TrimSuffix(token, ")")
+	for _, token := range tokens[i : end+1] {
+		token = strings.TrimSuffix(strings.TrimPrefix(token, "("), ")")
 		if token != "" && token != "or" {
 			alternatives = append(alternatives, token)
 		}
-		if closed {
-			break
-		}
 	}
-	return alternatives, min(i, len(tokens)-1)
+	return alternatives, end
 }
 
 // prFilterMatcher evaluates single filter tokens, building the free-text
