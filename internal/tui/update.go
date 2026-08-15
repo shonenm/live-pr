@@ -122,7 +122,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.handleRemoteLoaded(msg)
 		return next, cmd
 	case ciPollTick:
-		if msg.generation == m.targetGeneration && !m.refreshing && m.screen == detailScreen && m.cache.PR != nil && m.cache.PR.Number == msg.number && prCIHealth(*m.cache.PR) == "pending" {
+		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && prCIHealth(*m.cache.PR) == "pending" {
 			return m, pollCI(msg.generation, msg.number)
 		}
 		return m, nil
