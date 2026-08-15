@@ -137,6 +137,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.richBodies = msg.bodies
+		m.invalidateConversation()
 		m.layout()
 		return m, m.sync()
 	case avatarColorsLoaded:
@@ -149,6 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for login, color := range msg.colors {
 			m.avatarColors[login] = color
 		}
+		m.invalidateConversation()
 		m.layout()
 		return m, m.sync()
 	case listAvatarColorsLoaded:
