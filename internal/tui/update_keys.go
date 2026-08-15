@@ -140,15 +140,7 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		st := store.ForBranch(m.root, m.currentBranch)
 		cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
-		if err := m.loadLocal(st, cache, pr); err != nil {
-			m.status = err.Error()
-			return m, nil
-		}
-		cmds := []tea.Cmd{fetchGitHub(m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync(), m.startSpinner()}
-		if m.diffTerminal != nil {
-			cmds = append(cmds, m.diffTerminal.Init())
-		}
-		return m, tea.Batch(cmds...)
+		return m, tea.Batch(m.startLocalLoad(st, cache, pr), m.startSpinner())
 	}
 	return m, nil
 }

@@ -121,6 +121,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case remoteLoaded:
 		next, cmd := m.handleRemoteLoaded(msg)
 		return next, cmd
+	case localLoaded:
+		next, cmd := m.handleLocalLoaded(msg)
+		return next, cmd
 	case ciPollTick:
 		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && prCIHealth(*m.cache.PR) == "pending" {
 			return m, pollCI(msg.generation, msg.number)
