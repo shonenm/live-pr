@@ -378,6 +378,13 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 			return browserDone{err: errors.New("cannot open browser or copy URL")}
 		}
+	case msg.String() == "C" && key.Matches(msg, m.keys.Checkout):
+		// Detail keeps c for the commits tab, so checkout answers to C only.
+		if pr := m.cache.PR; pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
+			m.pendingPRAction, m.prActionNumber, m.prActionPR = checkoutPR, pr.Number, *pr
+			m.status, m.notice = "", ""
+		}
+		return m, nil
 	case key.Matches(msg, m.keys.Commits):
 		if m.fileExplorerMode() && m.focusExplorer {
 			return m, m.toggleFileCheck()
