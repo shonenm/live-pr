@@ -2625,3 +2625,29 @@ func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
 		t.Fatal("q did not close the status popup")
 	}
 }
+
+// A refresh that changes card content without changing cursor/width/item
+// count must still re-render: restoreConversationSelection consumes the dirty
+// flag before buildConversation runs, so the render cache has to be dropped
+// by invalidateConversation itself.
+func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
+	m := testModel()
+	m.list.Width = 80
+	c := gh.Comment{ID: 1, Body: "old body", CreatedAt: "2026-08-01T10:00:00Z"}
+	c.User.Login = "alice"
+	m.cache.Comments = []gh.Comment{c}
+	m.conversationDirty = true
+	before, _ := m.buildConversation()
+	if !strings.Contains(ansi.Strip(before), "old body") {
+		t.Fatal("setup: old body missing")
+	}
+
+	// Refresh path: content changes, then selection restore consumes dirty.
+	m.cache.Comments[0].Body = "new body"
+	m.invalidateConversation()
+	m.restoreConversationSelection(m.selectedConversationKey())
+	after, _ := m.buildConversation()
+	if !strings.Contains(ansi.Strip(after), "new body") {
+		t.Fatal("render cache served stale conversation content")
+	}
+}
