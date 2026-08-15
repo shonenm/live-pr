@@ -444,7 +444,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 			m.activePRPage = prPageKey(m.prView, m.prListState, "")
 		}
 		m.applyPRFilters(msg.pr.Number)
-		diffCmd = tea.Batch(m.useBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
+		diffCmd = tea.Batch(m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 		m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(m.mergeReadiness, m.mergeReadinessErr, msg.pr)
 		stale := []string{}
 		if msg.commentsErr == nil {
@@ -477,14 +477,9 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	}
 	m.reloadLocalConversation()
 	m.invalidateConversation()
-	if err := gh.SaveCache(m.cachePath, m.cache); err != nil {
-		m.status = "GitHub cache: " + err.Error()
-	} else if strings.HasPrefix(m.status, "GitHub cache") {
-		m.status = ""
-	}
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	return m, tea.Batch(diffCmd, m.sync(), m.nextCIPoll(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities))
+	return m, tea.Batch(diffCmd, saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities))
 
 }
 
