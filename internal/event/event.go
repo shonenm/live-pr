@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/shonenm/live-pr/internal/debugtime"
 )
 
 // Kind categorizes a timeline event. Kinds drive the visual treatment in the TUI
@@ -109,6 +111,10 @@ func Delete(path, id string) error {
 
 // Load materializes visible events from the append-only record stream. Legacy
 // records without IDs receive deterministic IDs so they can also be edited.
+// Malformed lines and ops with unknown or duplicate targets are skipped (and
+// logged) rather than failing the load: the stream is appended with O_APPEND
+// from concurrent processes, so a torn line must not take down every consumer
+// of the branch. The returned error is reserved for IO failures.
 func Load(path string) ([]Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -122,6 +128,10 @@ func Load(path string) ([]Event, error) {
 	var events []Event
 	positions := map[string]int{}
 	deleted := map[string]bool{}
+	var skipped []error
+	skip := func(line int, format string, args ...any) {
+		skipped = append(skipped, fmt.Errorf("line %d: "+format, append([]any{line}, args...)...))
+	}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	lineNumber := 0
@@ -135,7 +145,8 @@ func Load(path string) ([]Event, error) {
 		}
 		var rec record
 		if err := json.Unmarshal(line, &rec); err != nil {
-			return nil, err
+			skip(lineNumber, "%v", err)
+			continue
 		}
 		switch rec.Op {
 		case "":
@@ -143,14 +154,16 @@ func Load(path string) ([]Event, error) {
 				rec.ID = legacyID(lineNumber, line)
 			}
 			if _, exists := positions[rec.ID]; exists {
-				return nil, fmt.Errorf("duplicate timeline event id %q", rec.ID)
+				skip(lineNumber, "duplicate timeline event id %q", rec.ID)
+				continue
 			}
 			positions[rec.ID] = len(events)
 			events = append(events, rec.Event)
 		case "update":
 			i, ok := positions[rec.Target]
 			if !ok {
-				return nil, fmt.Errorf("update targets unknown timeline event %q", rec.Target)
+				skip(lineNumber, "update targets unknown timeline event %q", rec.Target)
+				continue
 			}
 			if deleted[rec.Target] {
 				continue
@@ -163,12 +176,16 @@ func Load(path string) ([]Event, error) {
 			events[i] = rec.Event
 		case "delete":
 			if _, ok := positions[rec.Target]; !ok {
-				return nil, fmt.Errorf("delete targets unknown timeline event %q", rec.Target)
+				skip(lineNumber, "delete targets unknown timeline event %q", rec.Target)
+				continue
 			}
 			deleted[rec.Target] = true
 		default:
-			return nil, fmt.Errorf("unsupported timeline operation %q", rec.Op)
+			skip(lineNumber, "unsupported timeline operation %q", rec.Op)
 		}
+	}
+	if len(skipped) > 0 {
+		debugtime.Logf("timeline %s: skipped %d invalid records; first: %v", path, len(skipped), skipped[0])
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
