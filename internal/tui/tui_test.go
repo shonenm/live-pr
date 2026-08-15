@@ -2575,3 +2575,33 @@ func TestReviewedMarksPersistAcrossSessions(t *testing.T) {
 		t.Fatal("mark did not survive a session restart")
 	}
 }
+
+// Async completions must land even while a modal popup owns the keyboard;
+// dropping them used to leave reviewSubmitting/refreshing stuck until restart.
+func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
+	// reviewSubmitted arrives while the status popup is open.
+	m := testModel()
+	m.reviewSubmitting = true
+	m.statusPR = gh.PR{Number: 12, State: "OPEN"}
+	u, _ := m.Update(reviewSubmitted{event: gh.ReviewApproveEvent})
+	if got := u.(Model); got.reviewSubmitting {
+		t.Fatal("reviewSubmitted was dropped by the status popup")
+	}
+
+	// githubRefreshed arrives while the local editor is open.
+	m = testModel()
+	m.refreshing = true
+	m.localEditMode = addLocalComment
+	u, _ = m.Update(githubRefreshed{generation: m.targetGeneration, err: gh.ErrPRNotFound})
+	if got := u.(Model); got.refreshing {
+		t.Fatal("githubRefreshed was dropped by the editor overlay")
+	}
+
+	// Keys still go to the modal, not the main handler.
+	m = testModel()
+	m.statusPR = gh.PR{Number: 12, State: "OPEN"}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if got := u.(Model); got.statusPR.Number != 0 {
+		t.Fatal("q did not close the status popup")
+	}
+}

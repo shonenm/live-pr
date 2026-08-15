@@ -294,12 +294,9 @@ func localEventByID(events []event.Event, id string) (event.Event, bool) {
 }
 
 func (m Model) handleLocalOverlay(msg tea.Msg) (Model, tea.Cmd) {
-	if size, ok := msg.(tea.WindowSizeMsg); ok {
-		m.w, m.h = size.Width, size.Height
-		m.sizeLocalEditor()
-		m.layout()
-		return m, nil
-	}
+	// WindowSizeMsg is routed through the main Update switch (it resizes the
+	// editor there), so this handler only sees keys and editor-internal
+	// messages such as cursor blink.
 	key, ok := msg.(tea.KeyMsg)
 	if m.localDeleteTarget != "" {
 		if !ok {
