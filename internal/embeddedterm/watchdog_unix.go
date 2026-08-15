@@ -32,6 +32,14 @@ func init() {
 }
 
 func runWatchdog(parent int, command string) int {
+	pidFile := os.Getenv(watchdogPIDFileEnv)
+	// The reviewer must not inherit the watchdog trigger: a live-pr invocation
+	// from inside the reviewer (e.g. `live-pr review add` in a nvim terminal)
+	// would otherwise re-enter watchdog mode, double-spawn the reviewer, and
+	// clobber the pid file.
+	for _, env := range []string{watchdogModeEnv, watchdogParentEnv, watchdogCommandEnv, watchdogPIDFileEnv} {
+		_ = os.Unsetenv(env)
+	}
 	child := exec.Command("sh", "-c", "exec "+command)
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 	// Inherit the watchdog's PTY foreground group. Creating a separate reviewer
@@ -41,7 +49,7 @@ func runWatchdog(parent int, command string) int {
 		return 1
 	}
 	group := os.Getpid()
-	if pidFile := os.Getenv(watchdogPIDFileEnv); pidFile != "" {
+	if pidFile != "" {
 		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(group)), 0o600)
 		defer os.Remove(pidFile)
 	}
@@ -62,10 +70,14 @@ func runWatchdog(parent int, command string) int {
 			}
 			return 1
 		case <-stopping:
+			removePIDFile(pidFile)
 			killTree(group)
 			return 0
 		case <-ticker.C:
 			if !processAlive(parent) || os.Getppid() != parent {
+				// killTree SIGKILLs our own process group, so the deferred
+				// remove never runs; delete the pid file first.
+				removePIDFile(pidFile)
 				killTree(group)
 				return 0
 			}
@@ -122,4 +134,10 @@ func descendants(root int) []int {
 		}
 	}
 	return result
+}
+
+func removePIDFile(path string) {
+	if path != "" {
+		_ = os.Remove(path)
+	}
 }
