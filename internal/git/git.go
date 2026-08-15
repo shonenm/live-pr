@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shonenm/live-pr/internal/debugtime"
@@ -401,6 +402,7 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 	}
 	parts := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
 	var files []ChangedFile
+	var root string
 	for i := 0; i < len(parts) && parts[i] != ""; {
 		meta := strings.Fields(strings.TrimPrefix(parts[i], ":"))
 		i++
@@ -418,7 +420,12 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 			file.OldPath, file.Path = file.Path, parts[i]
 			i++
 		}
-		file.Fingerprint = fileFingerprint(srcBlob, dstBlob, file.Path)
+		if root == "" {
+			// Paths in --raw output are repo-root relative; resolve the root
+			// once per scan so hashing works from subdirectory launches too.
+			root, _ = RepoRoot()
+		}
+		file.Fingerprint = fileFingerprint(srcBlob, dstBlob, root, file.Path)
 		files = append(files, file)
 	}
 	return files, nil
@@ -432,14 +439,53 @@ const zeroBlob = "0000000000000000000000000000000000000000"
 // committed revisions; an uncommitted post-image has no blob, so the working
 // tree's content is hashed instead. An unreadable file (a deletion) keeps the
 // null ID, which is still stable for that state.
-func fileFingerprint(srcBlob, dstBlob, path string) string {
+func fileFingerprint(srcBlob, dstBlob, root, path string) string {
 	if strings.Trim(dstBlob, "0") == "" {
-		if data, err := os.ReadFile(path); err == nil {
-			sum := sha256.Sum256(data)
-			dstBlob = hex.EncodeToString(sum[:])
+		if root != "" {
+			path = filepath.Join(root, path)
+		}
+		if sum := workingTreeHash(path); sum != "" {
+			dstBlob = sum
 		}
 	}
 	return srcBlob + ":" + dstBlob
+}
+
+type hashMemoEntry struct {
+	modTime time.Time
+	size    int64
+	sum     string
+}
+
+// hashMemo caches working-tree hashes by absolute path; scans re-run on every
+// refresh and re-reading each uncommitted file in full every time adds up.
+var (
+	hashMemoMu sync.Mutex
+	hashMemo   = map[string]hashMemoEntry{}
+)
+
+// workingTreeHash hashes a working-tree file, memoized on (mtime, size).
+func workingTreeHash(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	hashMemoMu.Lock()
+	entry, ok := hashMemo[path]
+	hashMemoMu.Unlock()
+	if ok && entry.modTime.Equal(info.ModTime()) && entry.size == info.Size() {
+		return entry.sum
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	entry = hashMemoEntry{modTime: info.ModTime(), size: info.Size(), sum: hex.EncodeToString(sum[:])}
+	hashMemoMu.Lock()
+	hashMemo[path] = entry
+	hashMemoMu.Unlock()
+	return entry.sum
 }
 
 // FileDiff returns the colorized base...HEAD patch for the selected paths.
