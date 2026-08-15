@@ -1056,8 +1056,10 @@ func pollCI(generation uint64, number int) tea.Cmd {
 	}
 }
 
-func richContentKey(pr *gh.PR, comments []gh.Comment, activities []gh.Activity) [sha256.Size]byte {
+func richContentKey(width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity) [sha256.Size]byte {
 	var input strings.Builder
+	// Width participates in the key so a resize invalidates rendered mermaid.
+	fmt.Fprintf(&input, "%d\x00", width)
 	if pr != nil {
 		fmt.Fprintf(&input, "%s\x00%s\x00%s\x00", pr.Author.Login, pr.Author.AvatarURL, pr.Body)
 	}
@@ -1120,7 +1122,12 @@ func loadListAvatarColors(generation uint64, prs []gh.PR) tea.Cmd {
 }
 
 func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity) tea.Cmd {
-	key := richContentKey(pr, comments, activities)
+	if width <= 0 {
+		// Init can run before the first WindowSizeMsg; rendering mermaid at a
+		// negative width wastes the work and caches garbage.
+		return nil
+	}
+	key := richContentKey(width, pr, comments, activities)
 	bodies := make([]string, 0, len(comments)+1)
 	avatars := map[string]string{}
 	if pr != nil {
