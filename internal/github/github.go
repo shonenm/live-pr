@@ -111,15 +111,16 @@ type Comment struct {
 
 // PRDetail is one concurrently loaded pull-request detail snapshot.
 type PRDetail struct {
-	PR             PR
-	Comments       []Comment
-	Activities     []Activity
-	Reviews        []Review
-	ReviewComments []ReviewThreadComment
-	PreviewErr     error
-	CommentsErr    error
-	ActivitiesErr  error
-	ReviewsErr     error
+	PR                PR
+	Comments          []Comment
+	Activities        []Activity
+	Reviews           []Review
+	ReviewComments    []ReviewThreadComment
+	PreviewErr        error
+	CommentsErr       error
+	ActivitiesErr     error
+	ReviewsErr        error
+	ReviewCommentsErr error
 }
 
 // Activity is a non-comment PR timeline event from GitHub's issue events API.
@@ -434,11 +435,11 @@ func (c Client) FindPreview(number int) (PR, error) {
 		return PR{}, fmt.Errorf("decode gh pr preview: %w", err)
 	}
 	preview.CommentCount = len(preview.Conversation)
-	commits, err := c.commitStatusRollups(number)
-	if err != nil {
-		return PR{}, err
+	// A failed rollup fetch only costs the per-commit CI states; discarding
+	// the whole preview over it left the PR with no metadata at all.
+	if commits, err := c.commitStatusRollups(number); err == nil {
+		preview.CommitCount, preview.Commits = len(commits), commits
 	}
-	preview.CommitCount, preview.Commits = len(commits), commits
 	preview.PreviewLoaded = true
 	return preview, nil
 }
@@ -618,7 +619,7 @@ func (c Client) LoadPRDetail(number int) PRDetail {
 		var rwg sync.WaitGroup
 		rwg.Add(2)
 		go func() { defer rwg.Done(); detail.Reviews, detail.ReviewsErr = c.Reviews(number) }()
-		go func() { defer rwg.Done(); detail.ReviewComments, _ = c.ReviewComments(number) }()
+		go func() { defer rwg.Done(); detail.ReviewComments, detail.ReviewCommentsErr = c.ReviewComments(number) }()
 		rwg.Wait()
 	}()
 	wg.Wait()
