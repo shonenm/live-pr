@@ -66,7 +66,7 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, ManageViews, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, ManageViews, CopyURL, Help, Quit key.Binding
 }
 
 // helpGroups is the single source of help ordering; ShortHelp flattens it and
@@ -75,7 +75,7 @@ type keyMap struct {
 func (k keyMap) helpGroups() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.FocusLeft, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList},
-		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.ManageViews, k.Help, k.Quit},
+		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.CopyURL, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.ManageViews, k.Help, k.Quit},
 	}
 }
 
@@ -121,6 +121,7 @@ var keys = keyMap{
 	EditLocal:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
 	DeleteLocal:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete comment")),
 	Review:       key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "review (verdict+body)")),
+	CopyURL:      key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "copy URL")),
 	ManageViews:  key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "manage views")),
 	Help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:         key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -1538,6 +1539,7 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Back:        false,
 		&m.keys.PRList:      false,
 		&m.keys.Browse:      m.selectedBrowseURL() != "",
+		&m.keys.CopyURL:     m.selectedBrowseURL() != "",
 		&m.keys.Publish:     false,
 		&m.keys.Merge:       m.prListState == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
 		&m.keys.Checkout:    pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
@@ -1576,6 +1578,7 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Back:        m.active != conversationTab,
 		&m.keys.PRList:      true,
 		&m.keys.Browse:      m.selectedBrowseURL() != "",
+		&m.keys.CopyURL:     m.selectedBrowseURL() != "",
 		&m.keys.Publish:     !m.remote,
 		&m.keys.Merge:       m.canMergeCurrentPR() && m.prActionRunning == noPRAction,
 		&m.keys.Checkout:    m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR) && m.prActionRunning == noPRAction,
