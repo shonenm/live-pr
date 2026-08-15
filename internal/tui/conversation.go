@@ -167,12 +167,9 @@ type convRenderKey struct {
 }
 
 func (m *Model) buildConversation() (string, int) {
-	// conversationItems() consumes the dirty flag, so capture it first: a
-	// content change forces a rebuild even when cursor/width are unchanged.
-	dirty := m.conversationDirty
 	items := m.conversationItems()
 	key := convRenderKey{cursor: m.cursors[conversationTab], width: m.list.Width, items: len(items)}
-	if !dirty && m.conversationRenderValid && m.conversationRenderKey == key {
+	if m.conversationRenderValid && m.conversationRenderKey == key {
 		return m.conversationRender, m.conversationRenderLine
 	}
 	out, selectedLine := m.renderConversation(items)

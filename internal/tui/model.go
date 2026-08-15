@@ -860,6 +860,11 @@ func (m *Model) advanceAsyncGenerations(previous Model) {
 
 func (m *Model) invalidateConversation() {
 	m.conversationDirty = true
+	// The render cache must drop too: conversationItems() consumes the dirty
+	// flag, and callers like restoreConversationSelection do that before
+	// buildConversation runs — the stale render would otherwise survive a
+	// refresh whenever cursor, width, and item count all stayed the same.
+	m.conversationRenderValid = false
 }
 
 func fetchPRList(generation uint64, key, query, cursor string, appendPage bool) tea.Cmd {
