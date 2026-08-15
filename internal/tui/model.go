@@ -1257,6 +1257,7 @@ func (m Model) selectedCommitSHA() string {
 	return ""
 }
 
+// sync rebuilds both panes for the current tab and selection.
 func (m *Model) sync() tea.Cmd {
 	if done := debugtime.Start("tui sync"); done != nil {
 		defer done()
