@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -65,7 +66,7 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, ManageViews, Help, Quit key.Binding
 }
 
 // helpGroups is the single source of help ordering; ShortHelp flattens it and
@@ -74,7 +75,7 @@ type keyMap struct {
 func (k keyMap) helpGroups() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.FocusLeft, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList},
-		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.Help, k.Quit},
+		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.ManageViews, k.Help, k.Quit},
 	}
 }
 
@@ -120,6 +121,7 @@ var keys = keyMap{
 	EditLocal:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit local")),
 	DeleteLocal:  key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete comment")),
 	Review:       key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "review (verdict+body)")),
+	ManageViews:  key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "manage views")),
 	Help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:         key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
@@ -455,6 +457,14 @@ type Model struct {
 	prPreviewLoaded           map[int]bool
 	prView                    prView
 	views                     []config.View
+	viewManager               bool
+	viewDraft                 []config.View
+	viewCursor                int
+	viewEditField             viewEditField
+	viewEditIndex             int
+	viewNameInput             textinput.Model
+	viewQueryInput            textinput.Model
+	viewManagerError          string
 	prListState               prListState
 	prPages                   map[string]prPageState
 	activePRPage              string
@@ -1533,6 +1543,7 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Checkout:    pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
 		&m.keys.Close:       m.prListState == openPRListState && pr != nil && pr.Number > 0 && idle,
 		&m.keys.Status:      pr != nil && pr.Number > 0,
+		&m.keys.ManageViews: true,
 	})
 	content, selectedLine := m.buildPRListRows()
 	m.list.SetContent(content)
@@ -1570,6 +1581,7 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Checkout:    false,
 		&m.keys.Close:       false,
 		&m.keys.Status:      m.cache.PR != nil && m.cache.PR.Number > 0,
+		&m.keys.ManageViews: false,
 	})
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
@@ -1647,6 +1659,9 @@ func (m Model) View() string {
 	}
 	if m.statusPR.Number > 0 {
 		return overlayPopup(view, m.renderPRStatusPopup(), m.w)
+	}
+	if m.viewManager {
+		return overlayPopup(view, m.renderViewManagerPopup(), m.w)
 	}
 	if m.localDeleteTarget != "" {
 		return overlayPopup(view, m.renderLocalDeletePopup(), m.w)
