@@ -175,7 +175,7 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
 			m.reviewSubmitTyping = false
 			return m, nil
-		case "enter", "ctrl+s":
+		case "ctrl+s", "ctrl+enter":
 			m.reviewDraft.Body = strings.TrimSpace(m.localEditor.Value())
 			if m.reviewSubmitEvent == gh.ReviewRequestChangesEvent && m.reviewDraft.Body == "" {
 				m.status = "request changes requires a general review body"
@@ -252,7 +252,7 @@ func (m Model) renderReviewSubmitPopup() string {
 	}
 	if m.reviewSubmitTyping {
 		lines = append(lines, "", stMuted.Render("Message"), m.localEditor.View())
-		lines = append(lines, "", stMuted.Render("type message · Enter submit · Esc back"))
+		lines = append(lines, "", stMuted.Render("type message · Ctrl+S submit · Esc back"))
 	} else {
 		lines = append(lines, "", stMuted.Render("j/k select · Enter write message · Esc cancel"))
 	}
