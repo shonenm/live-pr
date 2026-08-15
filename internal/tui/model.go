@@ -298,6 +298,54 @@ type conversationItem struct {
 	reviewComment *gh.ReviewThreadComment
 }
 
+type conversationItemKind uint8
+
+const (
+	itemUnknown conversationItemKind = iota
+	itemSummary
+	itemPRDescription
+	itemComment
+	itemReview
+	itemReviewComment
+	itemActivity
+	itemPRCommit
+	itemEvent
+)
+
+// kind classifies which pointer of the hand-rolled sum type is populated, so
+// consumers switch once instead of chaining nil checks — and itemEvent is
+// only reported when event is actually set, closing the nil-deref tail the
+// old else-branches carried.
+func (it conversationItem) kind() conversationItemKind {
+	switch {
+	case it.summary != nil:
+		return itemSummary
+	case it.pr != nil:
+		return itemPRDescription
+	case it.comment != nil:
+		return itemComment
+	case it.review != nil:
+		return itemReview
+	case it.reviewComment != nil:
+		return itemReviewComment
+	case it.activity != nil:
+		return itemActivity
+	case it.prCommit != nil:
+		return itemPRCommit
+	case it.event != nil:
+		return itemEvent
+	default:
+		return itemUnknown
+	}
+}
+
+// compactActivity items render as one-liners and pack together without blank
+// separators.
+func (it conversationItem) compactActivity() bool {
+	kind := it.kind()
+	return kind == itemActivity || kind == itemPRCommit
+}
+
 // Model holds the living-PR view state.
 type Model struct {
 	screen                    screen
