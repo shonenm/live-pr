@@ -750,7 +750,9 @@ func (c Client) SetStatus(pr PR, target string) error {
 	var args []string
 	switch target {
 	case "open":
-		if !pr.IsDraft {
+		// Reopening a closed PR must not change its draftness; only the
+		// explicit draft -> open transition marks it ready for review.
+		if strings.EqualFold(pr.State, "CLOSED") || !pr.IsDraft {
 			return nil
 		}
 		args = []string{"pr", "ready", strconv.Itoa(pr.Number)}

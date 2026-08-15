@@ -2868,3 +2868,23 @@ func TestCurrentBranchPRLoadedKeepsListStateOnDetailScreen(t *testing.T) {
 		t.Fatalf("detail screen rewrote list state: view=%v state=%v", m.prView, m.prListState)
 	}
 }
+
+func TestReopenKeepsDraftAndClosedFilterMatchesMerged(t *testing.T) {
+	// Reopening a closed draft keeps its draftness in the optimistic update.
+	pr := optimisticStatus(gh.PR{Number: 3, State: "CLOSED", IsDraft: true}, "open")
+	if !pr.IsDraft || pr.State != "OPEN" {
+		t.Fatalf("reopened draft = %#v", pr)
+	}
+	// The explicit draft -> open transition clears it.
+	if pr := optimisticStatus(gh.PR{Number: 3, State: "OPEN", IsDraft: true}, "open"); pr.IsDraft {
+		t.Fatalf("ready-for-review kept draft: %#v", pr)
+	}
+
+	// is:closed matches MERGED like GitHub search and matchesListState.
+	if !matchesPRFilter(gh.PR{State: "MERGED"}, "is:closed", "") {
+		t.Fatal("is:closed rejected a merged PR")
+	}
+	if matchesPRFilter(gh.PR{State: "OPEN"}, "is:closed", "") {
+		t.Fatal("is:closed matched an open PR")
+	}
+}
