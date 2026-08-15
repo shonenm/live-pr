@@ -75,10 +75,10 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 		m.navigator.ViewerLogin = msg.page.ViewerLogin
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	cacheUpdated := strings.TrimSpace(m.filterQuery) == "" && m.prListState == standardPRListState(m.prView)
+	cacheUpdated := strings.TrimSpace(m.filterQuery) == "" && m.prListState == m.standardPRListState(m.prView)
 	if cacheUpdated {
 		m.navigator.PRs = appendUniquePRs(m.navigator.PRs, msg.page.PRs)
-		m.navigator.SetView(m.prView.String(), page.prs, page.total, now)
+		m.navigator.SetView(m.viewName(m.prView), page.prs, page.total, now)
 		m.navigator.PrunePRs()
 		m.navigator.FetchedAt = now
 	}
@@ -96,7 +96,7 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	if cacheUpdated {
 		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
-	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.prView.String())
+	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.viewName(m.prView))
 	_, localFilter := splitPRFilter(m.filterQuery)
 	if page.hasNext && (len(msg.page.PRs) == 0 || localFilter != "" && len(m.openPRs) == 0) {
 		cmds = append(cmds, m.requestPRPage(false))
@@ -123,8 +123,8 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
 	// Only the PR list screen may switch views; arriving on the detail
 	// screen this would silently rewrite the list state behind it.
-	if m.screen == prListScreen && matchesListState(msg.pr, closedPRListState) {
-		m.prView, m.prListState, m.listRefreshing = closedPRsView, closedPRListState, false
+	if closed, ok := m.closedView(); ok && m.screen == prListScreen && matchesListState(msg.pr, closedPRListState) {
+		m.prView, m.prListState, m.listRefreshing = closed, closedPRListState, false
 		m.prListGeneration++
 		m.activePRPage = prPageKey(m.prView, m.prListState, "")
 	}
@@ -471,8 +471,8 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		m.localAvailable = false
 		m.cache.FetchedAt = now
 		m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
-		if matchesListState(msg.pr, closedPRListState) {
-			m.prView, m.prListState, m.listRefreshing = closedPRsView, closedPRListState, false
+		if closed, ok := m.closedView(); ok && matchesListState(msg.pr, closedPRListState) {
+			m.prView, m.prListState, m.listRefreshing = closed, closedPRListState, false
 			m.prListGeneration++
 			m.activePRPage = prPageKey(m.prView, m.prListState, "")
 		}

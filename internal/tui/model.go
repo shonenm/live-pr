@@ -41,23 +41,14 @@ type tab int
 
 type screen int
 
-type prView uint8
+// prView indexes Model.views, the config-defined PR list tabs.
+type prView int
 
 type prListState uint8
 
 const (
 	openPRListState prListState = iota
 	closedPRListState
-)
-
-const (
-	assignedView prView = iota
-	reviewRequestedView
-	allPRsView
-	authoredView
-	needsMeView
-	closedPRsView
-	prViewCount
 )
 
 const (
@@ -463,11 +454,12 @@ type Model struct {
 	prPreviewLoading          map[int]bool
 	prPreviewLoaded           map[int]bool
 	prView                    prView
+	views                     []config.View
 	prListState               prListState
 	prPages                   map[string]prPageState
 	activePRPage              string
-	viewCounts                [prViewCount]int
-	viewCountKnown            [prViewCount]bool
+	viewCounts                []int
+	viewCountKnown            []bool
 	viewCountsValid           bool
 	filterQuery               string
 	filterBeforeEdit          string
@@ -596,9 +588,16 @@ func New(version ...string) (Model, error) {
 	defaultBranch := strings.TrimPrefix(defaultRef, "origin/")
 	localEligible := branch != "HEAD" && branch != defaultBranch
 	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), hasChanges)
-	initialView, initialState := assignedView, openPRListState
+	views := config.NormalizeViews(cfg.Views)
+	initialView, initialState := prView(0), openPRListState
 	if currentPR != nil && matchesListState(*currentPR, closedPRListState) {
-		initialView, initialState = closedPRsView, closedPRListState
+		// Open on a tab that can actually show the branch's closed PR.
+		for i, view := range views {
+			if view.Closed() {
+				initialView, initialState = prView(i), closedPRListState
+				break
+			}
+		}
 	}
 
 	m := Model{
@@ -619,6 +618,7 @@ func New(version ...string) (Model, error) {
 		openPRs:           navigator.PRs,
 		viewerLogin:       navigator.ViewerLogin,
 		prView:            initialView,
+		views:             views,
 		prListState:       initialState,
 		localAvailable:    localEligible && currentPR == nil,
 		localTitle:        branch,
@@ -937,7 +937,7 @@ func Run(version string, opts ...Option) error {
 func (m Model) Init() tea.Cmd {
 	// loadSpinner and spinnerRunning are initialized in New(); the value
 	// receiver here would discard any mutation anyway.
-	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.activePRPage, prViewSearch(m.prView, m.prListState, m.filterQuery), "", false), m.loadSpinner.Tick}
+	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.activePRPage, m.prViewSearch(m.prView, m.prListState, m.filterQuery), "", false), m.loadSpinner.Tick}
 	if m.screen == prListScreen && m.localAvailable && m.autoOpenCurrent {
 		cmds = append(cmds, fetchCurrentBranchPR(m.currentBranch))
 	}
@@ -1591,7 +1591,7 @@ func (m Model) View() string {
 	}
 	var view string
 	if m.screen == prListScreen {
-		listTitle := fmt.Sprintf("%s · %d", m.prView, len(m.filteredPRs))
+		listTitle := fmt.Sprintf("%s · %d", m.viewName(m.prView), len(m.filteredPRs))
 		previewTitle := "Preview"
 		if pr := m.selectedPR(); pr != nil {
 			if pr.Number > 0 {

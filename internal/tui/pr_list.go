@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/shonenm/live-pr/internal/config"
 	gh "github.com/shonenm/live-pr/internal/github"
 	md "github.com/shonenm/live-pr/internal/markdown"
 )
@@ -50,14 +51,21 @@ func (m Model) desiredPRListState() prListState {
 	if state, ok := filterPRListState(m.filterQuery); ok {
 		return state
 	}
-	if m.prView == closedPRsView {
-		return closedPRListState
-	}
-	return openPRListState
+	return m.standardPRListState(m.prView)
 }
 
-func standardPRListState(view prView) prListState {
-	if view == closedPRsView {
+// viewDef returns the definition behind a tab index. Out-of-range indexes
+// can survive a config edit that shortened the list, so they fall back to a
+// harmless empty view rather than panicking.
+func (m Model) viewDef(view prView) config.View {
+	if view < 0 || int(view) >= len(m.views) {
+		return config.View{}
+	}
+	return m.views[view]
+}
+
+func (m Model) standardPRListState(view prView) prListState {
+	if m.viewDef(view).Closed() {
 		return closedPRListState
 	}
 	return openPRListState
@@ -71,13 +79,13 @@ func (m *Model) seedPRPages() {
 	for _, pr := range m.navigator.PRs {
 		byNumber[pr.Number] = pr
 	}
-	for view := assignedView; view < prViewCount; view++ {
-		state := standardPRListState(view)
+	for view := prView(0); int(view) < len(m.views); view++ {
+		state := m.standardPRListState(view)
 		key := prPageKey(view, state, "")
 		if _, exists := m.prPages[key]; exists {
 			continue
 		}
-		if cached, ok := m.navigator.Views[view.String()]; ok {
+		if cached, ok := m.navigator.Views[m.viewName(view)]; ok {
 			prs := make([]gh.PR, 0, len(cached.Numbers))
 			for _, number := range cached.Numbers {
 				if pr, exists := byNumber[number]; exists {
@@ -95,7 +103,7 @@ func (m *Model) seedPRPages() {
 		}
 		if len(prs) > 0 {
 			m.prPages[key] = prPageState{prs: prs, total: len(prs), loaded: true}
-			m.navigator.SetView(view.String(), prs, len(prs), m.navigator.FetchedAt)
+			m.navigator.SetView(m.viewName(view), prs, len(prs), m.navigator.FetchedAt)
 		}
 	}
 }
@@ -120,17 +128,13 @@ func splitPRFilter(query string) (server, local string) {
 	return strings.Join(serverTokens, " "), strings.Join(localTokens, " ")
 }
 
-func prViewSearch(view prView, state prListState, filter string) string {
+// prViewSearch builds the GitHub search for a tab: the requested state, the
+// view's own query (minus its state tokens, which state already carries), and
+// the server-side part of the user's filter.
+func (m Model) prViewSearch(view prView, state prListState, filter string) string {
 	terms := []string{"is:" + strings.ToLower(state.String())}
-	switch view {
-	case assignedView:
-		terms = append(terms, "assignee:@me")
-	case reviewRequestedView:
-		terms = append(terms, "review-requested:@me")
-	case authoredView:
-		terms = append(terms, "author:@me")
-	case needsMeView:
-		terms = append(terms, "(assignee:@me OR review-requested:@me)")
+	if query, _ := splitPRFilter(m.viewDef(view).Query); query != "" {
+		terms = append(terms, query)
 	}
 	server, _ := splitPRFilter(filter)
 	if server != "" {
@@ -155,8 +159,8 @@ func (m *Model) requestPRPage(reset bool) tea.Cmd {
 	page.loading = true
 	m.prPages[key] = page
 	m.listRefreshing = true
-	m.githubStatus = "GitHub: fetching " + m.prView.String() + " pull requests…"
-	return tea.Batch(fetchPRList(m.prListGeneration, key, prViewSearch(m.prView, m.prListState, m.filterQuery), cursor, appendPage), m.startSpinner())
+	m.githubStatus = "GitHub: fetching " + m.viewName(m.prView) + " pull requests…"
+	return tea.Batch(fetchPRList(m.prListGeneration, key, m.prViewSearch(m.prView, m.prListState, m.filterQuery), cursor, appendPage), m.startSpinner())
 }
 
 func (m *Model) applyPRViewState(selectedNumber int) tea.Cmd {
@@ -173,33 +177,22 @@ func (m *Model) applyPRViewState(selectedNumber int) tea.Cmd {
 	m.applyPRFilters(selectedNumber)
 	if page := m.prPages[key]; page.loading {
 		m.listRefreshing = true
-		m.githubStatus = "GitHub: fetching " + m.prView.String() + " pull requests…"
+		m.githubStatus = "GitHub: fetching " + m.viewName(m.prView) + " pull requests…"
 		return m.sync()
 	} else if page.fresh {
 		m.listRefreshing = false
-		m.githubStatus = "GitHub: cached " + m.prView.String() + " page"
+		m.githubStatus = "GitHub: cached " + m.viewName(m.prView) + " page"
 		return m.sync()
 	}
 	return tea.Batch(m.sync(), m.requestPRPage(true))
 }
 
-func (v prView) String() string {
-	switch v {
-	case assignedView:
-		return "Assigned"
-	case reviewRequestedView:
-		return "Review requested"
-	case allPRsView:
-		return "All"
-	case authoredView:
-		return "Authored"
-	case needsMeView:
-		return "Needs me"
-	case closedPRsView:
-		return "Closed"
-	default:
-		return "All"
+// viewName is the tab label, and the key its page cache is stored under.
+func (m Model) viewName(view prView) string {
+	if name := m.viewDef(view).Name; name != "" {
+		return name
 	}
+	return "All"
 }
 
 func matchesListState(pr gh.PR, state prListState) bool {
@@ -224,28 +217,19 @@ func upsertPR(prs []gh.PR, updated gh.PR) []gh.PR {
 	return append([]gh.PR{updated}, result...)
 }
 
+// matchesView evaluates a tab's own query locally, for counts and for the
+// cached rows shown before a page arrives. State tokens are dropped: the
+// caller pairs this with matchesListState.
 func (m Model) matchesView(pr gh.PR, view prView) bool {
 	if pr.Number == 0 {
-		return view != closedPRsView
+		// The synthetic local PR belongs to every open tab.
+		return !m.viewDef(view).Closed()
 	}
-	if view == allPRsView || view == closedPRsView {
+	query, _ := splitPRFilter(m.viewDef(view).Query)
+	if strings.TrimSpace(query) == "" {
 		return true
 	}
-	authored := strings.EqualFold(pr.Author.Login, m.viewerLogin)
-	assigned := hasLogin(pr.Assignees, m.viewerLogin)
-	reviewRequested := pr.ViewerReviewRequested || hasLogin(pr.ReviewRequests, m.viewerLogin)
-	switch view {
-	case reviewRequestedView:
-		return reviewRequested
-	case assignedView:
-		return assigned
-	case authoredView:
-		return authored
-	case needsMeView:
-		return assigned || reviewRequested
-	default:
-		return true
-	}
+	return matchesPRFilter(pr, query, m.viewerLogin)
 }
 
 func hasLogin(users []gh.PRUser, login string) bool {
@@ -324,10 +308,10 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 // recomputeViewCounts refreshes the per-view PR counts shown in the tab bar,
 // preferring a loaded page's total, then the navigator, then the local set.
 func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
-	clear(m.viewCounts[:])
-	clear(m.viewCountKnown[:])
-	for view := assignedView; view < prViewCount; view++ {
-		state := standardPRListState(view)
+	m.viewCounts = make([]int, len(m.views))
+	m.viewCountKnown = make([]bool, len(m.views))
+	for view := prView(0); int(view) < len(m.views); view++ {
+		state := m.standardPRListState(view)
 		if cached, ok := m.prPages[prPageKey(view, state, "")]; ok && cached.loaded {
 			m.viewCounts[view], m.viewCountKnown[view] = cached.total, true
 		} else if page.loaded {
@@ -339,13 +323,13 @@ func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
 		}
 	}
 	if !paged || !page.loaded {
-		for view := assignedView; view < prViewCount; view++ {
+		for view := prView(0); int(view) < len(m.views); view++ {
 			// A cached page already produced this view's exact total; adding
 			// the allPRs fallback on top would double-count it.
 			if m.viewCountKnown[view] {
 				continue
 			}
-			state := standardPRListState(view)
+			state := m.standardPRListState(view)
 			for _, pr := range m.allPRs {
 				if matchesListState(pr, state) && m.matchesView(pr, view) {
 					m.viewCounts[view]++
@@ -356,8 +340,8 @@ func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
 	}
 	if m.localAvailable && page.loaded {
 		local := gh.PR{State: "LOCAL", Author: gh.PRUser{Login: m.viewerLogin}}
-		for view := assignedView; view < closedPRsView; view++ {
-			if m.matchesView(local, view) || view == allPRsView {
+		for view := prView(0); int(view) < len(m.views); view++ {
+			if m.matchesView(local, view) {
 				m.viewCounts[view]++
 			}
 		}
@@ -650,11 +634,11 @@ func (m *Model) ensureSelectedPRPreview() tea.Cmd {
 }
 
 func (m Model) renderPRListHeader() string {
-	tabs := make([]string, 0, prViewCount)
+	tabs := make([]string, 0, len(m.views))
 	activeBg := lipgloss.Color(cSelectedBg)
-	for view := assignedView; view < prViewCount; view++ {
-		name, count := view.String(), "?"
-		if !m.viewCountsValid || m.viewCountKnown[view] {
+	for view := prView(0); int(view) < len(m.views); view++ {
+		name, count := m.viewName(view), "?"
+		if !m.viewCountsValid || (int(view) < len(m.viewCountKnown) && m.viewCountKnown[view]) {
 			count = strconv.Itoa(m.viewCount(view))
 		}
 		border, content := stMuted, stMuted
@@ -704,13 +688,10 @@ func (m Model) renderPRListHeader() string {
 }
 
 func (m Model) viewCount(view prView) int {
-	if m.viewCountsValid && view >= 0 && view < prViewCount {
+	if m.viewCountsValid && view >= 0 && int(view) < len(m.viewCounts) {
 		return m.viewCounts[view]
 	}
-	state := openPRListState
-	if view == closedPRsView {
-		state = closedPRListState
-	}
+	state := m.standardPRListState(view)
 	count := 0
 	for _, pr := range m.allPRs {
 		if matchesListState(pr, state) && m.matchesView(pr, view) {
@@ -1244,4 +1225,27 @@ func relativeLuminance(rgb uint64) float64 {
 	g := channel((rgb >> 8) & 0xff)
 	b := channel(rgb & 0xff)
 	return 0.2126*r + 0.7152*g + 0.0722*b
+}
+
+// stepView cycles the selected tab, tolerating an index left out of range by
+// a shortened view list.
+func (m Model) stepView(delta int) prView {
+	count := len(m.views)
+	if count == 0 {
+		return 0
+	}
+	next := (int(m.prView)%count + count + delta%count) % count
+	return prView(next)
+}
+
+// closedView finds a tab that lists closed pull requests, so the list can
+// follow a branch whose PR just closed. A config without such a tab simply
+// stays put.
+func (m Model) closedView() (prView, bool) {
+	for i, view := range m.views {
+		if view.Closed() {
+			return prView(i), true
+		}
+	}
+	return 0, false
 }
