@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/shonenm/live-pr/internal/embeddedterm"
-	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
 )
@@ -349,11 +348,9 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 		return m, m.sync()
 	}
 	m.headRev = msg.headRef
-	m.base = git.ResolveBase(msg.pr.BaseRefName)
-	m.diffBase = remoteReviewBase(msg.pr)
+	m.base, m.diffBase = msg.base, msg.diffBase
 	m.reviewRange = m.diffBase + "..." + m.headRev
-	m.commits, _ = git.CommitsRange(m.diffBase, m.headRev)
-	m.files, _ = git.ChangedFilesRange(m.diffBase, m.headRev)
+	m.commits, m.files = msg.commits, msg.files
 	m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, msg.readinessErr, msg.pr)
 	m.fileCursor = 0
 	m.status = ""
