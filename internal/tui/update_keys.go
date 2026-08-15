@@ -70,11 +70,11 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.PrevView):
 		selected := m.selectedPRNumber()
-		m.prView = (m.prView + prViewCount - 1) % prViewCount
+		m.prView = m.stepView(-1)
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.NextView):
 		selected := m.selectedPRNumber()
-		m.prView = (m.prView + 1) % prViewCount
+		m.prView = m.stepView(1)
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
