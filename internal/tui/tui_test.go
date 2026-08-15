@@ -496,14 +496,14 @@ func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
 	if got := reviewSummary("CHANGES_REQUESTED"); got != stRedF.Render("review changes requested") {
 		t.Fatalf("changes-requested review = %q", got)
 	}
-	if got := mergeSummary(gh.PR{Number: 1, MergeStateStatus: "BLOCKED"}); got != stRedF.Render("blocked") {
-		t.Fatalf("blocked merge = %q", got)
+	if text, style := mergeState(gh.PR{Number: 1, MergeStateStatus: "BLOCKED"}); style.Render(text) != stRedF.Render("blocked") {
+		t.Fatalf("blocked merge = %q", style.Render(text))
 	}
-	if got := mergeSummary(gh.PR{Number: 1, Mergeable: "MERGEABLE", MergeStateStatus: "UNSTABLE"}); got != stGreenF.Render("⇄ mergeable") {
-		t.Fatalf("unstable merge = %q", got)
+	if text, style := mergeState(gh.PR{Number: 1, Mergeable: "MERGEABLE", MergeStateStatus: "UNSTABLE"}); style.Render(text) != stGreenF.Render("⇄ mergeable") {
+		t.Fatalf("unstable merge = %q", style.Render(text))
 	}
-	if got := checkSummary([]gh.PRCheck{{Status: "IN_PROGRESS"}}); got != stAttention.Render("◐ CI 1 pending") {
-		t.Fatalf("pending CI = %q", got)
+	if text, style := checkState([]gh.PRCheck{{Status: "IN_PROGRESS"}}); style.Render(text) != stAttention.Render("◐ CI 1 pending") {
+		t.Fatalf("pending CI = %q", style.Render(text))
 	}
 	if cDoneEmphasis != "#8957e5" {
 		t.Fatalf("merged palette = %s", cDoneEmphasis)
@@ -780,7 +780,7 @@ func TestPRListPreviewShowsConflictAndFailedCI(t *testing.T) {
 
 func TestCheckSummaryTreatsTerminalFailuresAsFailed(t *testing.T) {
 	for _, conclusion := range []string{"STARTUP_FAILURE", "STALE"} {
-		if got := ansi.Strip(checkSummary([]gh.PRCheck{{Status: "COMPLETED", Conclusion: conclusion}})); !strings.Contains(got, "failed") {
+		if got, _ := checkState([]gh.PRCheck{{Status: "COMPLETED", Conclusion: conclusion}}); !strings.Contains(got, "failed") {
 			t.Fatalf("%s summary = %q", conclusion, got)
 		}
 	}
@@ -1417,6 +1417,7 @@ func TestPRListScrollTracksRenderedRows(t *testing.T) {
 	for i := 1; i <= 20; i++ {
 		m.openPRs = append(m.openPRs, gh.PR{Number: i, Title: "PR"})
 	}
+	m.prStacks = buildPRStacks(m.openPRs)
 	m.prCursor = 10
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 	m = u.(Model)
