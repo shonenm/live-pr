@@ -144,6 +144,10 @@ type remoteLoaded struct {
 	generation     uint64
 	pr             gh.PR
 	headRef        string
+	base           string
+	diffBase       string
+	commits        []git.Commit
+	files          []git.ChangedFile
 	comments       []gh.Comment
 	activities     []gh.Activity
 	reviews        []gh.Review
@@ -987,10 +991,19 @@ func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
 			}
 		}()
 		wg.Wait()
+		// The range scans run here so handleRemoteLoaded stays subprocess-free
+		// on the Update goroutine.
+		var resolvedBase, diffBase string
+		var commits []git.Commit
+		var files []git.ChangedFile
 		if refErr == nil {
-			readiness, readinessErr = git.CheckMergeReadiness(git.ResolveBase(pr.BaseRefName), headRef)
+			resolvedBase = git.ResolveBase(pr.BaseRefName)
+			diffBase = remoteReviewBase(pr)
+			readiness, readinessErr = git.CheckMergeReadiness(resolvedBase, headRef)
+			commits, _ = git.CommitsRange(diffBase, headRef)
+			files, _ = git.ChangedFilesRange(diffBase, headRef)
 		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, readinessErr: readinessErr}
 	}
 }
 
