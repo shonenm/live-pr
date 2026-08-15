@@ -2985,3 +2985,34 @@ func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 		t.Fatal("unchanged range must not restart the review terminal")
 	}
 }
+
+func TestNoticeYieldsToProgressAndClearsOnRefresh(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.notice = "Checked out PR #7"
+	m.githubStatus = "GitHub: refreshing…"
+
+	// Idle: the notice shows.
+	if got := ansi.Strip(m.footerContent()); !strings.Contains(got, "Checked out PR #7") {
+		t.Fatalf("idle footer lost the notice: %q", got)
+	}
+	// Loading: the progress line wins over the lingering notice.
+	m.refreshing = true
+	if got := ansi.Strip(m.footerContent()); strings.Contains(got, "Checked out PR #7") || !strings.Contains(got, "refreshing") {
+		t.Fatalf("loading footer hid the progress: %q", got)
+	}
+	m.refreshing = false
+
+	// r clears the notice on both screens.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if got := u.(Model); got.notice != "" {
+		t.Fatalf("detail refresh kept notice %q", got.notice)
+	}
+	list := testModel()
+	list.screen = prListScreen
+	list.notice = "Merge submitted for PR #7"
+	u, _ = list.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if got := u.(Model); got.notice != "" {
+		t.Fatalf("list refresh kept notice %q", got.notice)
+	}
+}
