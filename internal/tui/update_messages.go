@@ -237,30 +237,51 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 		m.prPages[m.activePRPage] = page
 		return m, m.requestPRPage(true)
 	}
-	m.close()
-	next, err := New(m.version)
-	if err != nil {
-		m.status = "checkout reload: " + err.Error()
+	m.status = fmt.Sprintf("Checked out PR #%d · reloading…", msg.number)
+	m.refreshing = true
+	return m, tea.Batch(rebuildAfterCheckout(m.version, msg), m.startSpinner())
+
+}
+
+// rebuildAfterCheckout reconstructs the Model in a Cmd: New plus the local
+// hydration spawn a dozen git subprocesses, which froze the UI when run
+// inside the handler.
+func rebuildAfterCheckout(version string, msg prActionDone) tea.Cmd {
+	return func() tea.Msg {
+		next, err := New(version)
+		if err != nil {
+			return checkoutReloaded{number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
+		}
+		if msg.pr.Number > 0 {
+			cache := gh.NewCache(next.currentBranch)
+			pr := msg.pr
+			cache.PR, cache.ExplicitCheckout = &pr, true
+			if err := next.loadLocal(store.ForBranch(next.root, next.currentBranch), cache, &pr); err != nil {
+				return checkoutReloaded{number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
+			}
+			if err := gh.SaveCache(next.cachePath, next.cache); err != nil {
+				return checkoutReloaded{number: msg.number, err: fmt.Errorf("checkout cache: %w", err)}
+			}
+		}
+		return checkoutReloaded{number: msg.number, next: &next}
+	}
+}
+
+func (m Model) handleCheckoutReloaded(msg checkoutReloaded) (Model, tea.Cmd) {
+	m.refreshing = false
+	if msg.err != nil {
+		// The old model stays live, terminal included: closing before a
+		// fallible rebuild left a dead review pane on failure.
+		m.status = msg.err.Error()
 		return m, nil
 	}
-	if msg.pr.Number > 0 {
-		cache := gh.NewCache(next.currentBranch)
-		cache.PR, cache.ExplicitCheckout = &msg.pr, true
-		if err := next.loadLocal(store.ForBranch(next.root, next.currentBranch), cache, &msg.pr); err != nil {
-			m.status = "checkout reload: " + err.Error()
-			return m, nil
-		}
-		if err := gh.SaveCache(next.cachePath, next.cache); err != nil {
-			m.status = "checkout cache: " + err.Error()
-			return m, nil
-		}
-	}
+	m.close()
+	next := *msg.next
 	next.w, next.h = m.w, m.h
 	next.advanceAsyncGenerations(m)
 	next.notice = fmt.Sprintf("Checked out PR #%d", msg.number)
 	next.layout()
 	return next, tea.Batch(next.Init(), next.sync())
-
 }
 
 func (m Model) handleBrowserDone(msg browserDone) (Model, tea.Cmd) {

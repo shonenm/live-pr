@@ -251,6 +251,12 @@ func saveNavigatorCacheCmd(path string, navigator gh.NavigatorCache) tea.Cmd {
 	}
 }
 
+type checkoutReloaded struct {
+	number int
+	next   *Model
+	err    error
+}
+
 type prAction uint8
 
 type localEditMode uint8

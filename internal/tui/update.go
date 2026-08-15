@@ -105,6 +105,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prActionDone:
 		next, cmd := m.handlePRActionDone(msg)
 		return next, cmd
+	case checkoutReloaded:
+		next, cmd := m.handleCheckoutReloaded(msg)
+		return next, cmd
 	case browserDone:
 		next, cmd := m.handleBrowserDone(msg)
 		return next, cmd
