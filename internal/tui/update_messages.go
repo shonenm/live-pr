@@ -386,7 +386,8 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 }
 
 func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration || m.screen != detailScreen || m.cache.PR == nil || m.cache.PR.Number != msg.pr.Number && msg.err == nil {
+	// Errors carry no PR number, so the number check applies to successes only.
+	if !m.ciPollTargetsCurrentPR(msg.generation) || (msg.err == nil && m.cache.PR.Number != msg.pr.Number) {
 		return m, nil
 	}
 	if msg.err != nil {
@@ -491,4 +492,10 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	m.restoreConversationSelection(selectedKey)
 	return m, tea.Batch(diffCmd, m.sync(), m.nextCIPoll(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities))
 
+}
+
+// ciPollTargetsCurrentPR reports whether a CI poll message still belongs to
+// the PR shown on the detail screen.
+func (m Model) ciPollTargetsCurrentPR(generation uint64) bool {
+	return generation == m.targetGeneration && m.screen == detailScreen && m.cache.PR != nil
 }
