@@ -3016,3 +3016,28 @@ func TestNoticeYieldsToProgressAndClearsOnRefresh(t *testing.T) {
 		t.Fatalf("list refresh kept notice %q", got.notice)
 	}
 }
+
+func TestEditorAdvertisesTheKeyThatActuallySaves(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	m := testModel()
+	m.root = t.TempDir()
+	m.cache.PR = &gh.PR{Number: 12, URL: "u"}
+
+	// e / a open the overlay; the hint must name a key bubbletea can report.
+	next, _ := m.openLocalEditor(addRemoteComment, "", "")
+	hint := ansi.Strip(next.renderLocalEditorPopup())
+	if !strings.Contains(hint, "Ctrl+S send") {
+		t.Fatalf("editor hint = %q", hint)
+	}
+
+	// Enter stays a newline; Ctrl+S sends.
+	next.localEditor.SetValue("hello")
+	typed, _ := next.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := typed.(Model); got.localEditMode != addRemoteComment || !strings.Contains(got.localEditor.Value(), "\n") {
+		t.Fatalf("enter did not insert a newline: mode=%v value=%q", got.localEditMode, got.localEditor.Value())
+	}
+	sent, cmd := next.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if got := sent.(Model); got.localEditMode != noLocalEdit || cmd == nil {
+		t.Fatalf("ctrl+s did not send: mode=%v cmd=%v", got.localEditMode, cmd)
+	}
+}

@@ -358,7 +358,9 @@ func (m Model) handleLocalOverlay(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	if ok {
 		switch key.String() {
-		case "ctrl+s", "ctrl+enter":
+		// Ctrl+S only: bubbletea cannot report ctrl+enter (the terminal sends
+		// plain CR for it), and Enter has to stay a newline in the editor.
+		case "ctrl+s":
 			return m.saveLocalEdit()
 		case "esc":
 			m.localEditor.Blur()
@@ -397,7 +399,7 @@ func (m Model) renderLocalEditorPopup() string {
 	if m.localEditError != "" {
 		lines = append(lines, "", stRedF.Render(m.localEditError))
 	}
-	lines = append(lines, "", stMuted.Render("Ctrl+Enter send · Esc cancel"))
+	lines = append(lines, "", stMuted.Render("Ctrl+S send · Esc cancel"))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAccent)).
