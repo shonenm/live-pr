@@ -4,11 +4,13 @@ package store
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/shonenm/live-pr/internal/git"
@@ -196,4 +198,72 @@ func stateRoot() string {
 
 func slug(branch string) string {
 	return strings.NewReplacer("/", "-", " ", "-", ":", "-").Replace(branch)
+}
+
+// ReviewedMarksPath locates the reviewed-file marks for one review scope: the
+// pull request when its number is known, else the local branch. Marks are
+// per-scope files so moving between PRs (stacked ones included) never leaks
+// another review's progress.
+func ReviewedMarksPath(root string, prNumber int, branch string) string {
+	name := "branch-" + slug(branch)
+	if prNumber > 0 {
+		name = strconv.Itoa(prNumber)
+	}
+	return filepath.Join(repoStateRoot(root), "reviewed", name+".json")
+}
+
+// LoadReviewedMarks reads a marks file: a JSON object of path → fingerprint.
+// A missing file is an empty set.
+func LoadReviewedMarks(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	marks := map[string]string{}
+	if err := json.Unmarshal(data, &marks); err != nil {
+		return nil, fmt.Errorf("parse reviewed marks %s: %w", path, err)
+	}
+	return marks, nil
+}
+
+// SaveReviewedMarks writes the marks atomically so an external reviewer
+// reading the same file never observes a partial write.
+func SaveReviewedMarks(path string, marks map[string]string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(marks, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".reviewed-*.json")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return replaceFile(name, path)
+}
+
+// replaceFile renames tmp over path, with the Windows remove-and-retry that
+// WriteConclusion also needs.
+func replaceFile(tmp, path string) error {
+	err := os.Rename(tmp, path)
+	if err != nil && runtime.GOOS == "windows" {
+		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return err
+		}
+		return os.Rename(tmp, path)
+	}
+	return err
 }

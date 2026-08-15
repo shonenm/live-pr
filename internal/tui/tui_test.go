@@ -2529,3 +2529,49 @@ func TestReviewedMarksSurviveCommitsThatTouchOtherFiles(t *testing.T) {
 		t.Error("edited.go stayed reviewed even though its diff changed")
 	}
 }
+
+// Stacked PRs share paths and often identical per-file diffs, so marks must be
+// scoped per PR — switching must never show another PR's progress.
+func TestReviewedMarksAreScopedPerPR(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	m := testModel()
+	m.root = t.TempDir()
+	m.files = []git.ChangedFile{{Status: "M", Path: "shared.go", Fingerprint: "aaa:bbb"}}
+
+	// PR #1: check the file; the mark is persisted to #1's file.
+	m.loadReviewedMarks(1, "feature")
+	m.toggleFileCheck()
+	if !m.fileChecked(m.files[0]) {
+		t.Fatal("mark not set for PR #1")
+	}
+
+	// Switching to stacked PR #2 with the same path+fingerprint: clean slate.
+	m.loadReviewedMarks(2, "feature")
+	if m.fileChecked(m.files[0]) {
+		t.Fatal("PR #1's mark leaked into PR #2")
+	}
+
+	// Back to PR #1: the persisted mark is restored.
+	m.loadReviewedMarks(1, "feature")
+	if !m.fileChecked(m.files[0]) {
+		t.Fatal("PR #1's mark was lost after switching away")
+	}
+}
+
+func TestReviewedMarksPersistAcrossSessions(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	m := testModel()
+	m.root = t.TempDir()
+	m.files = []git.ChangedFile{{Status: "M", Path: "a.go", Fingerprint: "f1"}}
+	m.loadReviewedMarks(7, "feature")
+	m.toggleFileCheck()
+
+	// A fresh model (new session) sees the same marks from disk.
+	fresh := testModel()
+	fresh.root = m.root
+	fresh.files = m.files
+	fresh.loadReviewedMarks(7, "feature")
+	if !fresh.fileChecked(fresh.files[0]) {
+		t.Fatal("mark did not survive a session restart")
+	}
+}
