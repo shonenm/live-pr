@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/event"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -105,10 +106,9 @@ func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.remoteDeleteID = item.comment.ID
-		m.remoteDeleteTitle = item.comment.Body
-		if len(m.remoteDeleteTitle) > 60 {
-			m.remoteDeleteTitle = m.remoteDeleteTitle[:60] + "…"
-		}
+		// ansi.Truncate counts display cells, so multibyte text is never cut
+		// mid-rune.
+		m.remoteDeleteTitle = ansi.Truncate(item.comment.Body, 60, "…")
 		m.status = ""
 		return m, nil
 	case itemReview, itemReviewComment:
