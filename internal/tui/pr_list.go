@@ -607,7 +607,6 @@ func (m *Model) ensureSelectedPRPreview() tea.Cmd {
 	return fetchPRPreview(pr.Number, m.prListGeneration)
 }
 
-// sync rebuilds both panes for the current tab and selection.
 func (m Model) renderPRListHeader() string {
 	tabs := make([]string, 0, prViewCount)
 	activeBg := lipgloss.Color(cSelectedBg)

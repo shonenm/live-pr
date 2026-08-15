@@ -46,28 +46,8 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.pendingPRAction != noPRAction {
-		switch msg.String() {
-		case "y":
-			action, pr := m.pendingPRAction, m.prActionPR
-			m.pendingPRAction = noPRAction
-			m.prActionRunning = action
-			m.notice = ""
-			return m, tea.Batch(runPRAction(action, pr), m.startSpinner())
-		case "n", "q", "esc":
-			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
-			return m, nil
-		case "ctrl+c":
-			return m, tea.Quit
-		default:
-			return m, nil
-		}
-	}
-	if m.prActionRunning != noPRAction {
-		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
-		}
-		return m, nil
+	if next, cmd, handled := m.handlePRActionConfirmKey(msg); handled {
+		return next, cmd
 	}
 	if key.Matches(msg, m.keys.PreviewUp) {
 		scrollQuarter(&m.detail, false)
@@ -173,8 +153,10 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-
+// handlePRActionConfirmKey drives the y/n confirmation for a pending PR
+// action and swallows keys while one runs; handled is false when neither
+// state applies. Both screens share this state machine.
+func (m Model) handlePRActionConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	if m.pendingPRAction != noPRAction {
 		switch msg.String() {
 		case "y":
@@ -182,21 +164,29 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.pendingPRAction = noPRAction
 			m.prActionRunning = action
 			m.notice = ""
-			return m, tea.Batch(runPRAction(action, pr), m.startSpinner())
+			return m, tea.Batch(runPRAction(action, pr), m.startSpinner()), true
 		case "n", "q", "esc":
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
-			return m, nil
+			return m, nil, true
 		case "ctrl+c":
-			return m, tea.Quit
+			return m, tea.Quit, true
 		default:
-			return m, nil
+			return m, nil, true
 		}
 	}
 	if m.prActionRunning != noPRAction {
 		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
+			return m, tea.Quit, true
 		}
-		return m, nil
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+
+	if next, cmd, handled := m.handlePRActionConfirmKey(msg); handled {
+		return next, cmd
 	}
 	if key.Matches(msg, m.keys.PRList) {
 		selected := m.currentPRNumber()
