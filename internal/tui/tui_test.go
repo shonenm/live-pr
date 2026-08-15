@@ -2749,3 +2749,44 @@ func TestConversationCursorMoveReusesUnselectedCardRenders(t *testing.T) {
 		t.Fatal("invalidation kept stale card renders")
 	}
 }
+
+func TestBaseResolvedAppliesOnlyCurrentGeneration(t *testing.T) {
+	m := testModel()
+	m.targetGeneration = 3
+	m.base, m.diffBase, m.headRev, m.reviewRange = "main", "old-base", "HEAD", "old-base"
+
+	// Stale generation: dropped.
+	u, _ := m.Update(baseResolved{generation: 2, base: "main", diffBase: "new-base", headRev: "HEAD", reviewRange: "new-base"})
+	if u.(Model).diffBase != "old-base" {
+		t.Fatalf("stale baseResolved applied: %q", u.(Model).diffBase)
+	}
+
+	// Unchanged range: no-op.
+	u, _ = m.Update(baseResolved{generation: 3, base: "main", diffBase: "old-base", headRev: "HEAD", reviewRange: "old-base"})
+	if u.(Model).fileCursor != 0 && u.(Model).diffBase != "old-base" {
+		t.Fatal("unchanged range should be a no-op")
+	}
+
+	// Changed range: applied with the gathered scans.
+	u, _ = m.Update(baseResolved{
+		generation: 3, base: "main", diffBase: "new-base", headRev: "HEAD", reviewRange: "new-base",
+		commits: []git.Commit{{SHA: "abc"}}, files: []git.ChangedFile{{Status: "M", Path: "x.go"}},
+	})
+	m = u.(Model)
+	if m.diffBase != "new-base" || m.reviewRange != "new-base" || len(m.commits) != 1 || len(m.files) != 1 {
+		t.Fatalf("baseResolved not applied: diffBase=%q commits=%d files=%d", m.diffBase, len(m.commits), len(m.files))
+	}
+}
+
+func TestCacheSavedUpdatesStatus(t *testing.T) {
+	m := testModel()
+	u, _ := m.Update(cacheSaved{err: errors.New("disk full")})
+	if got := u.(Model).status; got != "GitHub cache: disk full" {
+		t.Fatalf("error status = %q", got)
+	}
+	m.status = "GitHub cache: disk full"
+	u, _ = m.Update(cacheSaved{})
+	if got := u.(Model).status; got != "" {
+		t.Fatalf("stale cache error kept: %q", got)
+	}
+}

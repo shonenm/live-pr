@@ -211,6 +211,33 @@ type navigatorCacheSaved struct {
 	err error
 }
 
+type cacheSaved struct {
+	err error
+}
+
+// saveCacheCmd persists the branch GitHub cache off the Update goroutine. The
+// PR is copied here because handlers mutate it in place (CI polls); slices are
+// only ever replaced wholesale, so sharing them is safe.
+func saveCacheCmd(path string, cache gh.Cache) tea.Cmd {
+	if cache.PR != nil {
+		pr := *cache.PR
+		cache.PR = &pr
+	}
+	return func() tea.Msg {
+		return cacheSaved{err: gh.SaveCache(path, cache)}
+	}
+}
+
+type baseResolved struct {
+	generation                           uint64
+	prURL                                string
+	base, diffBase, headRev, reviewRange string
+	events                               []event.Event
+	eventsOK                             bool
+	commits                              []git.Commit
+	files                                []git.ChangedFile
+}
+
 // saveNavigatorCacheCmd persists the navigator cache off the Update goroutine.
 // The clone happens here, on the Update goroutine, so the write never races
 // with later handler mutations; only failures produce a message.
