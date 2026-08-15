@@ -688,17 +688,68 @@ func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (
 	return diffBase, "HEAD", diffBase
 }
 
+// localData is everything loadLocalData gathers off the Update goroutine; the
+// git subprocesses involved froze the UI when run inside a message handler.
+type localData struct {
+	cache             gh.Cache
+	base              string
+	diffBase          string
+	headRev           string
+	reviewRange       string
+	events            []event.Event
+	commits           []git.Commit
+	files             []git.ChangedFile
+	stats             git.ChangeStats
+	dirty             bool
+	incomplete        bool
+	conclusion        string
+	mergeReadiness    git.MergeReadiness
+	mergeReadinessErr error
+}
+
+type localLoaded struct {
+	generation uint64
+	st         *store.Store
+	data       localData
+	err        error
+}
+
+// startLocalLoad gathers local detail in a Cmd and applies it on localLoaded.
+func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR) tea.Cmd {
+	m.targetGeneration++
+	generation := m.targetGeneration
+	m.refreshing = true
+	var hint *gh.PR
+	if hintedPR != nil {
+		pr := *hintedPR
+		hint = &pr
+	}
+	return func() tea.Msg {
+		data, err := loadLocalData(st, cache, hint)
+		return localLoaded{generation: generation, st: st, data: data, err: err}
+	}
+}
+
+// loadLocal is the synchronous variant for startup, before the UI runs.
 func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) error {
+	m.targetGeneration++
+	data, err := loadLocalData(st, cache, hintedPR)
+	if err != nil {
+		return err
+	}
+	m.applyLocal(st, data)
+	return nil
+}
+
+func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData, error) {
 	if done := debugtime.Start("tui local hydration"); done != nil {
 		defer done()
 	}
-	m.targetGeneration++
-	m.resetDetailCaches()
 	if err := st.Ensure(); err != nil {
-		return err
+		return localData{}, err
 	}
 	if err := prtemplate.Seed(st); err != nil {
-		return err
+		return localData{}, err
 	}
 	if cache.PR == nil && hintedPR != nil && hintedPR.Number > 0 {
 		pr := *hintedPR
@@ -709,7 +760,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	_, _ = timeline.SyncCommits(st.Timeline(), diffBase)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
-		return err
+		return localData{}, err
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	var commits []git.Commit
@@ -726,29 +777,51 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 		stats, _ = git.DiffStats(diffBase, headRev)
 	}
 	dirty, dirtyErr := git.HasUncommittedChanges()
-	if commitErr != nil || fileErr != nil || dirtyErr != nil {
+	conclusion, _ := os.ReadFile(st.Conclusion())
+	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(base, "HEAD")
+	return localData{
+		cache:             cache,
+		base:              base,
+		diffBase:          diffBase,
+		headRev:           headRev,
+		reviewRange:       reviewRange,
+		events:            events,
+		commits:           commits,
+		files:             files,
+		stats:             stats,
+		dirty:             dirty,
+		incomplete:        commitErr != nil || fileErr != nil || dirtyErr != nil,
+		conclusion:        string(conclusion),
+		mergeReadiness:    mergeReadiness,
+		mergeReadinessErr: mergeReadinessErr,
+	}, nil
+}
+
+func (m *Model) applyLocal(st *store.Store, data localData) {
+	m.resetDetailCaches()
+	if data.incomplete {
 		m.status = "local git data is incomplete"
 	}
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
+	cache := data.cache
 	prURL := ""
 	if cache.PR != nil {
 		prURL = cache.PR.URL
 	}
-	conclusion, _ := os.ReadFile(st.Conclusion())
 	m.screen = detailScreen
 	m.remote = false
-	m.summary = string(conclusion)
+	m.summary = data.conclusion
 	m.title = prbody.Title(m.summary, st.Branch)
 	if cache.PR != nil && strings.TrimSpace(cache.PR.Title) != "" {
 		m.title = cache.PR.Title
 	}
 	m.localAvailable, m.localTitle = cache.PR == nil, m.title
-	m.localStats, m.localCommitCount, m.workingTreeDirty = stats, len(commits), dirty
-	m.mergeReadiness, m.mergeReadinessErr = git.CheckMergeReadiness(base, "HEAD")
-	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = base, diffBase, st.Branch, headRev, reviewRange
-	m.events, m.files, m.commits = events, files, commits
+	m.localStats, m.localCommitCount, m.workingTreeDirty = data.stats, len(data.commits), data.dirty
+	m.mergeReadiness, m.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
+	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange
+	m.events, m.files, m.commits = data.events, data.files, data.commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
 	m.loadReviewedMarks(m.currentPRNumber(), st.Branch)
 	m.invalidateConversation()
@@ -757,10 +830,9 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 		m.githubStatus = "GitHub: cached · refreshing…"
 	}
 	m.refreshing, m.publishing = true, false
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, diffBase, st.Branch, "HEAD", prURL, "", m.reviewedMarksPath))
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.reviewedMarksPath))
 	m.focusDiff, m.focusExplorer, m.fileCursor, m.active, m.reviewSHA = false, false, 0, conversationTab, ""
 	m.layout()
-	return nil
 }
 
 // Run launches the TUI.

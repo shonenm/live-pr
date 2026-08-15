@@ -2651,3 +2651,39 @@ func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
 		t.Fatal("render cache served stale conversation content")
 	}
 }
+
+func TestLocalLoadRunsOffTheUpdateGoroutine(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	m := testModel()
+	m.root = t.TempDir()
+	m.screen, m.prView = prListScreen, assignedView
+	m.currentBranch, m.defaultBranch = "feature/x", "main"
+	m.autoOpenCurrent = true
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+
+	u, cmd := m.Update(currentBranchPRLoaded{pr: gh.PR{Number: 7, State: "OPEN", HeadRefName: "feature/x"}})
+	m = u.(Model)
+	// The handler only dispatches: the git subprocess work happens in the Cmd.
+	if m.screen != prListScreen || cmd == nil || !m.refreshing {
+		t.Fatalf("local load not deferred: screen=%v cmd=%v refreshing=%v", m.screen, cmd, m.refreshing)
+	}
+
+	// Stale completions are dropped.
+	stale, _ := m.Update(localLoaded{generation: m.targetGeneration - 1, st: store.ForBranch(m.root, "feature/x")})
+	if stale.(Model).screen != prListScreen {
+		t.Fatal("stale localLoaded applied")
+	}
+
+	pr := gh.PR{Number: 7, State: "OPEN", HeadRefName: "feature/x", Title: "Seven"}
+	cache := gh.NewCache("feature/x")
+	cache.PR = &pr
+	done, _ := m.Update(localLoaded{
+		generation: m.targetGeneration,
+		st:         store.ForBranch(m.root, "feature/x"),
+		data:       localData{cache: cache, base: "main", diffBase: "main", headRev: "HEAD"},
+	})
+	m = done.(Model)
+	if m.screen != detailScreen || m.title != "Seven" {
+		t.Fatalf("localLoaded not applied: screen=%v title=%q", m.screen, m.title)
+	}
+}
