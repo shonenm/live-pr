@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -162,114 +163,33 @@ func parseLocalComment(value string, allowSummary bool) (event.Kind, string, str
 }
 
 func (m Model) saveLocalEdit() (Model, tea.Cmd) {
-	// GitHub conversation comments are posted/edited over the network, so they
-	// return early with an async command instead of the local save path below.
-	// PR description edit: update title + body via gh pr edit.
+	// GitHub-bound targets are posted over the network, so they return early
+	// with an async command; the local modes share the close-editor /
+	// reload / notice tail below.
 	if m.localEditMode == editRemoteComment && m.localEditTarget == "pr-description" {
-		body := m.localEditor.Value()
-		if m.cache.PR == nil {
-			m.localEditError = "no pull request"
-			return m, nil
-		}
-		number := m.cache.PR.Number
-		m.localEditor.Blur()
-		m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-		m.remoteCommentBusy = true
-		m.status = "updating PR description…"
-		gen := m.targetGeneration
-		return m, tea.Batch(updatePRDescription(number, m.head, body, gen), m.startSpinner())
+		return m.savePRDescription()
 	}
 	if m.localEditMode == addRemoteComment || m.localEditMode == editRemoteComment {
-		body := strings.TrimSpace(m.localEditor.Value())
-		if body == "" {
-			m.localEditError = "comment must not be empty"
-			return m, nil
-		}
-		if m.cache.PR == nil {
-			m.localEditError = "no pull request for this comment"
-			return m, nil
-		}
-		editID := int64(0)
-		if m.localEditMode == editRemoteComment {
-			editID = m.remoteCommentID
-		}
-		number := m.cache.PR.Number
-		m.localEditor.Blur()
-		m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-		m.remoteCommentID, m.remoteCommentBusy = 0, true
-		m.status = "sending comment…"
-		return m, tea.Batch(postRemoteComment(number, body, editID, m.targetGeneration), m.startSpinner())
+		return m.saveRemoteComment()
 	}
 	st := store.ForBranch(m.root, m.currentBranch)
 	selectedKey := "local-summary"
+	var err error
 	switch m.localEditMode {
 	case editLocalSummary:
-		if strings.TrimSpace(m.localEditor.Value()) == "" {
-			m.localEditError = "summary must not be empty"
-			return m, nil
-		}
-		if err := st.WriteConclusion(m.localEditor.Value()); err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
+		selectedKey, err = m.saveLocalSummary(st)
 	case addLocalComment:
-		kind, title, body, err := parseLocalComment(m.localEditor.Value(), false)
-		if err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		comment := event.New(kind, title, body)
-		comment.Author = "user"
-		created, err := event.Create(st.Timeline(), comment)
-		if err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		selectedKey = "event:" + created.ID + ":0"
+		selectedKey, err = m.saveNewLocalComment(st)
 	case editReviewBody:
-		if err := m.loadReviewDraft(); err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		m.reviewDraft.Body = strings.TrimSpace(m.localEditor.Value())
-		if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		selectedKey = m.selectedConversationKey()
+		selectedKey, err = m.saveReviewBodyDraft()
 	case addInlineReviewComment:
-		comment, err := parseInlineReviewComment(m.localEditor.Value())
-		if err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		if err := m.loadReviewDraft(); err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		m.reviewDraft.Comments = append(m.reviewDraft.Comments, comment)
-		if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		selectedKey = m.selectedConversationKey()
+		selectedKey, err = m.saveInlineReviewComment()
 	case editLocalComment:
-		kind, title, body, err := parseLocalComment(m.localEditor.Value(), true)
-		if err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		current, ok := localEventByID(m.events, m.localEditTarget)
-		if !ok {
-			m.localEditError = "comment no longer exists"
-			return m, nil
-		}
-		current.Kind, current.Title, current.Body, current.Author = kind, title, body, "user"
-		if _, err := event.Update(st.Timeline(), current.ID, current); err != nil {
-			m.localEditError = err.Error()
-			return m, nil
-		}
-		selectedKey = "event:" + current.ID + ":0"
+		selectedKey, err = m.saveEditedLocalComment(st)
+	}
+	if err != nil {
+		m.localEditError = err.Error()
+		return m, nil
 	}
 	mode := m.localEditMode
 	m.localEditor.Blur()
@@ -282,6 +202,108 @@ func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 	}
 	m.restoreConversationSelection(selectedKey)
 	return m, m.sync()
+}
+
+func (m Model) savePRDescription() (Model, tea.Cmd) {
+	body := m.localEditor.Value()
+	if m.cache.PR == nil {
+		m.localEditError = "no pull request"
+		return m, nil
+	}
+	number := m.cache.PR.Number
+	m.localEditor.Blur()
+	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
+	m.remoteCommentBusy = true
+	m.status = "updating PR description…"
+	return m, tea.Batch(updatePRDescription(number, m.head, body, m.targetGeneration), m.startSpinner())
+}
+
+func (m Model) saveRemoteComment() (Model, tea.Cmd) {
+	body := strings.TrimSpace(m.localEditor.Value())
+	if body == "" {
+		m.localEditError = "comment must not be empty"
+		return m, nil
+	}
+	if m.cache.PR == nil {
+		m.localEditError = "no pull request for this comment"
+		return m, nil
+	}
+	editID := int64(0)
+	if m.localEditMode == editRemoteComment {
+		editID = m.remoteCommentID
+	}
+	number := m.cache.PR.Number
+	m.localEditor.Blur()
+	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
+	m.remoteCommentID, m.remoteCommentBusy = 0, true
+	m.status = "sending comment…"
+	return m, tea.Batch(postRemoteComment(number, body, editID, m.targetGeneration), m.startSpinner())
+}
+
+func (m *Model) saveLocalSummary(st *store.Store) (string, error) {
+	if strings.TrimSpace(m.localEditor.Value()) == "" {
+		return "", errors.New("summary must not be empty")
+	}
+	if err := st.WriteConclusion(m.localEditor.Value()); err != nil {
+		return "", err
+	}
+	return "local-summary", nil
+}
+
+func (m *Model) saveNewLocalComment(st *store.Store) (string, error) {
+	kind, title, body, err := parseLocalComment(m.localEditor.Value(), false)
+	if err != nil {
+		return "", err
+	}
+	comment := event.New(kind, title, body)
+	comment.Author = "user"
+	created, err := event.Create(st.Timeline(), comment)
+	if err != nil {
+		return "", err
+	}
+	return "event:" + created.ID + ":0", nil
+}
+
+func (m *Model) saveReviewBodyDraft() (string, error) {
+	if err := m.loadReviewDraft(); err != nil {
+		return "", err
+	}
+	m.reviewDraft.Body = strings.TrimSpace(m.localEditor.Value())
+	if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
+		return "", err
+	}
+	return m.selectedConversationKey(), nil
+}
+
+func (m *Model) saveInlineReviewComment() (string, error) {
+	comment, err := parseInlineReviewComment(m.localEditor.Value())
+	if err != nil {
+		return "", err
+	}
+	if err := m.loadReviewDraft(); err != nil {
+		return "", err
+	}
+	m.reviewDraft.Comments = append(m.reviewDraft.Comments, comment)
+	if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
+		return "", err
+	}
+	return m.selectedConversationKey(), nil
+}
+
+func (m *Model) saveEditedLocalComment(st *store.Store) (string, error) {
+	kind, title, body, err := parseLocalComment(m.localEditor.Value(), true)
+	if err != nil {
+		return "", err
+	}
+	current, ok := localEventByID(m.events, m.localEditTarget)
+	if !ok {
+		return "", errors.New("comment no longer exists")
+	}
+	current.Kind, current.Title, current.Body, current.Author = kind, title, body, "user"
+	if _, err := event.Update(st.Timeline(), current.ID, current); err != nil {
+		return "", err
+	}
+	return "event:" + current.ID + ":0", nil
 }
 
 func localEventByID(events []event.Event, id string) (event.Event, bool) {
