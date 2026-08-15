@@ -3041,3 +3041,35 @@ func TestEditorAdvertisesTheKeyThatActuallySaves(t *testing.T) {
 		t.Fatalf("ctrl+s did not send: mode=%v cmd=%v", got.localEditMode, cmd)
 	}
 }
+
+func TestPRFilterOrGroups(t *testing.T) {
+	assigned := gh.PR{Number: 1, State: "OPEN", Assignees: []gh.PRUser{{Login: "me"}}}
+	requested := gh.PR{Number: 2, State: "OPEN", ViewerReviewRequested: true}
+	neither := gh.PR{Number: 3, State: "OPEN", Author: gh.PRUser{Login: "someone"}}
+
+	const needsMe = "(assignee:@me OR review-requested:@me)"
+	for _, tc := range []struct {
+		pr   gh.PR
+		want bool
+	}{{assigned, true}, {requested, true}, {neither, false}} {
+		if got := matchesPRFilter(tc.pr, needsMe, "me"); got != tc.want {
+			t.Fatalf("#%d needs-me = %v, want %v", tc.pr.Number, got, tc.want)
+		}
+	}
+
+	// Groups AND with the rest of the query.
+	if matchesPRFilter(assigned, needsMe+" is:closed", "me") {
+		t.Fatal("group ignored the trailing is:closed term")
+	}
+	if !matchesPRFilter(assigned, "is:open "+needsMe, "me") {
+		t.Fatal("leading term broke the group")
+	}
+	// An unclosed group still evaluates its alternatives.
+	if !matchesPRFilter(requested, "(assignee:@me OR review-requested:@me", "me") {
+		t.Fatal("unclosed group rejected a matching PR")
+	}
+	// Plain queries keep working, free text included.
+	if !matchesPRFilter(neither, "someone", "me") || matchesPRFilter(neither, "nobody", "me") {
+		t.Fatal("free-text matching regressed")
+	}
+}
