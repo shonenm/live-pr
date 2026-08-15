@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -2886,5 +2887,39 @@ func TestReopenKeepsDraftAndClosedFilterMatchesMerged(t *testing.T) {
 	}
 	if matchesPRFilter(gh.PR{State: "OPEN"}, "is:closed", "") {
 		t.Fatal("is:closed matched an open PR")
+	}
+}
+
+func TestRichContentKeyIncludesWidthAndSkipsZeroWidth(t *testing.T) {
+	pr := &gh.PR{Number: 1, Body: "```mermaid\ngraph TD;A-->B;\n```"}
+	if richContentKey(80, pr, nil, nil) == richContentKey(40, pr, nil, nil) {
+		t.Fatal("resize does not invalidate rendered mermaid")
+	}
+	if loadRichContent(1, 0, pr, nil, nil) != nil || loadRichContent(1, -7, pr, nil, nil) != nil {
+		t.Fatal("zero/negative width still dispatched a render")
+	}
+}
+
+func TestRemoteDeleteTitleTruncatesOnRuneBoundary(t *testing.T) {
+	m := testModel()
+	m.viewerLogin = "me"
+	body := strings.Repeat("あ", 40)
+	comment := gh.Comment{ID: 5, Body: body}
+	comment.User.Login = "me"
+	m.cache.Comments = []gh.Comment{comment}
+	m.conversationDirty = true
+	items := m.conversationItems()
+	for i, it := range items {
+		if it.comment != nil {
+			m.cursors[conversationTab] = i
+		}
+	}
+	next, _ := m.deleteSelectedLocalComment()
+	title := next.remoteDeleteTitle
+	if !utf8.ValidString(title) {
+		t.Fatalf("truncation split a rune: %q", title)
+	}
+	if !strings.HasSuffix(title, "…") || strings.Contains(title, "�") {
+		t.Fatalf("title = %q", title)
 	}
 }

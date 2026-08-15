@@ -85,6 +85,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sizeLocalEditor() // keep the open editor overlay fitting the new size
 		}
 		m.layout()
+		if m.screen == detailScreen {
+			// Mermaid diagrams are rendered at the pane width; re-render them
+			// for the new size.
+			return m, tea.Batch(m.sync(), loadRichContent(m.targetGeneration, m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities))
+		}
 		return m, m.sync()
 
 	case prListRefreshed:
@@ -156,7 +161,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.handleGitHubRefreshed(msg)
 		return next, cmd
 	case richBodiesLoaded:
-		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.cache.PR, m.cache.Comments, m.cache.Activities) {
+		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
 		m.richBodies = msg.bodies
@@ -164,7 +169,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, m.sync()
 	case avatarColorsLoaded:
-		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.cache.PR, m.cache.Comments, m.cache.Activities) {
+		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
 		if m.avatarColors == nil {
