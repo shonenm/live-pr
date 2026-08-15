@@ -240,6 +240,9 @@ type baseResolved struct {
 	eventsOK                             bool
 	commits                              []git.Commit
 	files                                []git.ChangedFile
+	readiness                            git.MergeReadiness
+	readinessErr                         error
+	readinessOK                          bool
 }
 
 // saveNavigatorCacheCmd persists the navigator cache off the Update goroutine.
