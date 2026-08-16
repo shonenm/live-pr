@@ -141,6 +141,8 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if pr == nil {
 			return m, nil
 		}
+		// Remember the tab so b returns here rather than guessing.
+		m.detailOrigin, m.detailOriginSet = m.prView, true
 		if !m.isCurrentTargetPR(*pr) {
 			return m, m.openRemote(*pr)
 		}
@@ -188,6 +190,8 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 	if key.Matches(msg, m.keys.PRList) {
 		selected := m.currentPRNumber()
+		m.prView = m.listViewForReturn(selected)
+		m.detailOriginSet = false
 		m.targetGeneration++
 		if m.diffTerminal != nil {
 			m.diffTerminal.Close()

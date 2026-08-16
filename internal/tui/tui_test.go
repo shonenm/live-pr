@@ -930,6 +930,69 @@ func TestOrGroupViewFiltersAndCountsLocally(t *testing.T) {
 	}
 }
 
+func TestBackToListPicksTheOriginOrFirstMatchingView(t *testing.T) {
+	newModel := func() Model {
+		m := testModel()
+		m.viewerLogin = "me"
+		m.currentBranch = "feature"
+		m.navigator = gh.NewNavigatorCache()
+		m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+		m.views = []config.View{
+			{Name: "Assigned", Query: "assignee:@me"},
+			{Name: "Authored", Query: "author:@me"},
+			{Name: "All", Query: ""},
+		}
+		return m
+	}
+	authored := gh.PR{Number: 7, State: "OPEN", Author: gh.PRUser{Login: "me"}, HeadRefName: "feature"}
+
+	// Entered from a tab: b returns to that tab even when others match.
+	m := newModel()
+	m.screen, m.prView = prListScreen, 2
+	m.openPRs = []gh.PR{authored}
+	m.prStacks = buildPRStacks(m.openPRs)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if !m.detailOriginSet || m.detailOrigin != 2 {
+		t.Fatalf("origin not recorded: set=%v view=%d", m.detailOriginSet, m.detailOrigin)
+	}
+	m.screen, m.cache.PR = detailScreen, &authored
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	back := u.(Model)
+	if back.screen != prListScreen || back.prView != 2 {
+		t.Fatalf("did not return to the origin tab: screen=%v view=%d", back.screen, back.prView)
+	}
+	if back.detailOriginSet {
+		t.Fatal("origin outlived the return")
+	}
+
+	// Opened at startup: the first tab containing the PR wins (Assigned does
+	// not match, Authored does), and the PR keeps the selection.
+	startup := newModel()
+	startup.screen, startup.prView = detailScreen, 0
+	startup.cache.PR = &authored
+	startup.navigator.PRs = []gh.PR{authored}
+	u, _ = startup.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	landed := u.(Model)
+	if landed.prView != 1 {
+		t.Fatalf("landed on view %d (%q), want Authored", landed.prView, landed.viewName(landed.prView))
+	}
+	if landed.selectedPRNumber() != 7 {
+		t.Fatalf("selection = #%d, want the PR just left", landed.selectedPRNumber())
+	}
+
+	// No tab contains it: fall back to the first.
+	orphan := newModel()
+	orphan.views = orphan.views[:2] // Assigned, Authored
+	orphan.screen, orphan.prView = detailScreen, 1
+	someoneElse := gh.PR{Number: 9, State: "OPEN", Author: gh.PRUser{Login: "you"}}
+	orphan.cache.PR = &someoneElse
+	u, _ = orphan.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	if got := u.(Model).prView; got != 0 {
+		t.Fatalf("fallback landed on view %d, want the first", got)
+	}
+}
+
 func TestPRPaginationAppendsOnceAndCachesView(t *testing.T) {
 	m := testModel()
 	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
