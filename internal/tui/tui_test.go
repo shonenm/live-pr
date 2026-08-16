@@ -3079,6 +3079,49 @@ func TestNoticeYieldsToProgressAndClearsOnRefresh(t *testing.T) {
 	}
 }
 
+// Shift+Enter reaches the program as CR on most terminals and LF (ctrl+j) on
+// others; both must insert a newline. The editor also has to fit the popup
+// that renders it, or the popup re-wraps its lines and shows breaks the text
+// does not contain.
+func TestEditorNewlineKeysAndWidthFitPopup(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyEnter},
+		{Type: tea.KeyCtrlJ},
+		{Type: tea.KeyRunes, Runes: []rune("\r"), Alt: true},
+	} {
+		m := testModel()
+		m.w, m.h = 120, 40
+		m.cache.PR = &gh.PR{Number: 1, URL: "u"}
+		next, _ := m.openLocalEditor(addRemoteComment, "line", "")
+		next.localEditor.SetValue("line")
+		u, _ := next.Update(key)
+		if got := u.(Model).localEditor.Value(); !strings.Contains(got, "\n") {
+			t.Fatalf("%v did not insert a newline: %q", key, got)
+		}
+	}
+
+	// The review popup declares its width; the editor must stay inside it.
+	for _, w := range []int{60, 100, 160} {
+		m := testModel()
+		m.w, m.h = w, 40
+		m.cache.PR = &gh.PR{Number: 1, HeadRefOID: "abc"}
+		m.reviewDraft = gh.NewReviewDraft(1, "abc")
+		next, _ := m.openLocalEditor(editReviewBody, strings.Repeat("x", 300), "review-submit")
+		next.reviewSubmitEvent, next.reviewSubmitTyping = gh.ReviewCommentEvent, true
+		budget := max(36, min(80, w-14)) - 4
+		if got := next.localEditor.Width(); got > budget {
+			t.Fatalf("w=%d editor width %d exceeds the popup budget %d", w, got, budget)
+		}
+		// The popup must not need to wrap anything the editor rendered.
+		for _, line := range strings.Split(ansi.Strip(next.renderReviewSubmitPopup()), "\n") {
+			if lipgloss.Width(line) > budget+6 {
+				t.Fatalf("w=%d popup line %q exceeds its own frame", w, line)
+			}
+		}
+	}
+}
+
 func TestEditorAdvertisesTheKeyThatActuallySaves(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	m := testModel()
