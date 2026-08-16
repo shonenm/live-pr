@@ -1513,20 +1513,27 @@ func (m Model) selectedBrowseURL() string {
 		}
 		return ""
 	}
+	// The commits, conflicts, and checks tabs have nothing per-row to link
+	// to, so they fall back to the pull request itself — as does a
+	// conversation row without its own URL.
+	prURL := ""
+	if m.cache.PR != nil {
+		prURL = m.cache.PR.URL
+	}
 	if m.active != conversationTab {
-		return ""
+		return prURL
 	}
 	item := m.selectedConversationItem()
 	if item == nil {
-		return ""
+		return prURL
 	}
-	if item.pr != nil {
+	if item.pr != nil && item.pr.URL != "" {
 		return item.pr.URL
 	}
-	if item.comment != nil {
+	if item.comment != nil && item.comment.HTMLURL != "" {
 		return item.comment.HTMLURL
 	}
-	return ""
+	return prURL
 }
 
 func (m Model) selectedCommitSHA() string {

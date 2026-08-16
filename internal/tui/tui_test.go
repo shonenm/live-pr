@@ -3456,6 +3456,55 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	}
 }
 
+func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	pr := gh.PR{Number: 7, URL: "https://example/pr/7"}
+	m.cache.PR = &pr
+	m.conversationDirty = true
+
+	// c, f, i have no per-row link, so they offer the pull request itself.
+	for _, tab := range []tab{commitsTab, conflictsTab, checksTab} {
+		m.active = tab
+		if got := m.selectedBrowseURL(); got != "https://example/pr/7" {
+			t.Fatalf("tab %d URL = %q", tab, got)
+		}
+	}
+
+	// A conversation row with its own URL still wins.
+	comment := gh.Comment{ID: 1, Body: "hi", HTMLURL: "https://example/pr/7#c1"}
+	comment.User.Login = "me"
+	m.cache.Comments = []gh.Comment{comment}
+	m.active = conversationTab
+	m.conversationDirty = true
+	items := m.conversationItems()
+	for i, it := range items {
+		if it.comment != nil {
+			m.cursors[conversationTab] = i
+		}
+	}
+	if got := m.selectedBrowseURL(); got != "https://example/pr/7#c1" {
+		t.Fatalf("comment URL = %q", got)
+	}
+	// A row without one falls back rather than disabling the key.
+	for i, it := range items {
+		if it.activity != nil || it.event != nil {
+			m.cursors[conversationTab] = i
+			if got := m.selectedBrowseURL(); got != "https://example/pr/7" {
+				t.Fatalf("row %d URL = %q", i, got)
+			}
+			break
+		}
+	}
+
+	// Without a pull request there is still nothing to open.
+	local := testModel()
+	local.screen, local.active = detailScreen, checksTab
+	if got := local.selectedBrowseURL(); got != "" {
+		t.Fatalf("local-only detail URL = %q", got)
+	}
+}
+
 func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
