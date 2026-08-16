@@ -457,6 +457,8 @@ type Model struct {
 	prPreviewLoading          map[int]bool
 	prPreviewLoaded           map[int]bool
 	prView                    prView
+	detailOrigin              prView
+	detailOriginSet           bool
 	views                     []config.View
 	viewManager               bool
 	viewDraft                 []config.View
@@ -1482,6 +1484,26 @@ func (m Model) baseBranchStyle(ref string) lipgloss.Style {
 		return stAccent.Bold(true)
 	}
 	return stBold
+}
+
+// listViewForReturn picks the tab to land on when leaving the detail screen.
+// Entering from a tab returns there; a detail opened at startup has no origin,
+// so the first tab that actually contains the PR wins, falling back to the
+// first tab.
+func (m Model) listViewForReturn(number int) prView {
+	if m.detailOriginSet && int(m.detailOrigin) < len(m.views) {
+		return m.detailOrigin
+	}
+	pr := m.cache.PR
+	if pr == nil {
+		return 0
+	}
+	for view := prView(0); int(view) < len(m.views); view++ {
+		if matchesListState(*pr, m.standardPRListState(view)) && m.matchesView(*pr, view) {
+			return view
+		}
+	}
+	return 0
 }
 
 func (m Model) selectedBrowseURL() string {
