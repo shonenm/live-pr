@@ -138,6 +138,10 @@ type prListRefreshed struct {
 type currentBranchPRLoaded struct {
 	pr  gh.PR
 	err error
+	// stateOnly marks a refresh-triggered lookup: it updates what the list
+	// knows about the branch's PR without moving the user to another tab or
+	// disturbing the selection.
+	stateOnly bool
 }
 
 type prPreviewLoaded struct {
@@ -1017,6 +1021,16 @@ func fetchPRList(generation uint64, key, query, cursor string, appendPage bool) 
 	return func() tea.Msg {
 		page, err := gh.New().SearchPRs(query, cursor)
 		return prListRefreshed{generation: generation, key: key, appendPage: appendPage, page: page, err: err}
+	}
+}
+
+// fetchCurrentBranchPRState re-checks the branch's PR purely to refresh what
+// the list believes about it.
+func fetchCurrentBranchPRState(head string) tea.Cmd {
+	return func() tea.Msg {
+		msg, _ := fetchCurrentBranchPR(head)().(currentBranchPRLoaded)
+		msg.stateOnly = true
+		return msg
 	}
 }
 
