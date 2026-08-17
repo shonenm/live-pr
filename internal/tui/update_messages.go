@@ -91,6 +91,7 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 			}
 		}
 	}
+	m.syncCachedPRState(msg.page.PRs)
 	m.applyPRFilters(selectedNumber)
 	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prListGeneration, msg.page.PRs)}
 	if cacheUpdated {
@@ -103,6 +104,28 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	}
 	return m, tea.Batch(cmds...)
 
+}
+
+// syncCachedPRState keeps the checked-out branch's PR in step with what the
+// list just learned. Its state otherwise only refreshes on the detail screen,
+// so a PR closed on GitHub kept being injected into the open list as open.
+// Only the state is taken: list rows lack the detail the cache carries.
+func (m *Model) syncCachedPRState(prs []gh.PR) {
+	if m.cache.PR == nil || m.cache.PR.Number == 0 {
+		return
+	}
+	for _, pr := range prs {
+		if pr.Number != m.cache.PR.Number || pr.State == "" {
+			continue
+		}
+		if pr.State == m.cache.PR.State && pr.IsDraft == m.cache.PR.IsDraft {
+			return
+		}
+		updated := *m.cache.PR
+		updated.State, updated.IsDraft = pr.State, pr.IsDraft
+		m.cache.PR = &updated
+		return
+	}
 }
 
 func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, tea.Cmd) {
@@ -121,14 +144,19 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	}
 	m.localAvailable = false
 	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
-	// Only the PR list screen may switch views; arriving on the detail
-	// screen this would silently rewrite the list state behind it.
-	if closed, ok := m.closedView(); ok && m.screen == prListScreen && matchesListState(msg.pr, closedPRListState) {
+	m.syncCachedPRState([]gh.PR{msg.pr})
+	// Only the PR list screen may switch views, and a refresh-triggered
+	// lookup never does: it must not yank the user to another tab.
+	if closed, ok := m.closedView(); ok && !msg.stateOnly && m.screen == prListScreen && matchesListState(msg.pr, closedPRListState) {
 		m.prView, m.prListState, m.listRefreshing = closed, closedPRListState, false
 		m.prListGeneration++
 		m.activePRPage = prPageKey(m.prView, m.prListState, "")
 	}
-	m.applyPRFilters(msg.pr.Number)
+	selected := msg.pr.Number
+	if msg.stateOnly {
+		selected = m.selectedPRNumber()
+	}
+	m.applyPRFilters(selected)
 	saveCmd := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
 	if m.screen != prListScreen || !m.autoOpenCurrent {
 		return m, tea.Batch(saveCmd, m.sync())
