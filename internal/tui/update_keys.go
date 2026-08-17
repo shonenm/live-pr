@@ -121,9 +121,11 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Refresh):
 		if m.listRefreshing {
-			return m, nil
+			// Say so rather than swallowing the key: silence reads as a
+			// broken refresh.
+			m.githubStatus = "GitHub: fetching " + m.viewName(m.prView) + " pull requests…"
+			return m, m.startSpinner()
 		}
-		m.notice = ""
 		m.prListGeneration++
 		if m.prPages == nil {
 			m.prPages = map[string]prPageState{}
@@ -339,10 +341,10 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Refresh):
 		if m.refreshing || m.publishing {
-			return m, nil
+			m.githubStatus = "GitHub: refreshing…"
+			return m, m.startSpinner()
 		}
 		m.refreshing = true
-		m.notice = ""
 		m.githubStatus = "GitHub: refreshing…"
 		if m.remote && m.cache.PR != nil {
 			m.targetGeneration++
