@@ -131,7 +131,9 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		page := m.prPages[m.activePRPage]
 		page.fresh, page.loading = false, false
 		m.prPages[m.activePRPage] = page
-		return m, m.requestPRPage(true)
+		// Re-check the branch's own PR too: once it leaves the open view,
+		// nothing else would ever tell the list that it closed.
+		return m, tea.Batch(m.requestPRPage(true), fetchCurrentBranchPRState(m.currentBranch))
 	case key.Matches(msg, m.keys.Down):
 		return m, m.moveCursorBy(1)
 	case key.Matches(msg, m.keys.Up):

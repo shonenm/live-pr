@@ -327,6 +327,60 @@ func TestCurrentBranchResolutionKeepsLocalOrShowsMergedPR(t *testing.T) {
 	}
 }
 
+// A PR closed on GitHub used to sit in the open list forever: the list keeps
+// injecting the checked-out branch's PR, whose cached state only refreshed on
+// the detail screen.
+func TestClosedBranchPRLeavesTheOpenList(t *testing.T) {
+	m := testModel()
+	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.currentBranch, m.viewerLogin = "feature", "me"
+	m.navigator = gh.NewNavigatorCache()
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	stale := gh.PR{Number: 1, State: "OPEN", HeadRefName: "feature", Title: "closed upstream"}
+	m.cache = gh.NewCache("feature")
+	m.cache.PR = &stale
+	m.prPages = map[string]prPageState{m.activePRPage: {
+		prs: []gh.PR{{Number: 2, State: "OPEN", Title: "other"}}, total: 1, loaded: true, fresh: true,
+	}}
+	m.applyPRFilters(0)
+	if len(m.openPRs) != 2 {
+		t.Fatalf("setup: expected the stale PR to be listed, got %#v", m.openPRs)
+	}
+
+	// The refresh-triggered lookup reports it closed: it leaves the open list
+	// without dragging the user to the closed tab or moving the selection.
+	m.prCursor = 1
+	u, _ := m.Update(currentBranchPRLoaded{pr: gh.PR{Number: 1, State: "CLOSED", HeadRefName: "feature"}, stateOnly: true})
+	m = u.(Model)
+	if m.prView != allPRsView {
+		t.Fatalf("refresh switched to view %d", m.prView)
+	}
+	for _, pr := range m.openPRs {
+		if pr.Number == 1 {
+			t.Fatalf("closed PR still listed: %#v", m.openPRs)
+		}
+	}
+	if m.cache.PR.State != "CLOSED" {
+		t.Fatalf("cached state = %q", m.cache.PR.State)
+	}
+
+	// A list page carrying a newer state reconciles the cache the same way.
+	reopened := testModel()
+	reopened.screen, reopened.prView, reopened.prListState = prListScreen, allPRsView, openPRListState
+	reopened.currentBranch = "feature"
+	reopened.navigator = gh.NewNavigatorCache()
+	reopened.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+	reopened.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	draft := gh.PR{Number: 1, State: "OPEN", IsDraft: false, HeadRefName: "feature"}
+	reopened.cache = gh.NewCache("feature")
+	reopened.cache.PR = &draft
+	u, _ = reopened.Update(prListRefreshed{key: reopened.activePRPage, page: gh.PRPage{PRs: []gh.PR{{Number: 1, State: "OPEN", IsDraft: true, HeadRefName: "feature"}}, TotalCount: 1}})
+	if got := u.(Model).cache.PR; !got.IsDraft {
+		t.Fatalf("list page did not refresh the cached PR: %#v", got)
+	}
+}
+
 func TestLocalPRAppearsInEveryOpenView(t *testing.T) {
 	m := testModel()
 	local := gh.PR{}
