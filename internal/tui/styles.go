@@ -29,9 +29,10 @@ const (
 	cClosed         = theme.BorderEmphasis
 	cDangerEmphasis = theme.DangerEmphasis
 	cDoneEmphasis   = theme.DoneEmphasis
-	// cDescriptionBorder frames the PR description, which is the one card
-	// that is neither a comment nor a verdict.
-	cDescriptionBorder = theme.DoneEmphasis
+	// cDescriptionBorder frames the PR description. It is the one card that
+	// carries no status, so it takes the bright neutral rather than a
+	// semantic color that would read as a verdict.
+	cDescriptionBorder = theme.Foreground
 )
 
 var (
