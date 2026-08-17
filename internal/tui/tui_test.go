@@ -3456,6 +3456,49 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	}
 }
 
+func TestSpecialCardsGetTheirOwnBorder(t *testing.T) {
+	// Verdicts carry GitHub's semantics; anything else keeps the plain frame.
+	for state, want := range map[string]string{
+		"APPROVED":          cGreenF,
+		"approved":          cGreenF,
+		"CHANGES_REQUESTED": cRedF,
+		"COMMENTED":         cCloudBorder,
+		"DISMISSED":         cCloudBorder,
+		"":                  cCloudBorder,
+	} {
+		if got := reviewBorder(state); got != want {
+			t.Fatalf("%q border = %q, want %q", state, got, want)
+		}
+	}
+	// Each emphasized frame has to be distinguishable from the others, from
+	// ordinary comments, and from the selection frame.
+	frames := map[string]string{"approve": cGreenF, "change request": cRedF, "description": cDescriptionBorder}
+	for name, color := range frames {
+		if color == cCloudBorder || color == cAccent {
+			t.Fatalf("%s frame is not distinguishable: %q", name, color)
+		}
+		for other, otherColor := range frames {
+			if other != name && otherColor == color {
+				t.Fatalf("%s and %s share the frame color %q", name, other, color)
+			}
+		}
+	}
+
+	// Rendering in tests strips color, so just confirm the cards still frame
+	// their content.
+	m := testModel()
+	m.list.Width = 80
+	for name, lines := range map[string][]string{
+		"approval":    m.reviewLines(gh.Review{State: "APPROVED", Body: "lgtm"}, false, 80),
+		"description": m.descriptionLines(gh.PR{Number: 1, Body: "why"}, false, 80),
+	} {
+		got := ansi.Strip(strings.Join(lines, "\n"))
+		if !strings.Contains(got, "╭") || !strings.Contains(got, "╰") {
+			t.Fatalf("%s card lost its frame: %q", name, got)
+		}
+	}
+}
+
 func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen

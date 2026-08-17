@@ -29,6 +29,9 @@ const (
 	cClosed         = theme.BorderEmphasis
 	cDangerEmphasis = theme.DangerEmphasis
 	cDoneEmphasis   = theme.DoneEmphasis
+	// cDescriptionBorder frames the PR description, which is the one card
+	// that is neither a comment nor a verdict.
+	cDescriptionBorder = theme.DoneEmphasis
 )
 
 var (
