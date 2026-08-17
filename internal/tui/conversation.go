@@ -274,7 +274,7 @@ func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
 		body = "(no description provided)"
 	}
 	header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+shortTS(pr.CreatedAt))
-	return cardLines(header, md.Render(body, width-7), selected, width, cCloudBorder)
+	return cardLines(header, md.Render(body, width-7), selected, width, cDescriptionBorder)
 }
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
@@ -290,7 +290,20 @@ func (m Model) reviewLines(review gh.Review, selected bool, width int) []string 
 	if body == "" {
 		return []string{selectionBar(selected) + header}
 	}
-	return cardLines(header, md.Render(m.richBody(body), width-7), selected, width, cCloudBorder)
+	return cardLines(header, md.Render(m.richBody(body), width-7), selected, width, reviewBorder(review.State))
+}
+
+// reviewBorder frames a verdict in its own color so an approval or a change
+// request is distinguishable from ordinary comments without reading it.
+func reviewBorder(state string) string {
+	switch strings.ToUpper(state) {
+	case "APPROVED":
+		return cGreenF
+	case "CHANGES_REQUESTED":
+		return cRedF
+	default:
+		return cCloudBorder
+	}
 }
 
 func (m Model) reviewCommentLines(rc gh.ReviewThreadComment, selected bool, width int) []string {
