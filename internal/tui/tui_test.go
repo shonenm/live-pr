@@ -2439,9 +2439,12 @@ func TestRefreshAndPublishAreMutuallyExclusive(t *testing.T) {
 	if cmd != nil || m.publishing || !strings.Contains(m.status, "wait") {
 		t.Fatal("publish should wait for refresh")
 	}
+	// r during a publish reports the busy state instead of starting a second
+	// fetch — and instead of silently doing nothing.
 	m.refreshing, m.publishing = false, true
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}); cmd != nil {
-		t.Fatal("refresh should not overlap publish")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if got := u.(Model); got.refreshing || !got.publishing {
+		t.Fatalf("refresh overlapped publish: refreshing=%v publishing=%v", got.refreshing, got.publishing)
 	}
 }
 
@@ -3162,6 +3165,52 @@ func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 	}
 	if m.diffTerminal != nil {
 		t.Fatal("unchanged range must not restart the review terminal")
+	}
+}
+
+// A notice must not outlive the next thing the user does, or the footer keeps
+// reporting an old action while newer work runs unannounced.
+func TestNoticeClearsOnTheNextKeyAndRefreshAlwaysReports(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.navigator = gh.NewNavigatorCache()
+	pr := gh.PR{Number: 12, State: "OPEN", Title: "x"}
+	m.openPRs = []gh.PR{pr}
+	m.prStacks = buildPRStacks(m.openPRs)
+
+	u, _ := m.Update(prStatusDone{pr: pr, target: "open"})
+	m = u.(Model)
+	if m.notice == "" {
+		t.Fatal("setup: expected a notice from the status change")
+	}
+	// Any key retires it, not just refresh.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if got := u.(Model).notice; got != "" {
+		t.Fatalf("notice survived a keypress: %q", got)
+	}
+
+	// r while a refresh is already running reports it rather than doing
+	// nothing at all.
+	m.notice = "URL copied to clipboard"
+	m.listRefreshing = true
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	busy := u.(Model)
+	if busy.notice != "" {
+		t.Fatalf("notice survived refresh: %q", busy.notice)
+	}
+	if !strings.Contains(ansi.Strip(busy.footerContent()), "fetching") {
+		t.Fatalf("busy refresh gave no feedback: %q", ansi.Strip(busy.footerContent()))
+	}
+
+	// Same on the detail screen.
+	d := testModel()
+	d.screen, d.refreshing = detailScreen, true
+	d.cache.PR = &pr
+	d.notice = "Checked out PR #12"
+	u, _ = d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	detail := u.(Model)
+	if detail.notice != "" || !strings.Contains(ansi.Strip(detail.footerContent()), "refreshing") {
+		t.Fatalf("detail refresh feedback = notice:%q footer:%q", detail.notice, ansi.Strip(detail.footerContent()))
 	}
 }
 

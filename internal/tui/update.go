@@ -212,6 +212,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// A notice reports the last action. Acting again makes it stale, and
+		// leaving it up hides the status of whatever runs next — including
+		// whether a refresh is running at all.
+		m.notice = ""
 		next, cmd := m.handleKey(msg)
 		return next, cmd
 	}
