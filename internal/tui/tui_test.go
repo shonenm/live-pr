@@ -2827,6 +2827,50 @@ func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
 // count must still re-render: restoreConversationSelection consumes the dirty
 // flag before buildConversation runs, so the render cache has to be dropped
 // by invalidateConversation itself.
+// Background arrivals and reloads must not scroll the conversation back to
+// the selected item: the reader may have scrolled away from it deliberately.
+func TestConversationKeepsScrollAcrossSyncsAndReloads(t *testing.T) {
+	m := testModel()
+	m.screen, m.active = detailScreen, conversationTab
+	m.ready, m.w, m.h = true, 120, 30
+	pr := gh.PR{Number: 1, URL: "u", Body: "body"}
+	m.cache = gh.NewCache("feature")
+	m.cache.PR = &pr
+	for i := 1; i <= 40; i++ {
+		c := gh.Comment{ID: int64(i), Body: "comment body", CreatedAt: "2026-08-01T10:00:00Z"}
+		c.User.Login = "alice"
+		m.cache.Comments = append(m.cache.Comments, c)
+	}
+	m.conversationDirty = true
+	m.layout()
+	m.sync()
+
+	scrollQuarter(&m.list, true)
+	scrollQuarter(&m.list, true)
+	scrolled := m.list.YOffset
+	if scrolled == 0 {
+		t.Fatal("setup: the conversation did not scroll")
+	}
+
+	m.sync()
+	if m.list.YOffset != scrolled {
+		t.Fatalf("a background sync moved the view to %d, want %d", m.list.YOffset, scrolled)
+	}
+
+	u, _ := m.Update(githubRefreshed{generation: m.targetGeneration, pr: pr, comments: m.cache.Comments})
+	if got := u.(Model).list.YOffset; got != scrolled {
+		t.Fatalf("a reload moved the view to %d, want %d", got, scrolled)
+	}
+
+	// Moving the selection still pulls it into view.
+	m.list.SetYOffset(scrolled)
+	m.cursors[conversationTab] = len(m.conversationItems()) - 1
+	m.sync()
+	if m.list.YOffset == scrolled {
+		t.Fatal("selection change no longer scrolls the conversation")
+	}
+}
+
 func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
 	m := testModel()
 	m.list.Width = 80
