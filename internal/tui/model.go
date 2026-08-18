@@ -357,6 +357,15 @@ type prRowCacheKey struct {
 	draft, previewLoaded, current                   bool
 }
 
+// listAnchor records which selected line the left pane was last scrolled to,
+// so a background refresh can tell "the selection moved" from "the reader
+// scrolled away from it".
+type listAnchor struct {
+	tab    tab
+	line   int
+	pinned bool
+}
+
 type conversationItem struct {
 	key           string
 	ts            string
@@ -461,6 +470,7 @@ type Model struct {
 	prPreviewLoading          map[int]bool
 	prPreviewLoaded           map[int]bool
 	prView                    prView
+	listAnchor                listAnchor
 	detailOrigin              prView
 	detailOriginSet           bool
 	views                     []config.View
@@ -1649,7 +1659,13 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 	})
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
-	keepLineVisible(&m.list, selectedLine)
+	// Chase the selection only when it actually moved. Syncing runs on every
+	// background arrival and on every reload, and scrolling back to the
+	// selection there would drag a reader who had scrolled elsewhere.
+	if anchor := (listAnchor{tab: m.active, line: selectedLine, pinned: true}); anchor != m.listAnchor {
+		m.listAnchor = anchor
+		keepLineVisible(&m.list, selectedLine)
+	}
 	if m.fileExplorerMode() {
 		explorer, selectedFileLine := m.buildFileExplorer()
 		m.explorer.SetContent(explorer)
