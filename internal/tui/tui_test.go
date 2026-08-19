@@ -2507,6 +2507,83 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 	}
 }
 
+func TestCIPollUnchangedResultSkipsCacheInvalidation(t *testing.T) {
+	m := testModel()
+	m.screen, m.targetGeneration = detailScreen, 2
+	m.cache.PR = &gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head", PreviewLoaded: true,
+		Checks:           []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}},
+		CheckRollupState: "PENDING",
+		Commits:          []gh.PRCommit{{OID: "head", CheckRollupState: "PENDING"}}}
+	m.conversationDirty = false
+	key := prRowCacheKey{number: 12}
+	m.prRowCache = map[prRowCacheKey][]string{key: {"row"}}
+	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head",
+		Checks: []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}}}})
+	m = u.(Model)
+	if m.conversationDirty {
+		t.Fatal("unchanged CI result rebuilt the conversation cards")
+	}
+	if _, ok := m.prRowCache[key]; !ok {
+		t.Fatal("unchanged CI result dropped the PR row cache")
+	}
+	// A pending PR still needs the next tick even when nothing changed.
+	if cmd == nil {
+		t.Fatal("unchanged CI result stopped the poll chain")
+	}
+}
+
+func TestCIPollReplacesCommitsWholesaleForAsyncSave(t *testing.T) {
+	m := testModel()
+	m.screen, m.targetGeneration = detailScreen, 2
+	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true,
+		Commits: []gh.PRCommit{{OID: "head", CheckRollupState: "PENDING"}}}
+	// saveCacheCmd copies the PR struct but shares slice backing arrays with
+	// the async marshal, so the poll must swap in a fresh Commits slice
+	// instead of writing elements in place.
+	shared := m.cache.PR.Commits
+	u, _ := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "head",
+		Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
+	m = u.(Model)
+	if shared[0].CheckRollupState != "PENDING" {
+		t.Fatal("CI poll wrote the shared commits slice in place")
+	}
+	if m.cache.PR.Commits[0].CheckRollupState != "SUCCESS" {
+		t.Fatalf("cloned commits missed the rollup: %#v", m.cache.PR.Commits)
+	}
+}
+
+func TestReviewRefFailureKeepsCIPollAlive(t *testing.T) {
+	// countBatch runs the batch wrapper only, never the inner cmds.
+	countBatch := func(cmd tea.Cmd) int {
+		if cmd == nil {
+			return 0
+		}
+		if batch, ok := cmd().(tea.BatchMsg); ok {
+			return len(batch)
+		}
+		return 1
+	}
+	load := func(pr gh.PR) int {
+		m := testModel()
+		m.screen = detailScreen
+		m.navigator = gh.NewNavigatorCache()
+		m.cache = gh.NewCache("feature")
+		m.cache.PR = &pr
+		_, cmd := m.Update(remoteLoaded{generation: m.targetGeneration, pr: pr, refErr: errors.New("ref unavailable")})
+		return countBatch(cmd)
+	}
+	pending := gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head", PreviewLoaded: true,
+		Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
+	done := pending
+	done.Checks = []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}
+	// The refresh orphaned the previous poll chain, so the refErr return is
+	// the only place a new one can start: a pending PR must batch exactly one
+	// cmd more (the CI poll) than one whose checks are already terminal.
+	if got, want := load(pending), load(done)+1; got != want {
+		t.Fatalf("refErr result did not schedule the CI poll: pending batches %d cmds, terminal %d", got, want-1)
+	}
+}
+
 func TestRefreshAndPublishAreMutuallyExclusive(t *testing.T) {
 	m := testModel()
 	m.refreshing = true
