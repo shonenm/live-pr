@@ -57,6 +57,12 @@ type remoteCommentDone struct {
 	edited     bool
 	deleted    bool
 	err        error
+	// number, body, and editID echo what postRemoteComment sent, so a
+	// network failure can queue the text in the outbox instead of losing it.
+	// Deletes and description updates leave them zero and are never queued.
+	number int
+	body   string
+	editID int64
 }
 
 // postRemoteComment posts a new conversation comment, or edits one when editID
@@ -69,7 +75,7 @@ func postRemoteComment(client githubClient, number int, body string, editID int6
 		} else {
 			err = client.PostIssueComment(number, body)
 		}
-		return remoteCommentDone{generation: generation, edited: editID > 0, err: err}
+		return remoteCommentDone{generation: generation, edited: editID > 0, err: err, number: number, body: body, editID: editID}
 	}
 }
 
@@ -79,6 +85,9 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.err != nil {
+		if next, cmd, queued := m.queueOfflineComment(msg); queued {
+			return next, cmd
+		}
 		m.status = "comment: " + msg.err.Error()
 		return m, nil
 	}

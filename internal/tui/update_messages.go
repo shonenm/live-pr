@@ -410,6 +410,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.detailView.resetCaches()
 	m.cache.PR = &msg.pr
 	m.refreshReviewDraft()
+	m.refreshOutbox()
 	if strings.TrimSpace(msg.pr.Title) != "" {
 		m.detailView.title = msg.pr.Title
 	}
@@ -471,7 +472,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.pr.URL, "", m.detailView.reviewedMarksPath))
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	cmds := []tea.Cmd{saveCmd, m.sync(), m.nextCIPoll(), m.dispatchRichContent()}
+	cmds := []tea.Cmd{saveCmd, m.sync(), m.nextCIPoll(), m.dispatchRichContent(), m.startOutboxFlush()}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
@@ -610,11 +611,16 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		m.githubStatus = offlineStatus(msg.err, "showing cached GitHub data")
 	}
 	m.refreshReviewDraft()
+	m.refreshOutbox()
+	var flushCmd tea.Cmd
+	if msg.err == nil {
+		flushCmd = m.startOutboxFlush()
+	}
 	m.reloadLocalConversation()
 	m.detailView.invalidateConversation()
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	return m, tea.Batch(diffCmd, saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent())
+	return m, tea.Batch(diffCmd, flushCmd, saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent())
 
 }
 
