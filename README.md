@@ -32,7 +32,13 @@ a real pull request.
 
 ## Install
 
-Download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases):
+With Homebrew (macOS):
+
+```sh
+brew install shonenm/live-pr/live-pr
+```
+
+Or download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases):
 
 ```sh
 version=v0.5.1

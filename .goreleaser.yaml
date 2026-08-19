@@ -44,6 +44,29 @@ archives:
 checksum:
   name_template: checksums.txt
 
+homebrew_casks:
+  - name: live-pr
+    repository:
+      owner: shonenm
+      name: homebrew-live-pr
+      branch: main
+      # The workflow's default GITHUB_TOKEN cannot push to another repo, so
+      # the tap needs a PAT with contents:write on shonenm/homebrew-live-pr.
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    homepage: https://github.com/shonenm/live-pr
+    description: Live PR review TUI with a decision timeline for humans and agents
+    # Prereleases publish GitHub archives only; the tap tracks stable tags.
+    skip_upload: auto
+    commit_msg_template: 'live-pr {{ .Tag }}'
+    # The binaries are unsigned, so strip Gatekeeper's quarantine bit — the
+    # pattern goreleaser documents for CLI casks.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/live-pr"]
+          end
+
 changelog:
   sort: asc
   filters:
