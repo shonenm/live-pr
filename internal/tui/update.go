@@ -155,7 +155,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.handleBaseResolved(msg)
 		return next, cmd
 	case ciPollTick:
-		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && prCIHealth(*m.cache.PR) == "pending" {
+		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && pollableCI(*m.cache.PR) {
 			return m, pollCI(msg.generation, msg.number)
 		}
 		return m, nil

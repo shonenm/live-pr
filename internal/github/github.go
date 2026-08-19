@@ -406,21 +406,24 @@ func (c Client) SearchPRs(query, cursor string) (PRPage, error) {
 }
 
 // FindChecks loads only the current head revision and its CI rollup.
+// FindChecks polls the CI state. It also carries the pull request state:
+// this call outlives a merge, and the poller needs to know when to stop.
 func (c Client) FindChecks(number int) (PR, error) {
-	const fields = "number,headRefOid,statusCheckRollup"
+	const fields = "number,state,headRefOid,statusCheckRollup"
 	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
 	if err != nil {
 		return PR{}, commandError("gh pr view checks", out, err)
 	}
 	var result struct {
 		Number     int       `json:"number"`
+		State      string    `json:"state"`
 		HeadRefOID string    `json:"headRefOid"`
 		Checks     []PRCheck `json:"statusCheckRollup"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
 		return PR{}, fmt.Errorf("decode gh PR checks: %w", err)
 	}
-	return PR{Number: result.Number, HeadRefOID: result.HeadRefOID, Checks: result.Checks, PreviewLoaded: true}, nil
+	return PR{Number: result.Number, State: result.State, HeadRefOID: result.HeadRefOID, Checks: result.Checks, PreviewLoaded: true}, nil
 }
 
 // FindPreview loads the expensive preview fields for one PR only.

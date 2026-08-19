@@ -1084,10 +1084,20 @@ func scheduleCIPoll(generation uint64, number, failures int) tea.Cmd {
 }
 
 func (m Model) nextCIPoll() tea.Cmd {
-	if m.screen == detailScreen && m.cache.PR != nil && prCIHealth(*m.cache.PR) == "pending" {
+	if m.screen == detailScreen && m.cache.PR != nil && pollableCI(*m.cache.PR) {
 		return scheduleCIPoll(m.targetGeneration, m.cache.PR.Number, m.ciPollFailures)
 	}
 	return nil
+}
+
+// pollableCI reports whether a PR's checks are still worth polling. Only an
+// open PR can change them; a sparse row with no state yet is given the
+// benefit of the doubt.
+func pollableCI(pr gh.PR) bool {
+	if pr.State != "" && !strings.EqualFold(pr.State, "OPEN") {
+		return false
+	}
+	return prCIHealth(pr) == "pending"
 }
 
 func pollCI(generation uint64, number int) tea.Cmd {

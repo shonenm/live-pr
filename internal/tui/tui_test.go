@@ -330,6 +330,45 @@ func TestCurrentBranchResolutionKeepsLocalOrShowsMergedPR(t *testing.T) {
 // A PR closed on GitHub used to sit in the open list forever: the list keeps
 // injecting the checked-out branch's PR, whose cached state only refreshed on
 // the detail screen.
+// The CI poll is the only thing that runs while live-pr sits idle. It used to
+// push its cached copy of the PR back into the list wholesale, reverting a
+// merged row to open until the next manual reload.
+func TestCIPollDoesNotRevertAMergedPR(t *testing.T) {
+	m := testModel()
+	m.screen, m.active = detailScreen, conversationTab
+	m.currentBranch = "feature"
+	m.navigator = gh.NewNavigatorCache()
+	stale := gh.PR{Number: 12, State: "OPEN", HeadRefName: "feature", HeadRefOID: "abc",
+		Checks: []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}}, PreviewLoaded: true}
+	m.cache = gh.NewCache("feature")
+	m.cache.PR = &stale
+	merged := stale
+	merged.State = "MERGED"
+	m.navigator.PRs = []gh.PR{merged}
+
+	u, cmd := m.Update(ciPolled{generation: m.targetGeneration, pr: gh.PR{
+		Number: 12, State: "MERGED", HeadRefOID: "abc",
+		Checks: []gh.PRCheck{{Name: "test", Status: "COMPLETED", Conclusion: "SUCCESS"}},
+	}})
+	m = u.(Model)
+	if m.navigator.PRs[0].State != "MERGED" || m.cache.PR.State != "MERGED" {
+		t.Fatalf("poll reverted the state: navigator=%q cache=%q", m.navigator.PRs[0].State, m.cache.PR.State)
+	}
+	if len(m.cache.PR.Checks) != 1 || m.cache.PR.Checks[0].Conclusion != "SUCCESS" {
+		t.Fatalf("poll dropped the checks it fetched: %#v", m.cache.PR.Checks)
+	}
+	// Nothing left to watch, so the poll stops rather than looping forever.
+	if cmd != nil && pollableCI(*m.cache.PR) {
+		t.Fatal("kept polling a merged PR")
+	}
+	if pollableCI(gh.PR{State: "CLOSED", Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}) {
+		t.Fatal("a closed PR is still considered pollable")
+	}
+	if !pollableCI(gh.PR{State: "OPEN", Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}) {
+		t.Fatal("an open PR with pending checks must stay pollable")
+	}
+}
+
 func TestClosedBranchPRLeavesTheOpenList(t *testing.T) {
 	m := testModel()
 	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
