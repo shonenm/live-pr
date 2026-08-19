@@ -1,5 +1,16 @@
 # コード改善戦略 (2026-08)
 
+> **Status: ほぼ消化済み (2026-08-19 全件照合)。** 全45所見を現行コードと突き合わせた結果、39 件が消化済み (DONE、コード削除による解消含む)、前提消滅 (OBSOLETE) は 0 件、6 件が未消化 (OPEN、うち2件は部分消化)。消化は PR #170〜#198 による (確定バグ修正、dead code 削除、gh Client 注入、god-struct 分割 = 旧 P13 相当、テスト・性能改善)。本文中の行番号・カバレッジ数値は当時のスナップショットであり現状とは一致しない。歴史的記録として残す。
+
+### 未消化 (2026-08-19 時点)
+
+- `internal/git/git.go:523,536` — FileDiffRange/Show が git エラーを空文字に握り潰したまま、失敗と空 diff が区別不能 (debugtime ログ追加・ShowStat 削除のみで `(string, error)` 化は未) — P3
+- `internal/git/git.go:244` — contentConflicts の merge-file fallback (同 :304) が未テスト。既存の readiness テスト2件は merge-tree が衝突を報告して早期 return する — P4
+- `internal/git/git.go:98` — DefaultBase の main/master fallback 順が未テスト (ResolveBase の origin 優先は消化済み) — P4
+- `internal/tui/update_messages.go:202-227` — preview 1件ロード毎の navigator/pages 線形スキャンと全 applyPRFilters 再計算が残存 (番号→位置索引なし。ディスク書き込みは可視行のみ・非同期化で部分消化) — P11
+- `internal/tui/conversation.go:409` — activitySummary の assigned/review_requested/renamed/force-pushed 分岐が未テスト (labeled のみ検証) — P12
+- `internal/tui/local_edit.go:193` — parseLocalComment の異常系 (prefix欠落/不正kind/空title) と allowSummary ゲートが未テスト — P12
+
 コード品質・性能・可読性・テストカバレッジの網羅調査結果と、全45所見を消化するための PR 分割計画。
 
 ## 調査概要
