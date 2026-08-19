@@ -6,6 +6,7 @@ package embeddedterm
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 // Terminal embeds one interactive process and its VT screen.
 type Terminal struct {
 	sessionID string
+	pidDir    string
 	pidFile   string
 	emulator  *portalis.Emulator
 	started   bool
@@ -40,7 +42,13 @@ func New(command, cwd string, env []string) *Terminal {
 	if err != nil {
 		return &Terminal{sessionID: sessionID, err: fmt.Errorf("CodeDiff watchdog: %w", err), exited: true}
 	}
-	pidFile := fmt.Sprintf("%s/live-pr-review-%d-%s.pid", os.TempDir(), os.Getpid(), sessionID)
+	// A private 0700 directory keeps the pid file out of reach on shared /tmp:
+	// nobody else can pre-create or symlink the path Close later kills from.
+	pidDir, err := os.MkdirTemp("", "live-pr-review-")
+	if err != nil {
+		return &Terminal{sessionID: sessionID, err: fmt.Errorf("CodeDiff watchdog: %w", err), exited: true}
+	}
+	pidFile := filepath.Join(pidDir, fmt.Sprintf("live-pr-review-%d-%s.pid", os.Getpid(), sessionID))
 	emulator := portalis.NewEmulator(sessionID, "CodeDiff", executable, nil)
 	emulator.SetInitialCWD(cwd)
 	env = append(env,
@@ -51,7 +59,7 @@ func New(command, cwd string, env []string) *Terminal {
 	)
 	emulator.SetStartEnv(env)
 	emulator.SetScrollbackLimit(2_000)
-	return &Terminal{sessionID: sessionID, pidFile: pidFile, emulator: emulator}
+	return &Terminal{sessionID: sessionID, pidDir: pidDir, pidFile: pidFile, emulator: emulator}
 }
 
 // Init starts the child before returning its first output listener. Synchronous
@@ -196,6 +204,9 @@ func (t *Terminal) Close() {
 			killTree(pid)
 		}
 		_ = os.Remove(t.pidFile)
+	}
+	if t.pidDir != "" {
+		_ = os.Remove(t.pidDir)
 	}
 	if t.emulator != nil {
 		t.emulator.Close()
