@@ -591,9 +591,13 @@ func (m Model) buildPRPreview() string {
 		stBold.Render("Status"),
 		statusLine,
 	}
+	// Comments belong with the conversation state, not the diff size stats.
+	conversation := []string{}
 	if pr.ReviewDecision != "" {
-		lines = append(lines, "  "+reviewSummary(pr.ReviewDecision))
+		conversation = append(conversation, reviewSummary(pr.ReviewDecision))
 	}
+	conversation = append(conversation, stFg.Render(fmt.Sprintf("%d comments", pr.CommentCount)))
+	lines = append(lines, "  "+strings.Join(conversation, "   "))
 	if !pr.PreviewLoaded && pr.Number > 0 {
 		lines = append(lines, "  "+stMuted.Render("loading preview details…"))
 	}
@@ -601,7 +605,6 @@ func (m Model) buildPRPreview() string {
 		"",
 		stBold.Render("Size"),
 		stFg.Render(fmt.Sprintf("  %d files   ", pr.ChangedFiles))+stGreenF.Render(fmt.Sprintf("+%d", pr.Additions))+stFg.Render("   ")+stRedF.Render(fmt.Sprintf("-%d", pr.Deletions))+stFg.Render(fmt.Sprintf("   %d commits", pr.CommitCount)),
-		stFg.Render(fmt.Sprintf("  %d comments", pr.CommentCount)),
 		"",
 		stBold.Render("Metadata"),
 		"  "+m.previewPeople(*pr),
@@ -668,6 +671,21 @@ func reviewSummary(decision string) string {
 		return stAttention.Render(label)
 	default:
 		return stMuted.Render(label)
+	}
+}
+
+// reviewBadge is the compact list-row form of reviewSummary. Unknown or
+// missing decisions (older cached rows) render nothing.
+func reviewBadge(decision string) (string, lipgloss.Style) {
+	switch strings.ToUpper(strings.TrimSpace(decision)) {
+	case "APPROVED":
+		return "✓ approved", stGreenF
+	case "CHANGES_REQUESTED":
+		return "± changes", stRedF
+	case "REVIEW_REQUIRED":
+		return "◌ review", stAttention
+	default:
+		return "", stMuted
 	}
 }
 
@@ -886,7 +904,7 @@ func (m *Model) cachedPRRow(pr gh.PR, prefix string) []string {
 		number: pr.Number, width: max(10, m.list.Width), additions: pr.Additions, deletions: pr.Deletions, checkCount: count,
 		prefix: prefix, state: pr.State, title: pr.Title, author: pr.Author.Login, base: pr.BaseRefName, head: pr.HeadRefName,
 		mergeable: pr.Mergeable, mergeState: pr.MergeStateStatus, checkHealth: health, rollup: pr.CheckRollupState,
-		draft: pr.IsDraft, previewLoaded: pr.PreviewLoaded, current: m.isCurrentTargetPR(pr),
+		review: pr.ReviewDecision, draft: pr.IsDraft, previewLoaded: pr.PreviewLoaded, current: m.isCurrentTargetPR(pr),
 	}
 	if rows, ok := m.prList.rowCache[key]; ok {
 		return rows
@@ -921,8 +939,9 @@ func (m Model) renderSegments(segments []rowSegment, background string) string {
 }
 
 // prRowSegments assembles the two content lines of a PR row once; selection
-// only changes the background and padding, never the content.
-func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) {
+// only changes the background and padding, never the content. current marks
+// the PR whose branch is checked out locally.
+func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta []rowSegment) {
 	state := strings.ToLower(pr.State)
 	if state == "" {
 		state = "open"
@@ -945,12 +964,18 @@ func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) 
 		{text: "   " + indent, style: stMuted},
 		{text: state, style: glyphStyle},
 	}
+	if current && pr.Number > 0 {
+		meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: "⎇ checked out", style: stAttention})
+	}
 	if pr.Number > 0 {
 		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
 			meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: mergeText, style: mergeStyle})
 		}
 		checkText, checkStyle := prCheckState(pr)
 		meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: checkText, style: checkStyle})
+		if reviewText, reviewStyle := reviewBadge(pr.ReviewDecision); reviewText != "" {
+			meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: reviewText, style: reviewStyle})
+		}
 	}
 	if pr.Additions != 0 || pr.Deletions != 0 {
 		meta = append(meta,
@@ -986,9 +1011,9 @@ func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) 
 }
 
 func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
-	lineSegments, metaSegments := m.prRowSegments(pr, prefix)
 	width := max(10, m.list.Width)
 	current := m.isCurrentTargetPR(pr)
+	lineSegments, metaSegments := m.prRowSegments(pr, prefix, current)
 	if !selected {
 		currentBar := " "
 		if current {
