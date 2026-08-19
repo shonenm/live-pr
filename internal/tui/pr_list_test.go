@@ -623,3 +623,94 @@ func TestConfiguredViewsDriveTabsSearchAndCounts(t *testing.T) {
 		t.Fatalf("previous view = %d", prev)
 	}
 }
+
+func TestPRRowMarksCheckedOutBranch(t *testing.T) {
+	m := testModel()
+	m.list.Width = 140
+	m.currentBranch = "feature"
+	current := gh.PR{Number: 12, State: "OPEN", Title: "Current", BaseRefName: "main", HeadRefName: "feature"}
+	if row := ansi.Strip(strings.Join(m.renderPRRow(current, false, ""), "\n")); !strings.Contains(row, "⎇ checked out") {
+		t.Fatalf("checked-out badge missing: %q", row)
+	}
+	other := gh.PR{Number: 13, State: "OPEN", Title: "Other", BaseRefName: "main", HeadRefName: "other"}
+	if row := ansi.Strip(strings.Join(m.renderPRRow(other, false, ""), "\n")); strings.Contains(row, "⎇ checked out") {
+		t.Fatalf("badge leaked onto a non-current row: %q", row)
+	}
+	// The synthetic local row already reads "local"; no badge on top.
+	local := gh.PR{Number: 0, Title: "Local", BaseRefName: "main", HeadRefName: "feature"}
+	if row := ansi.Strip(strings.Join(m.renderPRRow(local, false, ""), "\n")); strings.Contains(row, "⎇ checked out") {
+		t.Fatalf("badge rendered on the local row: %q", row)
+	}
+}
+
+func TestPRRowShowsReviewDecisionBadge(t *testing.T) {
+	m := testModel()
+	m.list.Width = 140
+	for decision, want := range map[string]string{
+		"APPROVED":          stGreenF.Render("✓ approved"),
+		"CHANGES_REQUESTED": stRedF.Render("± changes"),
+		"REVIEW_REQUIRED":   stAttention.Render("◌ review"),
+	} {
+		pr := gh.PR{Number: 5, State: "OPEN", Title: "badge", BaseRefName: "main", HeadRefName: "head", ReviewDecision: decision}
+		if row := strings.Join(m.renderPRRow(pr, false, ""), "\n"); !strings.Contains(row, want) {
+			t.Fatalf("%s badge missing %q: %q", decision, want, row)
+		}
+	}
+	// No decision (older cached rows) renders no badge at all.
+	bare := gh.PR{Number: 6, State: "OPEN", Title: "bare", BaseRefName: "main", HeadRefName: "head"}
+	row := ansi.Strip(strings.Join(m.renderPRRow(bare, false, ""), "\n"))
+	for _, unwanted := range []string{"◌ review", "✓ approved", "± changes"} {
+		if strings.Contains(row, unwanted) {
+			t.Fatalf("badge %q rendered without a decision: %q", unwanted, row)
+		}
+	}
+}
+
+func TestPRRowKeepsAuthorVisibleWithLabels(t *testing.T) {
+	m := testModel()
+	m.list.Width = 160
+	pr := gh.PR{Number: 8, State: "OPEN", Title: "authored", BaseRefName: "main", HeadRefName: "feature",
+		Author: gh.PRUser{Login: "alice"},
+		Labels: []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}, {Name: "infra", Color: "0e8a16"}}}
+	meta := ansi.Strip(m.renderPRRow(pr, false, "")[1])
+	author, label := strings.Index(meta, "@alice"), strings.Index(meta, " bug ")
+	if author < 0 || label < 0 || author > label {
+		t.Fatalf("author should precede label pills: %q", meta)
+	}
+	// A width that cuts into the pills still leaves the author visible.
+	m.list.Width = lipgloss.Width(strings.TrimRight(meta, " ")) - 4
+	narrow := ansi.Strip(m.renderPRRow(pr, false, "")[1])
+	if !strings.Contains(narrow, "@alice") || strings.Contains(narrow, "infra") {
+		t.Fatalf("narrow row lost the author before the pills: %q", narrow)
+	}
+}
+
+func TestPRPreviewGroupsCommentsWithReviewState(t *testing.T) {
+	m := testModel()
+	m.w, m.list.Width, m.detail.Width = 160, 70, 80
+	pr := gh.PR{Number: 9, State: "OPEN", Title: "preview", BaseRefName: "main", HeadRefName: "feature",
+		ReviewDecision: "APPROVED", CommentCount: 3, ChangedFiles: 2, Additions: 10, Deletions: 4, CommitCount: 1, PreviewLoaded: true}
+	m.prList.open = []gh.PR{pr}
+	lines := strings.Split(ansi.Strip(m.buildPRPreview()), "\n")
+	var conversation, size string
+	for _, line := range lines {
+		if strings.Contains(line, "review approved") {
+			conversation = line
+		}
+		if strings.Contains(line, "files") {
+			size = line
+		}
+	}
+	if !strings.Contains(conversation, "3 comments") {
+		t.Fatalf("comments left the review line: %#v", lines)
+	}
+	if size == "" || strings.Contains(size, "comments") {
+		t.Fatalf("size line should carry only diff stats: %q", size)
+	}
+	// Without a review decision the comment count still renders.
+	pr.ReviewDecision = ""
+	m.prList.open = []gh.PR{pr}
+	if out := ansi.Strip(m.buildPRPreview()); !strings.Contains(out, "3 comments") {
+		t.Fatalf("comments disappeared without a review decision: %q", out)
+	}
+}

@@ -80,7 +80,7 @@ func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
 		apiCalls++
 		requests = append(requests, strings.Join(args, " "))
 		if apiCalls == 1 {
-			return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":1,"state":"OPEN","baseRefOid":"base1"}],"pageInfo":{"hasNextPage":true,"startCursor":"S1","endCursor":"C1"}}}}`), nil
+			return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":1,"state":"OPEN","baseRefOid":"base1","reviewDecision":"APPROVED"}],"pageInfo":{"hasNextPage":true,"startCursor":"S1","endCursor":"C1"}}}}`), nil
 		}
 		return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":2,"state":"OPEN"}],"pageInfo":{"hasNextPage":false,"startCursor":"S2","endCursor":"C2"}}}}`), nil
 	}}
@@ -88,7 +88,7 @@ func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if apiCalls != 1 || first.Repository != "acme/repo" || first.TotalCount != 30 || len(first.PRs) != 1 || first.PRs[0].BaseRefOID != "base1" || !first.PageInfo.HasNextPage || first.PageInfo.EndCursor != "C1" {
+	if apiCalls != 1 || first.Repository != "acme/repo" || first.TotalCount != 30 || len(first.PRs) != 1 || first.PRs[0].BaseRefOID != "base1" || first.PRs[0].ReviewDecision != "APPROVED" || !first.PageInfo.HasNextPage || first.PageInfo.EndCursor != "C1" {
 		t.Fatalf("first page = %#v calls=%d", first, apiCalls)
 	}
 	second, err := client.SearchPRs("is:open assignee:@me", first.PageInfo.EndCursor)
@@ -98,7 +98,7 @@ func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
 	if apiCalls != 2 || repoCalls != 1 || len(second.PRs) != 1 || second.PRs[0].Number != 2 || second.PageInfo.HasNextPage {
 		t.Fatalf("second page = %#v calls=%d", second, apiCalls)
 	}
-	if strings.Contains(requests[0], "after=") || !strings.Contains(requests[0], "pageSize=25") || !strings.Contains(requests[1], "after=C1") || !strings.Contains(requests[0], "repo:acme/repo is:pr is:open assignee:@me sort:updated-desc") || !strings.Contains(requests[0], "author{login avatarUrl}") || !strings.Contains(requests[0], "nodes{login avatarUrl}") {
+	if strings.Contains(requests[0], "after=") || !strings.Contains(requests[0], "pageSize=25") || !strings.Contains(requests[1], "after=C1") || !strings.Contains(requests[0], "repo:acme/repo is:pr is:open assignee:@me sort:updated-desc") || !strings.Contains(requests[0], "author{login avatarUrl}") || !strings.Contains(requests[0], "nodes{login avatarUrl}") || !strings.Contains(requests[0], "reviewDecision") {
 		t.Fatalf("requests = %#v", requests)
 	}
 }
@@ -201,7 +201,7 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 		switch args[0] {
 		case "pr":
 			previewFields = args[len(args)-1]
-			return []byte(`{"number":12,"body":"body","comments":[{"author":{"login":"alice"},"body":"review","createdAt":"2026-08-10T00:00:00Z"}],"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`), nil
+			return []byte(`{"number":12,"body":"body","reviewDecision":"CHANGES_REQUESTED","comments":[{"author":{"login":"alice"},"body":"review","createdAt":"2026-08-10T00:00:00Z"}],"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}`), nil
 		case "repo":
 			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
 		default:
@@ -212,11 +212,11 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Number != 12 || pr.Body != "body" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || len(pr.Commits) != 2 || pr.Commits[0].CheckRollupState != "SUCCESS" || pr.Commits[1].CheckRollupState != "FAILURE" || !pr.PreviewLoaded {
+	if pr.Number != 12 || pr.Body != "body" || pr.ReviewDecision != "CHANGES_REQUESTED" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || len(pr.Commits) != 2 || pr.Commits[0].CheckRollupState != "SUCCESS" || pr.Commits[1].CheckRollupState != "FAILURE" || !pr.PreviewLoaded {
 		t.Fatalf("preview = %#v", pr)
 	}
-	if !strings.Contains(previewFields, "baseRefOid") {
-		t.Fatalf("gh pr preview omitted historical base OID: %q", previewFields)
+	if !strings.Contains(previewFields, "baseRefOid") || !strings.Contains(previewFields, "reviewDecision") {
+		t.Fatalf("gh pr preview omitted required fields: %q", previewFields)
 	}
 	if strings.Contains(previewFields, "commits") {
 		t.Fatalf("gh pr preview still duplicates GraphQL commits: %q", previewFields)
