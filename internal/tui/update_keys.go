@@ -155,7 +155,7 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, m.openRemote(*pr)
 		}
 		st := store.ForBranch(m.root, m.currentBranch)
-		cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
+		cache, _ := st.LoadGitHubCache()
 		return m, tea.Batch(m.startLocalLoad(st, cache, pr), m.startSpinner())
 	}
 	return m, nil

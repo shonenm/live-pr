@@ -37,11 +37,7 @@ type statusOutput struct {
 }
 
 func loadStatus(refresh bool) (statusOutput, error) {
-	st, err := store.Discover()
-	if err != nil {
-		return statusOutput{}, err
-	}
-	cache, err := gh.LoadCache(st.GitHubCache(), st.Branch)
+	st, cache, err := store.LoadSession()
 	if err != nil {
 		return statusOutput{}, err
 	}
