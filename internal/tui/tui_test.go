@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -851,6 +852,27 @@ func TestStartupRouting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := shouldOpenLocal(tc.branch, tc.defaultBranch, tc.hasPR, tc.hasData, tc.hasChanges); got != tc.detail {
 				t.Fatalf("shouldOpenLocal = %v, want %v", got, tc.detail)
+			}
+		})
+	}
+}
+
+func TestRelativeTS(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, ts, want string
+	}{
+		{name: "just now", ts: "2026-08-19T11:59:30Z", want: "just now"},
+		{name: "minutes", ts: "2026-08-19T11:15:00Z", want: "45m ago"},
+		{name: "hours", ts: "2026-08-19T07:00:00Z", want: "5h ago"},
+		{name: "days", ts: "2026-08-16T12:00:00Z", want: "3d ago"},
+		{name: "same year date", ts: "2026-03-05T12:00:00Z", want: "Mar 5"},
+		{name: "older year date", ts: "2025-01-02T12:00:00Z", want: "Jan 2, 2025"},
+		{name: "unparseable falls back", ts: "not-a-timestamp", want: "not-a-timestamp"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := relativeTS(now, tc.ts); got != tc.want {
+				t.Fatalf("relativeTS(%q) = %q, want %q", tc.ts, got, tc.want)
 			}
 		})
 	}

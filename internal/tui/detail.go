@@ -519,7 +519,7 @@ func (m Model) buildCommits() (string, int) {
 		if m.cache.PR != nil {
 			icon, _, style = commitCIStatus(ciStates[c.SHA])
 		}
-		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+shortTS(c.Date))
+		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
 		if i == m.cursors[commitsTab] {
 			line = highlightSelectedBg(line, m.list.Width)
 		}
