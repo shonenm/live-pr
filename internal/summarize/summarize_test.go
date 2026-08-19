@@ -52,6 +52,50 @@ func TestClaudeTimesOutInsteadOfHanging(t *testing.T) {
 	}
 }
 
+func TestCommandPipesTranscriptAndParsesOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell command")
+	}
+	c := Command{Command: `printf '# %s\n\n- noted\n' "$(head -n 1)"`}
+	got, err := c.Summarize("decided to ship\nmore transcript")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "decided to ship" || got.Body != "- noted" {
+		t.Fatalf("summary = %#v", got)
+	}
+}
+
+func TestCommandErrorIncludesStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell command")
+	}
+	c := Command{Command: "echo 'backend down' >&2; exit 1"}
+	_, err := c.Summarize("session")
+	if err == nil || !strings.Contains(err.Error(), "summarize command") || !strings.Contains(err.Error(), "backend down") {
+		t.Fatalf("summarize error = %v", err)
+	}
+}
+
+func TestCommandTimesOutInsteadOfHanging(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell command")
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := (Command{Command: "sleep 30", Timeout: 100 * time.Millisecond}).Summarize("session")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "timed out") {
+			t.Fatalf("summarize error = %v, want timeout", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Summarize did not return; the command is not bounded by a deadline")
+	}
+}
+
 func TestParse(t *testing.T) {
 	tests := []struct {
 		name      string
