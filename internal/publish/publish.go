@@ -86,11 +86,7 @@ func Run(opts Options) (Result, error) {
 }
 
 func run(opts Options, client githubClient, push func(string) error) (Result, error) {
-	st, err := store.Discover()
-	if err != nil {
-		return Result{}, err
-	}
-	cache, err := gh.LoadCache(st.GitHubCache(), st.Branch)
+	st, cache, err := store.LoadSession()
 	if err != nil {
 		return Result{}, err
 	}
