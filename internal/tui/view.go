@@ -61,10 +61,14 @@ func (m Model) View() string {
 			}
 			leftTitle = fmt.Sprintf("Checks · %d", count)
 		}
-		if m.detailView.reviewWide && m.detailView.focus == focusReview {
+		// Wide mode shows only the focused side. Explorer focus lives inside
+		// the review pane, so it counts as the review side — matching
+		// layout's conversationWide test keeps the sizes and the render in
+		// step when Tab or l moves focus while wide.
+		if m.detailView.reviewWide && m.detailView.focus != focusConversation {
 			body := m.renderReviewPane()
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
-		} else if m.detailView.reviewWide && m.detailView.focus != focusReview {
+		} else if m.detailView.reviewWide {
 			leftContent := m.list.View()
 			if m.detailView.active == conversationTab {
 				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())

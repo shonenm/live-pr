@@ -248,10 +248,13 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.layout()
 		return m, m.applyPRViewState(selected)
 	}
-	// Tab cycles focus: conversation → review → conversation.
+	// Tab cycles focus: conversation → review → conversation. It moves focus
+	// only: reviewWide stays set, so Shift+Tab's full-width mode is not undone
+	// by a focus switch — the full-width side follows the focused pane instead
+	// (layout and View key the wide side off focus).
 	if key.Matches(msg, m.keys.Focus) {
 		if m.detailView.focus == focusReview {
-			m.detailView.focus, m.detailView.reviewWide = focusConversation, false
+			m.detailView.focus = focusConversation
 		} else {
 			m.detailView.focus = focusReview
 		}
@@ -270,13 +273,17 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.layout()
 		return m, m.sync()
 	}
+	// FocusRight relayouts too: in wide mode the full-width side follows
+	// focus, so moving into the explorer or review swaps which pane is shown.
 	if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusRight) {
 		m.detailView.focus = focusExplorer
-		return m, nil
+		m.layout()
+		return m, m.sync()
 	}
 	if m.detailView.focus != focusReview && key.Matches(msg, m.keys.FocusRight) {
 		m.detailView.focus = focusReview
-		return m, nil
+		m.layout()
+		return m, m.sync()
 	}
 	// Comment/review/edit keys only apply when the conversation pane is focused;
 	// when the embedded reviewer (nvim) has focus, forward them to the terminal.

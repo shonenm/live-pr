@@ -7,8 +7,65 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 )
+
+func TestMergePopupShowsMergeConditions(t *testing.T) {
+	// A clean PR shows every condition as ok.
+	m := testModel()
+	m.screen = detailScreen
+	pr := gh.PR{
+		Number: 9, State: "OPEN", HeadRefOID: "head",
+		Mergeable: "MERGEABLE", MergeStateStatus: "CLEAN",
+		ReviewDecision: "APPROVED", PreviewLoaded: true,
+		Checks: []gh.PRCheck{{Name: "unit", Status: "COMPLETED", Conclusion: "SUCCESS"}},
+	}
+	m.cache.PR = &pr
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = u.(Model)
+	popup := ansi.Strip(m.renderActionPopup())
+	for _, want := range []string{"⇄ mergeable", "✓ CI 1 passed", "review approved", "✓ up to date with base"} {
+		if !strings.Contains(popup, want) {
+			t.Fatalf("clean merge popup missing %q: %q", want, popup)
+		}
+	}
+
+	// A dirty PR shows each blocked condition as a warning, including the
+	// local behind/conflict scan for the PR loaded on the detail screen.
+	m = testModel()
+	m.screen = detailScreen
+	pr = gh.PR{
+		Number: 9, State: "OPEN", HeadRefOID: "head", IsDraft: true,
+		Mergeable:      "CONFLICTING",
+		ReviewDecision: "CHANGES_REQUESTED", PreviewLoaded: true,
+		Checks: []gh.PRCheck{
+			{Name: "unit", Status: "COMPLETED", Conclusion: "FAILURE"},
+			{Name: "lint", Status: "IN_PROGRESS"},
+		},
+	}
+	m.cache.PR = &pr
+	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 2, ConflictFiles: []string{"a.go"}}
+	m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, 9, pr
+	u, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	popup = ansi.Strip(m.renderActionPopup())
+	for _, want := range []string{"◌ draft", "⚠ conflicts", "✗ CI 1 failed", "1 pending", "review changes requested", "⚠ 1 conflict file", "⚠ 2 commits behind base"} {
+		if !strings.Contains(popup, want) {
+			t.Fatalf("dirty merge popup missing %q: %q", want, popup)
+		}
+	}
+
+	// The local behind/conflict scan belongs to the detail target only, so a
+	// popup opened from the list omits it.
+	m.screen = prListScreen
+	popup = ansi.Strip(m.renderActionPopup())
+	if strings.Contains(popup, "behind base") || strings.Contains(popup, "conflict file") {
+		t.Fatalf("list merge popup leaked detail readiness: %q", popup)
+	}
+}
 
 func TestDetailMergeStartsConfirmation(t *testing.T) {
 	m := testModel()
