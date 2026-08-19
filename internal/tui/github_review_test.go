@@ -204,3 +204,89 @@ func TestCommentKeysOutsideConversationTabExplainInsteadOfSilence(t *testing.T) 
 		t.Fatalf("a outside the conversation tab left status = %q, want a pointer to the Conversation tab", m.status)
 	}
 }
+
+// A submitted review used to only clear the draft and post a notice: the
+// review itself did not appear in the conversation until a manual refresh.
+// Success must refetch through the same remote/local split as
+// handleRemoteCommentDone — fetchRemotePR for a PR opened from the list,
+// fetchGitHub for the current branch.
+func TestReviewSubmittedRefetchesConversation(t *testing.T) {
+	cmdName := func(c tea.Cmd) string {
+		return runtime.FuncForPC(reflect.ValueOf(c).Pointer()).Name()
+	}
+	dispatched := func(t *testing.T, cmd tea.Cmd) []string {
+		t.Helper()
+		if cmd == nil {
+			t.Fatal("review submitted did not schedule a refetch")
+		}
+		// Identify the scheduled fetch by closure symbol name without
+		// invoking it: running it would hit real git/gh. tea.Batch drops nil
+		// cmds, so the refetch may arrive bare or wrapped in a batch.
+		cmds := []tea.Cmd{cmd}
+		if !strings.Contains(cmdName(cmd), "fetch") {
+			batch, ok := cmd().(tea.BatchMsg)
+			if !ok {
+				t.Fatalf("scheduled cmd = %s, want a fetch or a batch", cmdName(cmd))
+			}
+			cmds = batch
+		}
+		names := make([]string, 0, len(cmds))
+		for _, sub := range cmds {
+			names = append(names, cmdName(sub))
+		}
+		return names
+	}
+
+	t.Run("remote", func(t *testing.T) {
+		m := testModel()
+		m.screen, m.remote = detailScreen, true
+		m.currentBranch = "main"
+		m.cache = gh.NewCache("feature")
+		m.cache.PR = &gh.PR{Number: 14, HeadRefName: "feature", URL: "u"}
+		generation := m.targetGeneration
+		u, cmd := m.Update(reviewSubmitted{event: gh.ReviewApproveEvent})
+		m = u.(Model)
+		if m.targetGeneration != generation+1 {
+			t.Fatalf("generation = %d, want %d", m.targetGeneration, generation+1)
+		}
+		sawRemote := false
+		names := dispatched(t, cmd)
+		for _, name := range names {
+			if strings.Contains(name, "fetchGitHub") {
+				t.Fatal("remote review refetch dispatched fetchGitHub, whose result fails isCurrentTargetPR and wipes the remote detail")
+			}
+			if strings.Contains(name, "fetchRemotePR") {
+				sawRemote = true
+			}
+		}
+		if !sawRemote {
+			t.Fatalf("remote review refetch did not dispatch fetchRemotePR: %v", names)
+		}
+	})
+
+	t.Run("local", func(t *testing.T) {
+		m := testModel()
+		m.screen, m.remote = detailScreen, false
+		m.cache = gh.NewCache("feature/x")
+		m.cache.PR = &gh.PR{Number: 14, HeadRefName: "feature/x"}
+		generation := m.targetGeneration
+		u, cmd := m.Update(reviewSubmitted{event: gh.ReviewCommentEvent})
+		m = u.(Model)
+		if m.targetGeneration != generation+1 {
+			t.Fatalf("generation = %d, want %d", m.targetGeneration, generation+1)
+		}
+		sawLocal := false
+		names := dispatched(t, cmd)
+		for _, name := range names {
+			if strings.Contains(name, "fetchRemotePR") {
+				t.Fatal("local review refetch went through fetchRemotePR instead of the branch path")
+			}
+			if strings.Contains(name, "fetchGitHub") {
+				sawLocal = true
+			}
+		}
+		if !sawLocal {
+			t.Fatalf("local review refetch did not dispatch fetchGitHub: %v", names)
+		}
+	})
+}
