@@ -64,6 +64,39 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	}
 }
 
+func TestLoadDetailSurfacesGitErrors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX fake executable")
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho 'fatal: bad revision' >&2\nexit 128\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	m := testModel()
+	m.screen, m.detailView.base, m.detailView.headRev = detailScreen, "main", "HEAD"
+	m.diffCommand, m.diffTerminal = "", nil
+
+	_, cmd := m.loadDetail()
+	if cmd == nil {
+		t.Fatal("cache miss did not dispatch")
+	}
+	u, _ := m.Update(cmd().(rawDetailLoaded))
+	m = u.(Model)
+	detail, again := m.loadDetail()
+	if again != nil {
+		t.Fatal("failed load was not cached")
+	}
+	plain := ansi.Strip(detail.raw)
+	if !strings.Contains(plain, "diff unavailable") || !strings.Contains(plain, "fatal: bad revision") {
+		t.Fatalf("git failure rendered as %q, want a visible diff error", plain)
+	}
+	if detail.renderable {
+		t.Fatal("error message must not be treated as a renderable diff")
+	}
+}
+
 func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen

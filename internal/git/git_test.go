@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -244,11 +245,11 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if modified == nil || modified.Status != "M" || renamed == nil || !strings.HasPrefix(renamed.Status, "R") || renamed.OldPath != "old.go" {
 		t.Fatalf("unexpected files: %#v", files)
 	}
-	if diff := FileDiffRange("main", "HEAD", "file.txt"); !strings.Contains(diff, "-before") || !strings.Contains(diff, "after") {
-		t.Fatalf("unexpected diff: %q", diff)
+	if diff, err := FileDiffRange("main", "HEAD", "file.txt"); err != nil || !strings.Contains(diff, "-before") || !strings.Contains(diff, "after") {
+		t.Fatalf("unexpected diff: %q, err=%v", diff, err)
 	}
-	if diff := FileDiffRange("main", "HEAD", renamed.OldPath, renamed.Path); !strings.Contains(diff, "rename from old.go") || !strings.Contains(diff, "rename to new.go") {
-		t.Fatalf("unexpected rename diff: %q", diff)
+	if diff, err := FileDiffRange("main", "HEAD", renamed.OldPath, renamed.Path); err != nil || !strings.Contains(diff, "rename from old.go") || !strings.Contains(diff, "rename to new.go") {
+		t.Fatalf("unexpected rename diff: %q, err=%v", diff, err)
 	}
 	runGit("update-ref", "refs/remotes/origin/release", "HEAD~1")
 	if got := ResolveBase("release"); got != "origin/release" {
@@ -273,11 +274,11 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if changed, err := HasChanges("main", "HEAD"); err != nil || changed {
 		t.Fatalf("main changes = %v, err=%v", changed, err)
 	}
-	if local := FileDiffRange("main", "HEAD"); local != "" {
-		t.Fatalf("main...HEAD should be empty: %q", local)
+	if local, err := FileDiffRange("main", "HEAD"); err != nil || local != "" {
+		t.Fatalf("main...HEAD should be empty: %q, err=%v", local, err)
 	}
-	if remote := FileDiffRange("main", "refs/live-pr/pulls/1/head"); !strings.Contains(remote, "after") {
-		t.Fatalf("explicit remote diff = %q", remote)
+	if remote, err := FileDiffRange("main", "refs/live-pr/pulls/1/head"); err != nil || !strings.Contains(remote, "after") {
+		t.Fatalf("explicit remote diff = %q, err=%v", remote, err)
 	}
 	commits, err := CommitsRange("main", "refs/live-pr/pulls/1/head")
 	if err != nil || len(commits) != 1 {
@@ -424,5 +425,113 @@ func TestChangedFilesRangeHashesFromSubdirectory(t *testing.T) {
 	_, dst, _ := strings.Cut(files[0].Fingerprint, ":")
 	if strings.Trim(dst, "0") == "" {
 		t.Fatalf("uncommitted file kept the null post-image: %q", files[0].Fingerprint)
+	}
+}
+
+func TestFileDiffRangeAndShowSurfaceErrors(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("file.txt", []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+
+	if out, err := Show("HEAD"); err != nil || !strings.Contains(out, "base") {
+		t.Fatalf("Show(HEAD) = %q, err=%v", out, err)
+	}
+	if out, err := FileDiffRange("no-such-branch", "HEAD"); err == nil || !strings.Contains(err.Error(), "git diff") {
+		t.Fatalf("FileDiffRange with bad base: out=%q err=%v, want git diff error", out, err)
+	}
+	if out, err := Show("deadbeef"); err == nil || !strings.Contains(err.Error(), "git show") {
+		t.Fatalf("Show with bad sha: out=%q err=%v, want git show error", out, err)
+	}
+}
+
+// TestContentConflictsMergeFileFallback drives the merge-file fallback
+// directly: CheckMergeReadiness only reaches it when merge-tree exits clean,
+// which the readiness tests above never do, so the branch coverage lives here.
+func TestContentConflictsMergeFileFallback(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(name, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Enough untouched filler that edits to the first and last line merge
+	// cleanly instead of conflicting.
+	cleanBody := func(first, last string) string {
+		return first + "\n" + strings.Repeat("filler\n", 8) + last + "\n"
+	}
+	write("conflict.txt", "shared\n")
+	write("clean.txt", cleanBody("top", "bottom"))
+	write("modify-delete.txt", "shared\n")
+	write("delete-delete.txt", "shared\n")
+	write("big.txt", "orig\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+
+	run("switch", "-c", "feature")
+	write("conflict.txt", "ours\n")
+	write("clean.txt", cleanBody("ours-top", "bottom"))
+	write("modify-delete.txt", "ours\n")
+	run("rm", "delete-delete.txt")
+	write("big.txt", "ours\n"+strings.Repeat("x", maxContentConflictBlob+1))
+	run("commit", "-am", "ours")
+
+	run("switch", "main")
+	write("conflict.txt", "theirs\n")
+	write("clean.txt", cleanBody("top", "theirs-bottom"))
+	run("rm", "modify-delete.txt")
+	run("rm", "delete-delete.txt")
+	write("big.txt", "theirs\n")
+	run("commit", "-am", "theirs")
+
+	files, err := contentConflicts("main", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// conflict.txt: merge-file reports overlapping edits. modify-delete.txt:
+	// changed on one side, deleted on the other. clean.txt merges cleanly,
+	// delete-delete.txt is gone on both sides, and big.txt trips the blob
+	// size cap, so none of those may appear.
+	want := []string{"conflict.txt", "modify-delete.txt"}
+	if !reflect.DeepEqual(files, want) {
+		t.Fatalf("contentConflicts = %#v, want %#v", files, want)
+	}
+}
+
+func TestDefaultBaseFallbackOrder(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "trunk")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("file.txt", []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+
+	if got := DefaultBase(); got != "main" {
+		t.Fatalf("no origin/HEAD, no main/master = %q, want fallback main", got)
+	}
+	run("branch", "master")
+	if got := DefaultBase(); got != "master" {
+		t.Fatalf("master only = %q, want master", got)
+	}
+	run("branch", "main")
+	if got := DefaultBase(); got != "main" {
+		t.Fatalf("main and master = %q, want main preferred", got)
+	}
+	run("update-ref", "refs/remotes/origin/develop", "HEAD")
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+	if got := DefaultBase(); got != "origin/develop" {
+		t.Fatalf("origin/HEAD set = %q, want origin/develop", got)
 	}
 }
