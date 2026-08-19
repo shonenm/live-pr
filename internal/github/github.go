@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -546,6 +548,56 @@ func (c Client) IssueComments(number int) ([]Comment, error) {
 	return paginatedList[Comment](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments?per_page=100", number), "gh api issue comments")
 }
 
+// issueCommentsSince returns only the comments created or updated at or
+// after since, an RFC3339 timestamp previously reported by the server.
+func (c Client) issueCommentsSince(number int, since string) ([]Comment, error) {
+	return paginatedList[Comment](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments?per_page=100&since=%s", number, url.QueryEscape(since)), "gh api issue comments")
+}
+
+// latestCommentUpdate returns the newest updated_at among comments. It
+// reports false when any timestamp is missing or unparseable — a cache that
+// cannot prove its own freshness must not seed an incremental fetch.
+func latestCommentUpdate(comments []Comment) (string, bool) {
+	var latest time.Time
+	var raw string
+	for _, comment := range comments {
+		ts, err := time.Parse(time.RFC3339, comment.UpdatedAt)
+		if err != nil {
+			return "", false
+		}
+		if ts.After(latest) {
+			latest, raw = ts, comment.UpdatedAt
+		}
+	}
+	return raw, raw != ""
+}
+
+// mergeComments upserts fetched comments into cached by ID and restores the
+// list endpoint's ordering (ascending created time, IDs breaking ties).
+func mergeComments(cached, fetched []Comment) []Comment {
+	merged := make([]Comment, len(cached))
+	copy(merged, cached)
+	index := make(map[int64]int, len(merged))
+	for i, comment := range merged {
+		index[comment.ID] = i
+	}
+	for _, comment := range fetched {
+		if i, ok := index[comment.ID]; ok {
+			merged[i] = comment
+			continue
+		}
+		index[comment.ID] = len(merged)
+		merged = append(merged, comment)
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		if merged[i].CreatedAt != merged[j].CreatedAt {
+			return merged[i].CreatedAt < merged[j].CreatedAt
+		}
+		return merged[i].ID < merged[j].ID
+	})
+	return merged
+}
+
 // Review is a submitted pull-request review (approve / request-changes /
 // comment) with its optional summary body.
 type Review struct {
@@ -587,46 +639,39 @@ func (c Client) IssueActivities(number int) ([]Activity, error) {
 	return paginatedList[Activity](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/events?per_page=100", number), "gh api issue events")
 }
 
-// IssueDetailResult bundles the concurrently-loaded comment and activity
-// collections with their independent errors.
-type IssueDetailResult struct {
-	Comments      []Comment
-	Activities    []Activity
-	CommentsErr   error
-	ActivitiesErr error
-}
-
-// IssueDetail loads independent comment and activity collections concurrently.
-func (c Client) IssueDetail(number int) IssueDetailResult {
-	var r IssueDetailResult
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		r.Comments, r.CommentsErr = c.IssueComments(number)
-	}()
-	go func() {
-		defer wg.Done()
-		r.Activities, r.ActivitiesErr = c.IssueActivities(number)
-	}()
-	wg.Wait()
-	return r
-}
-
 // LoadPRDetail loads preview metadata, comments, and activity concurrently.
-func (c Client) LoadPRDetail(number int) PRDetail {
+// prev is the caller's cached snapshot of the same PR: when it carries
+// comments, only those created or updated since the newest cached updated_at
+// are fetched and merged in by ID. An empty prev, a number mismatch, or any
+// doubt about the cache loads everything, exactly like a first load.
+func (c Client) LoadPRDetail(number int, prev PRDetail) PRDetail {
+	since, incremental := "", false
+	if number != 0 && prev.PR.Number == number && len(prev.Comments) > 0 {
+		since, incremental = latestCommentUpdate(prev.Comments)
+	}
 	var detail PRDetail
+	merged := false
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		detail.PR, detail.PreviewErr = c.FindPreview(number)
 	}()
 	go func() {
 		defer wg.Done()
-		d := c.IssueDetail(number)
-		detail.Comments, detail.Activities = d.Comments, d.Activities
-		detail.CommentsErr, detail.ActivitiesErr = d.CommentsErr, d.ActivitiesErr
+		if incremental {
+			if fetched, err := c.issueCommentsSince(number, since); err == nil {
+				detail.Comments, merged = mergeComments(prev.Comments, fetched), true
+				return
+			}
+			// An incremental failure must not surface a new error mode; fall
+			// through to the same full fetch a first load performs.
+		}
+		detail.Comments, detail.CommentsErr = c.IssueComments(number)
+	}()
+	go func() {
+		defer wg.Done()
+		detail.Activities, detail.ActivitiesErr = c.IssueActivities(number)
 	}()
 	go func() {
 		defer wg.Done()
@@ -637,6 +682,13 @@ func (c Client) LoadPRDetail(number int) PRDetail {
 		rwg.Wait()
 	}()
 	wg.Wait()
+	// A remotely deleted comment survives an incremental merge — since= can
+	// never report it. The preview fetched in this same call counts the full
+	// conversation, so any disagreement (or a failed preview, which leaves no
+	// count to check against) discards the merge for a full fetch.
+	if merged && (detail.PreviewErr != nil || len(detail.Comments) != detail.PR.CommentCount) {
+		detail.Comments, detail.CommentsErr = c.IssueComments(number)
+	}
 	return detail
 }
 

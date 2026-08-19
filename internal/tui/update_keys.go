@@ -386,9 +386,9 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.githubStatus = "GitHub: refreshing…"
 		if m.remote && m.cache.PR != nil {
 			m.targetGeneration++
-			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.startSpinner())
+			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 		}
-		return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration), m.startSpinner())
+		return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()), m.startSpinner())
 	case key.Matches(msg, m.keys.Status):
 		return m.openPRStatus(m.cache.PR)
 	case key.Matches(msg, m.keys.Merge):

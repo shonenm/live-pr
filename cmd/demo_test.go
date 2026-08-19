@@ -53,7 +53,7 @@ func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
 	if err != nil || !strings.Contains(preview.Body, "```mermaid") || !strings.Contains(preview.Body, "K --> N[Local terminal]") || preview.Author.AvatarURL == "" {
 		t.Fatalf("demo preview = %#v err=%v", preview, err)
 	}
-	detail := gh.New().LoadPRDetail(101)
+	detail := gh.New().LoadPRDetail(101, gh.PRDetail{})
 	if detail.CommentsErr != nil || len(detail.Comments) != 1 || detail.Comments[0].User.AvatarURL == "" {
 		t.Fatalf("demo comments = %#v err=%v", detail.Comments, detail.CommentsErr)
 	}

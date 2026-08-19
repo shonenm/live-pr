@@ -96,9 +96,9 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 	}
 	m.targetGeneration++
 	if m.remote {
-		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.startSpinner())
+		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 	}
-	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 }
 
 func deleteRemoteComment(client githubClient, id int64, generation uint64) tea.Cmd {
