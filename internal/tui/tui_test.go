@@ -333,6 +333,43 @@ func TestCurrentBranchResolutionKeepsLocalOrShowsMergedPR(t *testing.T) {
 // The CI poll is the only thing that runs while live-pr sits idle. It used to
 // push its cached copy of the PR back into the list wholesale, reverting a
 // merged row to open until the next manual reload.
+// Merge and close used to only refetch, and GitHub often still answers with
+// the old state right afterwards — so nothing visibly changed until a manual
+// reload. The outcome now lands immediately, everywhere the PR is shown.
+func TestMergeAndCloseApplyWithoutAReload(t *testing.T) {
+	pr := gh.PR{Number: 12, State: "OPEN", HeadRefName: "feature", Title: "x"}
+
+	// List screen: the merged PR leaves the open page at once.
+	m := testModel()
+	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.navigator = gh.NewNavigatorCache()
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{pr}, total: 1, loaded: true, fresh: true}}
+	m.navigator.PRs = []gh.PR{pr}
+	u, _ := m.Update(prActionDone{action: mergePR, pr: pr, number: 12})
+	m = u.(Model)
+	for _, listed := range m.openPRs {
+		if listed.Number == 12 {
+			t.Fatalf("merged PR still on the open list: %#v", m.openPRs)
+		}
+	}
+	if m.navigator.PRs[0].State != "MERGED" {
+		t.Fatalf("navigator state = %q", m.navigator.PRs[0].State)
+	}
+
+	// Detail screen: the header state flips without leaving the screen.
+	d := testModel()
+	d.screen = detailScreen
+	shown := pr
+	d.cache = gh.NewCache("feature")
+	d.cache.PR = &shown
+	u, _ = d.Update(prActionDone{action: closePR, pr: shown, number: 12})
+	if got := u.(Model).cache.PR.State; got != "CLOSED" {
+		t.Fatalf("detail state after close = %q", got)
+	}
+}
+
 func TestCIPollDoesNotRevertAMergedPR(t *testing.T) {
 	m := testModel()
 	m.screen, m.active = detailScreen, conversationTab
