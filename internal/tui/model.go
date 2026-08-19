@@ -2008,6 +2008,31 @@ func copyToClipboard(text string) error { return clipboard.Write(text) }
 
 func shortTS(ts string) string { return strings.Replace(ts, "T", " ", 1) }
 
+// relativeTS renders ts relative to now, gh style: "just now", "5m ago",
+// "3h ago", "12d ago", then "Jan 2" ("Jan 2, 2006" across years).
+// Unparseable input falls back to shortTS.
+func relativeTS(now time.Time, ts string) string {
+	t := conversationTime(ts)
+	if t.IsZero() {
+		return shortTS(ts)
+	}
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	case t.Year() == now.Year():
+		return t.Format("Jan 2")
+	default:
+		return t.Format("Jan 2, 2006")
+	}
+}
+
 func first(values []string) string {
 	if len(values) > 0 {
 		return values[0]

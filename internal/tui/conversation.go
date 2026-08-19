@@ -251,7 +251,7 @@ func (m Model) eventLines(e event.Event, selected bool, width int) []string {
 	if e.Author == "user" || (e.Author == "" && e.Kind == event.Note) {
 		who = "👤 you"
 	}
-	meta := " · " + shortTS(e.TS)
+	meta := " · " + relativeTS(time.Now(), e.TS)
 	if e.UpdatedAt != "" {
 		meta += " · edited"
 	}
@@ -273,19 +273,19 @@ func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
 	if strings.TrimSpace(body) == "" {
 		body = "(no description provided)"
 	}
-	header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+shortTS(pr.CreatedAt))
+	header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
 	return cardLines(header, md.Render(body, width-7), selected, width, cDescriptionBorder)
 }
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
-	header := m.userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+shortTS(comment.CreatedAt))
+	header := m.userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
 	return cardLines(header, md.Render(m.richBody(comment.Body), width-7), selected, width, cCloudBorder)
 }
 
 // reviewLines renders a submitted review verdict with GitHub's semantic color.
 func (m Model) reviewLines(review gh.Review, selected bool, width int) []string {
 	verdict, style := reviewVerdict(review.State)
-	header := m.userIcon(review.User.Login) + stMuted.Render(" @"+review.User.Login+" · ") + style.Render(verdict) + stMuted.Render(" · "+shortTS(review.SubmittedAt))
+	header := m.userIcon(review.User.Login) + stMuted.Render(" @"+review.User.Login+" · ") + style.Render(verdict) + stMuted.Render(" · "+relativeTS(time.Now(), review.SubmittedAt))
 	body := strings.TrimSpace(review.Body)
 	if body == "" {
 		return []string{selectionBar(selected) + header}
@@ -311,7 +311,7 @@ func (m Model) reviewCommentLines(rc gh.ReviewThreadComment, selected bool, widt
 	if rc.Line > 0 {
 		loc = fmt.Sprintf("%s:%d", rc.Path, rc.Line)
 	}
-	header := m.userIcon(rc.User.Login) + stMuted.Render(" @"+rc.User.Login+" · review comment · ") + stAccent.Render(loc) + stMuted.Render(" · "+shortTS(rc.CreatedAt))
+	header := m.userIcon(rc.User.Login) + stMuted.Render(" @"+rc.User.Login+" · review comment · ") + stAccent.Render(loc) + stMuted.Render(" · "+relativeTS(time.Now(), rc.CreatedAt))
 	return cardLines(header, md.Render(m.richBody(rc.Body), width-7), selected, width, cBorder)
 }
 
@@ -375,7 +375,7 @@ func cardLines(header, body string, selected bool, width int, border string) []s
 func (m Model) activityLines(activity gh.Activity, selected bool) []string {
 	glyph, style := activityGlyph(activity.Event)
 	summary := style.Render(glyph + " " + activitySummary(activity))
-	line := m.userIcon(activity.Actor.Login) + stMuted.Render(" @"+activity.Actor.Login+" ") + summary + stMuted.Render(" · "+shortTS(activity.CreatedAt))
+	line := m.userIcon(activity.Actor.Login) + stMuted.Render(" @"+activity.Actor.Login+" ") + summary + stMuted.Render(" · "+relativeTS(time.Now(), activity.CreatedAt))
 	return []string{selectionBar(selected) + line}
 }
 
@@ -401,7 +401,7 @@ func (m Model) commitCIActivityLines(commit gh.PRCommit, selected bool) []string
 		line += stFg.Render(" " + commit.MessageHeadline)
 	}
 	if commit.CommittedDate != "" {
-		line += stMuted.Render(" · " + shortTS(commit.CommittedDate))
+		line += stMuted.Render(" · " + relativeTS(time.Now(), commit.CommittedDate))
 	}
 	return []string{selectionBar(selected) + line}
 }
