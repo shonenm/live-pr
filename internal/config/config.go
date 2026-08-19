@@ -25,6 +25,13 @@ type Config struct {
 	// SummarizeModel optionally overrides the model used for summarization.
 	SummarizeModel string `toml:"summarize_model"`
 
+	// SummarizeCommand replaces the built-in `claude -p` summarizer with an
+	// arbitrary shell command (run via `sh -c`). Contract: the session
+	// transcript arrives on stdin; the summary goes to stdout as a title on
+	// the first non-empty line followed by optional detail; empty output
+	// records nothing. Empty keeps `claude -p`.
+	SummarizeCommand string `toml:"summarize_command"`
+
 	// Diff controls the optional right-pane diff display filter.
 	Diff DiffConfig `toml:"diff"`
 

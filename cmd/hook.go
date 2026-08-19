@@ -51,7 +51,7 @@ var hookStopCmd = &cobra.Command{
 		}
 		added, err := hook.Stop(text, hook.Deps{
 			TimelinePath: st.Timeline(),
-			Summarizer:   summarize.Claude{Model: cfg.SummarizeModel},
+			Summarizer:   summarizer(cfg),
 			Now:          time.Now(),
 			MinInterval:  cfg.SummaryInterval(),
 		})
@@ -63,6 +63,16 @@ var hookStopCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// summarizer picks the configured backend: the custom command when one is
+// set, otherwise the claude CLI. Both keep the hook's never-block contract
+// via the adapter's default timeout.
+func summarizer(cfg config.Config) summarize.Summarizer {
+	if cfg.SummarizeCommand != "" {
+		return summarize.Command{Command: cfg.SummarizeCommand}
+	}
+	return summarize.Claude{Model: cfg.SummarizeModel}
 }
 
 func init() {
