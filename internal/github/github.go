@@ -53,6 +53,7 @@ type PR struct {
 	Assignees             []PRUser                `json:"assignees,omitempty"`
 	Labels                []PRLabel               `json:"labels,omitempty"`
 	ReviewRequests        []PRUser                `json:"reviewRequests,omitempty"`
+	ClosingIssues         []IssueRef              `json:"closingIssues,omitempty"`
 	ViewerReviewRequested bool                    `json:"viewerReviewRequested,omitempty"`
 	PreviewLoaded         bool                    `json:"previewLoaded,omitempty"`
 }
@@ -106,6 +107,12 @@ type PRUser struct {
 type PRLabel struct {
 	Name  string `json:"name"`
 	Color string `json:"color"`
+}
+
+// IssueRef is a linked issue a pull request closes on merge.
+type IssueRef struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
 }
 
 // Comment is a top-level PR conversation comment.
@@ -475,26 +482,33 @@ func (c Client) FindPreview(number int) (PR, error) {
 		return PR{}, fmt.Errorf("decode gh pr preview: %w", err)
 	}
 	preview.CommentCount = len(preview.Conversation)
-	// A failed rollup fetch only costs the per-commit CI states; discarding
-	// the whole preview over it left the PR with no metadata at all.
-	if commits, err := c.commitStatusRollups(number); err == nil {
+	// A failed rollup fetch only costs the per-commit CI states and the
+	// linked issues; discarding the whole preview over it left the PR with
+	// no metadata at all.
+	if commits, issues, err := c.commitStatusRollups(number); err == nil {
 		preview.CommitCount, preview.Commits = len(commits), commits
+		preview.ClosingIssues = issues
 	}
 	preview.PreviewLoaded = true
 	return preview, nil
 }
 
-func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
+// commitStatusRollups loads the per-commit CI rollups and the issues the PR
+// closes. The linked issues ride along here because this is already the
+// preview's per-PR GraphQL round trip, and gh pr view --json cannot return
+// the issue titles.
+func (c Client) commitStatusRollups(number int) ([]PRCommit, []IssueRef, error) {
 	repoName, err := c.repositoryName()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	owner, name, ok := strings.Cut(repoName, "/")
 	if !ok {
-		return nil, fmt.Errorf("invalid repository %q", repoName)
+		return nil, nil, fmt.Errorf("invalid repository %q", repoName)
 	}
-	const query = `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){commits(first:100,after:$after){nodes{commit{oid committedDate messageHeadline statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
+	const query = `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:10){nodes{number title}} commits(first:100,after:$after){nodes{commit{oid committedDate messageHeadline statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
 	var commits []PRCommit
+	var issues []IssueRef
 	after := ""
 	for {
 		args := []string{"api", "graphql", "-F", "owner=" + owner, "-F", "name=" + name, "-F", fmt.Sprintf("number=%d", number)}
@@ -504,12 +518,15 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
 		args = append(args, "-f", "query="+query)
 		out, err := c.run(args...)
 		if err != nil {
-			return nil, commandError("gh api graphql commit statuses", out, err)
+			return nil, nil, commandError("gh api graphql commit statuses", out, err)
 		}
 		var page struct {
 			Data struct {
 				Repository struct {
 					PullRequest struct {
+						ClosingIssuesReferences struct {
+							Nodes []IssueRef `json:"nodes"`
+						} `json:"closingIssuesReferences"`
 						Commits struct {
 							Nodes []struct {
 								Commit struct {
@@ -531,21 +548,26 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
 			} `json:"errors"`
 		}
 		if err := json.Unmarshal(out, &page); err != nil {
-			return nil, fmt.Errorf("decode PR commit statuses: %w", err)
+			return nil, nil, fmt.Errorf("decode PR commit statuses: %w", err)
 		}
 		if len(page.Errors) > 0 {
-			return nil, fmt.Errorf("query PR commit statuses: %s", page.Errors[0].Message)
+			return nil, nil, fmt.Errorf("query PR commit statuses: %s", page.Errors[0].Message)
+		}
+		if after == "" {
+			// Every commit page repeats the closing references; the first
+			// page's copy is the whole list.
+			issues = page.Data.Repository.PullRequest.ClosingIssuesReferences.Nodes
 		}
 		connection := page.Data.Repository.PullRequest.Commits
 		for _, node := range connection.Nodes {
 			commits = append(commits, PRCommit{OID: node.Commit.OID, CommittedDate: node.Commit.CommittedDate, MessageHeadline: node.Commit.MessageHeadline, CheckRollupState: node.Commit.StatusCheckRollup.State})
 		}
 		if !connection.PageInfo.HasNextPage {
-			return commits, nil
+			return commits, issues, nil
 		}
 		after = connection.PageInfo.EndCursor
 		if after == "" {
-			return nil, errors.New("query PR commit statuses: missing next-page cursor")
+			return nil, nil, errors.New("query PR commit statuses: missing next-page cursor")
 		}
 	}
 }

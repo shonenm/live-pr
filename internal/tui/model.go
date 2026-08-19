@@ -261,6 +261,7 @@ type githubClient interface {
 // (startLocalLoad, dispatchRichContent), never a plain *Cmd suffix.
 type Model struct {
 	client            githubClient
+	checkoutHead      func(branch string) error
 	screen            screen
 	root              string
 	repository        string
@@ -391,6 +392,7 @@ func New(version ...string) (Model, error) {
 
 	m := Model{
 		client:          gh.New(),
+		checkoutHead:    git.CheckoutPullHead,
 		screen:          prListScreen,
 		version:         first(version),
 		root:            root,

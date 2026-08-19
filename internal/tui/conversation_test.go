@@ -274,6 +274,35 @@ func TestGitHubCommentsAreBoxedAndActivityIsUnboxed(t *testing.T) {
 	}
 }
 
+func TestAnnotateLinkTypesMarksIssueAndPRURLs(t *testing.T) {
+	in := strings.Join([]string{
+		"see https://github.com/acme/repo/issues/12 and",
+		"https://github.com/acme/repo/pull/34/files then",
+		"https://github.com/acme/repo/commit/abcdef and",
+		"https://example.com/acme/repo/pull/9 and bare #56",
+	}, "\n")
+	out := ansi.Strip(annotateLinkTypes(in))
+	if !strings.Contains(out, "issues/12 (issue)") {
+		t.Fatalf("issue URL not annotated: %q", out)
+	}
+	if !strings.Contains(out, "pull/34/files (PR)") {
+		t.Fatalf("PR URL not annotated: %q", out)
+	}
+	if strings.Contains(out, "abcdef (") || strings.Contains(out, "pull/9 (") || strings.Contains(out, "#56 (") {
+		t.Fatalf("non-issue/PR references were annotated: %q", out)
+	}
+}
+
+func TestCommentLinesAnnotateGitHubLinkTypes(t *testing.T) {
+	m := testModel()
+	comment := gh.Comment{ID: 1, Body: "fixes https://github.com/acme/repo/issues/12 via https://github.com/acme/repo/pull/34", CreatedAt: "2026-08-01T10:00:00Z"}
+	comment.User.Login = "alice"
+	view := ansi.Strip(strings.Join(m.commentLines(comment, false, 80), "\n"))
+	if !strings.Contains(view, "(issue)") || !strings.Contains(view, "(PR)") {
+		t.Fatalf("rendered comment lacks link-type annotations: %q", view)
+	}
+}
+
 func TestLocalEventsShowAuthorAndEditedState(t *testing.T) {
 	m := testModel()
 	agent := strings.Join(m.eventLines(m.detailView.events[0], false, 60), "\n")

@@ -196,7 +196,7 @@ func TestFindChecksCarriesCheckLogURLs(t *testing.T) {
 }
 
 func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
-	var previewFields string
+	var previewFields, graphqlQuery string
 	client := Client{run: func(args ...string) ([]byte, error) {
 		switch args[0] {
 		case "pr":
@@ -205,7 +205,8 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 		case "repo":
 			return []byte(`{"nameWithOwner":"acme/repo"}`), nil
 		default:
-			return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"oid":"aaaa","committedDate":"2026-08-10T00:00:00Z","messageHeadline":"first","statusCheckRollup":{"state":"SUCCESS"}}},{"commit":{"oid":"bbbb","committedDate":"2026-08-10T01:00:00Z","messageHeadline":"second","statusCheckRollup":{"state":"FAILURE"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
+			graphqlQuery = args[len(args)-1]
+			return []byte(`{"data":{"repository":{"pullRequest":{"closingIssuesReferences":{"nodes":[{"number":34,"title":"Crash on empty diff"}]},"commits":{"nodes":[{"commit":{"oid":"aaaa","committedDate":"2026-08-10T00:00:00Z","messageHeadline":"first","statusCheckRollup":{"state":"SUCCESS"}}},{"commit":{"oid":"bbbb","committedDate":"2026-08-10T01:00:00Z","messageHeadline":"second","statusCheckRollup":{"state":"FAILURE"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
 		}
 	}}
 	pr, err := client.FindPreview(12)
@@ -214,6 +215,12 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	}
 	if pr.Number != 12 || pr.Body != "body" || pr.ReviewDecision != "CHANGES_REQUESTED" || len(pr.Conversation) != 1 || pr.CommentCount != 1 || pr.CommitCount != 2 || len(pr.Checks) != 1 || len(pr.Commits) != 2 || pr.Commits[0].CheckRollupState != "SUCCESS" || pr.Commits[1].CheckRollupState != "FAILURE" || !pr.PreviewLoaded {
 		t.Fatalf("preview = %#v", pr)
+	}
+	if len(pr.ClosingIssues) != 1 || pr.ClosingIssues[0].Number != 34 || pr.ClosingIssues[0].Title != "Crash on empty diff" {
+		t.Fatalf("closing issues = %#v", pr.ClosingIssues)
+	}
+	if !strings.Contains(graphqlQuery, "closingIssuesReferences(first:10){nodes{number title}}") {
+		t.Fatalf("preview GraphQL does not request closing issues: %q", graphqlQuery)
 	}
 	if !strings.Contains(previewFields, "baseRefOid") || !strings.Contains(previewFields, "reviewDecision") {
 		t.Fatalf("gh pr preview omitted required fields: %q", previewFields)
@@ -228,16 +235,19 @@ func TestCommitStatusRollupsPaginates(t *testing.T) {
 	client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
 		calls++
 		if calls == 1 {
-			return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":{"state":"SUCCESS"}}}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}}`), nil
+			return []byte(`{"data":{"repository":{"pullRequest":{"closingIssuesReferences":{"nodes":[{"number":7,"title":"first page"}]},"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":{"state":"SUCCESS"}}}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}}`), nil
 		}
 		if !strings.Contains(strings.Join(args, " "), "after=next") {
 			t.Fatalf("second page args = %v", args)
 		}
-		return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"oid":"bbbb","statusCheckRollup":{"state":"FAILURE"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
+		return []byte(`{"data":{"repository":{"pullRequest":{"closingIssuesReferences":{"nodes":[{"number":9,"title":"repeated copy"}]},"commits":{"nodes":[{"commit":{"oid":"bbbb","statusCheckRollup":{"state":"FAILURE"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
 	}}
-	commits, err := client.commitStatusRollups(12)
+	commits, issues, err := client.commitStatusRollups(12)
 	if err != nil || calls != 2 || len(commits) != 2 || commits[1].CheckRollupState != "FAILURE" {
 		t.Fatalf("commit statuses = %#v calls=%d err=%v", commits, calls, err)
+	}
+	if len(issues) != 1 || issues[0].Number != 7 {
+		t.Fatalf("closing issues must come from the first page: %#v", issues)
 	}
 }
 
@@ -250,7 +260,7 @@ func TestCommitStatusRollupsRejectsIncompleteGraphQLResponses(t *testing.T) {
 			client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
 				return []byte(response), nil
 			}}
-			if _, err := client.commitStatusRollups(12); err == nil {
+			if _, _, err := client.commitStatusRollups(12); err == nil {
 				t.Fatalf("commit status response %s was accepted", response)
 			}
 		})

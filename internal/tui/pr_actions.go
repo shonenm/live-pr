@@ -47,14 +47,21 @@ func (m Model) selectedMergeMethod() gh.MergeMethod {
 	return mergeMethodOptions[m.mergeMethodCursor]
 }
 
-func runPRAction(client githubClient, action prAction, pr gh.PR, method gh.MergeMethod) tea.Cmd {
+// runPRAction executes one confirmed PR action. checkoutHead checks out a
+// same-repository head branch with plain git; fork heads (cross-repository)
+// keep gh pr checkout, which knows how to wire up the fork's remote.
+func runPRAction(client githubClient, checkoutHead func(branch string) error, action prAction, pr gh.PR, method gh.MergeMethod) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		switch action {
 		case mergePR:
 			err = client.Merge(pr.Number, pr.HeadRefOID, method)
 		case checkoutPR:
-			err = client.Checkout(pr.Number)
+			if pr.IsCrossRepository || pr.HeadRefName == "" || checkoutHead == nil {
+				err = client.Checkout(pr.Number)
+			} else {
+				err = checkoutHead(pr.HeadRefName)
+			}
 		case closePR:
 			err = client.Close(pr.Number)
 		}
