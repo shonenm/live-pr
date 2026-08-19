@@ -71,10 +71,12 @@ type keyMap struct {
 
 // helpGroups is the single source of help ordering; ShortHelp flattens it and
 // FullHelp shows it as-is, so a binding can no longer drop out of one of the
-// three hand-maintained lists (FocusLeft already had).
+// three hand-maintained lists. FocusLeft is deliberately absent: q quits even
+// while the review is focused (Quit wins in the key handler), so the binding
+// only exists for reservedReviewKey and its help text would lie.
 func (k keyMap) helpGroups() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.FocusLeft, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList},
+		{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList},
 		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.CopyURL, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.ManageViews, k.Help, k.Quit},
 	}
 }
@@ -1928,7 +1930,7 @@ func (m Model) footerContent() string {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}
 	if m.focusDiff {
-		hint := stMuted.Render("Review focused · Tab conversation · Shift+Tab full width · q back")
+		hint := stMuted.Render("Review focused · Tab conversation · Shift+Tab full width · q quit")
 		if m.githubStatus != "" {
 			return stMuted.Render(m.githubStatus) + "  " + hint
 		}
