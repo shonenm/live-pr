@@ -37,7 +37,6 @@ type Config struct {
 	// to primer-dark.
 	Theme string `toml:"theme"`
 
-
 	// Diff controls the optional right-pane diff display filter.
 	Diff DiffConfig `toml:"diff"`
 
