@@ -934,6 +934,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.events, m.files, m.commits = data.events, data.files, data.commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
 	m.loadReviewedMarks(m.currentPRNumber(), st.Branch)
+	m.refreshReviewDraft()
 	m.invalidateConversation()
 	m.githubStatus = "Local only · checking for PR…"
 	if cache.PR != nil {
@@ -1323,6 +1324,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.cache = gh.NewCache(pr.HeadRefName)
 	m.cache.PR = &pr
 	m.loadReviewedMarks(pr.Number, pr.HeadRefName)
+	m.refreshReviewDraft()
 	if snapshot, ok := m.navigator.Snapshot(pr.Number); ok {
 		m.cache.Comments = snapshot.Comments
 		m.cache.Activities = snapshot.Activities
@@ -1889,6 +1891,14 @@ func (m Model) renderHeader() string {
 	if !m.remote && m.workingTreeDirty {
 		dirty = "   " + stAttention.Render("● uncommitted changes")
 	}
+	draft := ""
+	if len(m.reviewDraft.Comments) > 0 || strings.TrimSpace(m.reviewDraft.Body) != "" {
+		label := "✎ review draft"
+		if n := len(m.reviewDraft.Comments); n > 0 {
+			label += fmt.Sprintf(" · %d comments", n)
+		}
+		draft = "   " + stAttention.Render(label)
+	}
 	readiness := ""
 	if m.cache.PR != nil || !m.remote {
 		readiness = stMuted.Render(fmt.Sprintf("   · %d behind", m.mergeReadiness.Behind))
@@ -1900,7 +1910,7 @@ func (m Model) renderHeader() string {
 			readiness += "   " + stMuted.Render("merge readiness unavailable")
 		}
 	}
-	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.base).Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty + readiness
+	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.base).Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty + draft + readiness
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
