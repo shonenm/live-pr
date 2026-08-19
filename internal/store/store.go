@@ -46,7 +46,7 @@ func Discover() (*Store, error) {
 		return nil, err
 	}
 	st := ForBranch(root, branch)
-	if err := os.MkdirAll(st.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(st.Dir, 0o700); err != nil {
 		return nil, err
 	}
 	return st, nil
@@ -58,7 +58,7 @@ func ForBranch(root, branch string) *Store {
 }
 
 // Ensure creates the branch data directory.
-func (s *Store) Ensure() error { return os.MkdirAll(s.Dir, 0o755) }
+func (s *Store) Ensure() error { return os.MkdirAll(s.Dir, 0o700) }
 
 // HasData reports whether a branch has meaningful local PR content.
 func (s *Store) HasData() bool {
@@ -148,7 +148,7 @@ func MigrateLegacy(root string) error {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return err
 		}
 		if err := os.Rename(filepath.Join(legacy, entry.Name()), target); err != nil {
@@ -259,7 +259,7 @@ func LoadReviewedMarks(path string) (map[string]string, error) {
 // SaveReviewedMarks writes the marks atomically so an external reviewer
 // reading the same file never observes a partial write.
 func SaveReviewedMarks(path string, marks map[string]string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(marks, "", "  ")
