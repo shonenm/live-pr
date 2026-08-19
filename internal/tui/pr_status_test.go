@@ -48,8 +48,12 @@ func TestPRStatusPopupOpensFromListAndDetail(t *testing.T) {
 		m.openPRs = []gh.PR{pr}
 		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 		m = u.(Model)
-		popup := ansi.Strip(m.renderPRStatusPopup())
-		if m.statusPR.Number != 12 || strings.Contains(popup, "\n   Open\n") || !strings.Contains(popup, "Close") || strings.Contains(popup, "Closed") || !strings.Contains(popup, "Draft") {
+		o, ok := m.overlay.(prStatusOverlay)
+		if !ok {
+			t.Fatalf("screen %v s did not open the status popup: %T", screen, m.overlay)
+		}
+		popup := ansi.Strip(o.render(m))
+		if o.pr.Number != 12 || strings.Contains(popup, "\n   Open\n") || !strings.Contains(popup, "Close") || strings.Contains(popup, "Closed") || !strings.Contains(popup, "Draft") {
 			t.Fatalf("screen %v status popup = %q", screen, popup)
 		}
 	}

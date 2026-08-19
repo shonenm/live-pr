@@ -27,8 +27,8 @@ func TestLocalPRCommentsCanBeManagedFromTUI(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	m = u.(Model)
-	if m.localEditMode != addLocalComment {
-		t.Fatalf("a did not open comment editor: %v", m.localEditMode)
+	if o, ok := m.overlay.(localEditOverlay); !ok || o.mode != addLocalComment {
+		t.Fatalf("a did not open comment editor: %#v", m.overlay)
 	}
 	if background := m.localEditor.FocusedStyle.CursorLine.GetBackground(); background != (lipgloss.NoColor{}) {
 		t.Fatalf("comment editor cursor line background = %v, want transparent", background)
@@ -53,7 +53,7 @@ func TestLocalPRCommentsCanBeManagedFromTUI(t *testing.T) {
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	m = u.(Model)
-	if m.localDeleteTarget == "" {
+	if o, ok := m.overlay.(localDeleteOverlay); !ok || o.target == "" {
 		t.Fatal("d did not request comment deletion")
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
@@ -77,8 +77,8 @@ func TestLocalPRSummaryCanBeEditedFromTUI(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	m = u.(Model)
-	if m.localEditMode != editLocalSummary {
-		t.Fatalf("e did not open summary editor: %v", m.localEditMode)
+	if o, ok := m.overlay.(localEditOverlay); !ok || o.mode != editLocalSummary {
+		t.Fatalf("e did not open summary editor: %#v", m.overlay)
 	}
 	m.localEditor.SetValue("# Final outcome\n\n## Summary\n\nImplemented result.")
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
@@ -104,7 +104,11 @@ func TestRemoteDeleteTitleTruncatesOnRuneBoundary(t *testing.T) {
 		}
 	}
 	next, _ := m.deleteSelectedLocalComment()
-	title := next.remoteDeleteTitle
+	o, ok := next.overlay.(remoteDeleteOverlay)
+	if !ok {
+		t.Fatalf("d did not open the remote delete confirm: %#v", next.overlay)
+	}
+	title := o.title
 	if !utf8.ValidString(title) {
 		t.Fatalf("truncation split a rune: %q", title)
 	}
@@ -127,7 +131,7 @@ func TestEditorNewlineKeysAndWidthFitPopup(t *testing.T) {
 		m := testModel()
 		m.w, m.h = 120, 40
 		m.cache.PR = &gh.PR{Number: 1, URL: "u"}
-		next, _ := m.openLocalEditor(addRemoteComment, "line", "")
+		next, _ := m.openLocalEditor(localEditOverlay{mode: addRemoteComment}, "line")
 		next.localEditor.SetValue("line")
 		u, _ := next.Update(key)
 		if got := u.(Model).localEditor.Value(); !strings.Contains(got, "\n") {
@@ -141,14 +145,15 @@ func TestEditorNewlineKeysAndWidthFitPopup(t *testing.T) {
 		m.w, m.h = w, 40
 		m.cache.PR = &gh.PR{Number: 1, HeadRefOID: "abc"}
 		m.reviewDraft = gh.NewReviewDraft(1, "abc")
-		next, _ := m.openLocalEditor(editReviewBody, strings.Repeat("x", 300), "review-submit")
-		next.reviewSubmitEvent, next.reviewSubmitTyping = gh.ReviewCommentEvent, true
+		next, _ := m.setupLocalEditor(strings.Repeat("x", 300))
+		popup := reviewSubmitOverlay{event: gh.ReviewCommentEvent, typing: true}
+		next.overlay = popup
 		budget := max(36, min(80, w-14)) - 4
 		if got := next.localEditor.Width(); got > budget {
 			t.Fatalf("w=%d editor width %d exceeds the popup budget %d", w, got, budget)
 		}
 		// The popup must not need to wrap anything the editor rendered.
-		for _, line := range strings.Split(ansi.Strip(next.renderReviewSubmitPopup()), "\n") {
+		for _, line := range strings.Split(ansi.Strip(popup.render(next)), "\n") {
 			if lipgloss.Width(line) > budget+6 {
 				t.Fatalf("w=%d popup line %q exceeds its own frame", w, line)
 			}
@@ -163,8 +168,8 @@ func TestEditorAdvertisesTheKeyThatActuallySaves(t *testing.T) {
 	m.cache.PR = &gh.PR{Number: 12, URL: "u"}
 
 	// e / a open the overlay; the hint must name a key bubbletea can report.
-	next, _ := m.openLocalEditor(addRemoteComment, "", "")
-	hint := ansi.Strip(next.renderLocalEditorPopup())
+	next, _ := m.openLocalEditor(localEditOverlay{mode: addRemoteComment}, "")
+	hint := ansi.Strip(next.overlay.render(next))
 	if !strings.Contains(hint, "Ctrl+S send") {
 		t.Fatalf("editor hint = %q", hint)
 	}
@@ -172,11 +177,13 @@ func TestEditorAdvertisesTheKeyThatActuallySaves(t *testing.T) {
 	// Enter stays a newline; Ctrl+S sends.
 	next.localEditor.SetValue("hello")
 	typed, _ := next.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := typed.(Model); got.localEditMode != addRemoteComment || !strings.Contains(got.localEditor.Value(), "\n") {
-		t.Fatalf("enter did not insert a newline: mode=%v value=%q", got.localEditMode, got.localEditor.Value())
+	if got := typed.(Model); !strings.Contains(got.localEditor.Value(), "\n") {
+		t.Fatalf("enter did not insert a newline: value=%q", got.localEditor.Value())
+	} else if o, ok := got.overlay.(localEditOverlay); !ok || o.mode != addRemoteComment {
+		t.Fatalf("enter closed or replaced the editor overlay: %#v", got.overlay)
 	}
 	sent, cmd := next.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-	if got := sent.(Model); got.localEditMode != noLocalEdit || cmd == nil {
-		t.Fatalf("ctrl+s did not send: mode=%v cmd=%v", got.localEditMode, cmd)
+	if got := sent.(Model); got.overlay != nil || cmd == nil {
+		t.Fatalf("ctrl+s did not send: overlay=%#v cmd=%v", got.overlay, cmd)
 	}
 }

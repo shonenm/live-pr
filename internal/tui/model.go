@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	bspinner "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -306,14 +305,6 @@ type Model struct {
 	detailOrigin              prView
 	detailOriginSet           bool
 	views                     []config.View
-	viewManager               bool
-	viewDraft                 []config.View
-	viewCursor                int
-	viewEditField             viewEditField
-	viewEditIndex             int
-	viewNameInput             textinput.Model
-	viewQueryInput            textinput.Model
-	viewManagerError          string
 	prListState               prListState
 	prPages                   map[string]prPageState
 	activePRPage              string
@@ -343,25 +334,12 @@ type Model struct {
 	ciPollFailures            int
 	listRefreshing            bool
 	publishing                bool
-	localEditMode             localEditMode
+	overlay                   overlay // open modal popup; nil when none
 	localEditor               textarea.Model
-	localEditTarget           string
-	localEditError            string
-	remoteCommentID           int64
 	remoteCommentBusy         bool
-	localDeleteTarget         string
-	localDeleteTitle          string
-	remoteDeleteID            int64
-	remoteDeleteTitle         string
 	reviewDraft               gh.ReviewDraft
 	reviewDraftPath           string
-	reviewSubmitEvent         gh.ReviewEvent
-	reviewSubmitCursor        int
-	reviewSubmitTyping        bool
 	reviewSubmitting          bool
-	statusPR                  gh.PR
-	statusCursor              int
-	statusRunning             bool
 	pendingPRAction           prAction
 	prActionRunning           prAction
 	prActionNumber            int
@@ -708,7 +686,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.statusRunning || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
+	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {

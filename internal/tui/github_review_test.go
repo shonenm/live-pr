@@ -34,15 +34,15 @@ func TestCommentKeysSplitConversationAndInlineReview(t *testing.T) {
 
 	// a opens a GitHub conversation comment (not the review body, which is now on v).
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	if got := u.(Model).localEditMode; got != addRemoteComment {
-		t.Fatalf("a editor = %v, want addRemoteComment", got)
+	if got, ok := u.(Model).overlay.(localEditOverlay); !ok || got.mode != addRemoteComment {
+		t.Fatalf("a editor = %#v, want addRemoteComment", u.(Model).overlay)
 	}
 
 	// A adds an inline review comment on the selected file.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
 	m = u.(Model)
-	if m.localEditMode != addInlineReviewComment || !strings.Contains(m.localEditor.Value(), "path: main.go") {
-		t.Fatalf("A inline editor = %v value=%q", m.localEditMode, m.localEditor.Value())
+	if got, ok := m.overlay.(localEditOverlay); !ok || got.mode != addInlineReviewComment || !strings.Contains(m.localEditor.Value(), "path: main.go") {
+		t.Fatalf("A inline editor = %#v value=%q", m.overlay, m.localEditor.Value())
 	}
 	m.localEditor.SetValue("path: main.go\nline: 3\nside: RIGHT\n\nFix this.")
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
@@ -69,8 +69,9 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = u.(Model)
-	if m.reviewSubmitEvent == "" || m.reviewSubmitTyping || !strings.Contains(m.renderReviewSubmitPopup(), "Request changes") {
-		t.Fatalf("submit popup not opened: event=%q typing=%v popup=%q", m.reviewSubmitEvent, m.reviewSubmitTyping, m.renderReviewSubmitPopup())
+	o, ok := m.overlay.(reviewSubmitOverlay)
+	if !ok || o.event == "" || o.typing || !strings.Contains(o.render(m), "Request changes") {
+		t.Fatalf("submit popup not opened: overlay=%#v", m.overlay)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = u.(Model)
@@ -78,15 +79,17 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if !m.reviewSubmitTyping || m.localEditMode != editReviewBody {
-		t.Fatalf("did not enter message after choosing type: typing=%v mode=%v", m.reviewSubmitTyping, m.localEditMode)
+	o, ok = m.overlay.(reviewSubmitOverlay)
+	if !ok || !o.typing || o.event != gh.ReviewRequestChangesEvent {
+		t.Fatalf("did not enter message after choosing type: overlay=%#v", m.overlay)
 	}
 	m.localEditor.SetValue("Please fix this before approve")
 	// Enter stays in the editor as a newline; only Ctrl+S submits.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if !m.reviewSubmitTyping || m.reviewSubmitting || !strings.Contains(m.localEditor.Value(), "\n") {
-		t.Fatalf("enter did not insert newline: typing=%v submitting=%v value=%q", m.reviewSubmitTyping, m.reviewSubmitting, m.localEditor.Value())
+	o, ok = m.overlay.(reviewSubmitOverlay)
+	if !ok || !o.typing || m.reviewSubmitting || !strings.Contains(m.localEditor.Value(), "\n") {
+		t.Fatalf("enter did not insert newline: overlay=%#v submitting=%v value=%q", m.overlay, m.reviewSubmitting, m.localEditor.Value())
 	}
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	m = u.(Model)
@@ -127,14 +130,15 @@ func TestEditRemoteCommentOwnershipGate(t *testing.T) {
 	// Own comment: e opens the remote editor targeting its id.
 	m.cursors[conversationTab] = idxOf(99)
 	edited, _ := m.editSelectedLocalItem()
-	if edited.localEditMode != editRemoteComment || edited.remoteCommentID != 99 || edited.localEditor.Value() != "mine" {
-		t.Fatalf("own comment edit = mode:%v id:%d value:%q", edited.localEditMode, edited.remoteCommentID, edited.localEditor.Value())
+	o, ok := edited.overlay.(localEditOverlay)
+	if !ok || o.mode != editRemoteComment || o.remoteCommentID != 99 || edited.localEditor.Value() != "mine" {
+		t.Fatalf("own comment edit = overlay:%#v value:%q", edited.overlay, edited.localEditor.Value())
 	}
 
 	// Someone else's comment: rejected.
 	m.cursors[conversationTab] = idxOf(100)
 	rejected, _ := m.editSelectedLocalItem()
-	if rejected.localEditMode == editRemoteComment {
+	if o, ok := rejected.overlay.(localEditOverlay); ok && o.mode == editRemoteComment {
 		t.Fatal("edited someone else's comment")
 	}
 }
@@ -193,8 +197,8 @@ func TestCommentKeysOutsideConversationTabExplainInsteadOfSilence(t *testing.T) 
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	m = u.(Model)
-	if m.localEditMode != noLocalEdit {
-		t.Fatalf("a outside the conversation tab opened an editor: mode=%v", m.localEditMode)
+	if m.overlay != nil {
+		t.Fatalf("a outside the conversation tab opened an editor: overlay=%#v", m.overlay)
 	}
 	if !strings.Contains(m.status, "Conversation tab") {
 		t.Fatalf("a outside the conversation tab left status = %q, want a pointer to the Conversation tab", m.status)

@@ -35,31 +35,17 @@ func asyncCompletion(msg tea.Msg) bool {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Modal popups own the keyboard only; async completions fall through to
+	// A modal popup owns the keyboard only; async completions fall through to
 	// the main switch below so background work keeps landing.
-	modal := m.statusPR.Number > 0 || m.reviewSubmitEvent != "" || m.viewManager ||
-		m.localEditMode != noLocalEdit || m.localDeleteTarget != "" || m.remoteDeleteID > 0
-	if modal && !asyncCompletion(msg) {
-		switch {
-		case m.viewManager:
-			if keyMsg, ok := msg.(tea.KeyMsg); ok {
-				return m.handleViewManagerKey(keyMsg)
-			}
-			return m, nil
-		case m.statusPR.Number > 0:
-			if keyMsg, ok := msg.(tea.KeyMsg); ok {
-				return m.handlePRStatusKey(keyMsg)
-			}
-			return m, nil
-		case m.reviewSubmitEvent != "":
-			if keyMsg, ok := msg.(tea.KeyMsg); ok {
-				return m.handleReviewSubmitKey(keyMsg)
-			}
-			return m, nil
-		default:
-			// The editor overlay also needs non-key messages (cursor blink).
-			return m.handleLocalOverlay(msg)
+	if m.overlay != nil && !asyncCompletion(msg) {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return m.overlay.handleKey(m, keyMsg)
 		}
+		// The editor overlay also needs non-key messages (cursor blink).
+		if handler, ok := m.overlay.(overlayMsgHandler); ok {
+			return handler.handleMsg(m, msg)
+		}
+		return m, nil
 	}
 	if m.diffTerminal != nil && m.diffTerminal.Handles(msg) && !reservedReviewKey(msg) {
 		cmd := m.diffTerminal.Update(msg)
@@ -87,7 +73,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.help.Width = msg.Width
-		if m.localEditMode != noLocalEdit {
+		if m.overlayHostsEditor() {
 			m.sizeLocalEditor() // keep the open editor overlay fitting the new size
 		}
 		m.layout()
