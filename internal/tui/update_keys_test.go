@@ -386,6 +386,47 @@ func TestReviewFocusKeys(t *testing.T) {
 	}
 }
 
+func TestTabKeepsWideModeAcrossFocusSwitches(t *testing.T) {
+	m := testModel()
+	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+
+	// Tab to the review, then Shift+Tab to full width.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if !m.detailView.reviewWide || m.detailView.focus != focusReview {
+		t.Fatal("Shift+Tab should make the review full width")
+	}
+	// Tab moves focus to the conversation but keeps wide mode: the
+	// conversation now owns the full width.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = u.(Model)
+	if m.detailView.focus != focusConversation || !m.detailView.reviewWide {
+		t.Fatalf("Tab dropped wide mode: focus=%v wide=%v", m.detailView.focus, m.detailView.reviewWide)
+	}
+	if m.list.Width != m.w-paneChromeW {
+		t.Fatalf("wide conversation width = %d, want %d", m.list.Width, m.w-paneChromeW)
+	}
+	// Tab back returns the full width to the review.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = u.(Model)
+	if m.detailView.focus != focusReview || !m.detailView.reviewWide {
+		t.Fatalf("Tab back dropped wide mode: focus=%v wide=%v", m.detailView.focus, m.detailView.reviewWide)
+	}
+	if m.detail.Width != m.w-paneChromeW {
+		t.Fatalf("wide review width = %d, want %d", m.detail.Width, m.w-paneChromeW)
+	}
+	// Shift+Tab is still the only key that restores the split.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = u.(Model)
+	if m.detailView.reviewWide {
+		t.Fatal("Shift+Tab should restore the split")
+	}
+}
+
 func TestStaticReviewFocusKeys(t *testing.T) {
 	m := testModel()
 	m.diffCommand = "cat"

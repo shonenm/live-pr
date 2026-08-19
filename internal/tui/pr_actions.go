@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
 // mergeMethodOptions lists the picker choices; the merge commit stays first
@@ -74,6 +75,47 @@ func actionLabel(action prAction) string {
 	}
 }
 
+// mergeConditionLines summarizes the merge conditions the confirmation is
+// about to act on: draft state, mergeability, the CI rollup, the review
+// decision when GitHub reported one, and — when the popup targets the PR
+// loaded on the detail screen — local base freshness and conflict files.
+// Display-only: every value is already in memory, nothing is fetched here.
+func (m Model) mergeConditionLines(pr gh.PR) []string {
+	var lines []string
+	if pr.IsDraft {
+		lines = append(lines, stAttention.Render("◌ draft"))
+	}
+	if text, style := mergeState(pr); text != "" {
+		lines = append(lines, style.Render(text))
+	}
+	ciText, ciStyle := prCheckState(pr)
+	ci := ciStyle.Render(ciText)
+	if pending, failed, _ := prfilter.CheckCounts(pr.Checks); failed > 0 && pending > 0 {
+		// CheckHealth surfaces only the failures; keep the still-running
+		// count visible so a red rollup is not mistaken for a finished one.
+		ci += stMuted.Render(fmt.Sprintf(" · %d pending", pending))
+	}
+	lines = append(lines, ci)
+	if pr.ReviewDecision != "" {
+		lines = append(lines, reviewSummary(pr.ReviewDecision))
+	}
+	// Behind/conflict scans are computed for the detail target only, so show
+	// them just when the popup is about that same PR.
+	if m.screen == detailScreen && m.cache.PR != nil && m.cache.PR.Number == pr.Number {
+		readiness := m.detailView.mergeReadiness
+		if n := len(readiness.ConflictFiles); n > 0 {
+			lines = append(lines, stRedF.Render(fmt.Sprintf("⚠ %d conflict file%s", n, plural(n))))
+		}
+		switch {
+		case readiness.Behind > 0:
+			lines = append(lines, stAttention.Render(fmt.Sprintf("⚠ %d commit%s behind base", readiness.Behind, plural(readiness.Behind))))
+		case m.detailView.mergeReadinessErr == nil && len(readiness.ConflictFiles) == 0:
+			lines = append(lines, stGreenF.Render("✓ up to date with base"))
+		}
+	}
+	return lines
+}
+
 func (m Model) renderActionPopup() string {
 	action := m.prActionRunning
 	if action == noPRAction {
@@ -102,6 +144,12 @@ func (m Model) renderActionPopup() string {
 		message = "Close without merging?"
 	}
 	lines := []string{stBold.Render(fmt.Sprintf("%s PR #%d", label, m.prActionNumber)), ""}
+	if action == mergePR {
+		if conditions := m.mergeConditionLines(m.prActionPR); len(conditions) > 0 {
+			lines = append(lines, conditions...)
+			lines = append(lines, "")
+		}
+	}
 	if len(options) > 0 && m.prActionRunning == noPRAction {
 		lines = append(lines, options...)
 		lines = append(lines, "")
