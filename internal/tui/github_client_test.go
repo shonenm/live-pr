@@ -17,7 +17,7 @@ type fakeGH struct {
 	findForHead        func(head string) (gh.PR, error)
 	findPreview        func(number int) (gh.PR, error)
 	findChecks         func(number int) (gh.PR, error)
-	loadPRDetail       func(number int) gh.PRDetail
+	loadPRDetail       func(number int, prev gh.PRDetail) gh.PRDetail
 	merge              func(number int, headOID string, method gh.MergeMethod) error
 	checkout           func(number int) error
 	close              func(number int) error
@@ -57,9 +57,9 @@ func (f *fakeGH) FindChecks(number int) (gh.PR, error) {
 	return gh.PR{}, nil
 }
 
-func (f *fakeGH) LoadPRDetail(number int) gh.PRDetail {
+func (f *fakeGH) LoadPRDetail(number int, prev gh.PRDetail) gh.PRDetail {
 	if f.loadPRDetail != nil {
-		return f.loadPRDetail(number)
+		return f.loadPRDetail(number, prev)
 	}
 	return gh.PRDetail{}
 }
@@ -317,6 +317,23 @@ func TestCIPollTickDispatchesPollForCurrentPR(t *testing.T) {
 	}
 }
 
+func TestFetchGitHubPassesCachedDetail(t *testing.T) {
+	var got gh.PRDetail
+	client := &fakeGH{loadPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
+		got = prev
+		return gh.PRDetail{}
+	}}
+	m := testModel()
+	m.client = client
+	pr := gh.PR{Number: 15}
+	m.cache.PR = &pr
+	m.cache.Comments = []gh.Comment{{ID: 7, UpdatedAt: "2026-08-01T10:00:00Z"}}
+	fetchGitHub(m.client, "feature", 15, 3, m.cachedDetail())()
+	if got.PR.Number != 15 || len(got.Comments) != 1 || got.Comments[0].ID != 7 {
+		t.Fatalf("cached detail did not reach LoadPRDetail: %#v", got)
+	}
+}
+
 func TestFetchRemotePRPropagatesClientError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a POSIX fake executable")
@@ -329,12 +346,12 @@ func TestFetchRemotePRPropagatesClientError(t *testing.T) {
 	t.Setenv("PATH", dir)
 	boom := errors.New("preview unavailable")
 	var gotNumber int
-	client := &fakeGH{loadPRDetail: func(number int) gh.PRDetail {
+	client := &fakeGH{loadPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
 		gotNumber = number
 		return gh.PRDetail{PreviewErr: boom}
 	}}
 	pr := gh.PR{Number: 15, BaseRefName: "main", HeadRefOID: "head"}
-	msg := fetchRemotePR(client, pr, 9)().(remoteLoaded)
+	msg := fetchRemotePR(client, pr, 9, gh.PRDetail{})().(remoteLoaded)
 	if gotNumber != 15 {
 		t.Fatalf("LoadPRDetail(%d); want 15", gotNumber)
 	}
