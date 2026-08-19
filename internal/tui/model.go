@@ -1568,12 +1568,20 @@ func (m Model) selectedBrowseURL() string {
 		}
 		return ""
 	}
-	// The commits, conflicts, and checks tabs have nothing per-row to link
-	// to, so they fall back to the pull request itself — as does a
-	// conversation row without its own URL.
+	// The commits and conflicts tabs have nothing per-row to link to, so
+	// they fall back to the pull request itself — as does a conversation
+	// row without its own URL, or a check without a log page.
 	prURL := ""
 	if m.cache.PR != nil {
 		prURL = m.cache.PR.URL
+	}
+	if m.active == checksTab {
+		if i := m.cursors[checksTab]; m.cache.PR != nil && i >= 0 && i < len(m.cache.PR.Checks) {
+			if url := m.cache.PR.Checks[i].URL(); url != "" {
+				return url
+			}
+		}
+		return prURL
 	}
 	if m.active != conversationTab {
 		return prURL

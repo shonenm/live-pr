@@ -4000,7 +4000,8 @@ func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 	m.cache.PR = &pr
 	m.conversationDirty = true
 
-	// c, f, i have no per-row link, so they offer the pull request itself.
+	// c, f, i have no per-row link here (no checks are loaded), so they
+	// offer the pull request itself.
 	for _, tab := range []tab{commitsTab, conflictsTab, checksTab} {
 		m.active = tab
 		if got := m.selectedBrowseURL(); got != "https://example/pr/7" {
@@ -4039,6 +4040,32 @@ func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 	local.screen, local.active = detailScreen, checksTab
 	if got := local.selectedBrowseURL(); got != "" {
 		t.Fatalf("local-only detail URL = %q", got)
+	}
+}
+
+func TestChecksTabBrowseURLOpensSelectedCheck(t *testing.T) {
+	m := testModel()
+	m.screen, m.active = detailScreen, checksTab
+	m.cache.PR = &gh.PR{Number: 7, URL: "https://example/pr/7", Checks: []gh.PRCheck{
+		{Name: "test", Conclusion: "FAILURE", DetailsURL: "https://example/runs/1"},
+		{Context: "ci/legacy", State: "FAILURE", TargetURL: "https://example/status/2"},
+		{Name: "pending", Status: "QUEUED"},
+	}}
+
+	// The selected row opens its own log page: detailsUrl for a check run,
+	// targetUrl for a legacy status context.
+	m.cursors[checksTab] = 0
+	if got := m.selectedBrowseURL(); got != "https://example/runs/1" {
+		t.Fatalf("check run URL = %q", got)
+	}
+	m.cursors[checksTab] = 1
+	if got := m.selectedBrowseURL(); got != "https://example/status/2" {
+		t.Fatalf("status context URL = %q", got)
+	}
+	// A check without a log page falls back to the pull request itself.
+	m.cursors[checksTab] = 2
+	if got := m.selectedBrowseURL(); got != "https://example/pr/7" {
+		t.Fatalf("URL-less check fell back to %q", got)
 	}
 }
 

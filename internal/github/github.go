@@ -81,6 +81,17 @@ type PRCheck struct {
 	WorkflowName string `json:"workflowName,omitempty"`
 	StartedAt    string `json:"startedAt,omitempty"`
 	CompletedAt  string `json:"completedAt,omitempty"`
+	DetailsURL   string `json:"detailsUrl,omitempty"`
+	TargetURL    string `json:"targetUrl,omitempty"`
+}
+
+// URL is the check's log page: a check run's detailsUrl, or a legacy status
+// context's targetUrl.
+func (c PRCheck) URL() string {
+	if c.DetailsURL != "" {
+		return c.DetailsURL
+	}
+	return c.TargetURL
 }
 
 // PRUser is a GitHub account attached to PR metadata.
