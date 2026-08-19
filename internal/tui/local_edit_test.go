@@ -187,3 +187,41 @@ func TestEditorAdvertisesTheKeyThatActuallySaves(t *testing.T) {
 		t.Fatalf("ctrl+s did not send: overlay=%#v cmd=%v", got.overlay, cmd)
 	}
 }
+
+func TestParseLocalCommentValidatesInput(t *testing.T) {
+	cases := []struct {
+		name         string
+		value        string
+		allowSummary bool
+		wantKind     event.Kind
+		wantTitle    string
+		wantBody     string
+		wantErr      string
+	}{
+		{name: "note with body", value: "kind: note\n\nTitle line\n\nBody first\nBody second", wantKind: event.Note, wantTitle: "Title line", wantBody: "Body first\nBody second"},
+		{name: "decision without body", value: "kind: decision\nTitle only", wantKind: event.Decision, wantTitle: "Title only"},
+		{name: "missing kind prefix", value: "Just a title", wantErr: "first line must be kind: decision, pivot, or note"},
+		{name: "empty input", value: "   \n", wantErr: "first line must be kind: decision, pivot, or note"},
+		{name: "invalid kind", value: "kind: banana\n\nTitle", wantErr: "kind must be decision, pivot, or note"},
+		{name: "summary rejected without gate", value: "kind: summary\n\nWeekly recap", wantErr: "kind must be decision, pivot, or note"},
+		{name: "summary allowed with gate", value: "kind: summary\n\nWeekly recap\n\nWhat happened.", allowSummary: true, wantKind: event.Summary, wantTitle: "Weekly recap", wantBody: "What happened."},
+		{name: "empty title", value: "kind: note\n\n\n", wantErr: "comment title must not be empty"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			kind, title, body, err := parseLocalComment(tc.value, tc.allowSummary)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("parseLocalComment error = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseLocalComment returned error: %v", err)
+			}
+			if kind != tc.wantKind || title != tc.wantTitle || body != tc.wantBody {
+				t.Fatalf("parseLocalComment = (%q, %q, %q), want (%q, %q, %q)", kind, title, body, tc.wantKind, tc.wantTitle, tc.wantBody)
+			}
+		})
+	}
+}
