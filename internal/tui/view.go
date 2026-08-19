@@ -34,9 +34,9 @@ func (m Model) View() string {
 	}
 	var view string
 	if m.screen == prListScreen {
-		listTitle := fmt.Sprintf("%s · %d", m.viewName(m.prView), len(m.filteredPRs))
+		listTitle := fmt.Sprintf("%s · %d", m.viewName(m.prList.view), len(m.prList.filtered))
 		previewTitle := "Preview"
-		if pr := m.selectedPR(); pr != nil {
+		if pr := m.prList.selectedPR(); pr != nil {
 			if pr.Number > 0 {
 				previewTitle = fmt.Sprintf("Preview · #%d", pr.Number)
 			} else {

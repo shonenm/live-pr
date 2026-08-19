@@ -30,7 +30,7 @@ func testModel() Model {
 		client:      &fakeGH{},
 		views:       config.DefaultViews(),
 		title:       "CodeDiff review mode",
-		prView:      allPRsView,
+		prList:      prListModel{view: allPRsView},
 		diffCommand: "",
 		base:        "main",
 		diffBase:    "main",

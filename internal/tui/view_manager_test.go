@@ -72,8 +72,8 @@ func TestViewManagerEditsReorderAndSave(t *testing.T) {
 	}
 
 	// The manager opens on the current tab; move to the top first.
-	if vm(m).cursor != int(m.prView) {
-		t.Fatalf("manager opened on view %d, want %d", vm(m).cursor, m.prView)
+	if vm(m).cursor != int(m.prList.view) {
+		t.Fatalf("manager opened on view %d, want %d", vm(m).cursor, m.prList.view)
 	}
 	m = edit(m, func(o *viewManagerOverlay) { o.cursor = 0 })
 
@@ -129,13 +129,13 @@ func TestViewManagerEditsReorderAndSave(t *testing.T) {
 	// Ctrl+S persists and applies. The tab that was selected before the edit
 	// ("Review requested", index 1 of the defaults) keeps its selection even
 	// though reordering moved it to the front.
-	m.prView = 1
+	m.prList.view = 1
 	saved := press(m, "ctrl+s")
 	if saved.overlay != nil || saved.views[0].Name != "Review requested" || saved.views[1].Name != "Mine" {
 		t.Fatalf("save did not apply: %v", saved.views)
 	}
-	if saved.viewName(saved.prView) != "Review requested" || saved.prView != 0 {
-		t.Fatalf("selection did not follow the renamed order: %q (%d)", saved.viewName(saved.prView), saved.prView)
+	if saved.viewName(saved.prList.view) != "Review requested" || saved.prList.view != 0 {
+		t.Fatalf("selection did not follow the renamed order: %q (%d)", saved.viewName(saved.prList.view), saved.prList.view)
 	}
 	reloaded, err := config.Load(saved.root)
 	if err != nil {

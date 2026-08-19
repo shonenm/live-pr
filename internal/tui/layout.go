@@ -44,7 +44,7 @@ func (m *Model) layout() {
 			m.ready = true
 		} else {
 			if m.list.Width != listW {
-				clear(m.prRowCache)
+				clear(m.prList.rowCache)
 			}
 			m.list.Width, m.list.Height = listW, bodyH
 			m.detail.Width, m.detail.Height = detailW, bodyH

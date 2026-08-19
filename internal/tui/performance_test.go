@@ -49,7 +49,7 @@ func benchmarkPRModel(size int) Model {
 	for i := range m.navigator.PRs {
 		m.navigator.PRs[i] = gh.PR{Number: i + 1, State: "OPEN", Title: fmt.Sprintf("PR %d", i), Assignees: []gh.PRUser{{Login: "viewer"}}}
 	}
-	m.prView = assignedView
+	m.prList.view = assignedView
 	m.applyPRFilters(0)
 	return m
 }
@@ -93,9 +93,9 @@ func BenchmarkApplyPRPage(b *testing.B) {
 	for _, size := range []int{25, 250, 2500} {
 		b.Run(fmt.Sprintf("rows=%d", size), func(b *testing.B) {
 			m := benchmarkPRModel(size)
-			m.prView, m.prListState = allPRsView, openPRListState
-			m.activePRPage = prPageKey(m.prView, m.prListState, "")
-			m.prPages = map[string]prPageState{m.activePRPage: {prs: m.navigator.PRs, total: size, loaded: true, fresh: true}}
+			m.prList.view, m.prList.state = allPRsView, openPRListState
+			m.prList.activePage = prPageKey(m.prList.view, m.prList.state, "")
+			m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: m.navigator.PRs, total: size, loaded: true, fresh: true}}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
@@ -121,7 +121,7 @@ func BenchmarkPRListRows(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				clear(m.prRowCache)
+				clear(m.prList.rowCache)
 				_, _ = m.buildPRListRows()
 			}
 		})
