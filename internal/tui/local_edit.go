@@ -110,6 +110,9 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.openLocalEditor(localEditOverlay{mode: editRemoteComment, remoteCommentID: item.comment.ID}, item.comment.Body)
+	case itemOutbox:
+		m.status = "queued comments cannot be edited; discard with d and rewrite"
+		return m, nil
 	case itemReview, itemReviewComment:
 		m.status = "review comments cannot be edited here; use GitHub"
 		return m, nil
@@ -161,6 +164,10 @@ func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
 		// ansi.Truncate counts display cells, so multibyte text is never cut
 		// mid-rune.
 		m.overlay = remoteDeleteOverlay{id: item.comment.ID, title: ansi.Truncate(item.comment.Body, 60, "…")}
+		m.status = ""
+		return m, nil
+	case itemOutbox:
+		m.overlay = outboxDiscardOverlay{id: item.outbox.ID, title: ansi.Truncate(item.outbox.Body, 60, "…")}
 		m.status = ""
 		return m, nil
 	case itemReview, itemReviewComment:
