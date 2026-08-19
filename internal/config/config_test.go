@@ -225,3 +225,24 @@ func TestNormalizeViewsDropsUnusableEntries(t *testing.T) {
 		t.Fatal("an empty view set must fall back to the defaults")
 	}
 }
+
+func TestLoadListSplitRatio(t *testing.T) {
+	global := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", global)
+	if got := loadConfig(t, repo).List.SplitRatio; got != 45 {
+		t.Fatalf("default list split = %d, want 45", got)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[list]\nsplit_ratio = 50\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).List.SplitRatio; got != 50 {
+		t.Fatalf("list split = %d, want 50", got)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[list]\nsplit_ratio = 250\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).List.SplitRatio; got != 45 {
+		t.Fatalf("out-of-range list split = %d, want the 45 default", got)
+	}
+}
