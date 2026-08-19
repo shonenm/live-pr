@@ -317,6 +317,7 @@ type Model struct {
 	diffCommitCommand string
 	diffSplitRatio    int
 	diffMinPaneWidth  int
+	listSplitRatio    int
 	diffTerminal      *embeddedterm.Terminal
 
 	list     viewport.Model
@@ -436,6 +437,7 @@ func New(version ...string) (Model, error) {
 		diffCommitCommand: cfg.CommitReviewCommand(),
 		diffSplitRatio:    cfg.Diff.SplitRatio,
 		diffMinPaneWidth:  cfg.Diff.MinPaneWidth,
+		listSplitRatio:    cfg.List.SplitRatio,
 		avatarColors:      map[string]string{},
 		help:              newHelp(),
 		keys:              keys,
