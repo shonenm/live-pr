@@ -352,7 +352,7 @@ func New(version ...string) (Model, error) {
 		status = "PR list cache ignored: " + navErr.Error()
 	}
 	st := store.ForBranch(root, branch)
-	cache, cacheErr := gh.LoadCache(st.GitHubCache(), branch)
+	cache, cacheErr := st.LoadGitHubCache()
 	if cacheErr != nil {
 		cache = gh.NewCache(branch)
 		status = "GitHub cache ignored: " + cacheErr.Error()
