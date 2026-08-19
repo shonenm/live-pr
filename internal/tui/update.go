@@ -27,6 +27,7 @@ func asyncCompletion(msg tea.Msg) bool {
 		githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		prStatusDone, prActionDone, ciPolled, ciPollTick, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
+		localLoaded, checkoutReloaded, rawDetailLoaded, baseResolved,
 		browserDone, tea.WindowSizeMsg, bspinner.TickMsg:
 		return true
 	}
