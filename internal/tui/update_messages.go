@@ -170,6 +170,9 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 }
 
 func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
+	// Clear the in-flight ticket even for stale results: an orphaned entry
+	// kept the spinner alive and blocked ensureSelectedPRPreview forever.
+	delete(m.prPreviewLoading, msg.number)
 	if msg.generation != m.prListGeneration {
 		return m, nil
 	}
@@ -180,7 +183,6 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	if m.prPreviewLoaded == nil {
 		m.prPreviewLoaded = map[int]bool{}
 	}
-	delete(m.prPreviewLoading, msg.number)
 	m.prPreviewLoaded[msg.number] = true
 	if msg.err != nil {
 		m.status = fmt.Sprintf("PR #%d preview: %v", msg.number, msg.err)
@@ -277,35 +279,40 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 	}
 	m.status = fmt.Sprintf("Checked out PR #%d · reloading…", msg.number)
 	m.refreshing = true
-	return m, tea.Batch(rebuildAfterCheckout(m.version, msg), m.startSpinner())
+	return m, tea.Batch(rebuildAfterCheckout(m.version, m.targetGeneration, msg), m.startSpinner())
 
 }
 
 // rebuildAfterCheckout reconstructs the Model in a Cmd: New plus the local
 // hydration spawn a dozen git subprocesses, which froze the UI when run
 // inside the handler.
-func rebuildAfterCheckout(version string, msg prActionDone) tea.Cmd {
+func rebuildAfterCheckout(version string, generation uint64, msg prActionDone) tea.Cmd {
 	return func() tea.Msg {
 		next, err := New(version)
 		if err != nil {
-			return checkoutReloaded{number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
+			return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
 		}
 		if msg.pr.Number > 0 {
 			cache := gh.NewCache(next.currentBranch)
 			pr := msg.pr
 			cache.PR, cache.ExplicitCheckout = &pr, true
 			if err := next.loadLocal(store.ForBranch(next.root, next.currentBranch), cache, &pr); err != nil {
-				return checkoutReloaded{number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
+				return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
 			}
 			if err := gh.SaveCache(next.cachePath, next.cache); err != nil {
-				return checkoutReloaded{number: msg.number, err: fmt.Errorf("checkout cache: %w", err)}
+				return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout cache: %w", err)}
 			}
 		}
-		return checkoutReloaded{number: msg.number, next: &next}
+		return checkoutReloaded{generation: generation, number: msg.number, next: &next}
 	}
 }
 
 func (m Model) handleCheckoutReloaded(msg checkoutReloaded) (Model, tea.Cmd) {
+	// A stale reload must not replace the Model: the user may have navigated
+	// elsewhere while the rebuild's git subprocesses were running.
+	if msg.generation != m.targetGeneration {
+		return m, nil
+	}
 	m.refreshing = false
 	if msg.err != nil {
 		// The old model stays live, terminal included: closing before a

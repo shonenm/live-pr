@@ -257,9 +257,10 @@ func saveNavigatorCacheCmd(path string, navigator gh.NavigatorCache) tea.Cmd {
 }
 
 type checkoutReloaded struct {
-	number int
-	next   *Model
-	err    error
+	generation uint64
+	number     int
+	next       *Model
+	err        error
 }
 
 type prAction uint8
