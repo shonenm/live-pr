@@ -3,9 +3,11 @@ package summarize
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Summary is a distilled session entry: a headline and supporting detail.
@@ -33,7 +35,8 @@ No preamble and no closing remarks.`
 // Claude summarizes via the `claude -p` headless CLI, piping the transcript on
 // stdin.
 type Claude struct {
-	Model string // optional --model override
+	Model   string        // optional --model override
+	Timeout time.Duration // bounds the CLI call; zero means 60s
 }
 
 func (c Claude) Summarize(transcript string) (Summary, error) {
@@ -41,12 +44,23 @@ func (c Claude) Summarize(transcript string) (Summary, error) {
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
-	cmd := exec.Command("claude", args...)
+	timeout := c.Timeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	// The stop hook must never block the agent, so a stuck CLI (auth prompt,
+	// network wait) has to be killed rather than waited on forever.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(transcript)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			err = fmt.Errorf("timed out after %s: %w", timeout, err)
+		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
 			return Summary{}, fmt.Errorf("claude summarize: %w: %s", err, detail)
