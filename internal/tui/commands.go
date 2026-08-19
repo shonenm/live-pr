@@ -265,10 +265,10 @@ func (m *Model) richContentCmd() tea.Cmd {
 		return nil
 	}
 	key := richContentKey(width, m.cache.PR, m.cache.Comments, m.cache.Activities)
-	if key == m.lastRichContentKey {
+	if key == m.detailView.lastRichContentKey {
 		return nil
 	}
-	m.lastRichContentKey = key
+	m.detailView.lastRichContentKey = key
 	resolved := make(map[string]bool, len(m.avatarColors))
 	for login := range m.avatarColors {
 		resolved[login] = true

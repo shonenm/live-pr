@@ -29,20 +29,22 @@ func testModel() Model {
 	return Model{
 		client:      &fakeGH{},
 		views:       config.DefaultViews(),
-		title:       "CodeDiff review mode",
 		prList:      prListModel{view: allPRsView},
 		diffCommand: "",
-		base:        "main",
-		diffBase:    "main",
-		head:        "feature/x",
-		events: []event.Event{
-			{TS: "2026-07-21T10:00", Kind: event.Decision, Title: "chose Go", Body: "gh-dash stack"},
-			{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: x", SHA: "abc1234"},
+		detailView: detailModel{
+			title:    "CodeDiff review mode",
+			base:     "main",
+			diffBase: "main",
+			head:     "feature/x",
+			events: []event.Event{
+				{TS: "2026-07-21T10:00", Kind: event.Decision, Title: "chose Go", Body: "gh-dash stack"},
+				{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: x", SHA: "abc1234"},
+			},
+			files:             []git.ChangedFile{{Status: "M", Path: "internal/tui/tui.go"}},
+			commits:           []git.Commit{{SHA: "abc1234", Subject: "feat: x", Date: "2026-07-21T11:00"}},
+			conversationDirty: true,
 		},
-		files:             []git.ChangedFile{{Status: "M", Path: "internal/tui/tui.go"}},
-		commits:           []git.Commit{{SHA: "abc1234", Subject: "feat: x", Date: "2026-07-21T11:00"}},
-		conversationDirty: true,
-		help:              newHelp(),
-		keys:              keys,
+		help: newHelp(),
+		keys: keys,
 	}
 }

@@ -2,7 +2,6 @@
 package tui
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -259,74 +258,52 @@ type githubClient interface {
 
 // Model holds the living-PR view state.
 type Model struct {
-	client                  githubClient
-	screen                  screen
-	title                   string
-	root                    string
-	repository              string
-	currentBranch           string
-	defaultBranch           string
-	base, head              string
-	diffBase, headRev       string
-	reviewRange             string
-	summary                 string
-	events                  []event.Event
-	conversationCache       []conversationItem
-	conversationDirty       bool
-	conversationRender      string
-	conversationRenderLine  int
-	conversationRenderKey   convRenderKey
-	conversationRenderValid bool
-	richBodies              map[string]string
-	avatarColors            map[string]string
-	files                   []git.ChangedFile
-	commits                 []git.Commit
-	active                  tab
-	cursors                 [tabCount]int
-	reviewSHA               string
-	status                  string
-	notice                  string
-	githubStatus            string
-	loadSpinner             bspinner.Model
-	spinnerRunning          bool
-	timelinePath            string
-	cachePath               string
-	cache                   gh.Cache
-	navigator               gh.NavigatorCache
-	navigatorPath           string
-	viewerLogin             string
-	prList                  prListModel
-	listAnchor              listAnchor
-	detailOrigin            prView
-	detailOriginSet         bool
-	views                   []config.View
-	convItemCache           map[string][]string
-	lastRichContentKey      [sha256.Size]byte
-	localAvailable          bool
-	localTitle              string
-	localStats              git.ChangeStats
-	localCommitCount        int
-	workingTreeDirty        bool
-	mergeReadiness          git.MergeReadiness
-	mergeReadinessErr       error
-	autoOpenCurrent         bool
-	refreshing              bool
-	ciPollFailures          int
-	publishing              bool
-	overlay                 overlay // open modal popup; nil when none
-	localEditor             textarea.Model
-	remoteCommentBusy       bool
-	reviewDraft             gh.ReviewDraft
-	reviewDraftPath         string
-	reviewSubmitting        bool
-	pendingPRAction         prAction
-	prActionRunning         prAction
-	prActionNumber          int
-	mergeMethodCursor       int
-	pendingG                bool
-	prActionPR              gh.PR
-	remote                  bool
-	targetGeneration        uint64
+	client            githubClient
+	screen            screen
+	root              string
+	repository        string
+	currentBranch     string
+	defaultBranch     string
+	avatarColors      map[string]string
+	status            string
+	notice            string
+	githubStatus      string
+	loadSpinner       bspinner.Model
+	spinnerRunning    bool
+	timelinePath      string
+	cachePath         string
+	cache             gh.Cache
+	navigator         gh.NavigatorCache
+	navigatorPath     string
+	viewerLogin       string
+	prList            prListModel
+	detailView        detailModel
+	detailOrigin      prView
+	detailOriginSet   bool
+	views             []config.View
+	localAvailable    bool
+	localTitle        string
+	localStats        git.ChangeStats
+	localCommitCount  int
+	workingTreeDirty  bool
+	autoOpenCurrent   bool
+	refreshing        bool
+	ciPollFailures    int
+	publishing        bool
+	overlay           overlay // open modal popup; nil when none
+	localEditor       textarea.Model
+	remoteCommentBusy bool
+	reviewDraft       gh.ReviewDraft
+	reviewDraftPath   string
+	reviewSubmitting  bool
+	pendingPRAction   prAction
+	prActionRunning   prAction
+	prActionNumber    int
+	mergeMethodCursor int
+	pendingG          bool
+	prActionPR        gh.PR
+	remote            bool
+	targetGeneration  uint64
 
 	diffDisplay       string
 	diffCommand       string
@@ -334,18 +311,6 @@ type Model struct {
 	diffSplitRatio    int
 	diffMinPaneWidth  int
 	diffTerminal      *embeddedterm.Terminal
-	focusDiff         bool
-	focusExplorer     bool
-	reviewWide        bool
-	fileCursor        int
-	detailKey         string
-	detailShownKey    string
-	rawDetailCache    map[string]string
-	rawPending        map[string]bool
-	diffCache         map[string]string
-	diffPending       map[string]bool
-	checkedFiles      map[string]string
-	reviewedMarksPath string
 
 	list     viewport.Model
 	explorer viewport.Model
@@ -418,27 +383,33 @@ func New(version ...string) (Model, error) {
 	}
 
 	m := Model{
-		client:            gh.New(),
-		screen:            prListScreen,
-		version:           first(version),
-		root:              root,
-		repository:        navigator.Repository,
-		currentBranch:     branch,
-		defaultBranch:     defaultBranch,
-		base:              base,
-		head:              branch,
-		headRev:           "HEAD",
-		status:            status,
-		loadSpinner:       newLoadSpinner(),
-		spinnerRunning:    true,
-		navigator:         navigator,
-		navigatorPath:     navigatorPath,
-		viewerLogin:       navigator.ViewerLogin,
-		views:             views,
-		localAvailable:    localEligible && currentPR == nil,
-		localTitle:        branch,
-		autoOpenCurrent:   localEligible,
-		conversationDirty: true,
+		client:          gh.New(),
+		screen:          prListScreen,
+		version:         first(version),
+		root:            root,
+		repository:      navigator.Repository,
+		currentBranch:   branch,
+		defaultBranch:   defaultBranch,
+		status:          status,
+		loadSpinner:     newLoadSpinner(),
+		spinnerRunning:  true,
+		navigator:       navigator,
+		navigatorPath:   navigatorPath,
+		viewerLogin:     navigator.ViewerLogin,
+		views:           views,
+		localAvailable:  localEligible && currentPR == nil,
+		localTitle:      branch,
+		autoOpenCurrent: localEligible,
+		detailView: detailModel{
+			base:              base,
+			head:              branch,
+			headRev:           "HEAD",
+			conversationDirty: true,
+			rawCache:          map[string]string{},
+			diffCache:         map[string]string{},
+			richBodies:        map[string]string{},
+			diffPending:       map[string]bool{},
+		},
 		prList: prListModel{
 			open:            navigator.PRs,
 			view:            initialView,
@@ -456,11 +427,7 @@ func New(version ...string) (Model, error) {
 		diffCommitCommand: cfg.CommitReviewCommand(),
 		diffSplitRatio:    cfg.Diff.SplitRatio,
 		diffMinPaneWidth:  cfg.Diff.MinPaneWidth,
-		rawDetailCache:    map[string]string{},
-		diffCache:         map[string]string{},
-		richBodies:        map[string]string{},
 		avatarColors:      map[string]string{},
-		diffPending:       map[string]bool{},
 		help:              newHelp(),
 		keys:              keys,
 	}
@@ -569,7 +536,7 @@ func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (
 }
 
 func (m *Model) applyLocal(st *store.Store, data localData) {
-	m.resetDetailCaches()
+	m.detailView.resetCaches()
 	if data.incomplete {
 		m.status = "local git data is incomplete"
 	}
@@ -583,27 +550,27 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	}
 	m.screen = detailScreen
 	m.remote = false
-	m.summary = data.conclusion
-	m.title = prbody.Title(m.summary, st.Branch)
+	m.detailView.summary = data.conclusion
+	m.detailView.title = prbody.Title(m.detailView.summary, st.Branch)
 	if cache.PR != nil && strings.TrimSpace(cache.PR.Title) != "" {
-		m.title = cache.PR.Title
+		m.detailView.title = cache.PR.Title
 	}
-	m.localAvailable, m.localTitle = cache.PR == nil, m.title
+	m.localAvailable, m.localTitle = cache.PR == nil, m.detailView.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = data.stats, len(data.commits), data.dirty
-	m.mergeReadiness, m.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
-	m.base, m.diffBase, m.head, m.headRev, m.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange
-	m.events, m.files, m.commits = data.events, data.files, data.commits
+	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
+	m.detailView.base, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, m.detailView.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange
+	m.detailView.events, m.detailView.files, m.detailView.commits = data.events, data.files, data.commits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
 	m.loadReviewedMarks(m.currentPRNumber(), st.Branch)
 	m.refreshReviewDraft()
-	m.invalidateConversation()
+	m.detailView.invalidateConversation()
 	m.githubStatus = "Local only · checking for PR…"
 	if cache.PR != nil {
 		m.githubStatus = "GitHub: cached · refreshing…"
 	}
 	m.refreshing, m.publishing = true, false
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.reviewedMarksPath))
-	m.focusDiff, m.focusExplorer, m.fileCursor, m.active, m.reviewSHA = false, false, 0, conversationTab, ""
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.detailView.reviewedMarksPath))
+	m.detailView.focusDiff, m.detailView.focusExplorer, m.detailView.fileCursor, m.detailView.active, m.detailView.reviewSHA = false, false, 0, conversationTab, ""
 	m.layout()
 }
 
@@ -654,7 +621,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, fetchCurrentBranchPR(m.client, m.currentBranch))
 	}
 	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
-		cmds = append(cmds, fetchGitHub(m.client, m.head, m.currentPRNumber(), m.targetGeneration))
+		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration))
 	}
 	if m.screen == detailScreen {
 		cmds = append(cmds, m.richContentCmd())
@@ -666,7 +633,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.prList.refreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prList.previewLoading) > 0 || len(m.diffPending) > 0
+	return m.refreshing || m.prList.refreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prList.previewLoading) > 0 || len(m.detailView.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {
@@ -692,34 +659,34 @@ func (m *Model) close() {
 func (m *Model) advanceAsyncGenerations(previous Model) {
 	m.targetGeneration = previous.targetGeneration + 1
 	m.prList.generation = previous.prList.generation + 1
-	m.resetDetailCaches()
+	m.detailView.resetCaches()
 }
 
-func (m *Model) invalidateConversation() {
-	m.conversationDirty = true
+func (d *detailModel) invalidateConversation() {
+	d.conversationDirty = true
 	// The render caches must drop too: conversationItems() consumes the dirty
 	// flag, and callers like restoreConversationSelection do that before
 	// buildConversation runs — the stale render would otherwise survive a
 	// refresh whenever cursor, width, and item count all stayed the same.
-	m.conversationRenderValid = false
-	m.convItemCache = map[string][]string{}
+	d.conversationRenderValid = false
+	d.convItemCache = map[string][]string{}
 }
 
 func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.targetGeneration++
-	m.resetDetailCaches()
+	m.detailView.resetCaches()
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
 	m.screen, m.remote = detailScreen, true
-	m.title = pr.Title
-	m.base = git.ResolveBase(pr.BaseRefName)
-	m.diffBase = remoteReviewBase(pr)
-	m.head = pr.HeadRefName
-	m.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
-	m.reviewRange = m.diffBase + "..." + m.headRev
-	m.events, m.commits, m.files = nil, nil, nil
-	m.mergeReadiness, m.mergeReadinessErr = git.MergeReadiness{}, nil
+	m.detailView.title = pr.Title
+	m.detailView.base = git.ResolveBase(pr.BaseRefName)
+	m.detailView.diffBase = remoteReviewBase(pr)
+	m.detailView.head = pr.HeadRefName
+	m.detailView.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
+	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
+	m.detailView.events, m.detailView.commits, m.detailView.files = nil, nil, nil
+	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = git.MergeReadiness{}, nil
 	m.timelinePath, m.cachePath = "", ""
 	m.cache = gh.NewCache(pr.HeadRefName)
 	m.cache.PR = &pr
@@ -730,8 +697,8 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 		m.cache.Activities = snapshot.Activities
 		m.cache.FetchedAt = snapshot.FetchedAt
 	}
-	m.invalidateConversation()
-	m.reviewSHA, m.active, m.focusDiff, m.focusExplorer, m.fileCursor = "", conversationTab, false, false, 0
+	m.detailView.invalidateConversation()
+	m.detailView.reviewSHA, m.detailView.active, m.detailView.focusDiff, m.detailView.focusExplorer, m.detailView.fileCursor = "", conversationTab, false, false, 0
 	m.diffTerminal = nil
 	m.refreshing, m.publishing = true, false
 	m.status = "loading PR refs…"
@@ -762,8 +729,8 @@ func (m *Model) navigationLength() int {
 	if m.screen == prListScreen {
 		return len(m.prList.open)
 	}
-	if m.focusExplorer {
-		return len(m.files)
+	if m.detailView.focusExplorer {
+		return len(m.detailView.files)
 	}
 	return m.activeLen()
 }
@@ -799,10 +766,10 @@ func (m *Model) moveCursorTo(index int) tea.Cmd {
 			return tea.Batch(cmd, m.requestPRPage(false))
 		}
 		return cmd
-	} else if m.focusExplorer {
-		m.fileCursor = index
+	} else if m.detailView.focusExplorer {
+		m.detailView.fileCursor = index
 	} else {
-		m.cursors[m.active] = index
+		m.detailView.cursors[m.detailView.active] = index
 	}
 	return m.sync()
 }
@@ -811,10 +778,10 @@ func (m Model) navigationCursor() int {
 	if m.screen == prListScreen {
 		return m.prList.cursor
 	}
-	if m.focusExplorer {
-		return m.fileCursor
+	if m.detailView.focusExplorer {
+		return m.detailView.fileCursor
 	}
-	return m.cursors[m.active]
+	return m.detailView.cursors[m.detailView.active]
 }
 
 // isDefaultBranch reports whether ref names the repository's default branch.
@@ -860,15 +827,15 @@ func (m Model) selectedBrowseURL() string {
 	if m.cache.PR != nil {
 		prURL = m.cache.PR.URL
 	}
-	if m.active == checksTab {
-		if i := m.cursors[checksTab]; m.cache.PR != nil && i >= 0 && i < len(m.cache.PR.Checks) {
+	if m.detailView.active == checksTab {
+		if i := m.detailView.cursors[checksTab]; m.cache.PR != nil && i >= 0 && i < len(m.cache.PR.Checks) {
 			if url := m.cache.PR.Checks[i].URL(); url != "" {
 				return url
 			}
 		}
 		return prURL
 	}
-	if m.active != conversationTab {
+	if m.detailView.active != conversationTab {
 		return prURL
 	}
 	item := m.selectedConversationItem()
@@ -884,9 +851,9 @@ func (m Model) selectedBrowseURL() string {
 	return prURL
 }
 
-func (m Model) selectedCommitSHA() string {
-	if i := m.cursors[commitsTab]; m.active == commitsTab && i >= 0 && i < len(m.commits) {
-		return m.commits[i].SHA
+func (d detailModel) selectedCommitSHA() string {
+	if i := d.cursors[commitsTab]; d.active == commitsTab && i >= 0 && i < len(d.commits) {
+		return d.commits[i].SHA
 	}
 	return ""
 }
@@ -947,7 +914,7 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 	m.detail.SetContent(m.buildPRPreview())
 	// The preview shares the detail viewport, so the detail screen's
 	// shown-content marker no longer describes what is displayed.
-	m.detailShownKey = ""
+	m.detailView.shownKey = ""
 	// Background arrivals (previews, avatars) re-sync constantly; only a
 	// selection change may reset the preview scroll position.
 	if selected := m.prList.selectedPRNumber(); selected != m.prList.previewedPR {
@@ -961,7 +928,7 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 
 func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 	applyKeyStates(map[*key.Binding]bool{
-		&m.keys.Select:      m.active == commitsTab,
+		&m.keys.Select:      m.detailView.active == commitsTab,
 		&m.keys.PreviewUp:   true,
 		&m.keys.PreviewDown: true,
 		&m.keys.PrevView:    false,
@@ -970,10 +937,10 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.ToggleStack: false,
 		&m.keys.Focus:       true,
 		&m.keys.FocusRight:  true,
-		&m.keys.Commits:     m.fileExplorerMode() || m.active != commitsTab,
-		&m.keys.Conflicts:   m.active != conflictsTab,
-		&m.keys.Checks:      m.cache.PR != nil && m.active != checksTab,
-		&m.keys.Back:        m.active != conversationTab,
+		&m.keys.Commits:     m.fileExplorerMode() || m.detailView.active != commitsTab,
+		&m.keys.Conflicts:   m.detailView.active != conflictsTab,
+		&m.keys.Checks:      m.cache.PR != nil && m.detailView.active != checksTab,
+		&m.keys.Back:        m.detailView.active != conversationTab,
 		&m.keys.PRList:      true,
 		&m.keys.Browse:      m.selectedBrowseURL() != "",
 		&m.keys.CopyURL:     m.selectedBrowseURL() != "",
@@ -989,8 +956,8 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 	// Chase the selection only when it actually moved. Syncing runs on every
 	// background arrival and on every reload, and scrolling back to the
 	// selection there would drag a reader who had scrolled elsewhere.
-	if anchor := (listAnchor{tab: m.active, line: selectedLine, pinned: true}); anchor != m.listAnchor {
-		m.listAnchor = anchor
+	if anchor := (listAnchor{tab: m.detailView.active, line: selectedLine, pinned: true}); anchor != m.detailView.listAnchor {
+		m.detailView.listAnchor = anchor
 		keepLineVisible(&m.list, selectedLine)
 	}
 	if m.fileExplorerMode() {

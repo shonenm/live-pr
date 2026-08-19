@@ -63,10 +63,10 @@ func (m *Model) layout() {
 		minPaneW = max(8, m.w/2)
 	}
 	var leftPaneW, rightPaneW int
-	conversationWide := m.reviewWide && !m.focusDiff && !m.focusExplorer
+	conversationWide := m.detailView.reviewWide && !m.detailView.focusDiff && !m.detailView.focusExplorer
 	if conversationWide {
 		leftPaneW, rightPaneW = m.w, 0
-	} else if m.reviewWide {
+	} else if m.detailView.reviewWide {
 		leftPaneW, rightPaneW = 0, m.w
 	} else {
 		leftPaneW = max(minPaneW, m.w*ratio/100)
@@ -102,7 +102,7 @@ func (m *Model) layout() {
 	} else {
 		m.list.Width = listW
 		m.list.Height = bodyH
-		if m.active == conversationTab {
+		if m.detailView.active == conversationTab {
 			m.list.Height = max(1, bodyH-1)
 		}
 		m.explorer.Width, m.explorer.Height = explorerW, bodyH

@@ -29,7 +29,7 @@ func TestCommentKeysSplitConversationAndInlineReview(t *testing.T) {
 	m := testModel()
 	m.root = t.TempDir()
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "abc123"}
-	m.files = []git.ChangedFile{{Path: "main.go", Status: "M"}}
+	m.detailView.files = []git.ChangedFile{{Path: "main.go", Status: "M"}}
 	m.diffCommand, m.diffTerminal = "", nil
 
 	// a opens a GitHub conversation comment (not the review body, which is now on v).
@@ -115,7 +115,7 @@ func TestEditRemoteCommentOwnershipGate(t *testing.T) {
 	other := gh.Comment{ID: 100, Body: "theirs"}
 	other.User.Login = "you"
 	m.cache.Comments = []gh.Comment{own, other}
-	m.conversationDirty = true
+	m.detailView.conversationDirty = true
 
 	items := m.conversationItems()
 	idxOf := func(id int64) int {
@@ -128,7 +128,7 @@ func TestEditRemoteCommentOwnershipGate(t *testing.T) {
 	}
 
 	// Own comment: e opens the remote editor targeting its id.
-	m.cursors[conversationTab] = idxOf(99)
+	m.detailView.cursors[conversationTab] = idxOf(99)
 	edited, _ := m.editSelectedLocalItem()
 	o, ok := edited.overlay.(localEditOverlay)
 	if !ok || o.mode != editRemoteComment || o.remoteCommentID != 99 || edited.localEditor.Value() != "mine" {
@@ -136,7 +136,7 @@ func TestEditRemoteCommentOwnershipGate(t *testing.T) {
 	}
 
 	// Someone else's comment: rejected.
-	m.cursors[conversationTab] = idxOf(100)
+	m.detailView.cursors[conversationTab] = idxOf(100)
 	rejected, _ := m.editSelectedLocalItem()
 	if o, ok := rejected.overlay.(localEditOverlay); ok && o.mode == editRemoteComment {
 		t.Fatal("edited someone else's comment")
@@ -193,7 +193,7 @@ func TestRemoteCommentDoneRefetchesViaRemotePath(t *testing.T) {
 func TestCommentKeysOutsideConversationTabExplainInsteadOfSilence(t *testing.T) {
 	m := testModel()
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "abc123"}
-	m.active = commitsTab
+	m.detailView.active = commitsTab
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	m = u.(Model)
