@@ -70,6 +70,10 @@ func run(label string, timeout time.Duration, transcript, name string, args ...s
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	// The deadline kills only the direct child; a grandchild (sh -c spawning
+	// the real tool) can keep the stdout pipe open and stall Wait forever.
+	// WaitDelay caps that wait after the kill.
+	cmd.WaitDelay = time.Second
 	cmd.Stdin = strings.NewReader(transcript)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
