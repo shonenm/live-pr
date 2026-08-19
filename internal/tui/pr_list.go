@@ -1149,6 +1149,22 @@ func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) 
 			rowSegment{login: pr.Author.Login},
 			rowSegment{text: " @" + pr.Author.Login, style: stMuted})
 	}
+	// Label pills close the meta line; cap at three so heavily-labelled PRs
+	// don't dominate the row, with the overflow collapsed into "+N".
+	const maxRowLabelPills = 3
+	if pr.Number > 0 && len(pr.Labels) > 0 {
+		meta = append(meta, rowSegment{text: " · ", style: stMuted})
+		shown := min(len(pr.Labels), maxRowLabelPills)
+		for i, label := range pr.Labels[:shown] {
+			if i > 0 {
+				meta = append(meta, rowSegment{text: " ", style: stMuted})
+			}
+			meta = append(meta, rowSegment{text: labelPill(label)})
+		}
+		if rest := len(pr.Labels) - shown; rest > 0 {
+			meta = append(meta, rowSegment{text: fmt.Sprintf(" +%d", rest), style: stMuted})
+		}
+	}
 	return line, meta
 }
 
