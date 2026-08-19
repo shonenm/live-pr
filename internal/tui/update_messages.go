@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -411,7 +412,11 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 		m.status = msg.refErr.Error()
 		m.githubStatus = "GitHub: Conversation updated · review ref unavailable"
 		m.restoreConversationSelection(selectedKey)
-		return m, tea.Batch(saveCmd, m.sync())
+		// The refresh bumped targetGeneration, orphaning the previous CI poll
+		// chain, so this return is the only place a new one can start: without
+		// it a PR whose review ref fails never polls CI (or loads rich
+		// content) again.
+		return m, tea.Batch(saveCmd, m.sync(), m.nextCIPoll(), m.richContentCmd())
 	}
 	m.headRev = msg.headRef
 	m.base, m.diffBase = msg.base, msg.diffBase
@@ -466,6 +471,24 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.ciPollFailures = 0
+	rollup := checkRollupState(msg.pr.Checks)
+	// A result identical to the cache skips the invalidation, row rebuild,
+	// and re-layout below: a pending PR polls every 15 seconds, and
+	// rebuilding every conversation card each time is pure waste. The
+	// comparison covers everything the mutations below would change.
+	unchanged := m.cache.PR.PreviewLoaded &&
+		(msg.pr.State == "" || msg.pr.State == m.cache.PR.State) &&
+		rollup == m.cache.PR.CheckRollupState &&
+		slices.Equal(msg.pr.Checks, m.cache.PR.Checks) &&
+		!slices.ContainsFunc(m.cache.PR.Commits, func(c gh.PRCommit) bool {
+			return c.OID == msg.pr.HeadRefOID && c.CheckRollupState != rollup
+		})
+	if unchanged {
+		if pollableCI(*m.cache.PR) {
+			return m, scheduleCIPoll(msg.generation, msg.pr.Number, 0)
+		}
+		return m, nil
+	}
 	// The poll reads the pull request itself, so its state is authoritative:
 	// without taking it, upserting the cached copy below would push a stale
 	// open state back over a row the list already knows is merged.
@@ -473,12 +496,17 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		m.cache.PR.State = msg.pr.State
 	}
 	m.cache.PR.Checks = msg.pr.Checks
-	m.cache.PR.CheckRollupState = checkRollupState(msg.pr.Checks)
-	for i := range m.cache.PR.Commits {
-		if m.cache.PR.Commits[i].OID == msg.pr.HeadRefOID {
-			m.cache.PR.Commits[i].CheckRollupState = m.cache.PR.CheckRollupState
+	m.cache.PR.CheckRollupState = rollup
+	// Clone before mutating: saveCacheCmd copies the PR struct but shares
+	// slice backing arrays with an in-flight marshal, so commit elements must
+	// be replaced wholesale, never written in place.
+	commits := slices.Clone(m.cache.PR.Commits)
+	for i := range commits {
+		if commits[i].OID == msg.pr.HeadRefOID {
+			commits[i].CheckRollupState = rollup
 		}
 	}
+	m.cache.PR.Commits = commits
 	m.cache.PR.PreviewLoaded = true
 	m.invalidateConversation()
 	m.navigator.PRs = upsertPR(m.navigator.PRs, *m.cache.PR)
