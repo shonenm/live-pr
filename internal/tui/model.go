@@ -274,6 +274,7 @@ type Model struct {
 	cachePath         string
 	cache             gh.Cache
 	navigator         gh.NavigatorCache
+	navigatorPRIndex  map[int]int
 	navigatorPath     string
 	viewerLogin       string
 	prList            prListModel
