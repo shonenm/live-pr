@@ -1,4 +1,4 @@
-package cmd
+package demo
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 
 func TestCreateDemoRepo(t *testing.T) {
 	root := t.TempDir()
-	if err := createDemoRepo(root, "delta"); err != nil {
+	if err := CreateRepo(root, "delta"); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("git", "-C", root, "log", "--oneline", "main..HEAD")
@@ -37,10 +37,10 @@ func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
 		t.Skip("builds a real demo git repository")
 	}
 	root := t.TempDir()
-	if err := createDemoRepo(root, "git"); err != nil {
+	if err := CreateRepo(root, "git"); err != nil {
 		t.Fatal(err)
 	}
-	binDir, stateDir, err := setupDemoGitHub(root, "git")
+	binDir, stateDir, err := SetupGitHub(root, "git")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,10 +67,10 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 		t.Skip("builds a real demo git repository and mock gh")
 	}
 	root := t.TempDir()
-	if err := createDemoRepo(root, "git"); err != nil {
+	if err := CreateRepo(root, "git"); err != nil {
 		t.Fatal(err)
 	}
-	binDir, stateDir, err := setupDemoGitHub(root, "git")
+	binDir, stateDir, err := SetupGitHub(root, "git")
 	if err != nil {
 		t.Fatal(err)
 	}
