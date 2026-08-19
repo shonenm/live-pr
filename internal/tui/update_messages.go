@@ -241,6 +241,7 @@ func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
 		} else if strings.HasPrefix(m.status, "diff display") {
 			m.status = ""
 		}
+		m.detailShownKey = "rendered\x00" + msg.key
 		m.detail.SetContent(m.diffCache[msg.key])
 		m.detail.GotoTop()
 	}
