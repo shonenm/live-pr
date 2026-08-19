@@ -2,6 +2,7 @@ package github
 
 import (
 	"errors"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -440,5 +441,31 @@ func TestFindPreviewSurvivesCommitRollupFailure(t *testing.T) {
 	}
 	if pr.Number != 12 || !pr.PreviewLoaded || len(pr.Commits) != 0 {
 		t.Fatalf("partial preview = %#v", pr)
+	}
+}
+
+func TestStatusHint(t *testing.T) {
+	longStderr := "GraphQL: " + strings.Repeat("x", 100)
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"nil", nil, ""},
+		{"gh not installed", commandError("gh pr list", nil, runError(&exec.Error{Name: "gh", Err: exec.ErrNotFound}, false, "")), "gh not installed"},
+		{"unauthenticated stderr", commandError("gh pr list", nil, runError(errors.New("exit status 4"), false, "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable.")), "run gh auth login"},
+		{"expired token", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), false, "HTTP 401: Bad credentials (https://api.github.com/graphql)")), "run gh auth login"},
+		{"broken query stderr", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), false, "GraphQL: Field 'nope' doesn't exist on type 'PullRequest' (search)")), "GraphQL: Field 'nope' doesn't exist on type 'PullRequest' (search)"},
+		{"long stderr truncated", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), false, longStderr)), string([]rune(longStderr)[:79]) + "…"},
+		{"offline gh stderr", commandError("gh pr list", nil, runError(errors.New("exit status 1"), false, "error connecting to api.github.com\ncheck your internet connection")), ""},
+		{"plain network error", errors.New("dial tcp 140.82.113.6:443: connect: connection refused"), ""},
+		{"timeout", commandError("gh pr list", nil, runError(errors.New("signal: killed"), true, "")), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := StatusHint(tc.err); got != tc.want {
+				t.Fatalf("StatusHint(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
 	}
 }

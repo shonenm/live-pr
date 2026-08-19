@@ -1543,6 +1543,19 @@ func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 	}
 }
 
+func TestPRListRefreshFailureNamesSetupProblems(t *testing.T) {
+	m := testModel()
+	authErr := errors.New("gh pr list: exit status 4: To get started with GitHub CLI, please run:  gh auth login")
+	u, _ := m.Update(prListRefreshed{err: authErr})
+	m = u.(Model)
+	if strings.Contains(m.githubStatus, "Offline") || !strings.Contains(m.githubStatus, "gh auth login") {
+		t.Fatalf("auth failure reported as offline: %q", m.githubStatus)
+	}
+	if !strings.Contains(m.githubStatus, "showing cached PR list") {
+		t.Fatalf("cached-list note lost: %q", m.githubStatus)
+	}
+}
+
 func TestStalePRListRefreshCannotRestoreMergedPR(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
