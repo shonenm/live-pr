@@ -157,7 +157,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	case ciPollTick:
 		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && pollableCI(*m.cache.PR) {
-			return m, pollCI(msg.generation, msg.number)
+			return m, pollCI(m.client, msg.generation, msg.number)
 		}
 		return m, nil
 	case ciPolled:

@@ -49,13 +49,13 @@ type remoteCommentDone struct {
 
 // postRemoteComment posts a new conversation comment, or edits one when editID
 // is set.
-func postRemoteComment(number int, body string, editID int64, generation uint64) tea.Cmd {
+func postRemoteComment(client githubClient, number int, body string, editID int64, generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if editID > 0 {
-			err = gh.New().EditIssueComment(editID, body)
+			err = client.EditIssueComment(editID, body)
 		} else {
-			err = gh.New().PostIssueComment(number, body)
+			err = client.PostIssueComment(number, body)
 		}
 		return remoteCommentDone{generation: generation, edited: editID > 0, err: err}
 	}
@@ -84,19 +84,19 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 	}
 	m.targetGeneration++
 	if m.remote {
-		return m, tea.Batch(fetchRemotePR(*m.cache.PR, m.targetGeneration), m.startSpinner())
+		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.startSpinner())
 	}
-	return m, tea.Batch(fetchGitHub(m.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(fetchGitHub(m.client, m.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
 }
 
-func deleteRemoteComment(id int64, generation uint64) tea.Cmd {
+func deleteRemoteComment(client githubClient, id int64, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		err := gh.New().DeleteIssueComment(id)
+		err := client.DeleteIssueComment(id)
 		return remoteCommentDone{generation: generation, deleted: true, err: err}
 	}
 }
 
-func updatePRDescription(number int, head, body string, generation uint64) tea.Cmd {
+func updatePRDescription(client githubClient, number int, head, body string, generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		file, err := os.CreateTemp("", "live-pr-body-*.md")
 		if err != nil {
@@ -111,7 +111,7 @@ func updatePRDescription(number int, head, body string, generation uint64) tea.C
 		if err := file.Close(); err != nil {
 			return remoteCommentDone{generation: generation, err: err}
 		}
-		err = gh.New().UpdateBody(head, name)
+		err = client.UpdateBody(head, name)
 		return remoteCommentDone{generation: generation, edited: true, err: err}
 	}
 }
@@ -163,8 +163,8 @@ func (m Model) openReviewSubmit() (Model, tea.Cmd) {
 	return m, nil
 }
 
-func submitReview(draft gh.ReviewDraft, event gh.ReviewEvent) tea.Cmd {
-	return func() tea.Msg { return reviewSubmitted{event: event, err: gh.New().SubmitReview(draft, event)} }
+func submitReview(client githubClient, draft gh.ReviewDraft, event gh.ReviewEvent) tea.Cmd {
+	return func() tea.Msg { return reviewSubmitted{event: event, err: client.SubmitReview(draft, event)} }
 }
 
 func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -191,7 +191,7 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.status = ""
 			event := m.reviewSubmitEvent
 			m.reviewSubmitEvent = ""
-			return m, tea.Batch(submitReview(m.reviewDraft, event), m.startSpinner())
+			return m, tea.Batch(submitReview(m.client, m.reviewDraft, event), m.startSpinner())
 		default:
 			var cmd tea.Cmd
 			m.localEditor, cmd = m.localEditor.Update(msg)
