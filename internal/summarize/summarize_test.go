@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClaudeErrorIncludesStderr(t *testing.T) {
@@ -22,6 +23,32 @@ func TestClaudeErrorIncludesStderr(t *testing.T) {
 	_, err := (Claude{}).Summarize("session")
 	if err == nil || !strings.Contains(err.Error(), "claude summarize") || !strings.Contains(err.Error(), "model unavailable") {
 		t.Fatalf("summarize error = %v", err)
+	}
+}
+
+func TestClaudeTimesOutInsteadOfHanging(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX fake executable")
+	}
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "claude")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := (Claude{Timeout: 100 * time.Millisecond}).Summarize("session")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "timed out") {
+			t.Fatalf("summarize error = %v, want timeout", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Summarize did not return; the claude CLI call is not bounded by a deadline")
 	}
 }
 
