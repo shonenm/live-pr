@@ -51,7 +51,7 @@ func TestPRListNavigationAndRefresh(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.currentBranch = "main"
-	m.openPRs = []gh.PR{{Number: 1, Title: "first"}, {Number: 2, Title: "second"}}
+	m.prList.open = []gh.PR{{Number: 1, Title: "first"}, {Number: 2, Title: "second"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	if out := ansi.Strip(m.View()); !strings.Contains(out, "Pull requests") || !strings.Contains(out, "#1") {
@@ -59,13 +59,13 @@ func TestPRListNavigationAndRefresh(t *testing.T) {
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	m = u.(Model)
-	if m.prCursor != 1 {
-		t.Fatalf("PR cursor = %d", m.prCursor)
+	if m.prList.cursor != 1 {
+		t.Fatalf("PR cursor = %d", m.prList.cursor)
 	}
-	m.listRefreshing = false
+	m.prList.refreshing = false
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	m = u.(Model)
-	if cmd == nil || !m.listRefreshing {
+	if cmd == nil || !m.prList.refreshing {
 		t.Fatal("r should explicitly refresh the PR list")
 	}
 	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}); cmd == nil {
@@ -76,9 +76,9 @@ func TestPRListNavigationAndRefresh(t *testing.T) {
 func TestPRListVimNavigationAndNarrowLayout(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
-	m.openPRs = make([]gh.PR, 20)
-	for i := range m.openPRs {
-		m.openPRs[i] = gh.PR{Number: i + 1, Title: fmt.Sprintf("PR %d", i+1)}
+	m.prList.open = make([]gh.PR, 20)
+	for i := range m.prList.open {
+		m.prList.open[i] = gh.PR{Number: i + 1, Title: fmt.Sprintf("PR %d", i+1)}
 	}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 30, Height: 12})
 	m = u.(Model)
@@ -89,13 +89,13 @@ func TestPRListVimNavigationAndNarrowLayout(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = u.(Model)
-	if m.prCursor != 0 {
-		t.Fatalf("gg did not move PR list to top: %d", m.prCursor)
+	if m.prList.cursor != 0 {
+		t.Fatalf("gg did not move PR list to top: %d", m.prList.cursor)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	m = u.(Model)
-	if m.prCursor != len(m.openPRs)-1 {
-		t.Fatalf("G did not move PR list to bottom: %d", m.prCursor)
+	if m.prList.cursor != len(m.prList.open)-1 {
+		t.Fatalf("G did not move PR list to bottom: %d", m.prList.cursor)
 	}
 	m.detail.Height = 3
 	m.detail.SetContent(strings.Repeat("preview\n", 20))
@@ -170,9 +170,9 @@ func TestBackToListPicksTheOriginOrFirstMatchingView(t *testing.T) {
 
 	// Entered from a tab: b returns to that tab even when others match.
 	m := newModel()
-	m.screen, m.prView = prListScreen, 2
-	m.openPRs = []gh.PR{authored}
-	m.prStacks = buildPRStacks(m.openPRs)
+	m.screen, m.prList.view = prListScreen, 2
+	m.prList.open = []gh.PR{authored}
+	m.prList.stacks = buildPRStacks(m.prList.open)
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	if !m.detailOriginSet || m.detailOrigin != 2 {
@@ -181,8 +181,8 @@ func TestBackToListPicksTheOriginOrFirstMatchingView(t *testing.T) {
 	m.screen, m.cache.PR = detailScreen, &authored
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
 	back := u.(Model)
-	if back.screen != prListScreen || back.prView != 2 {
-		t.Fatalf("did not return to the origin tab: screen=%v view=%d", back.screen, back.prView)
+	if back.screen != prListScreen || back.prList.view != 2 {
+		t.Fatalf("did not return to the origin tab: screen=%v view=%d", back.screen, back.prList.view)
 	}
 	if back.detailOriginSet {
 		t.Fatal("origin outlived the return")
@@ -191,26 +191,26 @@ func TestBackToListPicksTheOriginOrFirstMatchingView(t *testing.T) {
 	// Opened at startup: the first tab containing the PR wins (Assigned does
 	// not match, Authored does), and the PR keeps the selection.
 	startup := newModel()
-	startup.screen, startup.prView = detailScreen, 0
+	startup.screen, startup.prList.view = detailScreen, 0
 	startup.cache.PR = &authored
 	startup.navigator.PRs = []gh.PR{authored}
 	u, _ = startup.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
 	landed := u.(Model)
-	if landed.prView != 1 {
-		t.Fatalf("landed on view %d (%q), want Authored", landed.prView, landed.viewName(landed.prView))
+	if landed.prList.view != 1 {
+		t.Fatalf("landed on view %d (%q), want Authored", landed.prList.view, landed.viewName(landed.prList.view))
 	}
-	if landed.selectedPRNumber() != 7 {
-		t.Fatalf("selection = #%d, want the PR just left", landed.selectedPRNumber())
+	if landed.prList.selectedPRNumber() != 7 {
+		t.Fatalf("selection = #%d, want the PR just left", landed.prList.selectedPRNumber())
 	}
 
 	// No tab contains it: fall back to the first.
 	orphan := newModel()
 	orphan.views = orphan.views[:2] // Assigned, Authored
-	orphan.screen, orphan.prView = detailScreen, 1
+	orphan.screen, orphan.prList.view = detailScreen, 1
 	someoneElse := gh.PR{Number: 9, State: "OPEN", Author: gh.PRUser{Login: "you"}}
 	orphan.cache.PR = &someoneElse
 	u, _ = orphan.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
-	if got := u.(Model).prView; got != 0 {
+	if got := u.(Model).prList.view; got != 0 {
 		t.Fatalf("fallback landed on view %d, want the first", got)
 	}
 }
@@ -222,28 +222,28 @@ func TestPRListFilterEditingAndViewKeys(t *testing.T) {
 	m.applyPRFilters(0)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	m.prCursor = 1
+	m.prList.cursor = 1
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("label:bug")})
 	m = u.(Model)
-	if !m.filterEditing || m.filterQuery != "label:bug" || len(m.openPRs) != 2 {
-		t.Fatalf("editing unexpectedly fetched/filtered: editing:%v query:%q prs:%#v", m.filterEditing, m.filterQuery, m.openPRs)
+	if !m.prList.filterEditing || m.prList.filterQuery != "label:bug" || len(m.prList.open) != 2 {
+		t.Fatalf("editing unexpectedly fetched/filtered: editing:%v query:%q prs:%#v", m.prList.filterEditing, m.prList.filterQuery, m.prList.open)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(Model)
-	if m.filterQuery != "" || len(m.openPRs) != 2 || m.selectedPRNumber() != 2 {
-		t.Fatalf("Esc did not clear filter/restore selection: %q %#v selected=%d", m.filterQuery, m.openPRs, m.selectedPRNumber())
+	if m.prList.filterQuery != "" || len(m.prList.open) != 2 || m.prList.selectedPRNumber() != 2 {
+		t.Fatalf("Esc did not clear filter/restore selection: %q %#v selected=%d", m.prList.filterQuery, m.prList.open, m.prList.selectedPRNumber())
 	}
 	if m.help.Width != 120 {
 		t.Fatalf("help width = %d", m.help.Width)
 	}
-	m.prView = assignedView
+	m.prList.view = assignedView
 	m.applyPRFilters(0)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	m = u.(Model)
-	if m.prView != reviewRequestedView || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 {
-		t.Fatalf("next view = %v %#v", m.prView, m.openPRs)
+	if m.prList.view != reviewRequestedView || len(m.prList.open) != 1 || m.prList.open[0].Number != 2 {
+		t.Fatalf("next view = %v %#v", m.prList.view, m.prList.open)
 	}
 	plain := ansi.Strip(m.renderPRListHeader())
 	for _, want := range []string{"[ Assigned ? ]", "[ Review requested 1 ]", "[ All 2 ]", "[ Authored ? ]", "[ Needs me 1 ]", "[ Closed ? ]"} {
@@ -257,7 +257,7 @@ func TestPRListEnterOpensRemoteWithoutChangingCheckout(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.currentBranch = "main"
-	m.openPRs = []gh.PR{{Number: 14, Title: "remote", HeadRefName: "feature", BaseRefName: "main", HeadRefOID: "abc"}}
+	m.prList.open = []gh.PR{{Number: 14, Title: "remote", HeadRefName: "feature", BaseRefName: "main", HeadRefOID: "abc"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -272,7 +272,7 @@ func TestDetailBReturnsToPRList(t *testing.T) {
 	m.diffTerminal = embeddedterm.New("cat", t.TempDir(), nil)
 	m.currentBranch, m.defaultBranch = "feature", "main"
 	m.localAvailable, m.localTitle = true, "local work"
-	m.openPRs = m.withLocalPR(nil)
+	m.prList.open = m.withLocalPR(nil)
 	m.focusDiff = true
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
@@ -287,13 +287,13 @@ func TestDetailBRestoresRemotePRSelection(t *testing.T) {
 	m := testModel()
 	m.screen, m.remote = detailScreen, true
 	m.cache.PR = &gh.PR{Number: 22, State: "OPEN", Title: "selected"}
-	m.prView, m.prListState = allPRsView, openPRListState
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
-	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{{Number: 11}, {Number: 22}}, loaded: true, fresh: true}}
+	m.prList.view, m.prList.state = allPRsView, openPRListState
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: []gh.PR{{Number: 11}, {Number: 22}}, loaded: true, fresh: true}}
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
 	m = u.(Model)
-	if m.screen != prListScreen || m.selectedPRNumber() != 22 {
-		t.Fatalf("restored selection = screen:%v PR:%d", m.screen, m.selectedPRNumber())
+	if m.screen != prListScreen || m.prList.selectedPRNumber() != 22 {
+		t.Fatalf("restored selection = screen:%v PR:%d", m.screen, m.prList.selectedPRNumber())
 	}
 }
 
@@ -316,18 +316,18 @@ func TestRefreshAndPublishAreMutuallyExclusive(t *testing.T) {
 
 func TestPRViewNavigationSupportsHL(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView = prListScreen, allPRsView
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
-	m.prPages = map[string]prPageState{}
+	m.screen, m.prList.view = prListScreen, allPRsView
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.pages = map[string]prPageState{}
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = u.(Model)
-	if m.prView != authoredView {
-		t.Fatalf("l view = %v", m.prView)
+	if m.prList.view != authoredView {
+		t.Fatalf("l view = %v", m.prList.view)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	m = u.(Model)
-	if m.prView != allPRsView {
-		t.Fatalf("h view = %v", m.prView)
+	if m.prList.view != allPRsView {
+		t.Fatalf("h view = %v", m.prList.view)
 	}
 }
 
@@ -454,9 +454,9 @@ func TestOverloadedKeysDisambiguateByScreen(t *testing.T) {
 func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
-	m.openPRs = []gh.PR{{Number: 7, URL: "https://example/pr/7", Title: "seven"}}
-	m.prStacks = buildPRStacks(m.openPRs)
-	m.prCursor = 0
+	m.prList.open = []gh.PR{{Number: 7, URL: "https://example/pr/7", Title: "seven"}}
+	m.prList.stacks = buildPRStacks(m.prList.open)
+	m.prList.cursor = 0
 
 	// y copies the selected row's URL without opening a browser.
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
@@ -475,8 +475,8 @@ func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 	// A row without a URL (the synthetic local PR) copies nothing.
 	local := testModel()
 	local.screen = prListScreen
-	local.openPRs = []gh.PR{{Number: 0, Title: "local"}}
-	local.prStacks = buildPRStacks(local.openPRs)
+	local.prList.open = []gh.PR{{Number: 0, Title: "local"}}
+	local.prList.stacks = buildPRStacks(local.prList.open)
 	if local.copySelectedURL() != nil {
 		t.Fatal("local PR offered a URL to copy")
 	}

@@ -350,7 +350,7 @@ func TestExplicitForkCheckoutRemainsCurrentTarget(t *testing.T) {
 	if len(items) != 1 || items[0].Number != 12 {
 		t.Fatalf("explicit fork duplicated as local PR: %#v", items)
 	}
-	m.screen, m.openPRs = prListScreen, items
+	m.screen, m.prList.open = prListScreen, items
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	if m.keys.Checkout.Enabled() {
@@ -435,11 +435,11 @@ func TestBackgroundSyncKeepsPreviewScroll(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.navigator = gh.NewNavigatorCache()
-	m.openPRs = []gh.PR{
+	m.prList.open = []gh.PR{
 		{Number: 1, State: "OPEN", Title: "one", Body: strings.Repeat("line\n", 80)},
 		{Number: 2, State: "OPEN", Title: "two"},
 	}
-	m.prCursor = 0
+	m.prList.cursor = 0
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 90, Height: 8})
 	m = u.(Model)
 	m.detail.SetYOffset(1)
@@ -450,7 +450,7 @@ func TestBackgroundSyncKeepsPreviewScroll(t *testing.T) {
 		t.Fatal("background sync reset the preview scroll")
 	}
 	// Changing the selection resets it.
-	m.prCursor = 1
+	m.prList.cursor = 1
 	m.sync()
 	if m.detail.YOffset != 0 {
 		t.Fatalf("selection change kept stale scroll offset %d", m.detail.YOffset)
@@ -522,8 +522,8 @@ func TestNoticeClearsOnTheNextKeyAndRefreshAlwaysReports(t *testing.T) {
 	m.screen = prListScreen
 	m.navigator = gh.NewNavigatorCache()
 	pr := gh.PR{Number: 12, State: "OPEN", Title: "x"}
-	m.openPRs = []gh.PR{pr}
-	m.prStacks = buildPRStacks(m.openPRs)
+	m.prList.open = []gh.PR{pr}
+	m.prList.stacks = buildPRStacks(m.prList.open)
 
 	u, _ := m.Update(prStatusDone{pr: pr, target: "open"})
 	m = u.(Model)
@@ -539,7 +539,7 @@ func TestNoticeClearsOnTheNextKeyAndRefreshAlwaysReports(t *testing.T) {
 	// r while a refresh is already running reports it rather than doing
 	// nothing at all.
 	m.notice = "URL copied to clipboard"
-	m.listRefreshing = true
+	m.prList.refreshing = true
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	busy := u.(Model)
 	if busy.notice != "" {
@@ -704,8 +704,8 @@ func TestDefaultBaseBranchIsAccented(t *testing.T) {
 	list := testModel()
 	list.defaultBranch = "main"
 	list.screen, list.w = prListScreen, 120
-	list.openPRs = []gh.PR{{Number: 1, Title: "one", BaseRefName: "main", HeadRefName: "feat/x", URL: "u"}}
-	list.prStacks = buildPRStacks(list.openPRs)
+	list.prList.open = []gh.PR{{Number: 1, Title: "one", BaseRefName: "main", HeadRefName: "feat/x", URL: "u"}}
+	list.prList.stacks = buildPRStacks(list.prList.open)
 	if preview := ansi.Strip(list.buildPRPreview()); !strings.Contains(preview, "main ← feat/x") {
 		t.Fatalf("preview = %q", preview)
 	}

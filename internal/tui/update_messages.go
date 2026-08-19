@@ -44,25 +44,25 @@ func offlineStatus(err error, detail string) string {
 }
 
 func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
-	if msg.generation != m.prListGeneration || msg.key != m.activePRPage {
-		if page, ok := m.prPages[msg.key]; ok {
+	if msg.generation != m.prList.generation || msg.key != m.prList.activePage {
+		if page, ok := m.prList.pages[msg.key]; ok {
 			page.loading = false
-			m.prPages[msg.key] = page
+			m.prList.pages[msg.key] = page
 		}
 		return m, nil
 	}
-	if m.prPages == nil {
-		m.prPages = map[string]prPageState{}
+	if m.prList.pages == nil {
+		m.prList.pages = map[string]prPageState{}
 	}
-	page := m.prPages[msg.key]
+	page := m.prList.pages[msg.key]
 	page.loading = false
-	m.listRefreshing = false
+	m.prList.refreshing = false
 	if msg.err != nil {
-		m.prPages[msg.key] = page
+		m.prList.pages[msg.key] = page
 		m.githubStatus = offlineStatus(msg.err, "showing cached PR list")
 		return m, m.sync()
 	}
-	selectedNumber := m.selectedPRNumber()
+	selectedNumber := m.prList.selectedPRNumber()
 	if msg.appendPage {
 		page.prs = appendUniquePRs(page.prs, msg.page.PRs)
 	} else {
@@ -72,10 +72,10 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	page.endCursor = msg.page.PageInfo.EndCursor
 	page.hasNext = msg.page.PageInfo.HasNextPage
 	page.loaded, page.fresh = true, true
-	m.prPages[msg.key] = page
+	m.prList.pages[msg.key] = page
 	if !msg.appendPage {
-		m.prPreviewLoading = map[int]bool{}
-		m.prPreviewLoaded = map[int]bool{}
+		m.prList.previewLoading = map[int]bool{}
+		m.prList.previewLoaded = map[int]bool{}
 	}
 	if msg.page.Repository != "" {
 		m.repository = msg.page.Repository
@@ -86,10 +86,10 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 		m.navigator.ViewerLogin = msg.page.ViewerLogin
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	cacheUpdated := strings.TrimSpace(m.filterQuery) == "" && m.prListState == m.standardPRListState(m.prView)
+	cacheUpdated := strings.TrimSpace(m.prList.filterQuery) == "" && m.prList.state == m.standardPRListState(m.prList.view)
 	if cacheUpdated {
 		m.navigator.PRs = appendUniquePRs(m.navigator.PRs, msg.page.PRs)
-		m.navigator.SetView(m.viewName(m.prView), page.prs, page.total, now)
+		m.navigator.SetView(m.viewName(m.prList.view), page.prs, page.total, now)
 		m.navigator.PrunePRs()
 		m.navigator.FetchedAt = now
 	}
@@ -104,13 +104,13 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	}
 	m.syncCachedPRState(msg.page.PRs)
 	m.applyPRFilters(selectedNumber)
-	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prListGeneration, msg.page.PRs)}
+	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prList.generation, msg.page.PRs)}
 	if cacheUpdated {
 		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
-	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.viewName(m.prView))
-	_, localFilter := splitPRFilter(m.filterQuery)
-	if page.hasNext && (len(msg.page.PRs) == 0 || localFilter != "" && len(m.openPRs) == 0) {
+	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.viewName(m.prList.view))
+	_, localFilter := splitPRFilter(m.prList.filterQuery)
+	if page.hasNext && (len(msg.page.PRs) == 0 || localFilter != "" && len(m.prList.open) == 0) {
 		cmds = append(cmds, m.requestPRPage(false))
 	}
 	return m, tea.Batch(cmds...)
@@ -144,7 +144,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 		m.autoOpenCurrent = false
 		if errors.Is(msg.err, gh.ErrPRNotFound) {
 			m.localAvailable = m.currentBranch != "HEAD" && m.currentBranch != m.defaultBranch
-			m.applyPRFilters(m.selectedPRNumber())
+			m.applyPRFilters(m.prList.selectedPRNumber())
 			return m, m.sync()
 		}
 		m.githubStatus = offlineStatus(msg.err, "current branch PR unavailable")
@@ -159,13 +159,13 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	// Only the PR list screen may switch views, and a refresh-triggered
 	// lookup never does: it must not yank the user to another tab.
 	if closed, ok := m.closedView(); ok && !msg.stateOnly && m.screen == prListScreen && matchesListState(msg.pr, closedPRListState) {
-		m.prView, m.prListState, m.listRefreshing = closed, closedPRListState, false
-		m.prListGeneration++
-		m.activePRPage = prPageKey(m.prView, m.prListState, "")
+		m.prList.view, m.prList.state, m.prList.refreshing = closed, closedPRListState, false
+		m.prList.generation++
+		m.prList.activePage = prPageKey(m.prList.view, m.prList.state, "")
 	}
 	selected := msg.pr.Number
 	if msg.stateOnly {
-		selected = m.selectedPRNumber()
+		selected = m.prList.selectedPRNumber()
 	}
 	m.applyPRFilters(selected)
 	saveCmd := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
@@ -183,18 +183,18 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	// Clear the in-flight ticket even for stale results: an orphaned entry
 	// kept the spinner alive and blocked ensureSelectedPRPreview forever.
-	delete(m.prPreviewLoading, msg.number)
-	if msg.generation != m.prListGeneration {
+	delete(m.prList.previewLoading, msg.number)
+	if msg.generation != m.prList.generation {
 		return m, nil
 	}
-	selectedNumber := m.selectedPRNumber()
-	if m.prPreviewLoading == nil {
-		m.prPreviewLoading = map[int]bool{}
+	selectedNumber := m.prList.selectedPRNumber()
+	if m.prList.previewLoading == nil {
+		m.prList.previewLoading = map[int]bool{}
 	}
-	if m.prPreviewLoaded == nil {
-		m.prPreviewLoaded = map[int]bool{}
+	if m.prList.previewLoaded == nil {
+		m.prList.previewLoaded = map[int]bool{}
 	}
-	m.prPreviewLoaded[msg.number] = true
+	m.prList.previewLoaded[msg.number] = true
 	if msg.err != nil {
 		m.status = fmt.Sprintf("PR #%d preview: %v", msg.number, msg.err)
 		return m, nil
@@ -208,8 +208,8 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	}
 	// A PR number lives on exactly one page, so stop scanning once found.
 	// page.prs shares its backing array with the map entry, so the in-place
-	// write is visible without reassigning m.prPages[key].
-	for _, page := range m.prPages {
+	// write is visible without reassigning m.prList.pages[key].
+	for _, page := range m.prList.pages {
 		done := false
 		for i := range page.prs {
 			if page.prs[i].Number == msg.number {
@@ -225,10 +225,10 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 		}
 	}
 	m.applyPRFilters(selectedNumber)
-	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prListGeneration, []gh.PR{msg.pr})}
+	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prList.generation, []gh.PR{msg.pr})}
 	// Only persist when the visible row's preview loads; background prefetches
 	// stay in memory and ride the next page-load/refresh save.
-	if m.selectedPRNumber() == msg.number {
+	if m.prList.selectedPRNumber() == msg.number {
 		m.status = ""
 		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
@@ -280,8 +280,8 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 		if m.cache.PR != nil && m.cache.PR.Number == msg.number {
 			m.cache.PR.State = updated.State
 		}
-		if m.prPages == nil {
-			m.prPages = map[string]prPageState{}
+		if m.prList.pages == nil {
+			m.prList.pages = map[string]prPageState{}
 		}
 		next, cmd := m.applyPRStateChange(updated)
 		if next.screen == prListScreen {
@@ -529,7 +529,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	m.cache.PR.PreviewLoaded = true
 	m.invalidateConversation()
 	m.navigator.PRs = upsertPR(m.navigator.PRs, *m.cache.PR)
-	m.prRowCache = map[prRowCacheKey][]string{}
+	m.prList.rowCache = map[prRowCacheKey][]string{}
 	m.githubStatus = "GitHub: CI updated now"
 	m.layout()
 	cmd := m.sync()
@@ -561,9 +561,9 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		m.cache.FetchedAt = now
 		m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
 		if closed, ok := m.closedView(); ok && matchesListState(msg.pr, closedPRListState) {
-			m.prView, m.prListState, m.listRefreshing = closed, closedPRListState, false
-			m.prListGeneration++
-			m.activePRPage = prPageKey(m.prView, m.prListState, "")
+			m.prList.view, m.prList.state, m.prList.refreshing = closed, closedPRListState, false
+			m.prList.generation++
+			m.prList.activePage = prPageKey(m.prList.view, m.prList.state, "")
 		}
 		m.applyPRFilters(msg.pr.Number)
 		diffCmd = tea.Batch(m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), saveNavigatorCacheCmd(m.navigatorPath, m.navigator))

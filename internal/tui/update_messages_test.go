@@ -16,22 +16,22 @@ import (
 
 func TestCurrentBranchResolutionKeepsLocalOrShowsMergedPR(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView = prListScreen, assignedView
+	m.screen, m.prList.view = prListScreen, assignedView
 	m.currentBranch, m.defaultBranch = "feature/x", "main"
 	m.localAvailable, m.autoOpenCurrent = true, true
 	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
 
 	u, _ := m.Update(currentBranchPRLoaded{err: gh.ErrPRNotFound})
 	m = u.(Model)
-	if len(m.openPRs) != 1 || m.openPRs[0].Number != 0 || m.openPRs[0].HeadRefName != "feature/x" {
-		t.Fatalf("empty branch local PR = %#v", m.openPRs)
+	if len(m.prList.open) != 1 || m.prList.open[0].Number != 0 || m.prList.open[0].HeadRefName != "feature/x" {
+		t.Fatalf("empty branch local PR = %#v", m.prList.open)
 	}
 
 	m.autoOpenCurrent = false
 	u, _ = m.Update(currentBranchPRLoaded{pr: gh.PR{Number: 9, State: "MERGED", HeadRefName: "feature/x"}})
 	m = u.(Model)
-	if m.localAvailable || m.prView != closedPRsView || m.prListState != closedPRListState || len(m.openPRs) != 1 || m.openPRs[0].Number != 9 {
-		t.Fatalf("merged branch PR = local:%v view:%v state:%v prs:%#v", m.localAvailable, m.prView, m.prListState, m.openPRs)
+	if m.localAvailable || m.prList.view != closedPRsView || m.prList.state != closedPRListState || len(m.prList.open) != 1 || m.prList.open[0].Number != 9 {
+		t.Fatalf("merged branch PR = local:%v view:%v state:%v prs:%#v", m.localAvailable, m.prList.view, m.prList.state, m.prList.open)
 	}
 }
 
@@ -49,17 +49,17 @@ func TestMergeAndCloseApplyWithoutAReload(t *testing.T) {
 
 	// List screen: the merged PR leaves the open page at once.
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
 	m.navigator = gh.NewNavigatorCache()
 	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
-	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{pr}, total: 1, loaded: true, fresh: true}}
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: []gh.PR{pr}, total: 1, loaded: true, fresh: true}}
 	m.navigator.PRs = []gh.PR{pr}
 	u, _ := m.Update(prActionDone{action: mergePR, pr: pr, number: 12})
 	m = u.(Model)
-	for _, listed := range m.openPRs {
+	for _, listed := range m.prList.open {
 		if listed.Number == 12 {
-			t.Fatalf("merged PR still on the open list: %#v", m.openPRs)
+			t.Fatalf("merged PR still on the open list: %#v", m.prList.open)
 		}
 	}
 	if m.navigator.PRs[0].State != "MERGED" {
@@ -116,33 +116,33 @@ func TestCIPollDoesNotRevertAMergedPR(t *testing.T) {
 
 func TestClosedBranchPRLeavesTheOpenList(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
 	m.currentBranch, m.viewerLogin = "feature", "me"
 	m.navigator = gh.NewNavigatorCache()
 	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
 	stale := gh.PR{Number: 1, State: "OPEN", HeadRefName: "feature", Title: "closed upstream"}
 	m.cache = gh.NewCache("feature")
 	m.cache.PR = &stale
-	m.prPages = map[string]prPageState{m.activePRPage: {
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {
 		prs: []gh.PR{{Number: 2, State: "OPEN", Title: "other"}}, total: 1, loaded: true, fresh: true,
 	}}
 	m.applyPRFilters(0)
-	if len(m.openPRs) != 2 {
-		t.Fatalf("setup: expected the stale PR to be listed, got %#v", m.openPRs)
+	if len(m.prList.open) != 2 {
+		t.Fatalf("setup: expected the stale PR to be listed, got %#v", m.prList.open)
 	}
 
 	// The refresh-triggered lookup reports it closed: it leaves the open list
 	// without dragging the user to the closed tab or moving the selection.
-	m.prCursor = 1
+	m.prList.cursor = 1
 	u, _ := m.Update(currentBranchPRLoaded{pr: gh.PR{Number: 1, State: "CLOSED", HeadRefName: "feature"}, stateOnly: true})
 	m = u.(Model)
-	if m.prView != allPRsView {
-		t.Fatalf("refresh switched to view %d", m.prView)
+	if m.prList.view != allPRsView {
+		t.Fatalf("refresh switched to view %d", m.prList.view)
 	}
-	for _, pr := range m.openPRs {
+	for _, pr := range m.prList.open {
 		if pr.Number == 1 {
-			t.Fatalf("closed PR still listed: %#v", m.openPRs)
+			t.Fatalf("closed PR still listed: %#v", m.prList.open)
 		}
 	}
 	if m.cache.PR.State != "CLOSED" {
@@ -151,15 +151,15 @@ func TestClosedBranchPRLeavesTheOpenList(t *testing.T) {
 
 	// A list page carrying a newer state reconciles the cache the same way.
 	reopened := testModel()
-	reopened.screen, reopened.prView, reopened.prListState = prListScreen, allPRsView, openPRListState
+	reopened.screen, reopened.prList.view, reopened.prList.state = prListScreen, allPRsView, openPRListState
 	reopened.currentBranch = "feature"
 	reopened.navigator = gh.NewNavigatorCache()
 	reopened.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
-	reopened.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	reopened.prList.activePage = prPageKey(allPRsView, openPRListState, "")
 	draft := gh.PR{Number: 1, State: "OPEN", IsDraft: false, HeadRefName: "feature"}
 	reopened.cache = gh.NewCache("feature")
 	reopened.cache.PR = &draft
-	u, _ = reopened.Update(prListRefreshed{key: reopened.activePRPage, page: gh.PRPage{PRs: []gh.PR{{Number: 1, State: "OPEN", IsDraft: true, HeadRefName: "feature"}}, TotalCount: 1}})
+	u, _ = reopened.Update(prListRefreshed{key: reopened.prList.activePage, page: gh.PRPage{PRs: []gh.PR{{Number: 1, State: "OPEN", IsDraft: true, HeadRefName: "feature"}}, TotalCount: 1}})
 	if got := u.(Model).cache.PR; !got.IsDraft {
 		t.Fatalf("list page did not refresh the cached PR: %#v", got)
 	}
@@ -167,12 +167,12 @@ func TestClosedBranchPRLeavesTheOpenList(t *testing.T) {
 
 func TestRefreshOnDefaultBranchDoesNotInventLocalPR(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
 	m.currentBranch, m.defaultBranch = "main", "main"
 	m.navigator = gh.NewNavigatorCache()
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
 	m.cache = gh.NewCache("main")
-	m.prPages = map[string]prPageState{m.activePRPage: {
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {
 		prs: []gh.PR{{Number: 2, State: "OPEN", Title: "other"}}, total: 1, loaded: true, fresh: true,
 	}}
 
@@ -183,9 +183,9 @@ func TestRefreshOnDefaultBranchDoesNotInventLocalPR(t *testing.T) {
 	if m.localAvailable {
 		t.Fatal("default branch marked as an unpublished local PR")
 	}
-	for _, pr := range m.openPRs {
+	for _, pr := range m.prList.open {
 		if pr.State == "LOCAL" {
-			t.Fatalf("synthetic Local PR row injected: %#v", m.openPRs)
+			t.Fatalf("synthetic Local PR row injected: %#v", m.prList.open)
 		}
 	}
 }
@@ -195,10 +195,10 @@ func TestPRListRefreshAssociatesCurrentLocalBranch(t *testing.T) {
 	m.screen = detailScreen
 	m.currentBranch = "feature/x"
 	m.localAvailable = true
-	m.prListGeneration = 1
+	m.prList.generation = 1
 	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
 	pr := gh.PR{Number: 8, HeadRefName: "feature/x", BaseRefName: "main", State: "OPEN", HeadRefOID: "head"}
-	u, _ := m.Update(prListRefreshed{generation: 1, key: m.activePRPage, page: gh.PRPage{ViewerLogin: "me", PRs: []gh.PR{pr}, TotalCount: 1}})
+	u, _ := m.Update(prListRefreshed{generation: 1, key: m.prList.activePage, page: gh.PRPage{ViewerLogin: "me", PRs: []gh.PR{pr}, TotalCount: 1}})
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 8 || m.localAvailable {
 		t.Fatalf("current PR association = cache:%#v local:%v", m.cache.PR, m.localAvailable)
@@ -207,13 +207,13 @@ func TestPRListRefreshAssociatesCurrentLocalBranch(t *testing.T) {
 
 func TestLocalOnlyFilterContinuesUntilVisiblePage(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
-	m.filterQuery = "ci:failed"
-	m.activePRPage = prPageKey(allPRsView, openPRListState, m.filterQuery)
-	m.prPages = map[string]prPageState{m.activePRPage: {loading: true}}
+	m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
+	m.prList.filterQuery = "ci:failed"
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, m.prList.filterQuery)
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {loading: true}}
 	m.navigatorPath = filepath.Join(t.TempDir(), "navigator.json")
 	u, cmd := m.Update(prListRefreshed{
-		key: m.activePRPage,
+		key: m.prList.activePage,
 		page: gh.PRPage{
 			PRs:        []gh.PR{{Number: 1, CheckRollupState: "SUCCESS"}},
 			TotalCount: 2,
@@ -221,21 +221,21 @@ func TestLocalOnlyFilterContinuesUntilVisiblePage(t *testing.T) {
 		},
 	})
 	m = u.(Model)
-	if cmd == nil || len(m.openPRs) != 0 || !m.prPages[m.activePRPage].loading {
-		t.Fatalf("local filter did not continue: visible=%#v page=%#v", m.openPRs, m.prPages[m.activePRPage])
+	if cmd == nil || len(m.prList.open) != 0 || !m.prList.pages[m.prList.activePage].loading {
+		t.Fatalf("local filter did not continue: visible=%#v page=%#v", m.prList.open, m.prList.pages[m.prList.activePage])
 	}
 }
 
 func TestLazyPreviewKeepsCurrentPRSelection(t *testing.T) {
 	m := testModel()
-	m.screen, m.prListGeneration = prListScreen, 1
+	m.screen, m.prList.generation = prListScreen, 1
 	m.navigator.PRs = []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}}
 	m.applyPRFilters(0)
-	m.prCursor = 1
+	m.prList.cursor = 1
 	u, _ := m.Update(prPreviewLoaded{generation: 1, number: 1, pr: gh.PR{Number: 1, State: "OPEN", PreviewLoaded: true}})
 	m = u.(Model)
-	if m.selectedPRNumber() != 2 {
-		t.Fatalf("lazy preview moved selection to PR #%d", m.selectedPRNumber())
+	if m.prList.selectedPRNumber() != 2 {
+		t.Fatalf("lazy preview moved selection to PR #%d", m.prList.selectedPRNumber())
 	}
 }
 
@@ -246,17 +246,17 @@ func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 	m.defaultBranch = "main"
 	m.navigatorPath = filepath.Join(t.TempDir(), "github-prs.json")
 	m.navigator = gh.NewNavigatorCache()
-	m.openPRs = []gh.PR{{Number: 1}, {Number: 2}}
-	m.prCursor = 1
+	m.prList.open = []gh.PR{{Number: 1}, {Number: 2}}
+	m.prList.cursor = 1
 	u, _ := m.Update(prListRefreshed{err: errors.New("offline")})
 	m = u.(Model)
-	if len(m.openPRs) != 2 || m.prCursor != 1 {
-		t.Fatalf("failed refresh lost cache/selection: prs=%v cursor=%d", m.openPRs, m.prCursor)
+	if len(m.prList.open) != 2 || m.prList.cursor != 1 {
+		t.Fatalf("failed refresh lost cache/selection: prs=%v cursor=%d", m.prList.open, m.prList.cursor)
 	}
 	u, _ = m.Update(prListRefreshed{page: gh.PRPage{PRs: []gh.PR{{Number: 2}, {Number: 3}}, TotalCount: 2}})
 	m = u.(Model)
-	if len(m.openPRs) != 2 || m.openPRs[m.prCursor].Number != 2 {
-		t.Fatalf("successful refresh lost selection: prs=%v cursor=%d", m.openPRs, m.prCursor)
+	if len(m.prList.open) != 2 || m.prList.open[m.prList.cursor].Number != 2 {
+		t.Fatalf("successful refresh lost selection: prs=%v cursor=%d", m.prList.open, m.prList.cursor)
 	}
 	// Persisting rides an async Cmd; run it here to check the payload.
 	if msg := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
@@ -284,15 +284,15 @@ func TestPRListRefreshFailureNamesSetupProblems(t *testing.T) {
 func TestStalePRListRefreshCannotRestoreMergedPR(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
-	m.prListGeneration = 2
-	m.listRefreshing = true
-	m.activePRPage = "new"
-	m.prPages = map[string]prPageState{"old": {loading: true}}
-	m.openPRs = []gh.PR{{Number: 2}}
+	m.prList.generation = 2
+	m.prList.refreshing = true
+	m.prList.activePage = "new"
+	m.prList.pages = map[string]prPageState{"old": {loading: true}}
+	m.prList.open = []gh.PR{{Number: 2}}
 	u, cmd := m.Update(prListRefreshed{generation: 1, key: "old", page: gh.PRPage{PRs: []gh.PR{{Number: 1}}, TotalCount: 1}})
 	m = u.(Model)
-	if cmd != nil || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 || !m.listRefreshing || m.prPages["old"].loading {
-		t.Fatalf("stale PR list applied: prs=%v refreshing=%v old=%#v cmd=%v", m.openPRs, m.listRefreshing, m.prPages["old"], cmd)
+	if cmd != nil || len(m.prList.open) != 1 || m.prList.open[0].Number != 2 || !m.prList.refreshing || m.prList.pages["old"].loading {
+		t.Fatalf("stale PR list applied: prs=%v refreshing=%v old=%#v cmd=%v", m.prList.open, m.prList.refreshing, m.prList.pages["old"], cmd)
 	}
 }
 
@@ -301,8 +301,8 @@ func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
 	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, mergePR, 14
 	u, cmd := m.Update(prActionDone{action: mergePR, number: 14})
 	m = u.(Model)
-	if cmd == nil || !m.listRefreshing || m.notice != "Merge submitted for PR #14" || m.prActionRunning != noPRAction {
-		t.Fatalf("merge completion = refreshing:%v notice:%q running:%v cmd:%v", m.listRefreshing, m.notice, m.prActionRunning, cmd)
+	if cmd == nil || !m.prList.refreshing || m.notice != "Merge submitted for PR #14" || m.prActionRunning != noPRAction {
+		t.Fatalf("merge completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning, cmd)
 	}
 
 	m.prActionRunning = mergePR
@@ -318,19 +318,19 @@ func TestPRListCloseCompletionRefreshes(t *testing.T) {
 	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, closePR, 14
 	u, cmd := m.Update(prActionDone{action: closePR, number: 14})
 	m = u.(Model)
-	if cmd == nil || !m.listRefreshing || m.notice != "Closed PR #14" || m.prActionRunning != noPRAction {
-		t.Fatalf("close completion = refreshing:%v notice:%q running:%v cmd:%v", m.listRefreshing, m.notice, m.prActionRunning, cmd)
+	if cmd == nil || !m.prList.refreshing || m.notice != "Closed PR #14" || m.prActionRunning != noPRAction {
+		t.Fatalf("close completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning, cmd)
 	}
 }
 
 func TestCheckoutReloadEpochRejectsPreCheckoutMessages(t *testing.T) {
 	old := testModel()
 	old.targetGeneration = 7
-	old.prListGeneration = 5
+	old.prList.generation = 5
 	next := testModel()
 	next.advanceAsyncGenerations(old)
 	next.cache.PR = &gh.PR{Number: 2}
-	next.openPRs = []gh.PR{{Number: 2}}
+	next.prList.open = []gh.PR{{Number: 2}}
 	u, _ := next.Update(remoteLoaded{generation: 7, pr: gh.PR{Number: 1}})
 	next = u.(Model)
 	if next.cache.PR == nil || next.cache.PR.Number != 2 {
@@ -338,8 +338,8 @@ func TestCheckoutReloadEpochRejectsPreCheckoutMessages(t *testing.T) {
 	}
 	u, _ = next.Update(prListRefreshed{generation: 5, page: gh.PRPage{PRs: []gh.PR{{Number: 1}}, TotalCount: 1}})
 	next = u.(Model)
-	if len(next.openPRs) != 1 || next.openPRs[0].Number != 2 {
-		t.Fatalf("pre-checkout PR list result replaced list: %#v", next.openPRs)
+	if len(next.prList.open) != 1 || next.prList.open[0].Number != 2 {
+		t.Fatalf("pre-checkout PR list result replaced list: %#v", next.prList.open)
 	}
 	next.diffCache = map[string]string{"same-range": "new branch"}
 	u, _ = next.Update(diffRendered{generation: 7, key: "same-range", output: "old branch"})
@@ -371,11 +371,11 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.currentBranch = "main"
-	m.openPRs = []gh.PR{
+	m.prList.open = []gh.PR{
 		{Number: 1, Title: "A", HeadRefName: "a", BaseRefName: "main"},
 		{Number: 2, Title: "B", HeadRefName: "b", BaseRefName: "main"},
 	}
-	m.navigator.PRs = append([]gh.PR(nil), m.openPRs...)
+	m.navigator.PRs = append([]gh.PR(nil), m.prList.open...)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -387,7 +387,7 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	if m.autoOpenCurrent {
 		t.Fatal("explicit PR-list navigation must disable startup auto-open")
 	}
-	m.prCursor = 1
+	m.prList.cursor = 1
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
@@ -596,14 +596,14 @@ func TestCIPollUnchangedResultSkipsCacheInvalidation(t *testing.T) {
 		Commits:          []gh.PRCommit{{OID: "head", CheckRollupState: "PENDING"}}}
 	m.conversationDirty = false
 	key := prRowCacheKey{number: 12}
-	m.prRowCache = map[prRowCacheKey][]string{key: {"row"}}
+	m.prList.rowCache = map[prRowCacheKey][]string{key: {"row"}}
 	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head",
 		Checks: []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}}}})
 	m = u.(Model)
 	if m.conversationDirty {
 		t.Fatal("unchanged CI result rebuilt the conversation cards")
 	}
-	if _, ok := m.prRowCache[key]; !ok {
+	if _, ok := m.prList.rowCache[key]; !ok {
 		t.Fatal("unchanged CI result dropped the PR row cache")
 	}
 	// A pending PR still needs the next tick even when nothing changed.
@@ -698,7 +698,7 @@ func TestLocalLoadRunsOffTheUpdateGoroutine(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	m := testModel()
 	m.root = t.TempDir()
-	m.screen, m.prView = prListScreen, assignedView
+	m.screen, m.prList.view = prListScreen, assignedView
 	m.currentBranch, m.defaultBranch = "feature/x", "main"
 	m.autoOpenCurrent = true
 	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
@@ -786,12 +786,12 @@ func TestCurrentBranchPRLoadedKeepsListStateOnDetailScreen(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
 	m.currentBranch, m.defaultBranch = "feature/x", "main"
-	m.prView, m.prListState = assignedView, openPRListState
+	m.prList.view, m.prList.state = assignedView, openPRListState
 	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
 	u, _ := m.Update(currentBranchPRLoaded{pr: gh.PR{Number: 9, State: "MERGED", HeadRefName: "feature/x"}})
 	m = u.(Model)
-	if m.prView != assignedView || m.prListState != openPRListState {
-		t.Fatalf("detail screen rewrote list state: view=%v state=%v", m.prView, m.prListState)
+	if m.prList.view != assignedView || m.prList.state != openPRListState {
+		t.Fatalf("detail screen rewrote list state: view=%v state=%v", m.prList.view, m.prList.state)
 	}
 }
 
@@ -851,17 +851,17 @@ func TestStaleCheckoutReloadCannotReplaceModel(t *testing.T) {
 
 func TestStalePRPreviewResultClearsLoadingTicket(t *testing.T) {
 	m := testModel()
-	m.prListGeneration = 2
-	m.prPreviewLoading = map[int]bool{7: true}
+	m.prList.generation = 2
+	m.prList.previewLoading = map[int]bool{7: true}
 	u, _ := m.Update(prPreviewLoaded{generation: 1, number: 7, pr: gh.PR{Number: 7}})
 	got := u.(Model)
-	if len(got.prPreviewLoading) != 0 {
-		t.Fatalf("stale preview result orphaned the loading ticket: %#v", got.prPreviewLoading)
+	if len(got.prList.previewLoading) != 0 {
+		t.Fatalf("stale preview result orphaned the loading ticket: %#v", got.prList.previewLoading)
 	}
 	if got.isLoading() {
 		t.Fatal("orphaned ticket kept the spinner alive")
 	}
-	if got.prPreviewLoaded[7] {
+	if got.prList.previewLoaded[7] {
 		t.Fatal("stale preview result was applied")
 	}
 }
