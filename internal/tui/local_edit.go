@@ -82,7 +82,7 @@ func (m Model) openLocalEditor(o localEditOverlay, value string) (Model, tea.Cmd
 }
 
 func (m Model) startLocalComment() (Model, tea.Cmd) {
-	if m.remote || m.detailView.active != conversationTab || m.detailView.focusDiff || m.detailView.focusExplorer {
+	if m.remote || m.detailView.active != conversationTab || m.detailView.focus != focusConversation {
 		return m, nil
 	}
 	return m.openLocalEditor(localEditOverlay{mode: addLocalComment}, "kind: decision\n\n")
@@ -93,7 +93,7 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 		m.status = "comments live in the Conversation tab (esc)"
 		return m, nil
 	}
-	if m.detailView.focusDiff || m.detailView.focusExplorer {
+	if m.detailView.focus != focusConversation {
 		return m, nil
 	}
 	item := m.selectedConversationItem()
@@ -143,7 +143,7 @@ func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
 		m.status = "comments live in the Conversation tab (esc)"
 		return m, nil
 	}
-	if m.detailView.focusDiff || m.detailView.focusExplorer {
+	if m.detailView.focus != focusConversation {
 		return m, nil
 	}
 	item := m.selectedConversationItem()

@@ -239,7 +239,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.diffTerminal.Close()
 		}
 		m.diffTerminal = nil
-		m.detailView.focusDiff, m.detailView.focusExplorer = false, false
+		m.detailView.focus = focusConversation
 		m.screen = prListScreen
 		m.autoOpenCurrent = false
 		m.refreshing, m.publishing = false, false
@@ -250,10 +250,10 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 	// Tab cycles focus: conversation → review → conversation.
 	if key.Matches(msg, m.keys.Focus) {
-		if m.detailView.focusDiff {
-			m.detailView.focusDiff, m.detailView.focusExplorer, m.detailView.reviewWide = false, false, false
+		if m.detailView.focus == focusReview {
+			m.detailView.focus, m.detailView.reviewWide = focusConversation, false
 		} else {
-			m.detailView.focusDiff, m.detailView.focusExplorer = true, false
+			m.detailView.focus = focusReview
 		}
 		m.layout()
 		return m, m.sync()
@@ -262,27 +262,25 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// expands conversation; from review/explorer it expands the review side.
 	if isShiftTab(msg) {
 		m.detailView.reviewWide = !m.detailView.reviewWide
-		if m.detailView.reviewWide && !m.detailView.focusDiff && !m.detailView.focusExplorer {
-			m.detailView.focusDiff = false // conversation full-width: hide review
-		} else if m.detailView.reviewWide {
-			m.detailView.focusDiff, m.detailView.focusExplorer = true, false
+		// Expanding from the conversation keeps it focused (full-width
+		// conversation hides the review); otherwise the review takes over.
+		if m.detailView.reviewWide && m.detailView.focus != focusConversation {
+			m.detailView.focus = focusReview
 		}
 		m.layout()
 		return m, m.sync()
 	}
 	if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusRight) {
-		if !m.detailView.focusExplorer {
-			m.detailView.focusExplorer = true
-		}
+		m.detailView.focus = focusExplorer
 		return m, nil
 	}
-	if !m.detailView.focusDiff && key.Matches(msg, m.keys.FocusRight) {
-		m.detailView.focusDiff = true
+	if m.detailView.focus != focusReview && key.Matches(msg, m.keys.FocusRight) {
+		m.detailView.focus = focusReview
 		return m, nil
 	}
 	// Comment/review/edit keys only apply when the conversation pane is focused;
 	// when the embedded reviewer (nvim) has focus, forward them to the terminal.
-	if !m.detailView.focusDiff && !m.detailView.focusExplorer {
+	if m.detailView.focus == focusConversation {
 		if key.Matches(msg, m.keys.AddComment) {
 			return m.startAddComment()
 		}
@@ -299,7 +297,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m.deleteSelectedLocalComment()
 		}
 	}
-	if m.detailView.focusDiff {
+	if m.detailView.focus == focusReview {
 		if key.Matches(msg, m.keys.Quit) {
 			return m, tea.Quit
 		}
@@ -343,7 +341,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.detail, cmd = m.detail.Update(msg)
 		return m, cmd
 	}
-	if m.detailView.focusExplorer {
+	if m.detailView.focus == focusExplorer {
 		if m.fileExplorerMode() {
 			if key.Matches(msg, m.keys.PreviewUp) {
 				scrollQuarter(&m.detail, false)
@@ -358,7 +356,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
-	if m.screen == detailScreen && !m.detailView.focusDiff && !m.detailView.focusExplorer {
+	if m.screen == detailScreen && m.detailView.focus == focusConversation {
 		if key.Matches(msg, m.keys.PreviewUp) {
 			scrollQuarter(&m.list, false)
 			return m, nil
@@ -438,7 +436,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Commits):
-		if m.fileExplorerMode() && m.detailView.focusExplorer {
+		if m.fileExplorerMode() && m.detailView.focus == focusExplorer {
 			return m, m.toggleFileCheck()
 		}
 		m.detailView.active = commitsTab
@@ -475,10 +473,14 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		m.status = ""
 		cmd := m.restartReview(sha, m.prURL())
-		m.detailView.focusDiff = m.diffTerminal != nil && m.diffTerminal.Available()
+		if m.diffTerminal != nil && m.diffTerminal.Available() {
+			m.detailView.focus = focusReview
+		} else if m.detailView.focus == focusReview {
+			m.detailView.focus = focusConversation
+		}
 		return m, tea.Batch(cmd, m.sync())
 	case key.Matches(msg, m.keys.Down):
-		if m.detailView.focusExplorer {
+		if m.detailView.focus == focusExplorer {
 			if m.detailView.fileCursor < len(m.detailView.files)-1 {
 				m.detailView.fileCursor++
 				return m, m.sync()
@@ -491,7 +493,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
-		if m.detailView.focusExplorer {
+		if m.detailView.focus == focusExplorer {
 			if m.detailView.fileCursor > 0 {
 				m.detailView.fileCursor--
 				return m, m.sync()

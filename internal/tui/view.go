@@ -61,10 +61,10 @@ func (m Model) View() string {
 			}
 			leftTitle = fmt.Sprintf("Checks · %d", count)
 		}
-		if m.detailView.reviewWide && m.detailView.focusDiff {
+		if m.detailView.reviewWide && m.detailView.focus == focusReview {
 			body := m.renderReviewPane()
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
-		} else if m.detailView.reviewWide && !m.detailView.focusDiff {
+		} else if m.detailView.reviewWide && m.detailView.focus != focusReview {
 			leftContent := m.list.View()
 			if m.detailView.active == conversationTab {
 				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
@@ -77,7 +77,7 @@ func (m Model) View() string {
 			if m.detailView.active == conversationTab {
 				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
 			}
-			left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, !m.detailView.focusDiff && !m.detailView.focusExplorer)
+			left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, m.detailView.focus == focusConversation)
 			body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 		}
@@ -223,7 +223,7 @@ func (m Model) footerMode() string {
 		return "PRS"
 	}
 	switch {
-	case m.detailView.focusDiff, m.detailView.focusExplorer:
+	case m.detailView.focus != focusConversation:
 		return "REVIEW"
 	case m.detailView.active == commitsTab:
 		return "COMMITS"
@@ -258,7 +258,7 @@ func (m Model) footerContent() string {
 	if m.notice != "" && !m.isLoading() {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}
-	if m.detailView.focusDiff {
+	if m.detailView.focus == focusReview {
 		hint := stMuted.Render("Review focused · Tab conversation · Shift+Tab full width · q quit")
 		if m.githubStatus != "" {
 			return stMuted.Render(m.githubStatus) + "  " + hint

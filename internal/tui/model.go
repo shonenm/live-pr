@@ -587,7 +587,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	}
 	m.refreshing, m.publishing = true, false
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.detailView.reviewedMarksPath))
-	m.detailView.focusDiff, m.detailView.focusExplorer, m.detailView.fileCursor, m.detailView.active, m.detailView.reviewSHA = false, false, 0, conversationTab, ""
+	m.detailView.focus, m.detailView.fileCursor, m.detailView.active, m.detailView.reviewSHA = focusConversation, 0, conversationTab, ""
 	m.layout()
 }
 
@@ -720,7 +720,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 		m.cache.FetchedAt = snapshot.FetchedAt
 	}
 	m.detailView.invalidateConversation()
-	m.detailView.reviewSHA, m.detailView.active, m.detailView.focusDiff, m.detailView.focusExplorer, m.detailView.fileCursor = "", conversationTab, false, false, 0
+	m.detailView.reviewSHA, m.detailView.active, m.detailView.focus, m.detailView.fileCursor = "", conversationTab, focusConversation, 0
 	m.diffTerminal = nil
 	m.refreshing, m.publishing = true, false
 	m.status = "loading PR refs…"
@@ -751,7 +751,7 @@ func (m *Model) navigationLength() int {
 	if m.screen == prListScreen {
 		return len(m.prList.open)
 	}
-	if m.detailView.focusExplorer {
+	if m.detailView.focus == focusExplorer {
 		return len(m.detailView.files)
 	}
 	return m.activeLen()
@@ -788,7 +788,7 @@ func (m *Model) moveCursorTo(index int) tea.Cmd {
 			return tea.Batch(cmd, m.requestPRPage(false))
 		}
 		return cmd
-	} else if m.detailView.focusExplorer {
+	} else if m.detailView.focus == focusExplorer {
 		m.detailView.fileCursor = index
 	} else {
 		m.detailView.cursors[m.detailView.active] = index
@@ -800,7 +800,7 @@ func (m Model) navigationCursor() int {
 	if m.screen == prListScreen {
 		return m.prList.cursor
 	}
-	if m.detailView.focusExplorer {
+	if m.detailView.focus == focusExplorer {
 		return m.detailView.fileCursor
 	}
 	return m.detailView.cursors[m.detailView.active]
