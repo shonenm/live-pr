@@ -108,33 +108,33 @@ func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
 func TestPRRowCacheReusesUnselectedRowsAndInvalidatesWithFilters(t *testing.T) {
 	m := testModel()
 	m.list.Width = 120
-	m.openPRs = []gh.PR{{Number: 1, Title: "one"}, {Number: 2, Title: "two"}, {Number: 3, Title: "three"}}
-	m.prStacks = buildPRStacks(m.openPRs)
+	m.prList.open = []gh.PR{{Number: 1, Title: "one"}, {Number: 2, Title: "two"}, {Number: 3, Title: "three"}}
+	m.prList.stacks = buildPRStacks(m.prList.open)
 	_, _ = m.buildPRListRows()
-	if len(m.prRowCache) != 2 {
-		t.Fatalf("initial cached rows = %d, want 2 unselected rows", len(m.prRowCache))
+	if len(m.prList.rowCache) != 2 {
+		t.Fatalf("initial cached rows = %d, want 2 unselected rows", len(m.prList.rowCache))
 	}
 	_, _ = m.buildPRListRows()
-	if len(m.prRowCache) != 2 {
-		t.Fatalf("stable render grew row cache to %d", len(m.prRowCache))
+	if len(m.prList.rowCache) != 2 {
+		t.Fatalf("stable render grew row cache to %d", len(m.prList.rowCache))
 	}
-	m.prCursor = 1
+	m.prList.cursor = 1
 	_, _ = m.buildPRListRows()
-	if len(m.prRowCache) != 3 {
-		t.Fatalf("selection change cached rows = %d, want 3", len(m.prRowCache))
+	if len(m.prList.rowCache) != 3 {
+		t.Fatalf("selection change cached rows = %d, want 3", len(m.prList.rowCache))
 	}
 	// Rows key on their full render inputs, so a data refresh keeps them;
 	// eviction only happens past maxPRRowCacheEntries.
 	m.applyPRFilters(0)
-	if len(m.prRowCache) != 3 {
-		t.Fatalf("data refresh dropped still-valid rows: %d", len(m.prRowCache))
+	if len(m.prList.rowCache) != 3 {
+		t.Fatalf("data refresh dropped still-valid rows: %d", len(m.prList.rowCache))
 	}
 }
 
 func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
-	m.openPRs = []gh.PR{{
+	m.prList.open = []gh.PR{{
 		Number: 15, Title: "navigator", Body: "## Summary\n\nPreview body", BaseRefName: "main", HeadRefName: "feature",
 		Mergeable: "MERGEABLE", MergeStateStatus: "CLEAN", ReviewDecision: "APPROVED",
 		ChangedFiles: 18, Additions: 1123, Deletions: 128, CommitCount: 5,
@@ -161,7 +161,7 @@ func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 func TestPRListPreviewShowsConflictAndFailedCI(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
-	m.openPRs = []gh.PR{{Number: 1, Mergeable: "CONFLICTING", MergeStateStatus: "DIRTY", Checks: []gh.PRCheck{{Conclusion: "FAILURE"}}}}
+	m.prList.open = []gh.PR{{Number: 1, Mergeable: "CONFLICTING", MergeStateStatus: "DIRTY", Checks: []gh.PRCheck{{Conclusion: "FAILURE"}}}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	out := ansi.Strip(m.View())
@@ -192,8 +192,8 @@ func TestLocalPRListEntryCarriesDiffStats(t *testing.T) {
 
 func TestPRViewOrderDefaultsToAssigned(t *testing.T) {
 	var m Model
-	if m.prView != assignedView {
-		t.Fatalf("default view = %v", m.prView)
+	if m.prList.view != assignedView {
+		t.Fatalf("default view = %v", m.prList.view)
 	}
 	want := []prView{assignedView, reviewRequestedView, allPRsView, authoredView, needsMeView, closedPRsView}
 	for i, view := range want {
@@ -220,11 +220,11 @@ func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 		needsMeView:         {2, 3},
 	}
 	for view, numbers := range want {
-		m.prView = view
+		m.prList.view = view
 		m.applyPRFilters(0)
-		got := make([]int, len(m.openPRs))
-		for i := range m.openPRs {
-			got[i] = m.openPRs[i].Number
+		got := make([]int, len(m.prList.open))
+		for i := range m.prList.open {
+			got[i] = m.prList.open[i].Number
 		}
 		if !reflect.DeepEqual(got, numbers) {
 			t.Fatalf("view %s = %v, want %v", m.viewName(view), got, numbers)
@@ -260,8 +260,8 @@ func TestOrGroupViewFiltersAndCountsLocally(t *testing.T) {
 	m := testModel()
 	m.screen, m.viewerLogin = prListScreen, "me"
 	m.views = []config.View{{Name: "Needs me", Query: "(review-requested:@me OR assignee:@me OR author:@me)"}}
-	m.prView, m.prListState = 0, openPRListState
-	m.activePRPage = prPageKey(0, openPRListState, "")
+	m.prList.view, m.prList.state = 0, openPRListState
+	m.prList.activePage = prPageKey(0, openPRListState, "")
 	m.navigator = gh.NewNavigatorCache()
 
 	// What reaches GitHub carries no group, so the search is answerable.
@@ -274,12 +274,12 @@ func TestOrGroupViewFiltersAndCountsLocally(t *testing.T) {
 	reviewing := gh.PR{Number: 3, State: "OPEN", ViewerReviewRequested: true}
 	other := gh.PR{Number: 4, State: "OPEN", Author: gh.PRUser{Login: "you"}}
 	superset := []gh.PR{mine, assigned, reviewing, other}
-	m.prPages = map[string]prPageState{m.activePRPage: {prs: superset, total: len(superset), loaded: true, fresh: true}}
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: superset, total: len(superset), loaded: true, fresh: true}}
 	m.navigator.PRs = superset
 
 	m.applyPRFilters(0)
 	var listed []int
-	for _, pr := range m.openPRs {
+	for _, pr := range m.prList.open {
 		listed = append(listed, pr.Number)
 	}
 	if !reflect.DeepEqual(listed, []int{1, 2, 3}) {
@@ -293,13 +293,13 @@ func TestOrGroupViewFiltersAndCountsLocally(t *testing.T) {
 
 func TestPRPaginationAppendsOnceAndCachesView(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
-	m.prListGeneration = 3
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
-	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{{Number: 1, Title: "old"}}, total: 3, endCursor: "C1", hasNext: true, loaded: true, fresh: true}}
+	m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
+	m.prList.generation = 3
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: []gh.PR{{Number: 1, Title: "old"}}, total: 3, endCursor: "C1", hasNext: true, loaded: true, fresh: true}}
 	m.navigatorPath = filepath.Join(t.TempDir(), "navigator.json")
 	m.applyPRFilters(1)
-	if cmd := m.requestPRPage(false); cmd == nil || !m.prPages[m.activePRPage].loading {
+	if cmd := m.requestPRPage(false); cmd == nil || !m.prList.pages[m.prList.activePage].loading {
 		t.Fatal("next page was not scheduled")
 	}
 	if cmd := m.requestPRPage(false); cmd != nil {
@@ -307,7 +307,7 @@ func TestPRPaginationAppendsOnceAndCachesView(t *testing.T) {
 	}
 	u, _ := m.Update(prListRefreshed{
 		generation: 3,
-		key:        m.activePRPage,
+		key:        m.prList.activePage,
 		appendPage: true,
 		page: gh.PRPage{
 			PRs:        []gh.PR{{Number: 1, Title: "updated"}, {Number: 2, Title: "new"}},
@@ -316,7 +316,7 @@ func TestPRPaginationAppendsOnceAndCachesView(t *testing.T) {
 		},
 	})
 	m = u.(Model)
-	page := m.prPages[m.activePRPage]
+	page := m.prList.pages[m.prList.activePage]
 	if page.loading || page.hasNext || len(page.prs) != 2 || page.prs[0].Title != "updated" || page.prs[1].Number != 2 {
 		t.Fatalf("appended page = %#v", page)
 	}
@@ -328,27 +328,27 @@ func TestPRPaginationAppendsOnceAndCachesView(t *testing.T) {
 
 func TestPRViewSwitchUsesFreshPageWithoutRequest(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, assignedView, openPRListState
-	m.activePRPage = prPageKey(assignedView, openPRListState, "")
+	m.screen, m.prList.view, m.prList.state = prListScreen, assignedView, openPRListState
+	m.prList.activePage = prPageKey(assignedView, openPRListState, "")
 	reviewKey := prPageKey(reviewRequestedView, openPRListState, "")
-	m.prPages = map[string]prPageState{
-		m.activePRPage: {prs: []gh.PR{{Number: 1}}, total: 1, loaded: true, fresh: true},
-		reviewKey:      {prs: []gh.PR{{Number: 2}}, total: 1, loaded: true, fresh: true},
+	m.prList.pages = map[string]prPageState{
+		m.prList.activePage: {prs: []gh.PR{{Number: 1}}, total: 1, loaded: true, fresh: true},
+		reviewKey:           {prs: []gh.PR{{Number: 2}}, total: 1, loaded: true, fresh: true},
 	}
-	m.prView = reviewRequestedView
+	m.prList.view = reviewRequestedView
 	_ = m.applyPRViewState(0)
-	if m.activePRPage != reviewKey || m.listRefreshing || m.prPages[reviewKey].loading || len(m.openPRs) != 1 || m.openPRs[0].Number != 2 {
-		t.Fatalf("fresh view switch = key:%q refreshing:%v page=%#v prs=%#v", m.activePRPage, m.listRefreshing, m.prPages[reviewKey], m.openPRs)
+	if m.prList.activePage != reviewKey || m.prList.refreshing || m.prList.pages[reviewKey].loading || len(m.prList.open) != 1 || m.prList.open[0].Number != 2 {
+		t.Fatalf("fresh view switch = key:%q refreshing:%v page=%#v prs=%#v", m.prList.activePage, m.prList.refreshing, m.prList.pages[reviewKey], m.prList.open)
 	}
 }
 
 func TestPRPaginationStartsWhenNavigationReachesLastRow(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
-	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{{Number: 1}, {Number: 2}}, total: 3, endCursor: "C1", hasNext: true, loaded: true, fresh: true}}
+	m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: []gh.PR{{Number: 1}, {Number: 2}}, total: 3, endCursor: "C1", hasNext: true, loaded: true, fresh: true}}
 	m.applyPRFilters(1)
-	if cmd := m.moveCursorTo(1); cmd == nil || !m.prPages[m.activePRPage].loading {
+	if cmd := m.moveCursorTo(1); cmd == nil || !m.prList.pages[m.prList.activePage].loading {
 		t.Fatal("last-row navigation did not request the next page")
 	}
 }
@@ -359,42 +359,42 @@ func TestPRListLoadsClosedFromView(t *testing.T) {
 	m.navigator.FetchedStates = map[string]bool{"OPEN": true}
 	m.navigator.PRs = []gh.PR{{Number: 1, State: "OPEN", Title: "open", Assignees: []gh.PRUser{{Login: "me"}}}}
 	m.applyPRFilters(0)
-	if len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
-		t.Fatalf("default state = %#v", m.openPRs)
+	if len(m.prList.open) != 1 || m.prList.open[0].Number != 1 {
+		t.Fatalf("default state = %#v", m.prList.open)
 	}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	m.prView = needsMeView
+	m.prList.view = needsMeView
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	m = u.(Model)
-	if m.prView != closedPRsView || m.prListState != closedPRListState || !m.listRefreshing || len(m.openPRs) != 0 {
-		t.Fatalf("closed view switch = view:%v state:%v refreshing:%v prs:%#v", m.prView, m.prListState, m.listRefreshing, m.openPRs)
+	if m.prList.view != closedPRsView || m.prList.state != closedPRListState || !m.prList.refreshing || len(m.prList.open) != 0 {
+		t.Fatalf("closed view switch = view:%v state:%v refreshing:%v prs:%#v", m.prList.view, m.prList.state, m.prList.refreshing, m.prList.open)
 	}
-	u, _ = m.Update(prListRefreshed{generation: m.prListGeneration, key: m.activePRPage, page: gh.PRPage{ViewerLogin: "me", PRs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}, TotalCount: 1}})
+	u, _ = m.Update(prListRefreshed{generation: m.prList.generation, key: m.prList.activePage, page: gh.PRPage{ViewerLogin: "me", PRs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}, TotalCount: 1}})
 	m = u.(Model)
 	m.sync()
-	if len(m.openPRs) != 1 || m.openPRs[0].Number != 2 || len(m.navigator.PRs) != 2 || m.viewCount(assignedView) != 1 || !strings.Contains(ansi.Strip(m.buildPRList()), "closed") {
-		t.Fatalf("closed PR list/cache = visible:%#v cached:%#v assigned:%d", m.openPRs, m.navigator.PRs, m.viewCount(assignedView))
+	if len(m.prList.open) != 1 || m.prList.open[0].Number != 2 || len(m.navigator.PRs) != 2 || m.viewCount(assignedView) != 1 || !strings.Contains(ansi.Strip(m.buildPRList()), "closed") {
+		t.Fatalf("closed PR list/cache = visible:%#v cached:%#v assigned:%d", m.prList.open, m.navigator.PRs, m.viewCount(assignedView))
 	}
 	if m.keys.Merge.Enabled() || m.keys.Close.Enabled() {
 		t.Fatal("closed PR actions must be disabled")
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	m = u.(Model)
-	if m.prView != assignedView || !m.listRefreshing || len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
-		t.Fatalf("cache-first assigned view = view:%v refreshing:%v prs:%#v", m.prView, m.listRefreshing, m.openPRs)
+	if m.prList.view != assignedView || !m.prList.refreshing || len(m.prList.open) != 1 || m.prList.open[0].Number != 1 {
+		t.Fatalf("cache-first assigned view = view:%v refreshing:%v prs:%#v", m.prList.view, m.prList.refreshing, m.prList.open)
 	}
 }
 
 func TestClosedPRsDoNotRenderAsStacks(t *testing.T) {
 	m := testModel()
-	m.prListState = closedPRListState
-	m.filteredPRs = []gh.PR{
+	m.prList.state = closedPRListState
+	m.prList.filtered = []gh.PR{
 		{Number: 1, State: "CLOSED", HeadRefName: "one", BaseRefName: "main"},
 		{Number: 2, State: "CLOSED", HeadRefName: "two", BaseRefName: "one"},
 	}
 	m.applyPRFilters(0)
-	for _, stack := range m.prStacks {
+	for _, stack := range m.prList.stacks {
 		if len(stack.entries) != 1 {
 			t.Fatalf("closed stack = %#v", stack)
 		}
@@ -415,15 +415,15 @@ func TestPRListLoadsClosedFromSearch(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if m.prView != allPRsView || m.prListState != closedPRListState || !m.listRefreshing || len(m.openPRs) != 0 {
-		t.Fatalf("closed search = view:%v state:%v refreshing:%v prs:%#v", m.prView, m.prListState, m.listRefreshing, m.openPRs)
+	if m.prList.view != allPRsView || m.prList.state != closedPRListState || !m.prList.refreshing || len(m.prList.open) != 0 {
+		t.Fatalf("closed search = view:%v state:%v refreshing:%v prs:%#v", m.prList.view, m.prList.state, m.prList.refreshing, m.prList.open)
 	}
-	u, _ = m.Update(prListRefreshed{generation: m.prListGeneration, key: m.activePRPage, page: gh.PRPage{PRs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}, TotalCount: 1}})
+	u, _ = m.Update(prListRefreshed{generation: m.prList.generation, key: m.prList.activePage, page: gh.PRPage{PRs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}, TotalCount: 1}})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(Model)
-	if m.filterQuery != "" || m.prListState != openPRListState || !m.listRefreshing || len(m.openPRs) != 1 || m.openPRs[0].Number != 1 {
-		t.Fatalf("cleared closed search = query:%q state:%v refreshing:%v prs:%#v", m.filterQuery, m.prListState, m.listRefreshing, m.openPRs)
+	if m.prList.filterQuery != "" || m.prList.state != openPRListState || !m.prList.refreshing || len(m.prList.open) != 1 || m.prList.open[0].Number != 1 {
+		t.Fatalf("cleared closed search = query:%q state:%v refreshing:%v prs:%#v", m.prList.filterQuery, m.prList.state, m.prList.refreshing, m.prList.open)
 	}
 }
 
@@ -537,16 +537,16 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = u.(Model)
-	if len(m.openPRs) != 1 || m.openPRs[0].Number != 1 || !m.collapsedStacks[m.prStacks[0].id] {
-		t.Fatalf("collapsed stack = prs:%#v collapsed:%#v", m.openPRs, m.collapsedStacks)
+	if len(m.prList.open) != 1 || m.prList.open[0].Number != 1 || !m.prList.collapsedStacks[m.prList.stacks[0].id] {
+		t.Fatalf("collapsed stack = prs:%#v collapsed:%#v", m.prList.open, m.prList.collapsedStacks)
 	}
 	if !strings.Contains(ansi.Strip(m.buildPRList()), "▸ #1") {
 		t.Fatalf("collapsed header = %q", ansi.Strip(m.buildPRList()))
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = u.(Model)
-	if len(m.openPRs) != 3 || m.collapsedStacks[m.prStacks[0].id] {
-		t.Fatalf("expanded stack = prs:%#v collapsed:%#v", m.openPRs, m.collapsedStacks)
+	if len(m.prList.open) != 3 || m.prList.collapsedStacks[m.prList.stacks[0].id] {
+		t.Fatalf("expanded stack = prs:%#v collapsed:%#v", m.prList.open, m.prList.collapsedStacks)
 	}
 }
 
@@ -554,10 +554,10 @@ func TestPRListScrollTracksRenderedRows(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	for i := 1; i <= 20; i++ {
-		m.openPRs = append(m.openPRs, gh.PR{Number: i, Title: "PR"})
+		m.prList.open = append(m.prList.open, gh.PR{Number: i, Title: "PR"})
 	}
-	m.prStacks = buildPRStacks(m.openPRs)
-	m.prCursor = 10
+	m.prList.stacks = buildPRStacks(m.prList.open)
+	m.prList.cursor = 10
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 	m = u.(Model)
 	if m.list.YOffset < 20 {
@@ -598,7 +598,7 @@ func TestUserIconsAppearAcrossPRSurfaces(t *testing.T) {
 	m.w, m.list.Width, m.detail.Width = 160, 70, 80
 	pr := gh.PR{Number: 7, State: "OPEN", Title: "icons", BaseRefName: "main", HeadRefName: "icons", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "bob"}}, PreviewLoaded: true}
 	row := ansi.Strip(strings.Join(m.renderPRRow(pr, false, ""), "\n"))
-	preview := ansi.Strip(func() string { m.openPRs = []gh.PR{pr}; return m.buildPRPreview() }())
+	preview := ansi.Strip(func() string { m.prList.open = []gh.PR{pr}; return m.buildPRPreview() }())
 	m.cache.PR = &pr
 	header := ansi.Strip(m.renderHeader())
 	if !strings.Contains(row, "● @alice") {
@@ -614,37 +614,37 @@ func TestUserIconsAppearAcrossPRSurfaces(t *testing.T) {
 
 func TestRecomputeViewCountsDoesNotDoubleCountCachedViews(t *testing.T) {
 	m := testModel()
-	m.allPRs = []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}}
+	m.prList.all = []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}}
 	// A cached page holds the exact server-side total for the all view.
-	m.prPages = map[string]prPageState{
+	m.prList.pages = map[string]prPageState{
 		prPageKey(allPRsView, openPRListState, ""): {total: 5, loaded: true},
 	}
 
 	m.recomputeViewCounts(prPageState{}, false)
 
-	if m.viewCounts[allPRsView] != 5 {
-		t.Fatalf("all view count = %d, want cached total 5", m.viewCounts[allPRsView])
+	if m.prList.viewCounts[allPRsView] != 5 {
+		t.Fatalf("all view count = %d, want cached total 5", m.prList.viewCounts[allPRsView])
 	}
-	// Views without a cached page still fall back to counting allPRs.
-	if m.viewCounts[closedPRsView] != 0 || !m.viewCountKnown[closedPRsView] {
-		t.Fatalf("closed view = %d known=%v", m.viewCounts[closedPRsView], m.viewCountKnown[closedPRsView])
+	// Views without a cached page still fall back to counting prList.all.
+	if m.prList.viewCounts[closedPRsView] != 0 || !m.prList.viewCountKnown[closedPRsView] {
+		t.Fatalf("closed view = %d known=%v", m.prList.viewCounts[closedPRsView], m.prList.viewCountKnown[closedPRsView])
 	}
 }
 
 func TestApplyPRFiltersKeepsRowCacheWithinBound(t *testing.T) {
 	m := testModel()
 	m.navigator = gh.NewNavigatorCache()
-	m.prRowCache = map[prRowCacheKey][]string{{number: 1}: {"row"}}
+	m.prList.rowCache = map[prRowCacheKey][]string{{number: 1}: {"row"}}
 	m.applyPRFilters(0)
-	if len(m.prRowCache) != 1 {
+	if len(m.prList.rowCache) != 1 {
 		t.Fatal("data refresh dropped still-valid row renders")
 	}
 	for i := 0; i <= maxPRRowCacheEntries; i++ {
-		m.prRowCache[prRowCacheKey{number: i}] = []string{"row"}
+		m.prList.rowCache[prRowCacheKey{number: i}] = []string{"row"}
 	}
 	m.applyPRFilters(0)
-	if len(m.prRowCache) != 0 {
-		t.Fatalf("over-cap cache not evicted: %d", len(m.prRowCache))
+	if len(m.prList.rowCache) != 0 {
+		t.Fatalf("over-cap cache not evicted: %d", len(m.prList.rowCache))
 	}
 }
 
@@ -694,7 +694,7 @@ func TestConfiguredViewsDriveTabsSearchAndCounts(t *testing.T) {
 	done := gh.PR{Number: 3, State: "MERGED", Author: gh.PRUser{Login: "you"}}
 	m.navigator = gh.NewNavigatorCache()
 	m.navigator.PRs = []gh.PR{mine, bug, done}
-	m.allPRs = m.navigator.PRs
+	m.prList.all = m.navigator.PRs
 
 	// The tab's own query decides membership and its open/closed bucket.
 	for _, tc := range []struct {
@@ -718,7 +718,7 @@ func TestConfiguredViewsDriveTabsSearchAndCounts(t *testing.T) {
 	// Counts and the tab bar follow the configured names and order.
 	m.recomputeViewCounts(prPageState{}, false)
 	if m.viewCount(0) != 1 || m.viewCount(1) != 1 || m.viewCount(2) != 1 {
-		t.Fatalf("counts = %v", m.viewCounts)
+		t.Fatalf("counts = %v", m.prList.viewCounts)
 	}
 	m.w = 200
 	header := ansi.Strip(m.renderPRListHeader())
@@ -730,7 +730,7 @@ func TestConfiguredViewsDriveTabsSearchAndCounts(t *testing.T) {
 	}
 
 	// [ ] cycle over the configured list, not a fixed count of six.
-	m.prView = 2
+	m.prList.view = 2
 	if next := m.stepView(1); next != 0 {
 		t.Fatalf("wrap-around landed on %d", next)
 	}

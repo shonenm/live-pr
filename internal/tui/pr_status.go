@@ -169,9 +169,9 @@ func (m Model) applyPRStateChange(pr gh.PR) (Model, tea.Cmd) {
 		*m.cache.PR = pr
 	}
 	m.navigator.PRs = upsertPR(m.navigator.PRs, pr)
-	for key, page := range m.prPages {
+	for key, page := range m.prList.pages {
 		parts := strings.SplitN(key, ":", 3)
-		state := m.prListState
+		state := m.prList.state
 		if len(parts) > 1 {
 			if value, err := strconv.Atoi(parts[1]); err == nil {
 				state = prListState(value)
@@ -188,12 +188,12 @@ func (m Model) applyPRStateChange(pr gh.PR) (Model, tea.Cmd) {
 			prs = append(prs, existing)
 		}
 		page.prs = prs
-		m.prPages[key] = page
+		m.prList.pages[key] = page
 	}
-	m.prListGeneration++
-	for key, page := range m.prPages {
+	m.prList.generation++
+	for key, page := range m.prList.pages {
 		page.fresh, page.loading = false, false
-		m.prPages[key] = page
+		m.prList.pages[key] = page
 	}
 	if m.screen == prListScreen {
 		return m, m.applyPRViewState(0)

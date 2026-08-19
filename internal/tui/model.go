@@ -259,96 +259,74 @@ type githubClient interface {
 
 // Model holds the living-PR view state.
 type Model struct {
-	client                    githubClient
-	screen                    screen
-	title                     string
-	root                      string
-	repository                string
-	currentBranch             string
-	defaultBranch             string
-	base, head                string
-	diffBase, headRev         string
-	reviewRange               string
-	summary                   string
-	events                    []event.Event
-	conversationCache         []conversationItem
-	conversationDirty         bool
-	conversationRender        string
-	conversationRenderLine    int
-	conversationRenderKey     convRenderKey
-	conversationRenderValid   bool
-	richBodies                map[string]string
-	avatarColors              map[string]string
-	files                     []git.ChangedFile
-	commits                   []git.Commit
-	active                    tab
-	cursors                   [tabCount]int
-	reviewSHA                 string
-	status                    string
-	notice                    string
-	githubStatus              string
-	loadSpinner               bspinner.Model
-	spinnerRunning            bool
-	timelinePath              string
-	cachePath                 string
-	cache                     gh.Cache
-	navigator                 gh.NavigatorCache
-	navigatorPath             string
-	allPRs                    []gh.PR
-	filteredPRs               []gh.PR
-	openPRs                   []gh.PR
-	viewerLogin               string
-	prPreviewLoading          map[int]bool
-	prPreviewLoaded           map[int]bool
-	prView                    prView
-	listAnchor                listAnchor
-	detailOrigin              prView
-	detailOriginSet           bool
-	views                     []config.View
-	prListState               prListState
-	prPages                   map[string]prPageState
-	activePRPage              string
-	viewCounts                []int
-	viewCountKnown            []bool
-	viewCountsValid           bool
-	filterQuery               string
-	filterBeforeEdit          string
-	filterSelectionBeforeEdit int
-	filterEditing             bool
-	prStacks                  []prStack
-	prRowCache                map[prRowCacheKey][]string
-	collapsedStacks           map[string]bool
-	prCursor                  int
-	convItemCache             map[string][]string
-	previewedPR               int
-	lastRichContentKey        [sha256.Size]byte
-	localAvailable            bool
-	localTitle                string
-	localStats                git.ChangeStats
-	localCommitCount          int
-	workingTreeDirty          bool
-	mergeReadiness            git.MergeReadiness
-	mergeReadinessErr         error
-	autoOpenCurrent           bool
-	refreshing                bool
-	ciPollFailures            int
-	listRefreshing            bool
-	publishing                bool
-	overlay                   overlay // open modal popup; nil when none
-	localEditor               textarea.Model
-	remoteCommentBusy         bool
-	reviewDraft               gh.ReviewDraft
-	reviewDraftPath           string
-	reviewSubmitting          bool
-	pendingPRAction           prAction
-	prActionRunning           prAction
-	prActionNumber            int
-	mergeMethodCursor         int
-	pendingG                  bool
-	prActionPR                gh.PR
-	prListGeneration          uint64
-	remote                    bool
-	targetGeneration          uint64
+	client                  githubClient
+	screen                  screen
+	title                   string
+	root                    string
+	repository              string
+	currentBranch           string
+	defaultBranch           string
+	base, head              string
+	diffBase, headRev       string
+	reviewRange             string
+	summary                 string
+	events                  []event.Event
+	conversationCache       []conversationItem
+	conversationDirty       bool
+	conversationRender      string
+	conversationRenderLine  int
+	conversationRenderKey   convRenderKey
+	conversationRenderValid bool
+	richBodies              map[string]string
+	avatarColors            map[string]string
+	files                   []git.ChangedFile
+	commits                 []git.Commit
+	active                  tab
+	cursors                 [tabCount]int
+	reviewSHA               string
+	status                  string
+	notice                  string
+	githubStatus            string
+	loadSpinner             bspinner.Model
+	spinnerRunning          bool
+	timelinePath            string
+	cachePath               string
+	cache                   gh.Cache
+	navigator               gh.NavigatorCache
+	navigatorPath           string
+	viewerLogin             string
+	prList                  prListModel
+	listAnchor              listAnchor
+	detailOrigin            prView
+	detailOriginSet         bool
+	views                   []config.View
+	convItemCache           map[string][]string
+	lastRichContentKey      [sha256.Size]byte
+	localAvailable          bool
+	localTitle              string
+	localStats              git.ChangeStats
+	localCommitCount        int
+	workingTreeDirty        bool
+	mergeReadiness          git.MergeReadiness
+	mergeReadinessErr       error
+	autoOpenCurrent         bool
+	refreshing              bool
+	ciPollFailures          int
+	publishing              bool
+	overlay                 overlay // open modal popup; nil when none
+	localEditor             textarea.Model
+	remoteCommentBusy       bool
+	reviewDraft             gh.ReviewDraft
+	reviewDraftPath         string
+	reviewSubmitting        bool
+	pendingPRAction         prAction
+	prActionRunning         prAction
+	prActionNumber          int
+	mergeMethodCursor       int
+	pendingG                bool
+	prActionPR              gh.PR
+	remote                  bool
+	targetGeneration        uint64
 
 	diffDisplay       string
 	diffCommand       string
@@ -455,17 +433,24 @@ func New(version ...string) (Model, error) {
 		spinnerRunning:    true,
 		navigator:         navigator,
 		navigatorPath:     navigatorPath,
-		openPRs:           navigator.PRs,
 		viewerLogin:       navigator.ViewerLogin,
-		prView:            initialView,
 		views:             views,
-		prListState:       initialState,
 		localAvailable:    localEligible && currentPR == nil,
 		localTitle:        branch,
 		autoOpenCurrent:   localEligible,
-		listRefreshing:    true,
-		prListGeneration:  1,
 		conversationDirty: true,
+		prList: prListModel{
+			open:            navigator.PRs,
+			view:            initialView,
+			state:           initialState,
+			refreshing:      true,
+			generation:      1,
+			previewLoading:  map[int]bool{},
+			previewLoaded:   map[int]bool{},
+			pages:           map[string]prPageState{},
+			collapsedStacks: map[string]bool{},
+			rowCache:        map[prRowCacheKey][]string{},
+		},
 		diffDisplay:       cfg.Diff.Display,
 		diffCommand:       cfg.Diff.Command,
 		diffCommitCommand: cfg.CommitReviewCommand(),
@@ -476,11 +461,6 @@ func New(version ...string) (Model, error) {
 		richBodies:        map[string]string{},
 		avatarColors:      map[string]string{},
 		diffPending:       map[string]bool{},
-		prPreviewLoading:  map[int]bool{},
-		prPreviewLoaded:   map[int]bool{},
-		prPages:           map[string]prPageState{},
-		collapsedStacks:   map[string]bool{},
-		prRowCache:        map[prRowCacheKey][]string{},
 		help:              newHelp(),
 		keys:              keys,
 	}
@@ -490,10 +470,10 @@ func New(version ...string) (Model, error) {
 		}
 	}
 	m.seedPRPages()
-	m.activePRPage = prPageKey(m.prView, m.prListState, m.filterQuery)
-	page := m.prPages[m.activePRPage]
+	m.prList.activePage = prPageKey(m.prList.view, m.prList.state, m.prList.filterQuery)
+	page := m.prList.pages[m.prList.activePage]
 	page.loading = true
-	m.prPages[m.activePRPage] = page
+	m.prList.pages[m.prList.activePage] = page
 	m.applyPRFilters(0)
 	return m, nil
 }
@@ -669,7 +649,7 @@ func Run(version string, opts ...Option) error {
 func (m Model) Init() tea.Cmd {
 	// loadSpinner and spinnerRunning are initialized in New(); the value
 	// receiver here would discard any mutation anyway.
-	cmds := []tea.Cmd{fetchPRList(m.client, m.prListGeneration, m.activePRPage, m.prViewSearch(m.prView, m.prListState, m.filterQuery), "", false), m.loadSpinner.Tick}
+	cmds := []tea.Cmd{fetchPRList(m.client, m.prList.generation, m.prList.activePage, m.prViewSearch(m.prList.view, m.prList.state, m.prList.filterQuery), "", false), m.loadSpinner.Tick}
 	if m.screen == prListScreen && m.localAvailable && m.autoOpenCurrent {
 		cmds = append(cmds, fetchCurrentBranchPR(m.client, m.currentBranch))
 	}
@@ -686,7 +666,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.listRefreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prPreviewLoading) > 0 || len(m.diffPending) > 0
+	return m.refreshing || m.prList.refreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prList.previewLoading) > 0 || len(m.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {
@@ -711,7 +691,7 @@ func (m *Model) close() {
 
 func (m *Model) advanceAsyncGenerations(previous Model) {
 	m.targetGeneration = previous.targetGeneration + 1
-	m.prListGeneration = previous.prListGeneration + 1
+	m.prList.generation = previous.prList.generation + 1
 	m.resetDetailCaches()
 }
 
@@ -780,7 +760,7 @@ func (m *Model) handleVimNavigation(msg tea.KeyMsg) (bool, tea.Cmd) {
 
 func (m *Model) navigationLength() int {
 	if m.screen == prListScreen {
-		return len(m.openPRs)
+		return len(m.prList.open)
 	}
 	if m.focusExplorer {
 		return len(m.files)
@@ -813,7 +793,7 @@ func (m *Model) moveCursorTo(index int) tea.Cmd {
 		index = length - 1
 	}
 	if m.screen == prListScreen {
-		m.prCursor = index
+		m.prList.cursor = index
 		cmd := m.sync()
 		if index == length-1 {
 			return tea.Batch(cmd, m.requestPRPage(false))
@@ -829,7 +809,7 @@ func (m *Model) moveCursorTo(index int) tea.Cmd {
 
 func (m Model) navigationCursor() int {
 	if m.screen == prListScreen {
-		return m.prCursor
+		return m.prList.cursor
 	}
 	if m.focusExplorer {
 		return m.fileCursor
@@ -868,7 +848,7 @@ func (m Model) listViewForReturn(number int) prView {
 
 func (m Model) selectedBrowseURL() string {
 	if m.screen == prListScreen {
-		if pr := m.selectedPR(); pr != nil && pr.URL != "" {
+		if pr := m.prList.selectedPR(); pr != nil && pr.URL != "" {
 			return pr.URL
 		}
 		return ""
@@ -935,8 +915,8 @@ func applyKeyStates(states map[*key.Binding]bool) {
 }
 
 func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
-	pr := m.selectedPR()
-	_, stacked := m.stackForPR(m.selectedPRNumber())
+	pr := m.prList.selectedPR()
+	_, stacked := m.prList.stackForPR(m.prList.selectedPRNumber())
 	idle := m.prActionRunning == noPRAction
 	applyKeyStates(map[*key.Binding]bool{
 		&m.keys.Select:      true,
@@ -956,9 +936,9 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Browse:      m.selectedBrowseURL() != "",
 		&m.keys.CopyURL:     m.selectedBrowseURL() != "",
 		&m.keys.Publish:     false,
-		&m.keys.Merge:       m.prListState == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
+		&m.keys.Merge:       m.prList.state == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
 		&m.keys.Checkout:    pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
-		&m.keys.Close:       m.prListState == openPRListState && pr != nil && pr.Number > 0 && idle,
+		&m.keys.Close:       m.prList.state == openPRListState && pr != nil && pr.Number > 0 && idle,
 		&m.keys.Status:      pr != nil && pr.Number > 0,
 		&m.keys.ManageViews: true,
 	})
@@ -970,8 +950,8 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 	m.detailShownKey = ""
 	// Background arrivals (previews, avatars) re-sync constantly; only a
 	// selection change may reset the preview scroll position.
-	if selected := m.selectedPRNumber(); selected != m.previewedPR {
-		m.previewedPR = selected
+	if selected := m.prList.selectedPRNumber(); selected != m.prList.previewedPR {
+		m.prList.previewedPR = selected
 		m.detail.GotoTop()
 	}
 	keepLineVisible(&m.list, selectedLine)

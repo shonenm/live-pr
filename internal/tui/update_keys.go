@@ -20,29 +20,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if m.filterEditing {
-		selected := m.selectedPRNumber()
+	if m.prList.filterEditing {
+		selected := m.prList.selectedPRNumber()
 		switch msg.String() {
 		case "enter":
-			m.filterEditing, m.filterBeforeEdit, m.filterSelectionBeforeEdit = false, "", 0
+			m.prList.filterEditing, m.prList.filterBeforeEdit, m.prList.filterSelectionBeforeEdit = false, "", 0
 			return m, m.applyPRViewState(selected)
 		case "esc":
-			selected = m.filterSelectionBeforeEdit
-			m.filterQuery, m.filterEditing, m.filterBeforeEdit, m.filterSelectionBeforeEdit = m.filterBeforeEdit, false, "", 0
-			m.restorePRSelection(selected)
+			selected = m.prList.filterSelectionBeforeEdit
+			m.prList.filterQuery, m.prList.filterEditing, m.prList.filterBeforeEdit, m.prList.filterSelectionBeforeEdit = m.prList.filterBeforeEdit, false, "", 0
+			m.prList.restorePRSelection(selected)
 			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
 		case "backspace":
-			runes := []rune(m.filterQuery)
+			runes := []rune(m.prList.filterQuery)
 			if len(runes) > 0 {
-				m.filterQuery = string(runes[:len(runes)-1])
+				m.prList.filterQuery = string(runes[:len(runes)-1])
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
-				m.filterQuery += string(msg.Runes)
+				m.prList.filterQuery += string(msg.Runes)
 			} else if msg.String() == " " {
-				m.filterQuery += " "
+				m.prList.filterQuery += " "
 			}
 		}
 		return m, nil
@@ -63,21 +63,21 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(msg, m.keys.Filter):
-		m.filterBeforeEdit, m.filterSelectionBeforeEdit, m.filterEditing = m.filterQuery, m.selectedPRNumber(), true
+		m.prList.filterBeforeEdit, m.prList.filterSelectionBeforeEdit, m.prList.filterEditing = m.prList.filterQuery, m.prList.selectedPRNumber(), true
 		return m, nil
-	case msg.String() == "esc" && m.filterQuery != "":
-		selected := m.selectedPRNumber()
-		m.filterQuery = ""
+	case msg.String() == "esc" && m.prList.filterQuery != "":
+		selected := m.prList.selectedPRNumber()
+		m.prList.filterQuery = ""
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.ManageViews):
 		return m.openViewManager()
 	case key.Matches(msg, m.keys.PrevView):
-		selected := m.selectedPRNumber()
-		m.prView = m.stepView(-1)
+		selected := m.prList.selectedPRNumber()
+		m.prList.view = m.stepView(-1)
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.NextView):
-		selected := m.selectedPRNumber()
-		m.prView = m.stepView(1)
+		selected := m.prList.selectedPRNumber()
+		m.prList.view = m.stepView(1)
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -85,10 +85,10 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.help.ShowAll = !m.help.ShowAll
 		return m, nil
 	case key.Matches(msg, m.keys.Status):
-		return m.openPRStatus(m.selectedPR())
+		return m.openPRStatus(m.prList.selectedPR())
 	case key.Matches(msg, m.keys.Merge):
-		if m.prListState == openPRListState {
-			if pr := m.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
+		if m.prList.state == openPRListState {
+			if pr := m.prList.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
 				m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, pr.Number, *pr
 				m.mergeMethodCursor = 0
 				m.status, m.notice = "", ""
@@ -98,24 +98,24 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.CopyURL):
 		return m, m.copySelectedURL()
 	case key.Matches(msg, m.keys.Checkout):
-		if pr := m.selectedPR(); pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
+		if pr := m.prList.selectedPR(); pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = checkoutPR, pr.Number, *pr
 			m.status, m.notice = "", ""
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Close):
-		if m.prListState == openPRListState {
-			if pr := m.selectedPR(); pr != nil && pr.Number > 0 {
+		if m.prList.state == openPRListState {
+			if pr := m.prList.selectedPR(); pr != nil && pr.Number > 0 {
 				m.pendingPRAction, m.prActionNumber, m.prActionPR = closePR, pr.Number, *pr
 				m.status, m.notice = "", ""
 			}
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.ToggleStack):
-		if stack, ok := m.stackForPR(m.selectedPRNumber()); ok {
-			collapsing := !m.collapsedStacks[stack.id]
-			m.collapsedStacks[stack.id] = collapsing
-			selected := m.selectedPRNumber()
+		if stack, ok := m.prList.stackForPR(m.prList.selectedPRNumber()); ok {
+			collapsing := !m.prList.collapsedStacks[stack.id]
+			m.prList.collapsedStacks[stack.id] = collapsing
+			selected := m.prList.selectedPRNumber()
 			if collapsing {
 				selected = stack.entries[0].pr.Number
 			}
@@ -124,19 +124,19 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Refresh):
-		if m.listRefreshing {
+		if m.prList.refreshing {
 			// Say so rather than swallowing the key: silence reads as a
 			// broken refresh.
-			m.githubStatus = "GitHub: fetching " + m.viewName(m.prView) + " pull requests…"
+			m.githubStatus = "GitHub: fetching " + m.viewName(m.prList.view) + " pull requests…"
 			return m, m.startSpinner()
 		}
-		m.prListGeneration++
-		if m.prPages == nil {
-			m.prPages = map[string]prPageState{}
+		m.prList.generation++
+		if m.prList.pages == nil {
+			m.prList.pages = map[string]prPageState{}
 		}
-		page := m.prPages[m.activePRPage]
+		page := m.prList.pages[m.prList.activePage]
 		page.fresh, page.loading = false, false
-		m.prPages[m.activePRPage] = page
+		m.prList.pages[m.prList.activePage] = page
 		// Re-check the branch's own PR too: once it leaves the open view,
 		// nothing else would ever tell the list that it closed.
 		return m, tea.Batch(m.requestPRPage(true), fetchCurrentBranchPRState(m.client, m.currentBranch))
@@ -145,12 +145,12 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		return m, m.moveCursorBy(-1)
 	case key.Matches(msg, m.keys.Select):
-		pr := m.selectedPR()
+		pr := m.prList.selectedPR()
 		if pr == nil {
 			return m, nil
 		}
 		// Remember the tab so b returns here rather than guessing.
-		m.detailOrigin, m.detailOriginSet = m.prView, true
+		m.detailOrigin, m.detailOriginSet = m.prList.view, true
 		if !m.isCurrentTargetPR(*pr) {
 			return m, m.openRemote(*pr)
 		}
@@ -232,7 +232,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 	if key.Matches(msg, m.keys.PRList) {
 		selected := m.currentPRNumber()
-		m.prView = m.listViewForReturn(selected)
+		m.prList.view = m.listViewForReturn(selected)
 		m.detailOriginSet = false
 		m.targetGeneration++
 		if m.diffTerminal != nil {
