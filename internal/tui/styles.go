@@ -13,37 +13,81 @@ import (
 	"github.com/shonenm/live-pr/internal/theme"
 )
 
-// GitHub Primer dark semantic colors. Like gh-dash, ordinary content stays
+// Semantic colors, chosen once at startup from the configured theme preset
+// (primer-dark by default). Like gh-dash, ordinary content stays
 // primary/muted; semantic colors are reserved for GitHub-colored states.
-const (
-	cFg             = theme.Foreground
-	cMuted          = theme.Muted
-	cSelectedBg     = theme.Selected
-	cBorder         = theme.Border
-	cCloudBorder    = theme.BorderEmphasis
-	cAccent         = theme.Accent
-	cOpen           = theme.OpenEmphasis
-	cGreenF         = theme.Success
-	cAttention      = theme.Attention
-	cRedF           = theme.Danger
-	cClosed         = theme.BorderEmphasis
-	cDangerEmphasis = theme.DangerEmphasis
-	cDoneEmphasis   = theme.DoneEmphasis
+var (
+	cFg             string
+	cMuted          string
+	cSelectedBg     string
+	cBorder         string
+	cCloudBorder    string
+	cAccent         string
+	cOpen           string
+	cGreenF         string
+	cAttention      string
+	cRedF           string
+	cClosed         string
+	cDangerEmphasis string
+	cDoneEmphasis   string
 	// cDescriptionBorder frames the PR description. It is the one card that
 	// carries no status, so it takes the bright neutral rather than a
 	// semantic color that would read as a verdict.
-	cDescriptionBorder = theme.Foreground
+	cDescriptionBorder string
+	// cPageBg is the canvas the palette assumes. The TUI never paints it,
+	// but emphasisInk uses it as the candidate dark ink on filled blocks.
+	cPageBg string
 )
 
 var (
-	stFg        = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg))
-	stMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted))
-	stBold      = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Bold(true)
-	stGreenF    = lipgloss.NewStyle().Foreground(lipgloss.Color(cGreenF))
-	stAttention = lipgloss.NewStyle().Foreground(lipgloss.Color(cAttention))
-	stRedF      = lipgloss.NewStyle().Foreground(lipgloss.Color(cRedF))
-	stAccent    = lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent))
+	stFg        lipgloss.Style
+	stMuted     lipgloss.Style
+	stBold      lipgloss.Style
+	stGreenF    lipgloss.Style
+	stAttention lipgloss.Style
+	stRedF      lipgloss.Style
+	stAccent    lipgloss.Style
 )
+
+func init() { applyTheme(theme.PrimerDark()) }
+
+// applyTheme rebuilds the semantic colors and shared styles from a palette.
+// New calls it once, after the config names a theme and before any style is
+// captured into a model; there is no dynamic switching.
+func applyTheme(p theme.Palette) {
+	cFg = p.Foreground
+	cMuted = p.Muted
+	cSelectedBg = p.Selected
+	cBorder = p.Border
+	cCloudBorder = p.BorderEmphasis
+	cAccent = p.Accent
+	cOpen = p.OpenEmphasis
+	cGreenF = p.Success
+	cAttention = p.Attention
+	cRedF = p.Danger
+	cClosed = p.BorderEmphasis
+	cDangerEmphasis = p.DangerEmphasis
+	cDoneEmphasis = p.DoneEmphasis
+	cDescriptionBorder = p.Foreground
+	cPageBg = p.Background
+
+	stFg = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg))
+	stMuted = lipgloss.NewStyle().Foreground(lipgloss.Color(cMuted))
+	stBold = lipgloss.NewStyle().Foreground(lipgloss.Color(cFg)).Bold(true)
+	stGreenF = lipgloss.NewStyle().Foreground(lipgloss.Color(cGreenF))
+	stAttention = lipgloss.NewStyle().Foreground(lipgloss.Color(cAttention))
+	stRedF = lipgloss.NewStyle().Foreground(lipgloss.Color(cRedF))
+	stAccent = lipgloss.NewStyle().Foreground(lipgloss.Color(cAccent))
+}
+
+// emphasisInk picks the text color for a filled block: the palette's page
+// background when it reads better on the fill, white otherwise.
+func emphasisInk(background string) string {
+	if theme.ContrastRatio(background, cPageBg) > theme.ContrastRatio(background, "#ffffff") {
+		return cPageBg
+	}
+	return "#ffffff"
+}
 
 const (
 	logo = "╻  ╻╻ ╻┏━╸   ┏━┓┏━┓\n" +
@@ -98,7 +142,7 @@ func renderPane(title, content string, width, height int, focused bool) string {
 // footerSegment is the lualine-style mode block naming the focused pane.
 func footerSegment(label string) string {
 	return lipgloss.NewStyle().
-		Background(lipgloss.Color(cAccent)).Foreground(lipgloss.Color("#0d1117")).
+		Background(lipgloss.Color(cAccent)).Foreground(lipgloss.Color(emphasisInk(cAccent))).
 		Bold(true).Padding(0, 1).Render(label)
 }
 

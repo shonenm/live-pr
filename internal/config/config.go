@@ -32,6 +32,12 @@ type Config struct {
 	// records nothing. Empty keeps `claude -p`.
 	SummarizeCommand string `toml:"summarize_command"`
 
+	// Theme selects the TUI color palette. One of: "primer-dark" (default),
+	// "primer-light", "nord", "catppuccin-mocha". Unknown values fall back
+	// to primer-dark.
+	Theme string `toml:"theme"`
+
+
 	// Diff controls the optional right-pane diff display filter.
 	Diff DiffConfig `toml:"diff"`
 
