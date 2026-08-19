@@ -51,7 +51,9 @@ func LoadCache(path, head string) (Cache, error) {
 		return Cache{}, fmt.Errorf("decode GitHub cache: %w", err)
 	}
 	if c.Version != CacheVersion {
-		return Cache{}, fmt.Errorf("unsupported GitHub cache version %d", c.Version)
+		// The cache is re-fetchable derived data; an unsupported version
+		// resets it instead of blocking the caller, like a head mismatch.
+		return NewCache(head), nil
 	}
 	if c.Head != "" && c.Head != head {
 		return NewCache(head), nil

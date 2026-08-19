@@ -228,19 +228,28 @@ func (node prListNode) pullRequest(viewerReviewRequested bool) PR {
 // suffices — and it avoids a cwd-keyed map that would never be evicted.
 var sharedRepositoryIdentity = &repositoryIdentity{}
 
+// gh invocation deadlines. Most calls are small JSON round trips, but the
+// paginated list endpoints and pr checkout move real data and legitimately
+// outlast the default on slow links.
+const (
+	defaultRunTimeout = 30 * time.Second
+	longRunTimeout    = 120 * time.Second
+)
+
 // Client runs GitHub operations through gh.
 type Client struct {
-	run  runner
-	repo *repositoryIdentity
+	run        runner
+	runTimeout func(timeout time.Duration, args ...string) ([]byte, error)
+	repo       *repositoryIdentity
 }
 
 // New returns a GitHub CLI client.
 func New() Client {
-	return Client{repo: sharedRepositoryIdentity, run: func(args ...string) ([]byte, error) {
+	run := func(timeout time.Duration, args ...string) ([]byte, error) {
 		if done := debugtime.Start("github gh " + args[0]); done != nil {
 			defer done()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		// stdout and stderr must stay separate: gh prints warnings (update
 		// notices, deprecations) on stderr, and mixing them into stdout made
@@ -249,18 +258,33 @@ func New() Client {
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		err := cmd.Run()
-		return stdout.Bytes(), runError(err, ctx.Err() == context.DeadlineExceeded, stderr.String())
-	}}
+		return stdout.Bytes(), runError(err, timeout, ctx.Err() == context.DeadlineExceeded, stderr.String())
+	}
+	return Client{
+		repo:       sharedRepositoryIdentity,
+		run:        func(args ...string) ([]byte, error) { return run(defaultRunTimeout, args...) },
+		runTimeout: run,
+	}
+}
+
+// runWithTimeout runs gh with an explicit deadline. Test fakes that only
+// stub run keep working: without a runTimeout the deadline stays advisory
+// and the call goes through the default runner.
+func (c Client) runWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
+	if c.runTimeout != nil {
+		return c.runTimeout(timeout, args...)
+	}
+	return c.run(args...)
 }
 
 // runError folds the timeout cause and stderr detail into a run failure:
 // "signal: killed" alone says nothing, and gh's stderr carries the reason.
-func runError(err error, timedOut bool, stderr string) error {
+func runError(err error, timeout time.Duration, timedOut bool, stderr string) error {
 	if err == nil {
 		return nil
 	}
 	if timedOut {
-		err = fmt.Errorf("timed out after 30s: %w", err)
+		err = fmt.Errorf("timed out after %s: %w", timeout, err)
 	}
 	if detail := strings.TrimSpace(stderr); detail != "" {
 		err = fmt.Errorf("%w: %s", err, detail)
@@ -528,7 +552,7 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, error) {
 
 // paginatedList runs a --paginate --slurp endpoint and flattens the pages.
 func paginatedList[T any](c Client, endpoint, label string) ([]T, error) {
-	out, err := c.run("api", "--paginate", "--slurp", endpoint)
+	out, err := c.runWithTimeout(longRunTimeout, "api", "--paginate", "--slurp", endpoint)
 	if err != nil {
 		return nil, commandError(label, out, err)
 	}
@@ -853,16 +877,18 @@ func (c Client) SetStatus(pr PR, target string) error {
 
 // Checkout checks out a pull request using GitHub CLI's native branch handling.
 func (c Client) Checkout(number int) error {
-	out, err := c.run("pr", "checkout", strconv.Itoa(number))
+	out, err := c.runWithTimeout(longRunTimeout, "pr", "checkout", strconv.Itoa(number))
 	if err != nil {
 		return commandError("gh pr checkout", out, err)
 	}
 	return nil
 }
 
-// Update replaces the title and body of an existing PR.
-func (c Client) Update(head, title, bodyFile string) error {
-	out, err := c.run("pr", "edit", head, "--title", title, "--body-file", bodyFile)
+// Update replaces the title and body of an existing PR. It addresses the PR
+// by number: several PRs may share one head branch, and a branch-name edit
+// could land on the wrong one.
+func (c Client) Update(number int, title, bodyFile string) error {
+	out, err := c.run("pr", "edit", strconv.Itoa(number), "--title", title, "--body-file", bodyFile)
 	if err != nil {
 		return commandError("gh pr edit", out, err)
 	}
@@ -870,8 +896,8 @@ func (c Client) Update(head, title, bodyFile string) error {
 }
 
 // UpdateBody replaces only the body of an existing PR, preserving the title.
-func (c Client) UpdateBody(head, bodyFile string) error {
-	out, err := c.run("pr", "edit", head, "--body-file", bodyFile)
+func (c Client) UpdateBody(number int, bodyFile string) error {
+	out, err := c.run("pr", "edit", strconv.Itoa(number), "--body-file", bodyFile)
 	if err != nil {
 		return commandError("gh pr edit body", out, err)
 	}

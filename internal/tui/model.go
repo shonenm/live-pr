@@ -252,7 +252,7 @@ type githubClient interface {
 	PostIssueComment(number int, body string) error
 	EditIssueComment(id int64, body string) error
 	DeleteIssueComment(id int64) error
-	UpdateBody(head, bodyFile string) error
+	UpdateBody(number int, bodyFile string) error
 	SubmitReview(draft gh.ReviewDraft, event gh.ReviewEvent) error
 }
 

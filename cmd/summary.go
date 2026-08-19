@@ -67,6 +67,16 @@ var summarySetCmd = &cobra.Command{
 	},
 }
 
+// editorCommand builds the argv that opens path in editor. Following git's
+// convention, the editor string runs through the shell, so an editor whose
+// path contains spaces (quoted) or that carries flags survives intact.
+func editorCommand(editor, path string) ([]string, error) {
+	if strings.TrimSpace(editor) == "" {
+		return nil, fmt.Errorf("set $VISUAL or $EDITOR to edit the summary")
+	}
+	return []string{"sh", "-c", editor + ` "$1"`, "--", path}, nil
+}
+
 var summaryEditCmd = &cobra.Command{
 	Use:   "edit",
 	Short: "Open the final summary in $VISUAL or $EDITOR",
@@ -83,11 +93,11 @@ var summaryEditCmd = &cobra.Command{
 		if editor == "" {
 			editor = os.Getenv("EDITOR")
 		}
-		parts := strings.Fields(editor)
-		if len(parts) == 0 {
-			return fmt.Errorf("set $VISUAL or $EDITOR to edit the summary")
+		argv, err := editorCommand(editor, st.Conclusion())
+		if err != nil {
+			return err
 		}
-		process := exec.Command(parts[0], append(parts[1:], st.Conclusion())...)
+		process := exec.Command(argv[0], argv[1:]...)
 		process.Stdin, process.Stdout, process.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
 		return process.Run()
 	},

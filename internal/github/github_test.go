@@ -520,16 +520,23 @@ func TestUpdateArgumentsAndError(t *testing.T) {
 		got = append([]string(nil), args...)
 		return nil, nil
 	}}
-	if err := c.Update("feature", "title", "/tmp/body"); err != nil {
+	if err := c.Update(41, "title", "/tmp/body"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"pr", "edit", "feature", "--title", "title", "--body-file", "/tmp/body"}
+	want := []string{"pr", "edit", "41", "--title", "title", "--body-file", "/tmp/body"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args=%v", got)
+	}
+	if err := c.UpdateBody(41, "/tmp/body"); err != nil {
+		t.Fatal(err)
+	}
+	want = []string{"pr", "edit", "41", "--body-file", "/tmp/body"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("args=%v", got)
 	}
 
 	failed := Client{run: func(args ...string) ([]byte, error) { return []byte("denied"), errors.New("exit 1") }}
-	if err := failed.Update("feature", "title", "/tmp/body"); err == nil || !strings.Contains(err.Error(), "denied") {
+	if err := failed.Update(41, "title", "/tmp/body"); err == nil || !strings.Contains(err.Error(), "denied") {
 		t.Fatalf("expected contextual update error, got %v", err)
 	}
 }
@@ -550,12 +557,53 @@ func TestCreateArguments(t *testing.T) {
 	}
 }
 
+func TestSlowOperationsRunWithLongTimeout(t *testing.T) {
+	var gotTimeout time.Duration
+	var gotArgs []string
+	c := Client{runTimeout: func(timeout time.Duration, args ...string) ([]byte, error) {
+		gotTimeout, gotArgs = timeout, append([]string(nil), args...)
+		return []byte("[]"), nil
+	}}
+	if _, err := c.IssueComments(12); err != nil {
+		t.Fatal(err)
+	}
+	if gotTimeout != longRunTimeout {
+		t.Fatalf("paginated list timeout=%s, want %s", gotTimeout, longRunTimeout)
+	}
+	if want := []string{"api", "--paginate", "--slurp", "repos/{owner}/{repo}/issues/12/comments?per_page=100"}; !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("args=%v", gotArgs)
+	}
+	if err := c.Checkout(7); err != nil {
+		t.Fatal(err)
+	}
+	if gotTimeout != longRunTimeout {
+		t.Fatalf("checkout timeout=%s, want %s", gotTimeout, longRunTimeout)
+	}
+	if want := []string{"pr", "checkout", "7"}; !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("args=%v", gotArgs)
+	}
+}
+
+func TestRunWithTimeoutFallsBackToDefaultRunner(t *testing.T) {
+	ran := false
+	c := Client{run: func(args ...string) ([]byte, error) {
+		ran = true
+		return []byte("[]"), nil
+	}}
+	if _, err := c.IssueComments(12); err != nil {
+		t.Fatal(err)
+	}
+	if !ran {
+		t.Fatal("without runTimeout the default runner must handle the call")
+	}
+}
+
 func TestRunErrorFoldsTimeoutAndStderr(t *testing.T) {
-	if runError(nil, false, "warning: ignored") != nil {
+	if runError(nil, defaultRunTimeout, false, "warning: ignored") != nil {
 		t.Fatal("nil error must stay nil")
 	}
 	base := errors.New("signal: killed")
-	got := runError(base, true, "  gh: request timed out\n")
+	got := runError(base, defaultRunTimeout, true, "  gh: request timed out\n")
 	if !errors.Is(got, base) {
 		t.Fatal("wrapped error must keep the cause")
 	}
@@ -563,7 +611,7 @@ func TestRunErrorFoldsTimeoutAndStderr(t *testing.T) {
 	if got.Error() != want {
 		t.Fatalf("got %q, want %q", got.Error(), want)
 	}
-	if msg := runError(base, false, "").Error(); msg != "signal: killed" {
+	if msg := runError(base, defaultRunTimeout, false, "").Error(); msg != "signal: killed" {
 		t.Fatalf("no timeout, no stderr: got %q", msg)
 	}
 }
@@ -596,14 +644,14 @@ func TestStatusHint(t *testing.T) {
 		want string
 	}{
 		{"nil", nil, ""},
-		{"gh not installed", commandError("gh pr list", nil, runError(&exec.Error{Name: "gh", Err: exec.ErrNotFound}, false, "")), "gh not installed"},
-		{"unauthenticated stderr", commandError("gh pr list", nil, runError(errors.New("exit status 4"), false, "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable.")), "run gh auth login"},
-		{"expired token", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), false, "HTTP 401: Bad credentials (https://api.github.com/graphql)")), "run gh auth login"},
-		{"broken query stderr", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), false, "GraphQL: Field 'nope' doesn't exist on type 'PullRequest' (search)")), "GraphQL: Field 'nope' doesn't exist on type 'PullRequest' (search)"},
-		{"long stderr truncated", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), false, longStderr)), string([]rune(longStderr)[:79]) + "…"},
-		{"offline gh stderr", commandError("gh pr list", nil, runError(errors.New("exit status 1"), false, "error connecting to api.github.com\ncheck your internet connection")), ""},
+		{"gh not installed", commandError("gh pr list", nil, runError(&exec.Error{Name: "gh", Err: exec.ErrNotFound}, defaultRunTimeout, false, "")), "gh not installed"},
+		{"unauthenticated stderr", commandError("gh pr list", nil, runError(errors.New("exit status 4"), defaultRunTimeout, false, "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable.")), "run gh auth login"},
+		{"expired token", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), defaultRunTimeout, false, "HTTP 401: Bad credentials (https://api.github.com/graphql)")), "run gh auth login"},
+		{"broken query stderr", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), defaultRunTimeout, false, "GraphQL: Field 'nope' doesn't exist on type 'PullRequest' (search)")), "GraphQL: Field 'nope' doesn't exist on type 'PullRequest' (search)"},
+		{"long stderr truncated", commandError("gh api graphql", nil, runError(errors.New("exit status 1"), defaultRunTimeout, false, longStderr)), string([]rune(longStderr)[:79]) + "…"},
+		{"offline gh stderr", commandError("gh pr list", nil, runError(errors.New("exit status 1"), defaultRunTimeout, false, "error connecting to api.github.com\ncheck your internet connection")), ""},
 		{"plain network error", errors.New("dial tcp 140.82.113.6:443: connect: connection refused"), ""},
-		{"timeout", commandError("gh pr list", nil, runError(errors.New("signal: killed"), true, "")), ""},
+		{"timeout", commandError("gh pr list", nil, runError(errors.New("signal: killed"), defaultRunTimeout, true, "")), ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
