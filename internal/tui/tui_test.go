@@ -2742,6 +2742,43 @@ func TestConfiguredDiffFailureKeepsRawOutput(t *testing.T) {
 	}
 }
 
+func TestSyncDetailKeepsScrollWhenContentUnchanged(t *testing.T) {
+	m := testModel()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	long := strings.Repeat("line\n", 100)
+	detail := detailContent{key: "commit:abc", raw: long, renderable: true}
+	m.syncDetail(detail)
+	m.detail.SetYOffset(7)
+	m.syncDetail(detail)
+	if m.detail.YOffset != 7 {
+		t.Fatalf("re-sync of unchanged content moved scroll to %d, want 7", m.detail.YOffset)
+	}
+	other := strings.Repeat("other\n", 100)
+	m.syncDetail(detailContent{key: "commit:def", raw: other, renderable: true})
+	if m.detail.YOffset != 0 || !strings.Contains(m.detail.View(), "other") {
+		t.Fatalf("new content should reset to top: offset=%d view=%q", m.detail.YOffset, m.detail.View())
+	}
+}
+
+func TestSyncDetailKeepsScrollOnRenderedDiffCacheHits(t *testing.T) {
+	m := testModel()
+	m.diffDisplay = "cat"
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = u.(Model)
+	detail := detailContent{key: "commit:abc", raw: strings.Repeat("line\n", 100), renderable: true}
+	cmd := m.syncDetail(detail)
+	if cmd == nil {
+		t.Fatal("first sync should dispatch the configured diff command")
+	}
+	u, _ = m.Update(cmd())
+	m = u.(Model)
+	m.detail.SetYOffset(7)
+	if extra := m.syncDetail(detail); extra != nil || m.detail.YOffset != 7 {
+		t.Fatalf("cached rendered diff re-sync moved scroll to %d, want 7", m.detail.YOffset)
+	}
+}
+
 func TestPublishIsExplicitAndSingleFlight(t *testing.T) {
 	m := testModel()
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
