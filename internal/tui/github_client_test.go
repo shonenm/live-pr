@@ -18,7 +18,7 @@ type fakeGH struct {
 	findPreview        func(number int) (gh.PR, error)
 	findChecks         func(number int) (gh.PR, error)
 	loadPRDetail       func(number int) gh.PRDetail
-	merge              func(number int, headOID string) error
+	merge              func(number int, headOID string, method gh.MergeMethod) error
 	checkout           func(number int) error
 	close              func(number int) error
 	setStatus          func(pr gh.PR, target string) error
@@ -64,9 +64,9 @@ func (f *fakeGH) LoadPRDetail(number int) gh.PRDetail {
 	return gh.PRDetail{}
 }
 
-func (f *fakeGH) Merge(number int, headOID string) error {
+func (f *fakeGH) Merge(number int, headOID string, method gh.MergeMethod) error {
 	if f.merge != nil {
-		return f.merge(number, headOID)
+		return f.merge(number, headOID, method)
 	}
 	return nil
 }
@@ -130,17 +130,18 @@ func (f *fakeGH) SubmitReview(draft gh.ReviewDraft, event gh.ReviewEvent) error 
 func TestRunPRActionMergeGuardsOnHeadCommit(t *testing.T) {
 	var gotNumber int
 	var gotOID string
-	client := &fakeGH{merge: func(number int, headOID string) error {
-		gotNumber, gotOID = number, headOID
+	var gotMethod gh.MergeMethod
+	client := &fakeGH{merge: func(number int, headOID string, method gh.MergeMethod) error {
+		gotNumber, gotOID, gotMethod = number, headOID, method
 		return nil
 	}}
 	pr := gh.PR{Number: 7, HeadRefOID: "abc123"}
-	msg, ok := runPRAction(client, mergePR, pr)().(prActionDone)
+	msg, ok := runPRAction(client, mergePR, pr, gh.MergeSquash)().(prActionDone)
 	if !ok {
 		t.Fatal("runPRAction did not return prActionDone")
 	}
-	if gotNumber != 7 || gotOID != "abc123" {
-		t.Fatalf("Merge(%d, %q); want the PR number and its head commit", gotNumber, gotOID)
+	if gotNumber != 7 || gotOID != "abc123" || gotMethod != gh.MergeSquash {
+		t.Fatalf("Merge(%d, %q, %q); want the PR number, its head commit, and the chosen method", gotNumber, gotOID, gotMethod)
 	}
 	if msg.action != mergePR || msg.number != 7 || msg.pr.Number != 7 || msg.err != nil {
 		t.Fatalf("prActionDone = %+v", msg)
@@ -154,7 +155,7 @@ func TestRunPRActionCloseSurfacesClientError(t *testing.T) {
 		gotNumber = number
 		return boom
 	}}
-	msg := runPRAction(client, closePR, gh.PR{Number: 12})().(prActionDone)
+	msg := runPRAction(client, closePR, gh.PR{Number: 12}, gh.MergeCommit)().(prActionDone)
 	if gotNumber != 12 {
 		t.Fatalf("Close(%d); want 12", gotNumber)
 	}
@@ -169,7 +170,7 @@ func TestRunPRActionCheckoutDispatchesCheckout(t *testing.T) {
 		gotNumber = number
 		return nil
 	}}
-	msg := runPRAction(client, checkoutPR, gh.PR{Number: 3})().(prActionDone)
+	msg := runPRAction(client, checkoutPR, gh.PR{Number: 3}, gh.MergeCommit)().(prActionDone)
 	if gotNumber != 3 || msg.action != checkoutPR || msg.err != nil {
 		t.Fatalf("Checkout(%d), prActionDone = %+v", gotNumber, msg)
 	}

@@ -1643,6 +1643,73 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 	}
 }
 
+func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
+	var gotNumber int
+	var gotOID string
+	var gotMethod gh.MergeMethod
+	m := testModel()
+	m.client = &fakeGH{merge: func(number int, headOID string, method gh.MergeMethod) error {
+		gotNumber, gotOID, gotMethod = number, headOID, method
+		return nil
+	}}
+	m.screen = prListScreen
+	m.currentBranch = "main"
+	m.openPRs = []gh.PR{{Number: 14, HeadRefName: "feature", HeadRefOID: "abc123"}}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
+	m = u.(Model)
+	runInner := func(cmd tea.Cmd) {
+		if batch, ok := cmd().(tea.BatchMsg); ok {
+			for _, inner := range batch {
+				inner()
+			}
+		}
+	}
+
+	// j moves the cursor to Squash and the prompt follows the selection.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = u.(Model)
+	popup := ansi.Strip(m.renderActionPopup())
+	if m.mergeMethodCursor != 1 || !strings.Contains(popup, "Squash and merge?") || !strings.Contains(popup, "Rebase") {
+		t.Fatalf("squash selection not shown: cursor=%d popup=%q", m.mergeMethodCursor, popup)
+	}
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if cmd == nil || m.pendingPRAction != noPRAction || m.prActionRunning != mergePR {
+		t.Fatalf("enter did not fire the merge: pending=%v running=%v", m.pendingPRAction, m.prActionRunning)
+	}
+	runInner(cmd)
+	if gotNumber != 14 || gotOID != "abc123" || gotMethod != gh.MergeSquash {
+		t.Fatalf("Merge(%d, %q, %q); want squash for PR #14 at abc123", gotNumber, gotOID, gotMethod)
+	}
+
+	// Reopening resets the cursor to the merge commit; r submits a rebase.
+	m.prActionRunning = noPRAction
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = u.(Model)
+	if m.mergeMethodCursor != 0 || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge with a merge commit?") {
+		t.Fatalf("reopened popup did not reset to the merge commit: cursor=%d", m.mergeMethodCursor)
+	}
+	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = u.(Model)
+	runInner(cmd)
+	if m.prActionRunning != mergePR || gotMethod != gh.MergeRebase {
+		t.Fatalf("r shortcut = running:%v method:%q; want an immediate rebase merge", m.prActionRunning, gotMethod)
+	}
+
+	// Esc cancels without touching the client.
+	m.prActionRunning = noPRAction
+	gotNumber, gotMethod = 0, ""
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = u.(Model)
+	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	if cmd != nil || m.pendingPRAction != noPRAction || m.prActionNumber != 0 || gotNumber != 0 {
+		t.Fatalf("esc did not cancel: pending=%v number=%d merged=%d", m.pendingPRAction, m.prActionNumber, gotNumber)
+	}
+}
+
 func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
 	m := testModel()
 	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, mergePR, 14
