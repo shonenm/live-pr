@@ -172,6 +172,18 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 	}
 	m.detailKey = ""
 	output := detail.raw
+	// shownKey identifies the viewport content without comparing the content
+	// itself: cache entries are immutable per key, so the key plus its
+	// raw/rendered flavor is enough. Keyless placeholders are tiny messages,
+	// so their text serves directly. Skipping identical content matters
+	// because sync runs on every keystroke and background arrival, and
+	// SetContent re-splits the whole diff while GotoTop would throw away the
+	// reader's scroll position.
+	shownKey := "raw\x00" + detail.key
+	if detail.key == "" {
+		shownKey = "msg\x00" + detail.raw
+	}
+	var cmd tea.Cmd
 	embedded := m.diffTerminal != nil && m.diffTerminal.Available()
 	if !embedded && m.diffDisplay != "" && detail.renderable && detail.raw != "" {
 		key := fmt.Sprintf("%s\x00%d\x00%s", m.diffDisplay, m.detail.Width, detail.key)
@@ -184,16 +196,19 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 		}
 		if cached, ok := m.diffCache[key]; ok {
 			output = cached
+			shownKey = "rendered\x00" + key
 		} else if !m.diffPending[key] {
 			m.diffPending[key] = true
-			m.detail.SetContent(output)
-			m.detail.GotoTop()
-			return renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width)
+			cmd = renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width)
 		}
 	}
+	if shownKey == m.detailShownKey {
+		return cmd
+	}
+	m.detailShownKey = shownKey
 	m.detail.SetContent(output)
 	m.detail.GotoTop()
-	return nil
+	return cmd
 }
 
 func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight, headerHeight int) (tea.MouseMsg, bool) {

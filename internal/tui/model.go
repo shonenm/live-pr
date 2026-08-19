@@ -550,6 +550,7 @@ type Model struct {
 	reviewWide        bool
 	fileCursor        int
 	detailKey         string
+	detailShownKey    string
 	rawDetailCache    map[string]string
 	rawPending        map[string]bool
 	diffCache         map[string]string
@@ -1631,6 +1632,9 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 	content, selectedLine := m.buildPRListRows()
 	m.list.SetContent(content)
 	m.detail.SetContent(m.buildPRPreview())
+	// The preview shares the detail viewport, so the detail screen's
+	// shown-content marker no longer describes what is displayed.
+	m.detailShownKey = ""
 	// Background arrivals (previews, avatars) re-sync constantly; only a
 	// selection change may reset the preview scroll position.
 	if selected := m.selectedPRNumber(); selected != m.previewedPR {
