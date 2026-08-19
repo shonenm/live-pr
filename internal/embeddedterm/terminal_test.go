@@ -238,9 +238,12 @@ func TestKillTreeReachesGroupEscapedDescendants(t *testing.T) {
 	}
 
 	killTree(root)
-	time.Sleep(200 * time.Millisecond)
+	deadline := time.Now().Add(3 * time.Second)
 	for _, pid := range kids {
-		if err := syscall.Kill(pid, 0); err == nil {
+		for processAlive(pid) && time.Now().Before(deadline) {
+			time.Sleep(25 * time.Millisecond)
+		}
+		if processAlive(pid) {
 			t.Fatalf("descendant %d survived killTree", pid)
 		}
 	}

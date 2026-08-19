@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -43,7 +44,12 @@ func native(text string) error {
 // osc52 writes to stderr so the sequence reaches the terminal without
 // interleaving with the TUI's stdout rendering.
 func osc52(text string) error {
+	return writeOSC52(os.Stderr, text)
+}
+
+// writeOSC52 emits the OSC 52 clipboard escape for text on w.
+func writeOSC52(w io.Writer, text string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(text))
-	_, err := fmt.Fprintf(os.Stderr, "\x1b]52;c;%s\x07", encoded)
+	_, err := fmt.Fprintf(w, "\x1b]52;c;%s\x07", encoded)
 	return err
 }

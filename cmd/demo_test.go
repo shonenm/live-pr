@@ -33,6 +33,9 @@ func TestCreateDemoRepo(t *testing.T) {
 }
 
 func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a real demo git repository")
+	}
 	root := t.TempDir()
 	if err := createDemoRepo(root, "git"); err != nil {
 		t.Fatal(err)
@@ -60,6 +63,9 @@ func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
 }
 
 func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a real demo git repository and mock gh")
+	}
 	root := t.TempDir()
 	if err := createDemoRepo(root, "git"); err != nil {
 		t.Fatal(err)
