@@ -53,7 +53,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.diffTerminal.Err(); err != nil {
 				m.status = err.Error() + " · showing raw diff"
 			}
-			m.detailView.focusDiff, m.detailView.reviewWide = false, false
+			if m.detailView.focus == focusReview {
+				m.detailView.focus = focusConversation
+			}
+			m.detailView.reviewWide = false
 			m.layout()
 			return m, tea.Batch(cmd, m.sync())
 		}
@@ -194,11 +197,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			// The review pane sits after the bordered left pane; +1 row for its own top border.
 			if local, ok := translateDiffMouse(msg, m.list.Width+paneChromeW, m.detail.Width, m.detail.Height, m.headerHeight()+1); ok {
-				m.detailView.focusDiff = true
+				m.detailView.focus = focusReview
 				return m, m.diffTerminal.Update(local)
 			}
-			if msg.Action == tea.MouseActionPress {
-				m.detailView.focusDiff = false
+			if msg.Action == tea.MouseActionPress && m.detailView.focus == focusReview {
+				m.detailView.focus = focusConversation
 			}
 		}
 		return m, nil

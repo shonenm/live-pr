@@ -23,6 +23,18 @@ import (
 	"github.com/shonenm/live-pr/internal/timeline"
 )
 
+// detailFocus identifies which detail-screen pane owns keyboard input: the
+// conversation pane, the review pane (embedded reviewer or static diff), or
+// the file explorer. reviewWide stays a separate detailModel flag because
+// full-width layout is orthogonal to which pane has focus.
+type detailFocus uint8
+
+const (
+	focusConversation detailFocus = iota
+	focusReview
+	focusExplorer
+)
+
 // detailModel groups the state that only the detail screen touches: the
 // loaded target (title, refs, commits, files, events, merge readiness), the
 // tab/cursor/focus selection, the raw-diff and rendered-diff caches, reviewed
@@ -48,8 +60,7 @@ type detailModel struct {
 	cursors    [tabCount]int
 	listAnchor listAnchor
 
-	focusDiff         bool
-	focusExplorer     bool
+	focus             detailFocus
 	reviewWide        bool
 	fileCursor        int
 	diffKey           string
@@ -241,7 +252,7 @@ func (m *Model) restartReview(sha, prURL string) tea.Cmd {
 		m.diffTerminal.Close()
 	}
 	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, prURL, sha, m.detailView.reviewedMarksPath))
-	m.detailView.focusDiff, m.detailView.focusExplorer = false, false
+	m.detailView.focus = focusConversation
 	m.layout()
 	if m.diffTerminal != nil {
 		return m.diffTerminal.Init()
@@ -337,7 +348,7 @@ func (m Model) renderReviewPane() string {
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			content = m.diffTerminal.View(m.detail.Width, m.detail.Height)
 		}
-		return renderPane(title, content, width, height, m.detailView.focusDiff)
+		return renderPane(title, content, width, height, m.detailView.focus == focusReview)
 	}
 	title := "Files"
 	if file := m.detailView.selectedFile(); file != nil {
@@ -348,7 +359,7 @@ func (m Model) renderReviewPane() string {
 	divider := lipgloss.NewStyle().Padding(0, 1).Render(rule)
 	content := lipgloss.JoinHorizontal(lipgloss.Top, m.explorer.View(), divider, m.detail.View())
 	width := m.explorer.Width + dividerW + m.detail.Width + paneChromeW
-	return renderPane(title, content, width, m.explorer.Height+paneChromeH, m.detailView.focusDiff || m.detailView.focusExplorer)
+	return renderPane(title, content, width, m.explorer.Height+paneChromeH, m.detailView.focus != focusConversation)
 }
 
 func (m Model) buildFileExplorer() (string, int) {

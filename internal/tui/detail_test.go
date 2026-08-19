@@ -137,7 +137,7 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 		{Status: "M", Path: "internal/tui/tui.go"},
 		{Status: "A", Path: "internal/tui/explorer.go"},
 	}
-	m.detailView.focusExplorer = true
+	m.detailView.focus = focusExplorer
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	m = u.(Model)
 	if m.detailView.fileCursor != 1 {
@@ -456,8 +456,8 @@ func TestCommitSelectionStartsEmbeddedCommitCommandAndFocusesReview(t *testing.T
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	defer m.close()
-	if cmd == nil || m.detailView.reviewSHA != "abc1234" || !m.detailView.focusDiff || m.diffTerminal == nil {
-		t.Fatalf("commit selection did not start/focus embedded review: sha=%q focus=%v terminal=%v", m.detailView.reviewSHA, m.detailView.focusDiff, m.diffTerminal != nil)
+	if cmd == nil || m.detailView.reviewSHA != "abc1234" || m.detailView.focus != focusReview || m.diffTerminal == nil {
+		t.Fatalf("commit selection did not start/focus embedded review: sha=%q focus=%v terminal=%v", m.detailView.reviewSHA, m.detailView.focus, m.diffTerminal != nil)
 	}
 }
 
