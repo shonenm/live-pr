@@ -1,6 +1,10 @@
 package theme
 
-import "math"
+import (
+	"math"
+	"strconv"
+	"strings"
+)
 
 // ContrastingLabelForeground picks the foreground — GitHub's dark ink or
 // white — with the higher WCAG contrast ratio against the given background.
@@ -14,6 +18,24 @@ func ContrastingLabelForeground(background uint64) string {
 		return "#0d1117"
 	}
 	return "#ffffff"
+}
+
+// ContrastRatio returns the WCAG contrast ratio between two "#rrggbb"
+// colors, from 1 (identical) to 21 (black on white).
+func ContrastRatio(a, b string) float64 {
+	la, lb := hexLuminance(a), hexLuminance(b)
+	return (math.Max(la, lb) + 0.05) / (math.Min(la, lb) + 0.05)
+}
+
+// hexLuminance parses "#rrggbb" and returns its relative luminance; malformed
+// values count as black, the conservative end of the scale.
+func hexLuminance(hex string) float64 {
+	hex = strings.TrimPrefix(hex, "#")
+	rgb, err := strconv.ParseUint(hex, 16, 32)
+	if err != nil || len(hex) != 6 {
+		return 0
+	}
+	return relativeLuminance(rgb)
 }
 
 func relativeLuminance(rgb uint64) float64 {
