@@ -240,20 +240,20 @@ func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
 	}
-	delete(m.diffPending, msg.key)
+	delete(m.detailView.diffPending, msg.key)
 	if msg.err != nil {
-		m.diffCache[msg.key] = msg.raw
+		m.detailView.diffCache[msg.key] = msg.raw
 	} else {
-		m.diffCache[msg.key] = msg.output
+		m.detailView.diffCache[msg.key] = msg.output
 	}
-	if m.detailKey == msg.key {
+	if m.detailView.diffKey == msg.key {
 		if msg.err != nil {
 			m.status = msg.err.Error()
 		} else if strings.HasPrefix(m.status, "diff display") {
 			m.status = ""
 		}
-		m.detailShownKey = "rendered\x00" + msg.key
-		m.detail.SetContent(m.diffCache[msg.key])
+		m.detailView.shownKey = "rendered\x00" + msg.key
+		m.detail.SetContent(m.detailView.diffCache[msg.key])
 		m.detail.GotoTop()
 	}
 	return m, nil
@@ -363,9 +363,9 @@ func (m Model) handlePublishDone(msg publishDone) (Model, tea.Cmd) {
 		return m, nil
 	}
 	selectedKey := m.selectedConversationKey()
-	if cache, err := gh.LoadCache(m.cachePath, m.head); err == nil {
+	if cache, err := gh.LoadCache(m.cachePath, m.detailView.head); err == nil {
 		m.cache = cache
-		m.invalidateConversation()
+		m.detailView.invalidateConversation()
 	}
 	action := "updated"
 	if msg.result.Created {
@@ -403,11 +403,11 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.refreshing = false
 	selectedKey := m.selectedConversationKey()
 	now := time.Now().UTC().Format(time.RFC3339)
-	m.resetDetailCaches()
+	m.detailView.resetCaches()
 	m.cache.PR = &msg.pr
 	m.refreshReviewDraft()
 	if strings.TrimSpace(msg.pr.Title) != "" {
-		m.title = msg.pr.Title
+		m.detailView.title = msg.pr.Title
 	}
 	if msg.commentsErr == nil {
 		m.cache.Comments = msg.comments
@@ -424,7 +424,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 		m.cache.ReviewComments = msg.reviewComments
 	}
 	m.cache.FetchedAt = now
-	m.invalidateConversation()
+	m.detailView.invalidateConversation()
 	m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
 	saveCmd := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
 	if msg.refErr != nil {
@@ -437,12 +437,12 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 		// content) again.
 		return m, tea.Batch(saveCmd, m.sync(), m.nextCIPoll(), m.richContentCmd())
 	}
-	m.headRev = msg.headRef
-	m.base, m.diffBase = msg.base, msg.diffBase
-	m.reviewRange = m.diffBase + "..." + m.headRev
-	m.commits, m.files = msg.commits, msg.files
-	m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, msg.readinessErr, msg.pr)
-	m.fileCursor = 0
+	m.detailView.headRev = msg.headRef
+	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
+	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
+	m.detailView.commits, m.detailView.files = msg.commits, msg.files
+	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, msg.readinessErr, msg.pr)
+	m.detailView.fileCursor = 0
 	m.status = ""
 	stale := []string{}
 	if msg.previewErr != nil {
@@ -464,7 +464,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	if len(stale) > 0 {
 		m.githubStatus += " · " + strings.Join(stale, "/") + " stale"
 	}
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, msg.pr.URL, "", m.reviewedMarksPath))
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.pr.URL, "", m.detailView.reviewedMarksPath))
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
 	cmds := []tea.Cmd{saveCmd, m.sync(), m.nextCIPoll(), m.richContentCmd()}
@@ -527,7 +527,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	}
 	m.cache.PR.Commits = commits
 	m.cache.PR.PreviewLoaded = true
-	m.invalidateConversation()
+	m.detailView.invalidateConversation()
 	m.navigator.PRs = upsertPR(m.navigator.PRs, *m.cache.PR)
 	m.prList.rowCache = map[prRowCacheKey][]string{}
 	m.githubStatus = "GitHub: CI updated now"
@@ -552,10 +552,10 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	var diffCmd tea.Cmd
 	switch {
 	case msg.err == nil:
-		m.resetDetailCaches()
+		m.detailView.resetCaches()
 		m.cache.PR = &msg.pr
 		if strings.TrimSpace(msg.pr.Title) != "" {
-			m.title = msg.pr.Title
+			m.detailView.title = msg.pr.Title
 		}
 		m.localAvailable = false
 		m.cache.FetchedAt = now
@@ -567,7 +567,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		}
 		m.applyPRFilters(msg.pr.Number)
 		diffCmd = tea.Batch(m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
-		m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(m.mergeReadiness, m.mergeReadinessErr, msg.pr)
+		m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(m.detailView.mergeReadiness, m.detailView.mergeReadinessErr, msg.pr)
 		stale := []string{}
 		if msg.commentsErr == nil {
 			m.cache.Comments = msg.comments
@@ -607,7 +607,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	}
 	m.refreshReviewDraft()
 	m.reloadLocalConversation()
-	m.invalidateConversation()
+	m.detailView.invalidateConversation()
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
 	return m, tea.Batch(diffCmd, saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.richContentCmd())

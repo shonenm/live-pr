@@ -21,8 +21,8 @@ func TestConversationCacheInvalidation(t *testing.T) {
 	if len(first) == 0 || &first[0] != &second[0] {
 		t.Fatal("conversation derivation was not reused")
 	}
-	m.events = append(m.events, event.Event{TS: "2026-07-21T12:00", Kind: event.Note, Title: "new"})
-	m.invalidateConversation()
+	m.detailView.events = append(m.detailView.events, event.Event{TS: "2026-07-21T12:00", Kind: event.Note, Title: "new"})
+	m.detailView.invalidateConversation()
 	if got := m.conversationItems(); len(got) != len(first)+1 {
 		t.Fatalf("invalidated conversation length = %d, want %d", len(got), len(first)+1)
 	}
@@ -39,7 +39,7 @@ func TestConversationExcludesCommits(t *testing.T) {
 
 func TestConversationCountsStayAtPaneBottom(t *testing.T) {
 	m := testModel()
-	m.screen, m.active = detailScreen, conversationTab
+	m.screen, m.detailView.active = detailScreen, conversationTab
 	m.cache.Comments = []gh.Comment{{ID: 1}, {ID: 2}}
 	m.cache.Activities = []gh.Activity{{ID: 3}}
 	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
@@ -64,8 +64,8 @@ func TestConversationCountsStayAtPaneBottom(t *testing.T) {
 
 func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
 	m := testModel()
-	m.events = nil
-	m.commits = nil
+	m.detailView.events = nil
+	m.detailView.commits = nil
 	m.cache.Comments = []gh.Comment{{ID: 1, Body: "comment", CreatedAt: "2026-08-01T10:00:00Z"}}
 	m.cache.Activities = []gh.Activity{
 		{ID: 2, Event: "labeled", CreatedAt: "2026-08-01T11:00:00Z"},
@@ -94,9 +94,9 @@ func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
 
 func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 	m := testModel()
-	m.summary = "<final pull request summary>"
-	m.events = []event.Event{{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: hidden"}}
-	m.commits = nil
+	m.detailView.summary = "<final pull request summary>"
+	m.detailView.events = []event.Event{{TS: "2026-07-21T11:00", Kind: event.Commit, Title: "feat: hidden"}}
+	m.detailView.commits = nil
 	m.cache.PR = &gh.PR{
 		URL:       "https://github.com/acme/repo/pull/14",
 		Body:      "**opening** ![image](https://example.com/image.png)",
@@ -130,7 +130,7 @@ func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 
 func TestEmptyPRDescriptionHasPlaceholder(t *testing.T) {
 	m := testModel()
-	m.events = nil
+	m.detailView.events = nil
 	m.cache.PR = &gh.PR{URL: "https://example/pr/1"}
 	lines := ansi.Strip(strings.Join(m.descriptionLines(*m.cache.PR, false, 60), "\n"))
 	if !strings.Contains(lines, "(no description provided)") {
@@ -181,7 +181,7 @@ func TestCommentSelectionSurvivesRefresh(t *testing.T) {
 	comment := gh.Comment{ID: 42, NodeID: "IC_42", Body: "selected", CreatedAt: "2026-08-01T10:00:00Z"}
 	m.cache.Comments = []gh.Comment{comment}
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
-	m.cursors[conversationTab] = 1
+	m.detailView.cursors[conversationTab] = 1
 
 	newer := gh.Comment{ID: 43, NodeID: "IC_43", Body: "new", CreatedAt: "2026-08-02T10:00:00Z"}
 	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 1}, comments: []gh.Comment{comment, newer}})
@@ -193,7 +193,7 @@ func TestCommentSelectionSurvivesRefresh(t *testing.T) {
 
 func TestDescriptionOrderAndSelectionSurviveRefresh(t *testing.T) {
 	m := testModel()
-	m.events = []event.Event{{TS: "2026-07-01T10:01:00Z", Kind: event.Note, Title: "local"}}
+	m.detailView.events = []event.Event{{TS: "2026-07-01T10:01:00Z", Kind: event.Note, Title: "local"}}
 	m.cache.PR = &gh.PR{URL: "https://example/pr/1", Body: "old", CreatedAt: "2026-08-01T10:00:00Z"}
 	m.cache.Comments = []gh.Comment{{ID: 2, CreatedAt: "2026-08-01T10:02:00Z"}}
 	m.cache.Activities = []gh.Activity{{ID: 3, CreatedAt: "2026-08-01T10:03:00Z"}}
@@ -203,7 +203,7 @@ func TestDescriptionOrderAndSelectionSurviveRefresh(t *testing.T) {
 	if len(items) != 4 || items[0].pr == nil || items[1].event == nil || items[2].comment == nil || items[3].activity == nil {
 		t.Fatalf("conversation order = %#v", items)
 	}
-	m.cursors[conversationTab] = 0
+	m.detailView.cursors[conversationTab] = 0
 	u, _ := m.Update(githubRefreshed{
 		pr:         gh.PR{URL: "https://example/pr/1", Body: "edited", CreatedAt: "2026-08-01T10:00:00Z"},
 		comments:   m.cache.Comments,
@@ -211,33 +211,33 @@ func TestDescriptionOrderAndSelectionSurviveRefresh(t *testing.T) {
 	})
 	m = u.(Model)
 	selected := m.selectedConversationItem()
-	if selected == nil || selected.pr == nil || selected.pr.Body != "edited" || m.cursors[conversationTab] != 0 {
-		t.Fatalf("description selection after refresh = %#v cursor=%d", selected, m.cursors[conversationTab])
+	if selected == nil || selected.pr == nil || selected.pr.Body != "edited" || m.detailView.cursors[conversationTab] != 0 {
+		t.Fatalf("description selection after refresh = %#v cursor=%d", selected, m.detailView.cursors[conversationTab])
 	}
 }
 
 func TestLocalEventSelectionSurvivesCommitInsertion(t *testing.T) {
 	m := testModel()
-	m.events = []event.Event{
+	m.detailView.events = []event.Event{
 		{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "first"},
 		{TS: "2026-08-01T10:02:00Z", Kind: event.Decision, Title: "selected", Body: "keep me"},
 	}
-	m.cursors[conversationTab] = 1
+	m.detailView.cursors[conversationTab] = 1
 	selectedKey := m.selectedConversationKey()
-	m.events = append([]event.Event{{TS: "2026-08-01T10:00:00Z", Kind: event.Commit, Title: "inserted", SHA: "abc"}}, m.events...)
+	m.detailView.events = append([]event.Event{{TS: "2026-08-01T10:00:00Z", Kind: event.Commit, Title: "inserted", SHA: "abc"}}, m.detailView.events...)
 	m.restoreConversationSelection(selectedKey)
 
 	selected := m.selectedConversationItem()
-	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.cursors[conversationTab] != 1 {
-		t.Fatalf("selection after commit insertion = %#v cursor=%d", selected, m.cursors[conversationTab])
+	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.detailView.cursors[conversationTab] != 1 {
+		t.Fatalf("selection after commit insertion = %#v cursor=%d", selected, m.detailView.cursors[conversationTab])
 	}
 }
 
 func TestPublishInsertionPreservesConversationSelection(t *testing.T) {
 	m := testModel()
-	m.events = []event.Event{{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "selected"}}
+	m.detailView.events = []event.Event{{TS: "2026-08-01T10:01:00Z", Kind: event.Note, Title: "selected"}}
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
-	cache := gh.NewCache(m.head)
+	cache := gh.NewCache(m.detailView.head)
 	cache.PR = &gh.PR{URL: "https://example/pr/1", Body: "new", CreatedAt: "2026-08-01T10:00:00Z"}
 	if err := gh.SaveCache(m.cachePath, cache); err != nil {
 		t.Fatal(err)
@@ -246,8 +246,8 @@ func TestPublishInsertionPreservesConversationSelection(t *testing.T) {
 	u, _ := m.Update(publishDone{result: publish.Result{PR: *cache.PR, Created: true}})
 	m = u.(Model)
 	selected := m.selectedConversationItem()
-	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.cursors[conversationTab] != 1 {
-		t.Fatalf("selection after publish = %#v cursor=%d", selected, m.cursors[conversationTab])
+	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.detailView.cursors[conversationTab] != 1 {
+		t.Fatalf("selection after publish = %#v cursor=%d", selected, m.detailView.cursors[conversationTab])
 	}
 }
 
@@ -276,7 +276,7 @@ func TestGitHubCommentsAreBoxedAndActivityIsUnboxed(t *testing.T) {
 
 func TestLocalEventsShowAuthorAndEditedState(t *testing.T) {
 	m := testModel()
-	agent := strings.Join(m.eventLines(m.events[0], false, 60), "\n")
+	agent := strings.Join(m.eventLines(m.detailView.events[0], false, 60), "\n")
 	if !strings.Contains(agent, "╭") || strings.Contains(agent, "local ·") || !strings.Contains(agent, "agent") {
 		t.Fatalf("agent event should be a source-free card: %q", agent)
 	}
@@ -290,7 +290,7 @@ func TestConversationOrdersRFC3339OffsetsChronologically(t *testing.T) {
 	m := testModel()
 	earlier := gh.Comment{ID: 1, CreatedAt: "2026-08-01T10:00:00+09:00"}
 	later := gh.Comment{ID: 2, CreatedAt: "2026-08-01T02:00:00Z"}
-	m.events = nil
+	m.detailView.events = nil
 	m.cache.Comments = []gh.Comment{later, earlier}
 	items := m.conversationItems()
 	if len(items) != 2 || items[0].comment.ID != 1 || items[1].comment.ID != 2 {
@@ -306,7 +306,7 @@ func TestConversationOrdersRFC3339OffsetsChronologically(t *testing.T) {
 // the selected item: the reader may have scrolled away from it deliberately.
 func TestConversationKeepsScrollAcrossSyncsAndReloads(t *testing.T) {
 	m := testModel()
-	m.screen, m.active = detailScreen, conversationTab
+	m.screen, m.detailView.active = detailScreen, conversationTab
 	m.ready, m.w, m.h = true, 120, 30
 	pr := gh.PR{Number: 1, URL: "u", Body: "body"}
 	m.cache = gh.NewCache("feature")
@@ -316,7 +316,7 @@ func TestConversationKeepsScrollAcrossSyncsAndReloads(t *testing.T) {
 		c.User.Login = "alice"
 		m.cache.Comments = append(m.cache.Comments, c)
 	}
-	m.conversationDirty = true
+	m.detailView.conversationDirty = true
 	m.layout()
 	m.sync()
 
@@ -339,7 +339,7 @@ func TestConversationKeepsScrollAcrossSyncsAndReloads(t *testing.T) {
 
 	// Moving the selection still pulls it into view.
 	m.list.SetYOffset(scrolled)
-	m.cursors[conversationTab] = len(m.conversationItems()) - 1
+	m.detailView.cursors[conversationTab] = len(m.conversationItems()) - 1
 	m.sync()
 	if m.list.YOffset == scrolled {
 		t.Fatal("selection change no longer scrolls the conversation")
@@ -352,7 +352,7 @@ func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
 	c := gh.Comment{ID: 1, Body: "old body", CreatedAt: "2026-08-01T10:00:00Z"}
 	c.User.Login = "alice"
 	m.cache.Comments = []gh.Comment{c}
-	m.conversationDirty = true
+	m.detailView.conversationDirty = true
 	before, _ := m.buildConversation()
 	if !strings.Contains(ansi.Strip(before), "old body") {
 		t.Fatal("setup: old body missing")
@@ -360,7 +360,7 @@ func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
 
 	// Refresh path: content changes, then selection restore consumes dirty.
 	m.cache.Comments[0].Body = "new body"
-	m.invalidateConversation()
+	m.detailView.invalidateConversation()
 	m.restoreConversationSelection(m.selectedConversationKey())
 	after, _ := m.buildConversation()
 	if !strings.Contains(ansi.Strip(after), "new body") {
@@ -374,27 +374,27 @@ func TestConversationCursorMoveReusesUnselectedCardRenders(t *testing.T) {
 	one := gh.Comment{ID: 1, Body: "first"}
 	two := gh.Comment{ID: 2, Body: "second"}
 	m.cache.Comments = []gh.Comment{one, two}
-	m.conversationDirty = true
+	m.detailView.conversationDirty = true
 	items := m.conversationItems()
 	if len(items) < 2 {
 		t.Fatalf("need 2+ items, got %d", len(items))
 	}
-	m.cursors[conversationTab] = 0
+	m.detailView.cursors[conversationTab] = 0
 	_, _ = m.buildConversation()
-	cached := len(m.convItemCache)
+	cached := len(m.detailView.convItemCache)
 	if cached == 0 {
 		t.Fatal("no unselected cards cached")
 	}
 	// Cursor move: previously-selected card renders once, the rest come from
 	// the cache.
-	m.cursors[conversationTab] = 1
+	m.detailView.cursors[conversationTab] = 1
 	_, _ = m.buildConversation()
-	if len(m.convItemCache) != cached+1 {
-		t.Fatalf("cursor move cache growth = %d, want %d", len(m.convItemCache), cached+1)
+	if len(m.detailView.convItemCache) != cached+1 {
+		t.Fatalf("cursor move cache growth = %d, want %d", len(m.detailView.convItemCache), cached+1)
 	}
 	// Content changes flush the card cache.
-	m.invalidateConversation()
-	if len(m.convItemCache) != 0 {
+	m.detailView.invalidateConversation()
+	if len(m.detailView.convItemCache) != 0 {
 		t.Fatal("invalidation kept stale card renders")
 	}
 }

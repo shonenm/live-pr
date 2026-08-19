@@ -239,21 +239,21 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.diffTerminal.Close()
 		}
 		m.diffTerminal = nil
-		m.focusDiff, m.focusExplorer = false, false
+		m.detailView.focusDiff, m.detailView.focusExplorer = false, false
 		m.screen = prListScreen
 		m.autoOpenCurrent = false
 		m.refreshing, m.publishing = false, false
-		m.active = conversationTab
+		m.detailView.active = conversationTab
 		m.status = ""
 		m.layout()
 		return m, m.applyPRViewState(selected)
 	}
 	// Tab cycles focus: conversation → review → conversation.
 	if key.Matches(msg, m.keys.Focus) {
-		if m.focusDiff {
-			m.focusDiff, m.focusExplorer, m.reviewWide = false, false, false
+		if m.detailView.focusDiff {
+			m.detailView.focusDiff, m.detailView.focusExplorer, m.detailView.reviewWide = false, false, false
 		} else {
-			m.focusDiff, m.focusExplorer = true, false
+			m.detailView.focusDiff, m.detailView.focusExplorer = true, false
 		}
 		m.layout()
 		return m, m.sync()
@@ -261,28 +261,28 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Shift-Tab toggles the focused pane to full width. From conversation it
 	// expands conversation; from review/explorer it expands the review side.
 	if isShiftTab(msg) {
-		m.reviewWide = !m.reviewWide
-		if m.reviewWide && !m.focusDiff && !m.focusExplorer {
-			m.focusDiff = false // conversation full-width: hide review
-		} else if m.reviewWide {
-			m.focusDiff, m.focusExplorer = true, false
+		m.detailView.reviewWide = !m.detailView.reviewWide
+		if m.detailView.reviewWide && !m.detailView.focusDiff && !m.detailView.focusExplorer {
+			m.detailView.focusDiff = false // conversation full-width: hide review
+		} else if m.detailView.reviewWide {
+			m.detailView.focusDiff, m.detailView.focusExplorer = true, false
 		}
 		m.layout()
 		return m, m.sync()
 	}
 	if m.fileExplorerMode() && key.Matches(msg, m.keys.FocusRight) {
-		if !m.focusExplorer {
-			m.focusExplorer = true
+		if !m.detailView.focusExplorer {
+			m.detailView.focusExplorer = true
 		}
 		return m, nil
 	}
-	if !m.focusDiff && key.Matches(msg, m.keys.FocusRight) {
-		m.focusDiff = true
+	if !m.detailView.focusDiff && key.Matches(msg, m.keys.FocusRight) {
+		m.detailView.focusDiff = true
 		return m, nil
 	}
 	// Comment/review/edit keys only apply when the conversation pane is focused;
 	// when the embedded reviewer (nvim) has focus, forward them to the terminal.
-	if !m.focusDiff && !m.focusExplorer {
+	if !m.detailView.focusDiff && !m.detailView.focusExplorer {
 		if key.Matches(msg, m.keys.AddComment) {
 			return m.startAddComment()
 		}
@@ -299,7 +299,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m.deleteSelectedLocalComment()
 		}
 	}
-	if m.focusDiff {
+	if m.detailView.focusDiff {
 		if key.Matches(msg, m.keys.Quit) {
 			return m, tea.Quit
 		}
@@ -343,7 +343,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.detail, cmd = m.detail.Update(msg)
 		return m, cmd
 	}
-	if m.focusExplorer {
+	if m.detailView.focusExplorer {
 		if m.fileExplorerMode() {
 			if key.Matches(msg, m.keys.PreviewUp) {
 				scrollQuarter(&m.detail, false)
@@ -358,7 +358,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
-	if m.screen == detailScreen && !m.focusDiff && !m.focusExplorer {
+	if m.screen == detailScreen && !m.detailView.focusDiff && !m.detailView.focusExplorer {
 		if key.Matches(msg, m.keys.PreviewUp) {
 			scrollQuarter(&m.list, false)
 			return m, nil
@@ -388,7 +388,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.targetGeneration++
 			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.startSpinner())
 		}
-		return m, tea.Batch(fetchGitHub(m.client, m.head, m.currentPRNumber(), m.targetGeneration), m.startSpinner())
+		return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration), m.startSpinner())
 	case key.Matches(msg, m.keys.Status):
 		return m.openPRStatus(m.cache.PR)
 	case key.Matches(msg, m.keys.Merge):
@@ -408,7 +408,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		m.publishing = true
 		m.status = "publishing PR…"
-		base := m.base
+		base := m.detailView.base
 		generation := m.targetGeneration
 		return m, tea.Batch(func() tea.Msg {
 			result, err := publish.Run(publish.Options{Base: base})
@@ -438,27 +438,27 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Commits):
-		if m.fileExplorerMode() && m.focusExplorer {
+		if m.fileExplorerMode() && m.detailView.focusExplorer {
 			return m, m.toggleFileCheck()
 		}
-		m.active = commitsTab
+		m.detailView.active = commitsTab
 		m.status = "select a commit and press Enter"
 		m.layout()
 		return m, m.sync()
 	case key.Matches(msg, m.keys.Conflicts):
-		m.active, m.status = conflictsTab, ""
+		m.detailView.active, m.status = conflictsTab, ""
 		m.layout()
 		return m, m.sync()
 	case key.Matches(msg, m.keys.Checks):
-		m.active, m.status = checksTab, ""
+		m.detailView.active, m.status = checksTab, ""
 		m.layout()
 		return m, m.sync()
 	case key.Matches(msg, m.keys.Back):
-		if m.active == conversationTab {
+		if m.detailView.active == conversationTab {
 			return m, nil
 		}
-		wasCommitReview := m.active == commitsTab && m.reviewSHA != ""
-		m.active, m.status = conversationTab, ""
+		wasCommitReview := m.detailView.active == commitsTab && m.detailView.reviewSHA != ""
+		m.detailView.active, m.status = conversationTab, ""
 		m.layout()
 		if !wasCommitReview {
 			return m, m.sync()
@@ -466,40 +466,40 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		cmd := m.restartReview("", m.prURL())
 		return m, tea.Batch(cmd, m.sync())
 	case key.Matches(msg, m.keys.Select):
-		if m.active != commitsTab {
+		if m.detailView.active != commitsTab {
 			return m, nil
 		}
-		sha := m.selectedCommitSHA()
+		sha := m.detailView.selectedCommitSHA()
 		if sha == "" {
 			return m, nil
 		}
 		m.status = ""
 		cmd := m.restartReview(sha, m.prURL())
-		m.focusDiff = m.diffTerminal != nil && m.diffTerminal.Available()
+		m.detailView.focusDiff = m.diffTerminal != nil && m.diffTerminal.Available()
 		return m, tea.Batch(cmd, m.sync())
 	case key.Matches(msg, m.keys.Down):
-		if m.focusExplorer {
-			if m.fileCursor < len(m.files)-1 {
-				m.fileCursor++
+		if m.detailView.focusExplorer {
+			if m.detailView.fileCursor < len(m.detailView.files)-1 {
+				m.detailView.fileCursor++
 				return m, m.sync()
 			}
 			return m, nil
 		}
-		if m.cursors[m.active] < m.activeLen()-1 {
-			m.cursors[m.active]++
+		if m.detailView.cursors[m.detailView.active] < m.activeLen()-1 {
+			m.detailView.cursors[m.detailView.active]++
 			return m, m.sync()
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Up):
-		if m.focusExplorer {
-			if m.fileCursor > 0 {
-				m.fileCursor--
+		if m.detailView.focusExplorer {
+			if m.detailView.fileCursor > 0 {
+				m.detailView.fileCursor--
 				return m, m.sync()
 			}
 			return m, nil
 		}
-		if m.cursors[m.active] > 0 {
-			m.cursors[m.active]--
+		if m.detailView.cursors[m.detailView.active] > 0 {
+			m.detailView.cursors[m.detailView.active]--
 			return m, m.sync()
 		}
 		return m, nil

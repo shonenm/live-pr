@@ -39,11 +39,11 @@ func (m *Model) refreshReviewDraft() {
 // the branch has a PR, otherwise a local timeline note. Inline review comments
 // live on A; the review verdict + body live on v.
 func (m Model) startAddComment() (Model, tea.Cmd) {
-	if m.active != conversationTab {
+	if m.detailView.active != conversationTab {
 		m.status = "comments live in the Conversation tab (esc)"
 		return m, nil
 	}
-	if m.focusDiff || m.focusExplorer {
+	if m.detailView.focusDiff || m.detailView.focusExplorer {
 		return m, nil
 	}
 	if m.cache.PR != nil {
@@ -98,7 +98,7 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 	if m.remote {
 		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.startSpinner())
 	}
-	return m, tea.Batch(fetchGitHub(m.client, m.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
 }
 
 func deleteRemoteComment(client githubClient, id int64, generation uint64) tea.Cmd {
@@ -137,7 +137,7 @@ func (m Model) startInlineReviewComment() (Model, tea.Cmd) {
 		m.status = err.Error()
 		return m, nil
 	}
-	file := m.selectedFile()
+	file := m.detailView.selectedFile()
 	if file == nil {
 		m.status = "select a changed file first"
 		return m, nil
