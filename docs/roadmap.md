@@ -60,7 +60,8 @@
 - **Done**: GitHub Primer darkとgh-dashのsemantic color運用へ統一し、独自event-kind色を廃止。
 - **Done**: PR一覧にAll/Review requested/Assigned/Authored/Needs me view、GitHub風filter、base/head graphによるstack groupingとcollapseを追加。
 - **Done**: default branch/対象なしではcache-firstのPR一覧、current/local PRではdetailを自動表示。`b`でlocal PRを含む一覧へ戻り、右previewへ冒頭のdescription/commentカード、metadata、CI/conflict/review、comments、files/lines/commitsを表示。他PRは通常checkoutせずnumeric pull refをfetchしてConversationとCodeReviewを表示し、一覧で`c`によるcheckout、`x`によるclose、`m`によるmergeを確認後に実行可能。
-- **Next**: reviews / inline review commentsの取得とConversation統合、通常コメント投稿とoutbox。
+- **Done**: reviews / inline review commentsを取得しConversationへ時系列統合（review verdictカードとinline commentカード）。`a`でtop-levelコメント投稿、`A`でinline draft、`v`でreview提出。
+- **Done**: コメント投稿のoutbox — オフライン失敗をXDG stateへキューし、pendingカードとして表示、refresh/再接続時に順序保持で自動送信。認証系エラーはキューせず即表示。
 - **Done**: CodeReviewのreviewed markをXDG stateへ保存し、チェック後に対象ファイルのdiffが変わった場合は自動解除。
 - **Done**: repo-local `.live-pr/` runtimeを廃止し、XDG stateへ移行。旧stateは初回アクセス時に移行。
 
@@ -71,7 +72,7 @@
 - **Done**: Skillは初期計画ではなく最終結果をsummaryへ書き、reviewerが必要とする重要判断だけをtimelineへ記録する。
 
 ### P6 — 仕上げ / 配布
-- GitHub双方向連携の完成後、Homebrew tap、テーマ設定、追加agent adapter。goreleaser・補完・version-matched Agent Skillは導入済み。
+- 残: Homebrew tap。テーマ設定（`theme` = primer-dark / primer-light / nord / catppuccin-mocha）と要約backendの差し替え（`summarize_command`）は導入済み。goreleaser・補完・version-matched Agent Skillも導入済み。
 
 ## マイルストーン
 
@@ -99,4 +100,4 @@ docs/
 
 ## 現在地
 
-P0〜P5.2とConversation中心のTUIを実装。Local PRはPR template準拠のfinal summaryと、人間/agentがCLIでCRUDできる疎なdecision timelineを持ち、version一致Skillから運用規則をagentへ提供する。次はGitHub review/inline comment同期と通常コメント投稿outbox、Homebrew配布。
+P0〜P5.2とConversation中心のTUIを実装。Local PRはPR template準拠のfinal summaryと、人間/agentがCLIでCRUDできる疎なdecision timelineを持ち、version一致Skillから運用規則をagentへ提供する。review/inline comment同期、コメントoutbox、テーマ設定、要約backend差し替えまで実装済み。次はHomebrew配布。

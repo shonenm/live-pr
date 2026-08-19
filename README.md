@@ -69,6 +69,9 @@ Press `?` in the TUI for keybindings, or see [docs/keybindings.md](docs/keybindi
 `~/.config/live-pr/config.toml`, overridden per-repo by `.live-pr.toml`:
 
 ```toml
+theme = "primer-dark"        # primer-dark (default) | primer-light | nord | catppuccin-mocha
+summarize_command = ""       # summary backend: transcript on stdin, summary on stdout ("" = claude -p)
+
 [diff]
 command = 'nvim -c "CodeDiff --inline $LIVE_PR_RANGE"'  # embedded reviewer ("" = built-in git diff)
 display = "delta --color-only"                          # static diff filter
