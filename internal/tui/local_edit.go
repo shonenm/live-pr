@@ -16,6 +16,29 @@ import (
 	"github.com/shonenm/live-pr/internal/store"
 )
 
+// localEditOverlay hosts the shared localEditor textarea for local timeline
+// edits and GitHub-bound comment or description edits. mode selects the save
+// path; target carries the edited item's identity (a local event ID or
+// "pr-description"); remoteCommentID names the GitHub comment being edited.
+type localEditOverlay struct {
+	mode            localEditMode
+	target          string
+	errText         string
+	remoteCommentID int64
+}
+
+// localDeleteOverlay is the y/n confirm for deleting a local timeline comment.
+type localDeleteOverlay struct {
+	target string
+	title  string
+}
+
+// remoteDeleteOverlay is the y/n confirm for deleting a GitHub comment.
+type remoteDeleteOverlay struct {
+	id    int64
+	title string
+}
+
 // editorWidth is the widest the editor may be and still fit the popups that
 // host it. The review popup declares min(80, w-14) and pads 2 on each side,
 // so anything wider gets re-wrapped by the popup and shows breaks the text
@@ -29,7 +52,10 @@ func (m *Model) sizeLocalEditor() {
 	m.localEditor.SetHeight(max(6, min(18, m.h-12)))
 }
 
-func (m Model) openLocalEditor(mode localEditMode, value, target string) (Model, tea.Cmd) {
+// setupLocalEditor rebuilds the shared editor textarea with value and focuses
+// it. Callers decide which overlay presents it: openLocalEditor for the edit
+// overlay, the review submit popup for its message body.
+func (m Model) setupLocalEditor(value string) (Model, tea.Cmd) {
 	editor := textarea.New()
 	editor.Prompt = ""
 	editor.ShowLineNumbers = false
@@ -45,16 +71,21 @@ func (m Model) openLocalEditor(mode localEditMode, value, target string) (Model,
 	)
 	editor.SetValue(value)
 	m.localEditor = editor
-	m.localEditMode, m.localEditTarget, m.localEditError = mode, target, ""
 	m.sizeLocalEditor()
 	return m, m.localEditor.Focus()
+}
+
+func (m Model) openLocalEditor(o localEditOverlay, value string) (Model, tea.Cmd) {
+	m, cmd := m.setupLocalEditor(value)
+	m.overlay = o
+	return m, cmd
 }
 
 func (m Model) startLocalComment() (Model, tea.Cmd) {
 	if m.remote || m.active != conversationTab || m.focusDiff || m.focusExplorer {
 		return m, nil
 	}
-	return m.openLocalEditor(addLocalComment, "kind: decision\n\n", "")
+	return m.openLocalEditor(localEditOverlay{mode: addLocalComment}, "kind: decision\n\n")
 }
 
 func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
@@ -78,8 +109,7 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 			m.status = "only your own GitHub comments can be edited"
 			return m, nil
 		}
-		m.remoteCommentID = item.comment.ID
-		return m.openLocalEditor(editRemoteComment, item.comment.Body, "")
+		return m.openLocalEditor(localEditOverlay{mode: editRemoteComment, remoteCommentID: item.comment.ID}, item.comment.Body)
 	case itemReview, itemReviewComment:
 		m.status = "review comments cannot be edited here; use GitHub"
 		return m, nil
@@ -88,8 +118,7 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 			m.status = "no PR to edit"
 			return m, nil
 		}
-		m.remoteCommentID = 0
-		return m.openLocalEditor(editRemoteComment, item.pr.Body, "pr-description")
+		return m.openLocalEditor(localEditOverlay{mode: editRemoteComment, target: "pr-description"}, item.pr.Body)
 	case itemActivity, itemPRCommit:
 		m.status = "activity and CI events are not editable"
 		return m, nil
@@ -99,10 +128,10 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 	}
 	switch item.kind() {
 	case itemSummary:
-		return m.openLocalEditor(editLocalSummary, *item.summary, "")
+		return m.openLocalEditor(localEditOverlay{mode: editLocalSummary}, *item.summary)
 	case itemEvent:
 		if item.event.Kind != event.Commit {
-			return m.openLocalEditor(editLocalComment, formatLocalComment(*item.event), item.event.ID)
+			return m.openLocalEditor(localEditOverlay{mode: editLocalComment, target: item.event.ID}, formatLocalComment(*item.event))
 		}
 	}
 	m.status = "only local summary and comments can be edited"
@@ -129,10 +158,9 @@ func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
 			m.status = "only your own GitHub comments can be deleted"
 			return m, nil
 		}
-		m.remoteDeleteID = item.comment.ID
 		// ansi.Truncate counts display cells, so multibyte text is never cut
 		// mid-rune.
-		m.remoteDeleteTitle = ansi.Truncate(item.comment.Body, 60, "…")
+		m.overlay = remoteDeleteOverlay{id: item.comment.ID, title: ansi.Truncate(item.comment.Body, 60, "…")}
 		m.status = ""
 		return m, nil
 	case itemReview, itemReviewComment:
@@ -149,7 +177,7 @@ func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
 		m.status = "select a local comment to delete"
 		return m, nil
 	}
-	m.localDeleteTarget, m.localDeleteTitle = item.event.ID, item.event.Title
+	m.overlay = localDeleteOverlay{target: item.event.ID, title: item.event.Title}
 	m.status = ""
 	return m, nil
 }
@@ -184,20 +212,20 @@ func parseLocalComment(value string, allowSummary bool) (event.Kind, string, str
 	return kind, title, body, nil
 }
 
-func (m Model) saveLocalEdit() (Model, tea.Cmd) {
+func (o localEditOverlay) save(m Model) (Model, tea.Cmd) {
 	// GitHub-bound targets are posted over the network, so they return early
 	// with an async command; the local modes share the close-editor /
 	// reload / notice tail below.
-	if m.localEditMode == editRemoteComment && m.localEditTarget == "pr-description" {
-		return m.savePRDescription()
+	if o.mode == editRemoteComment && o.target == "pr-description" {
+		return o.savePRDescription(m)
 	}
-	if m.localEditMode == addRemoteComment || m.localEditMode == editRemoteComment {
-		return m.saveRemoteComment()
+	if o.mode == addRemoteComment || o.mode == editRemoteComment {
+		return o.saveRemoteComment(m)
 	}
 	st := store.ForBranch(m.root, m.currentBranch)
 	selectedKey := "local-summary"
 	var err error
-	switch m.localEditMode {
+	switch o.mode {
 	case editLocalSummary:
 		selectedKey, err = m.saveLocalSummary(st)
 	case addLocalComment:
@@ -207,16 +235,16 @@ func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 	case addInlineReviewComment:
 		selectedKey, err = m.saveInlineReviewComment()
 	case editLocalComment:
-		selectedKey, err = m.saveEditedLocalComment(st)
+		selectedKey, err = m.saveEditedLocalComment(st, o.target)
 	}
 	if err != nil {
-		m.localEditError = err.Error()
+		o.errText = err.Error()
+		m.overlay = o
 		return m, nil
 	}
-	mode := m.localEditMode
 	m.localEditor.Blur()
-	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-	if mode != editReviewBody && mode != addInlineReviewComment {
+	m.overlay = nil
+	if o.mode != editReviewBody && o.mode != addInlineReviewComment {
 		m.reloadLocalConversation()
 		m.notice = "Local PR updated"
 	} else {
@@ -226,38 +254,41 @@ func (m Model) saveLocalEdit() (Model, tea.Cmd) {
 	return m, m.sync()
 }
 
-func (m Model) savePRDescription() (Model, tea.Cmd) {
+func (o localEditOverlay) savePRDescription(m Model) (Model, tea.Cmd) {
 	body := m.localEditor.Value()
 	if m.cache.PR == nil {
-		m.localEditError = "no pull request"
+		o.errText = "no pull request"
+		m.overlay = o
 		return m, nil
 	}
 	number := m.cache.PR.Number
 	m.localEditor.Blur()
-	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
+	m.overlay = nil
 	m.remoteCommentBusy = true
 	m.status = "updating PR description…"
 	return m, tea.Batch(updatePRDescription(m.client, number, m.head, body, m.targetGeneration), m.startSpinner())
 }
 
-func (m Model) saveRemoteComment() (Model, tea.Cmd) {
+func (o localEditOverlay) saveRemoteComment(m Model) (Model, tea.Cmd) {
 	body := strings.TrimSpace(m.localEditor.Value())
 	if body == "" {
-		m.localEditError = "comment must not be empty"
+		o.errText = "comment must not be empty"
+		m.overlay = o
 		return m, nil
 	}
 	if m.cache.PR == nil {
-		m.localEditError = "no pull request for this comment"
+		o.errText = "no pull request for this comment"
+		m.overlay = o
 		return m, nil
 	}
 	editID := int64(0)
-	if m.localEditMode == editRemoteComment {
-		editID = m.remoteCommentID
+	if o.mode == editRemoteComment {
+		editID = o.remoteCommentID
 	}
 	number := m.cache.PR.Number
 	m.localEditor.Blur()
-	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-	m.remoteCommentID, m.remoteCommentBusy = 0, true
+	m.overlay = nil
+	m.remoteCommentBusy = true
 	m.status = "sending comment…"
 	return m, tea.Batch(postRemoteComment(m.client, number, body, editID, m.targetGeneration), m.startSpinner())
 }
@@ -312,12 +343,12 @@ func (m *Model) saveInlineReviewComment() (string, error) {
 	return m.selectedConversationKey(), nil
 }
 
-func (m *Model) saveEditedLocalComment(st *store.Store) (string, error) {
+func (m *Model) saveEditedLocalComment(st *store.Store, target string) (string, error) {
 	kind, title, body, err := parseLocalComment(m.localEditor.Value(), true)
 	if err != nil {
 		return "", err
 	}
-	current, ok := localEventByID(m.events, m.localEditTarget)
+	current, ok := localEventByID(m.events, target)
 	if !ok {
 		return "", errors.New("comment no longer exists")
 	}
@@ -337,91 +368,86 @@ func localEventByID(events []event.Event, id string) (event.Event, bool) {
 	return event.Event{}, false
 }
 
-func (m Model) handleLocalOverlay(msg tea.Msg) (Model, tea.Cmd) {
-	// WindowSizeMsg is routed through the main Update switch (it resizes the
-	// editor there), so this handler only sees keys and editor-internal
-	// messages such as cursor blink.
-	key, ok := msg.(tea.KeyMsg)
-	if m.localDeleteTarget != "" {
-		if !ok {
-			return m, nil
-		}
-		switch key.String() {
-		case "y":
-			if err := event.Delete(m.timelinePath, m.localDeleteTarget); err != nil {
-				m.status = err.Error()
-			} else {
-				m.reloadLocalConversation()
-				m.notice = "Comment deleted"
-			}
-			m.localDeleteTarget, m.localDeleteTitle = "", ""
-			return m, m.sync()
-		case "n", "esc", "q":
-			m.localDeleteTarget, m.localDeleteTitle = "", ""
-		}
+func (o localEditOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	// Ctrl+S only: bubbletea cannot report ctrl+enter (the terminal sends
+	// plain CR for it), and Enter has to stay a newline in the editor.
+	case "ctrl+s":
+		return o.save(m)
+	case "esc":
+		m.localEditor.Blur()
+		m.overlay = nil
 		return m, nil
-	}
-	if m.remoteDeleteID > 0 {
-		if !ok {
-			return m, nil
-		}
-		switch key.String() {
-		case "y":
-			id := m.remoteDeleteID
-			m.remoteDeleteID, m.remoteDeleteTitle = 0, ""
-			m.remoteCommentBusy = true
-			m.status = "deleting comment…"
-			return m, tea.Batch(deleteRemoteComment(m.client, id, m.targetGeneration), m.startSpinner())
-		case "n", "esc", "q":
-			m.remoteDeleteID, m.remoteDeleteTitle = 0, ""
-		}
-		return m, nil
-	}
-	if m.localEditMode == noLocalEdit {
-		return m, nil
-	}
-	if ok {
-		switch key.String() {
-		// Ctrl+S only: bubbletea cannot report ctrl+enter (the terminal sends
-		// plain CR for it), and Enter has to stay a newline in the editor.
-		case "ctrl+s":
-			return m.saveLocalEdit()
-		case "esc":
-			m.localEditor.Blur()
-			m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-			return m, nil
-		}
 	}
 	var cmd tea.Cmd
 	m.localEditor, cmd = m.localEditor.Update(msg)
 	return m, cmd
 }
 
-func (m Model) renderLocalEditorPopup() string {
+// handleMsg feeds editor-internal messages such as cursor blink to the
+// textarea. WindowSizeMsg is routed through the main Update switch (it
+// resizes the editor there), so this handler never sees it.
+func (o localEditOverlay) handleMsg(m Model, msg tea.Msg) (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.localEditor, cmd = m.localEditor.Update(msg)
+	return m, cmd
+}
+
+func (o localDeleteOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		if err := event.Delete(m.timelinePath, o.target); err != nil {
+			m.status = err.Error()
+		} else {
+			m.reloadLocalConversation()
+			m.notice = "Comment deleted"
+		}
+		m.overlay = nil
+		return m, m.sync()
+	case "n", "esc", "q":
+		m.overlay = nil
+	}
+	return m, nil
+}
+
+func (o remoteDeleteOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		m.overlay = nil
+		m.remoteCommentBusy = true
+		m.status = "deleting comment…"
+		return m, tea.Batch(deleteRemoteComment(m.client, o.id, m.targetGeneration), m.startSpinner())
+	case "n", "esc", "q":
+		m.overlay = nil
+	}
+	return m, nil
+}
+
+func (o localEditOverlay) render(m Model) string {
 	title, hint := "Add local comment", "first line: kind: decision | pivot | note"
-	if m.localEditMode == editLocalComment {
+	if o.mode == editLocalComment {
 		title = "Edit local comment"
 	}
-	if m.localEditMode == editLocalSummary {
+	if o.mode == editLocalSummary {
 		title, hint = "Edit final summary", "follow the repository PR template; describe the final result"
 	}
-	if m.localEditMode == editReviewBody {
+	if o.mode == editReviewBody {
 		title, hint = "Edit general review", "submitted with Comment, Approve, or Request changes"
 	}
-	if m.localEditMode == addInlineReviewComment {
+	if o.mode == addInlineReviewComment {
 		title, hint = "Add inline review comment", "RIGHT = new code; LEFT = deleted code"
 	}
-	if m.localEditMode == addRemoteComment {
+	if o.mode == addRemoteComment {
 		title, hint = "Add comment", "posts a GitHub conversation comment"
 	}
-	if m.localEditMode == editRemoteComment && m.localEditTarget == "pr-description" {
+	if o.mode == editRemoteComment && o.target == "pr-description" {
 		title, hint = "Edit PR description", "updates the pull request body on GitHub"
-	} else if m.localEditMode == editRemoteComment {
+	} else if o.mode == editRemoteComment {
 		title, hint = "Edit comment", "updates your GitHub conversation comment"
 	}
 	lines := []string{stBold.Render(title), stMuted.Render(hint), "", m.localEditor.View()}
-	if m.localEditError != "" {
-		lines = append(lines, "", stRedF.Render(m.localEditError))
+	if o.errText != "" {
+		lines = append(lines, "", stRedF.Render(o.errText))
 	}
 	lines = append(lines, "", stMuted.Render("Enter/Shift+Enter newline · Ctrl+S send · Esc cancel"))
 	return lipgloss.NewStyle().
@@ -431,17 +457,17 @@ func (m Model) renderLocalEditorPopup() string {
 		Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) renderLocalDeletePopup() string {
+func (o localDeleteOverlay) render(m Model) string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAttention)).
 		Padding(1, 3).
 		Width(max(24, min(60, m.w-14))).
-		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(m.localDeleteTitle) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
+		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(o.title) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
 }
 
-func (m Model) renderRemoteDeletePopup() string {
-	preview := strings.ReplaceAll(m.remoteDeleteTitle, "\n", " ")
+func (o remoteDeleteOverlay) render(m Model) string {
+	preview := strings.ReplaceAll(o.title, "\n", " ")
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cDangerEmphasis)).

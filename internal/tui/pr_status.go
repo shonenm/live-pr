@@ -46,13 +46,30 @@ func availablePRStatusOptions(pr gh.PR) []string {
 	return options
 }
 
+// prStatusOverlay is the status picker popup (open / close / draft) for one
+// pull request. running marks the in-flight transition; the popup swallows
+// keys until prStatusDone lands.
+type prStatusOverlay struct {
+	pr      gh.PR
+	cursor  int
+	running bool
+}
+
 func (m Model) openPRStatus(pr *gh.PR) (Model, tea.Cmd) {
 	if pr == nil || pr.Number <= 0 {
 		return m, nil
 	}
-	m.statusPR, m.statusCursor = *pr, 0
+	m.overlay = prStatusOverlay{pr: *pr}
 	m.status, m.notice = "", ""
 	return m, nil
+}
+
+// prStatusRunning reports an in-flight status transition. The flag lives on
+// the popup because the request cannot outlive it: keys are swallowed while
+// it runs, and prStatusDone clears or closes the popup.
+func (m Model) prStatusRunning() bool {
+	o, ok := m.overlay.(prStatusOverlay)
+	return ok && o.running
 }
 
 // optimisticStatus predicts the PR state after a successful transition.
@@ -81,61 +98,64 @@ func runPRStatus(client githubClient, pr gh.PR, target string) tea.Cmd {
 	}
 }
 
-func (m Model) handlePRStatusKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if m.statusRunning {
+func (o prStatusOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+	if o.running {
 		return m, nil
 	}
-	options := availablePRStatusOptions(m.statusPR)
+	options := availablePRStatusOptions(o.pr)
 	switch msg.String() {
 	case "up", "k":
 		if len(options) > 0 {
-			m.statusCursor = (m.statusCursor + len(options) - 1) % len(options)
+			o.cursor = (o.cursor + len(options) - 1) % len(options)
 		}
 	case "down", "j":
 		if len(options) > 0 {
-			m.statusCursor = (m.statusCursor + 1) % len(options)
+			o.cursor = (o.cursor + 1) % len(options)
 		}
 	case "o":
-		return m.submitPRStatusTarget("open", options)
+		return o.submitTarget(m, "open", options)
 	case "c":
-		return m.submitPRStatusTarget("closed", options)
+		return o.submitTarget(m, "closed", options)
 	case "d":
-		return m.submitPRStatusTarget("draft", options)
+		return o.submitTarget(m, "draft", options)
 	case "enter":
-		return m.submitPRStatus()
+		if o.cursor < 0 || o.cursor >= len(options) {
+			return m, nil
+		}
+		return o.submitTarget(m, options[o.cursor], nil)
 	case "esc", "q", "n":
-		m.statusPR = gh.PR{}
+		m.overlay = nil
+		return m, nil
 	}
+	m.overlay = o
 	return m, nil
 }
 
-func (m Model) submitPRStatus() (Model, tea.Cmd) {
-	options := availablePRStatusOptions(m.statusPR)
-	if m.statusCursor < 0 || m.statusCursor >= len(options) {
-		return m, nil
-	}
-	return m.submitPRStatusTarget(options[m.statusCursor], nil)
-}
-
-func (m Model) submitPRStatusTarget(target string, options []string) (Model, tea.Cmd) {
-	if strings.EqualFold(m.statusPR.State, "MERGED") {
+func (o prStatusOverlay) submitTarget(m Model, target string, options []string) (Model, tea.Cmd) {
+	if strings.EqualFold(o.pr.State, "MERGED") {
 		m.status = "merged pull requests cannot change status"
 		return m, nil
 	}
 	if options != nil && !slices.Contains(options, target) {
 		return m, nil
 	}
-	m.statusRunning = true
-	return m, tea.Batch(runPRStatus(m.client, m.statusPR, target), m.startSpinner())
+	o.running = true
+	m.overlay = o
+	return m, tea.Batch(runPRStatus(m.client, o.pr, target), m.startSpinner())
 }
 
 func (m Model) handlePRStatusDone(msg prStatusDone) (Model, tea.Cmd) {
-	m.statusRunning = false
+	if o, ok := m.overlay.(prStatusOverlay); ok {
+		o.running = false
+		m.overlay = o
+	}
 	if msg.err != nil {
 		m.status = "PR status: " + msg.err.Error()
 		return m, nil
 	}
-	m.statusPR = gh.PR{}
+	if _, ok := m.overlay.(prStatusOverlay); ok {
+		m.overlay = nil
+	}
 	m.notice = fmt.Sprintf("PR #%d is now %s", msg.pr.Number, msg.target)
 	return m.applyPRStateChange(msg.pr)
 }
@@ -181,19 +201,19 @@ func (m Model) applyPRStateChange(pr gh.PR) (Model, tea.Cmd) {
 	return m, m.sync()
 }
 
-func (m Model) renderPRStatusPopup() string {
-	lines := []string{stBold.Render(fmt.Sprintf("Change PR #%d status", m.statusPR.Number)), ""}
-	for i, option := range availablePRStatusOptions(m.statusPR) {
+func (o prStatusOverlay) render(m Model) string {
+	lines := []string{stBold.Render(fmt.Sprintf("Change PR #%d status", o.pr.Number)), ""}
+	for i, option := range availablePRStatusOptions(o.pr) {
 		prefix := "  "
 		style := stFg
-		if i == m.statusCursor {
+		if i == o.cursor {
 			prefix, style = "▸ ", stAccent.Bold(true)
 		}
 		lines = append(lines, prefix+style.Render(prStatusActionLabel(option)))
 	}
-	if strings.EqualFold(m.statusPR.State, "MERGED") {
+	if strings.EqualFold(o.pr.State, "MERGED") {
 		lines = append(lines, "", stMuted.Render("Merged PRs cannot be reopened."))
-	} else if m.statusRunning {
+	} else if o.running {
 		lines = append(lines, "", stAttention.Render(m.loadSpinner.View()+" updating…"))
 	} else {
 		lines = append(lines, "", stMuted.Render("j/k select · Enter apply · o/c/d shortcut · Esc cancel"))
