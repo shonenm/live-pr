@@ -441,3 +441,40 @@ func TestSpecialCardsGetTheirOwnBorder(t *testing.T) {
 		}
 	}
 }
+
+func TestActivitySummaryFormatsEventDetails(t *testing.T) {
+	assigned := gh.Activity{Event: "assigned"}
+	assigned.Assignee.Login = "alice"
+	unassigned := gh.Activity{Event: "unassigned"}
+	unassigned.Assignee.Login = "alice"
+	requested := gh.Activity{Event: "review_requested"}
+	requested.RequestedReviewer.Login = "bob"
+	removed := gh.Activity{Event: "review_request_removed"}
+	removed.RequestedReviewer.Login = "bob"
+	renamed := gh.Activity{Event: "renamed"}
+	renamed.Rename.From = "Old title"
+	renamed.Rename.To = "New title"
+	forcePushed := gh.Activity{Event: "head_ref_force_pushed", CommitID: "0123abcdef456789"}
+
+	cases := []struct {
+		name     string
+		activity gh.Activity
+		want     string
+	}{
+		{"assigned", assigned, "assigned @alice"},
+		{"unassigned", unassigned, "unassigned @alice"},
+		{"review requested", requested, "review requested @bob"},
+		{"review request removed", removed, "review request removed @bob"},
+		{"renamed", renamed, "renamed Old title → New title"},
+		{"force-pushed", forcePushed, "force-pushed 0123abc"},
+		{"unlabeled", gh.Activity{Event: "unlabeled"}, "unlabeled label"},
+		{"unknown event", gh.Activity{Event: "converted_to_draft"}, "converted to draft"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := activitySummary(tc.activity); got != tc.want {
+				t.Fatalf("activitySummary(%s) = %q, want %q", tc.activity.Event, got, tc.want)
+			}
+		})
+	}
+}
