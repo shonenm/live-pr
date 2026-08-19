@@ -20,6 +20,7 @@ import (
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 	"github.com/shonenm/live-pr/internal/prtemplate"
 	"github.com/shonenm/live-pr/internal/richcontent"
 	"github.com/shonenm/live-pr/internal/store"
@@ -178,7 +179,7 @@ func pollableCI(pr gh.PR) bool {
 	if pr.State != "" && !strings.EqualFold(pr.State, "OPEN") {
 		return false
 	}
-	return prCIHealth(pr) == "pending"
+	return prfilter.CIHealth(pr) == "pending"
 }
 
 func pollCI(client githubClient, generation uint64, number int) tea.Cmd {

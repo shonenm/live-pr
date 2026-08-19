@@ -13,6 +13,7 @@ import (
 	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
 func TestCurrentPRSuppressesLocalPRRow(t *testing.T) {
@@ -41,15 +42,6 @@ func TestLocalPRAppearsInEveryOpenView(t *testing.T) {
 	}
 	if m.matchesView(local, closedPRsView) || !matchesListState(gh.PR{State: "MERGED", Number: 1}, closedPRListState) {
 		t.Fatal("local/merged state routing is incorrect")
-	}
-}
-
-func TestLabelForegroundChoosesHigherContrast(t *testing.T) {
-	if got := contrastingLabelForeground(0x00aa00); got != "#0d1117" {
-		t.Fatalf("green foreground = %s", got)
-	}
-	if got := contrastingLabelForeground(0x000080); got != "#ffffff" {
-		t.Fatalf("navy foreground = %s", got)
 	}
 }
 
@@ -109,7 +101,7 @@ func TestPRRowCacheReusesUnselectedRowsAndInvalidatesWithFilters(t *testing.T) {
 	m := testModel()
 	m.list.Width = 120
 	m.prList.open = []gh.PR{{Number: 1, Title: "one"}, {Number: 2, Title: "two"}, {Number: 3, Title: "three"}}
-	m.prList.stacks = buildPRStacks(m.prList.open)
+	m.prList.stacks = prfilter.BuildStacks(m.prList.open)
 	_, _ = m.buildPRListRows()
 	if len(m.prList.rowCache) != 2 {
 		t.Fatalf("initial cached rows = %d, want 2 unselected rows", len(m.prList.rowCache))
@@ -239,18 +231,6 @@ func TestPRViewSearchAndLocalOnlyFilters(t *testing.T) {
 	query := testModel().prViewSearch(needsMeView, openPRListState, "label:bug ci:failed merge:conflicting")
 	if query != "is:open label:bug" {
 		t.Fatalf("needs-me query = %q", query)
-	}
-	server, local := splitPRFilter("is:closed author:me ci:failed merge:conflicting")
-	if server != "author:me" || local != "ci:failed merge:conflicting" {
-		t.Fatalf("split filter = server:%q local:%q", server, local)
-	}
-	server, local = splitPRFilter("(review-requested:@me OR assignee:@me OR author:@me) label:bug")
-	if server != "label:bug" || local != "(review-requested:@me OR assignee:@me OR author:@me)" {
-		t.Fatalf("group split = server:%q local:%q", server, local)
-	}
-	// An unclosed group still lands on the local side rather than leaking.
-	if server, local := splitPRFilter("(a OR b"); server != "" || local != "(a OR b" {
-		t.Fatalf("unclosed group = server:%q local:%q", server, local)
 	}
 }
 
@@ -395,7 +375,7 @@ func TestClosedPRsDoNotRenderAsStacks(t *testing.T) {
 	}
 	m.applyPRFilters(0)
 	for _, stack := range m.prList.stacks {
-		if len(stack.entries) != 1 {
+		if len(stack.Entries) != 1 {
 			t.Fatalf("closed stack = %#v", stack)
 		}
 	}
@@ -427,27 +407,6 @@ func TestPRListLoadsClosedFromSearch(t *testing.T) {
 	}
 }
 
-func TestPRFilterSupportsGitHubTermsAndFreeText(t *testing.T) {
-	failed := []gh.PRCheck{{Status: "COMPLETED", Conclusion: "FAILURE"}}
-	pr := gh.PR{Number: 7, Title: "Fix Login", State: "OPEN", HeadRefName: "auth/fix", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "me"}}, ReviewRequests: []gh.PRUser{{Login: "reviewer"}}, Labels: []gh.PRLabel{{Name: "bug"}}, Checks: failed, Mergeable: "CONFLICTING", IsDraft: false}
-	for _, query := range []string{"login", "#7", "is:open", "state:open", "author:alice", "assignee:@me", "review-requested:reviewer", "label:bug", "draft:false", "ci:failed", "merge:conflicting", "label:bug ci:failed auth"} {
-		if !matchesPRFilter(pr, query, "me") {
-			t.Fatalf("filter %q did not match", query)
-		}
-	}
-	teamRequest := pr
-	teamRequest.ReviewRequests = nil
-	teamRequest.ViewerReviewRequested = true
-	if !matchesPRFilter(teamRequest, "review-requested:@me", "me") {
-		t.Fatal("team review request did not match @me")
-	}
-	for _, query := range []string{"is:closed", "state:closed", "author:bob", "assignee:bob", "review-requested:@me", "label:docs", "draft:true", "ci:passed"} {
-		if matchesPRFilter(pr, query, "me") {
-			t.Fatalf("filter %q unexpectedly matched", query)
-		}
-	}
-}
-
 func TestPRListHeaderShowsRepositoryAtWideAndNarrowWidths(t *testing.T) {
 	for _, width := range []int{50, 120} {
 		m := testModel()
@@ -467,48 +426,6 @@ func TestPRFilteringDoesNotMutateNavigatorCache(t *testing.T) {
 	m.applyPRFilters(0)
 	if !reflect.DeepEqual(m.navigator.PRs, want) {
 		t.Fatalf("display filtering mutated navigator cache: got=%#v want=%#v", m.navigator.PRs, want)
-	}
-}
-
-func TestBuildPRStacksUsesExactBaseHeadGraph(t *testing.T) {
-	prs := []gh.PR{
-		{Number: 3, Title: "UI", BaseRefName: "stack/api", HeadRefName: "stack/ui"},
-		{Number: 2, Title: "API", BaseRefName: "stack/model", HeadRefName: "stack/api"},
-		{Number: 1, Title: "Model", BaseRefName: "main", HeadRefName: "stack/model"},
-		{Number: 4, Title: "Independent", BaseRefName: "main", HeadRefName: "other"},
-	}
-	stacks := buildPRStacks(prs)
-	if len(stacks) != 2 || len(stacks[0].entries) != 3 || len(stacks[1].entries) != 1 {
-		t.Fatalf("stacks = %#v", stacks)
-	}
-	for i, want := range []int{1, 2, 3} {
-		if stacks[0].entries[i].pr.Number != want || stacks[0].entries[i].depth != i {
-			t.Fatalf("chain[%d] = %#v", i, stacks[0].entries[i])
-		}
-	}
-	if stacks[1].entries[0].pr.Number != 4 {
-		t.Fatalf("independent stack = %#v", stacks[1])
-	}
-}
-
-func TestBuildPRStacksSupportsBranchesWithoutTitleHeuristics(t *testing.T) {
-	prs := []gh.PR{
-		{Number: 2, Title: "same", BaseRefName: "root", HeadRefName: "child-a"},
-		{Number: 3, Title: "same", BaseRefName: "root", HeadRefName: "child-b"},
-		{Number: 1, Title: "different", BaseRefName: "main", HeadRefName: "root"},
-		{Number: 4, Title: "same", BaseRefName: "main", HeadRefName: "unrelated"},
-	}
-	stacks := buildPRStacks(prs)
-	if len(stacks) != 2 || len(stacks[0].entries) != 3 || stacks[0].entries[1].depth != 1 || stacks[0].entries[2].depth != 1 || len(stacks[1].entries) != 1 {
-		t.Fatalf("branched stacks = %#v", stacks)
-	}
-}
-
-func TestDuplicateHeadBranchesDoNotInventStackParent(t *testing.T) {
-	prs := []gh.PR{{Number: 1, HeadRefName: "same"}, {Number: 2, HeadRefName: "same"}, {Number: 3, BaseRefName: "same", HeadRefName: "child"}}
-	stacks := buildPRStacks(prs)
-	if len(stacks) != 3 {
-		t.Fatalf("ambiguous head created stack: %#v", stacks)
 	}
 }
 
@@ -537,7 +454,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = u.(Model)
-	if len(m.prList.open) != 1 || m.prList.open[0].Number != 1 || !m.prList.collapsedStacks[m.prList.stacks[0].id] {
+	if len(m.prList.open) != 1 || m.prList.open[0].Number != 1 || !m.prList.collapsedStacks[m.prList.stacks[0].ID] {
 		t.Fatalf("collapsed stack = prs:%#v collapsed:%#v", m.prList.open, m.prList.collapsedStacks)
 	}
 	if !strings.Contains(ansi.Strip(m.buildPRList()), "▸ #1") {
@@ -545,7 +462,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = u.(Model)
-	if len(m.prList.open) != 3 || m.prList.collapsedStacks[m.prList.stacks[0].id] {
+	if len(m.prList.open) != 3 || m.prList.collapsedStacks[m.prList.stacks[0].ID] {
 		t.Fatalf("expanded stack = prs:%#v collapsed:%#v", m.prList.open, m.prList.collapsedStacks)
 	}
 }
@@ -556,7 +473,7 @@ func TestPRListScrollTracksRenderedRows(t *testing.T) {
 	for i := 1; i <= 20; i++ {
 		m.prList.open = append(m.prList.open, gh.PR{Number: i, Title: "PR"})
 	}
-	m.prList.stacks = buildPRStacks(m.prList.open)
+	m.prList.stacks = prfilter.BuildStacks(m.prList.open)
 	m.prList.cursor = 10
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 	m = u.(Model)
@@ -645,38 +562,6 @@ func TestApplyPRFiltersKeepsRowCacheWithinBound(t *testing.T) {
 	m.applyPRFilters(0)
 	if len(m.prList.rowCache) != 0 {
 		t.Fatalf("over-cap cache not evicted: %d", len(m.prList.rowCache))
-	}
-}
-
-func TestPRFilterOrGroups(t *testing.T) {
-	assigned := gh.PR{Number: 1, State: "OPEN", Assignees: []gh.PRUser{{Login: "me"}}}
-	requested := gh.PR{Number: 2, State: "OPEN", ViewerReviewRequested: true}
-	neither := gh.PR{Number: 3, State: "OPEN", Author: gh.PRUser{Login: "someone"}}
-
-	const needsMe = "(assignee:@me OR review-requested:@me)"
-	for _, tc := range []struct {
-		pr   gh.PR
-		want bool
-	}{{assigned, true}, {requested, true}, {neither, false}} {
-		if got := matchesPRFilter(tc.pr, needsMe, "me"); got != tc.want {
-			t.Fatalf("#%d needs-me = %v, want %v", tc.pr.Number, got, tc.want)
-		}
-	}
-
-	// Groups AND with the rest of the query.
-	if matchesPRFilter(assigned, needsMe+" is:closed", "me") {
-		t.Fatal("group ignored the trailing is:closed term")
-	}
-	if !matchesPRFilter(assigned, "is:open "+needsMe, "me") {
-		t.Fatal("leading term broke the group")
-	}
-	// An unclosed group still evaluates its alternatives.
-	if !matchesPRFilter(requested, "(assignee:@me OR review-requested:@me", "me") {
-		t.Fatal("unclosed group rejected a matching PR")
-	}
-	// Plain queries keep working, free text included.
-	if !matchesPRFilter(neither, "someone", "me") || matchesPRFilter(neither, "nobody", "me") {
-		t.Fatal("free-text matching regressed")
 	}
 }
 
