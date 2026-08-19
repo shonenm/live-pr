@@ -55,6 +55,7 @@ type detailModel struct {
 	diffKey           string
 	shownKey          string
 	rawCache          map[string]string
+	rawErrs           map[string]string
 	rawPending        map[string]bool
 	diffCache         map[string]string
 	diffPending       map[string]bool
@@ -105,6 +106,7 @@ func fingerprintStrings(h *maphash.Hash, fields ...string) {
 
 func (d *detailModel) resetCaches() {
 	d.rawCache = map[string]string{}
+	d.rawErrs = map[string]string{}
 	d.rawPending = map[string]bool{}
 	d.diffCache = map[string]string{}
 	d.diffPending = map[string]bool{}
@@ -699,28 +701,39 @@ type rawDetailLoaded struct {
 	generation uint64
 	key        string
 	raw        string
+	err        string // first line of the load error, "" on success
 }
 
 // cachedRawDetail resolves a raw diff from the cache, or dispatches a Cmd to
 // gather it: the git subprocess used to run synchronously on every cache miss,
-// which happens per keystroke while browsing files or commits.
-func (m *Model) cachedRawDetail(key string, load func() string) (string, bool, tea.Cmd) {
+// which happens per keystroke while browsing files or commits. loadErr is the
+// cached load failure for key, so callers can tell "git failed" from "the
+// diff really is empty".
+func (m *Model) cachedRawDetail(key string, load func() (string, error)) (raw, loadErr string, cached bool, cmd tea.Cmd) {
 	if m.detailView.rawCache == nil {
 		m.detailView.rawCache = map[string]string{}
 	}
+	if m.detailView.rawErrs == nil {
+		m.detailView.rawErrs = map[string]string{}
+	}
 	if raw, ok := m.detailView.rawCache[key]; ok {
-		return raw, true, nil
+		return raw, m.detailView.rawErrs[key], true, nil
 	}
 	if m.detailView.rawPending == nil {
 		m.detailView.rawPending = map[string]bool{}
 	}
 	if m.detailView.rawPending[key] {
-		return "", false, nil
+		return "", "", false, nil
 	}
 	m.detailView.rawPending[key] = true
 	generation := m.targetGeneration
-	return "", false, func() tea.Msg {
-		return rawDetailLoaded{generation: generation, key: key, raw: load()}
+	return "", "", false, func() tea.Msg {
+		raw, err := load()
+		msg := rawDetailLoaded{generation: generation, key: key, raw: raw}
+		if err != nil {
+			msg.err = strings.TrimSpace(strings.SplitN(err.Error(), "\n", 2)[0])
+		}
+		return msg
 	}
 }
 
@@ -733,6 +746,12 @@ func (m Model) handleRawDetailLoaded(msg rawDetailLoaded) (Model, tea.Cmd) {
 	}
 	delete(m.detailView.rawPending, msg.key)
 	m.detailView.rawCache[msg.key] = msg.raw
+	if msg.err != "" {
+		if m.detailView.rawErrs == nil {
+			m.detailView.rawErrs = map[string]string{}
+		}
+		m.detailView.rawErrs[msg.key] = msg.err
+	}
 	return m, m.sync()
 }
 
@@ -747,7 +766,12 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 				paths = append(paths, file.OldPath)
 			}
 			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.detailView.diffBase, m.detailView.headRev, file.Status, file.OldPath, file.Path)
-			d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev, paths...) })
+			d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) {
+				return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev, paths...)
+			})
+			if loadErr != "" {
+				return detailContent{raw: stMuted.Render("(diff unavailable: " + loadErr + ")")}, nil
+			}
 			if d != "" {
 				return detailContent{key: key, raw: d, renderable: true}, nil
 			}
@@ -758,7 +782,10 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 		return detailContent{raw: stMuted.Render("(no changes in selected file)")}, nil
 	}
 	key := "range:" + m.detailView.diffBase + "..." + m.detailView.headRev
-	d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev) })
+	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev) })
+	if loadErr != "" {
+		return detailContent{raw: stMuted.Render("(diff unavailable: " + loadErr + ")")}, nil
+	}
 	if d != "" {
 		return detailContent{key: key, raw: d, renderable: true}, nil
 	}
@@ -773,7 +800,10 @@ func (m *Model) loadCommitDetail(sha string) (detailContent, tea.Cmd) {
 		return detailContent{raw: stMuted.Render("no commit selected")}, nil
 	}
 	key := "commit:" + sha
-	d, cached, cmd := m.cachedRawDetail(key, func() string { return git.Show(sha) })
+	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.Show(sha) })
+	if loadErr != "" {
+		return detailContent{raw: stMuted.Render("(commit unavailable: " + loadErr + ")")}, nil
+	}
 	if d != "" {
 		return detailContent{key: key, raw: d, renderable: true}, nil
 	}

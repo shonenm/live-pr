@@ -520,26 +520,25 @@ func workingTreeHash(path string) string {
 }
 
 // FileDiffRange returns the colorized base...head patch for selected paths.
-func FileDiffRange(base, head string, paths ...string) string {
+// An empty patch with a nil error means the range really has no changes.
+func FileDiffRange(base, head string, paths ...string) (string, error) {
 	args := []string{"diff", "--color=always", "--end-of-options", base + "..." + head, "--"}
 	args = append(args, paths...)
 	out, err := run(args...)
 	if err != nil {
-		debugtime.Logf("FileDiffRange %s...%s: %v", base, head, err)
-		return ""
+		return "", err
 	}
-	return truncate(out, 800)
+	return truncate(out, 800), nil
 }
 
 // Show returns the full `git show` for a commit (stat + colorized patch),
-// capped to a sane number of lines. Empty string if the sha is unresolvable.
-func Show(sha string) string {
+// capped to a sane number of lines.
+func Show(sha string) (string, error) {
 	out, err := run("show", "--color=always", "--stat", "-p", "--end-of-options", sha)
 	if err != nil {
-		debugtime.Logf("Show %s: %v", sha, err)
-		return ""
+		return "", err
 	}
-	return truncate(out, 800)
+	return truncate(out, 800), nil
 }
 
 func truncate(s string, maxLines int) string {
