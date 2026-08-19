@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -275,17 +276,17 @@ func (m Model) summaryLines(summary string, selected bool, width int) []string {
 }
 
 func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
-	body := m.richBody(pr.Body)
-	if strings.TrimSpace(body) == "" {
-		body = "(no description provided)"
+	body := md.Render("(no description provided)", width-7)
+	if strings.TrimSpace(pr.Body) != "" {
+		body = m.renderRichMarkdown(pr.Body, width-7)
 	}
 	header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
-	return cardLines(header, md.Render(body, width-7), selected, width, cDescriptionBorder)
+	return cardLines(header, body, selected, width, cDescriptionBorder)
 }
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
 	header := m.userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
-	return cardLines(header, md.Render(m.richBody(comment.Body), width-7), selected, width, cCloudBorder)
+	return cardLines(header, m.renderRichMarkdown(comment.Body, width-7), selected, width, cCloudBorder)
 }
 
 // reviewLines renders a submitted review verdict with GitHub's semantic color.
@@ -296,7 +297,7 @@ func (m Model) reviewLines(review gh.Review, selected bool, width int) []string 
 	if body == "" {
 		return []string{selectionBar(selected) + header}
 	}
-	return cardLines(header, md.Render(m.richBody(body), width-7), selected, width, reviewBorder(review.State))
+	return cardLines(header, m.renderRichMarkdown(body, width-7), selected, width, reviewBorder(review.State))
 }
 
 // reviewBorder frames a verdict in its own color so an approval or a change
@@ -318,7 +319,7 @@ func (m Model) reviewCommentLines(rc gh.ReviewThreadComment, selected bool, widt
 		loc = fmt.Sprintf("%s:%d", rc.Path, rc.Line)
 	}
 	header := m.userIcon(rc.User.Login) + stMuted.Render(" @"+rc.User.Login+" · review comment · ") + stAccent.Render(loc) + stMuted.Render(" · "+relativeTS(time.Now(), rc.CreatedAt))
-	return cardLines(header, md.Render(m.richBody(rc.Body), width-7), selected, width, cBorder)
+	return cardLines(header, m.renderRichMarkdown(rc.Body, width-7), selected, width, cBorder)
 }
 
 // reviewVerdict maps a review state to its label and GitHub color.
@@ -340,6 +341,35 @@ func (m Model) richBody(body string) string {
 		return rendered
 	}
 	return body
+}
+
+// linkedIssueOrPRURL matches full GitHub issue and pull-request URLs. Bare #N
+// references stay unannotated: their kind cannot be told apart without an API
+// round trip. The tail must stop at ANSI escapes so a match never swallows
+// the styling around a rendered link.
+var linkedIssueOrPRURL = regexp.MustCompile(`https://github\.com/[\w.-]+/[\w.-]+/(?:issues|pull)/\d+(?:[/#?][^\s)\]>'"\x{1b}]*)?`)
+
+// annotateLinkTypes appends a muted "(issue)" or "(PR)" marker after each
+// GitHub issue/PR URL so a link's kind is visible without opening it. It runs
+// on glamour's rendered output rather than the markdown source: rewriting the
+// source could corrupt link syntax, and only here can the marker carry its
+// own muted style.
+func annotateLinkTypes(rendered string) string {
+	return linkedIssueOrPRURL.ReplaceAllStringFunc(rendered, func(url string) string {
+		kind := " (issue)"
+		if pull := strings.Index(url, "/pull/"); pull >= 0 {
+			if issue := strings.Index(url, "/issues/"); issue < 0 || pull < issue {
+				kind = " (PR)"
+			}
+		}
+		return url + stMuted.Render(kind)
+	})
+}
+
+// renderRichMarkdown renders one conversation body: mermaid replacement from
+// the rich-content cache, glamour, then link-type annotation.
+func (m Model) renderRichMarkdown(body string, width int) string {
+	return annotateLinkTypes(md.Render(m.richBody(body), width))
 }
 
 func (m Model) userIcon(login string) string { return m.userIconOn(login, "") }
