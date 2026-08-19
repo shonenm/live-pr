@@ -179,7 +179,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, m.sync()
 	case listAvatarColorsLoaded:
-		if msg.generation != m.prListGeneration {
+		if msg.generation != m.prList.generation {
 			return m, nil
 		}
 		if m.avatarColors == nil {
@@ -188,7 +188,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for login, color := range msg.colors {
 			m.avatarColors[login] = color
 		}
-		clear(m.prRowCache)
+		clear(m.prList.rowCache)
 		return m, m.sync()
 	case tea.MouseMsg:
 		if m.diffTerminal != nil && m.diffTerminal.Available() {

@@ -13,15 +13,15 @@ import (
 
 func TestListStatusCloseUpdatesCachedBranchPR(t *testing.T) {
 	m := testModel()
-	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
 	m.currentBranch = "feature"
 	m.navigator = gh.NewNavigatorCache()
 	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
-	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
 	stale := gh.PR{Number: 12, State: "OPEN", HeadRefName: "feature", Title: "x"}
 	m.cache = gh.NewCache("feature")
 	m.cache.PR = &stale
-	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{stale}, total: 1, loaded: true, fresh: true}}
+	m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: []gh.PR{stale}, total: 1, loaded: true, fresh: true}}
 
 	// Closing via the status popup on the list screen must update the
 	// branch cache too, or withLocalPR keeps re-injecting the stale copy.
@@ -32,9 +32,9 @@ func TestListStatusCloseUpdatesCachedBranchPR(t *testing.T) {
 	if m.cache.PR.State != "CLOSED" {
 		t.Fatalf("cached branch PR state = %q", m.cache.PR.State)
 	}
-	for _, pr := range m.openPRs {
+	for _, pr := range m.prList.open {
 		if pr.Number == 12 {
-			t.Fatalf("closed PR re-injected into the open list: %#v", m.openPRs)
+			t.Fatalf("closed PR re-injected into the open list: %#v", m.prList.open)
 		}
 	}
 }
@@ -45,7 +45,7 @@ func TestPRStatusPopupOpensFromListAndDetail(t *testing.T) {
 		m.screen = screen
 		pr := gh.PR{Number: 12, State: "OPEN", Title: "status"}
 		m.cache.PR = &pr
-		m.openPRs = []gh.PR{pr}
+		m.prList.open = []gh.PR{pr}
 		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 		m = u.(Model)
 		o, ok := m.overlay.(prStatusOverlay)

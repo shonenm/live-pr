@@ -38,7 +38,7 @@ type viewManagerOverlay struct {
 func (m Model) openViewManager() (Model, tea.Cmd) {
 	o := viewManagerOverlay{
 		draft:     append([]config.View(nil), m.views...),
-		cursor:    int(m.prView),
+		cursor:    int(m.prList.view),
 		editIndex: -1,
 	}
 	if o.cursor >= len(o.draft) {
@@ -206,20 +206,20 @@ func (o viewManagerOverlay) save(m Model) (Model, tea.Cmd) {
 		m.overlay = o
 		return m, nil
 	}
-	selected := m.selectedPRNumber()
-	previous := m.viewName(m.prView)
+	selected := m.prList.selectedPRNumber()
+	previous := m.viewName(m.prList.view)
 	m.views = draft
 	m.overlay = nil
 	// Stay on the same tab by name; a removed tab falls back to the first.
-	m.prView = 0
+	m.prList.view = 0
 	for i, view := range m.views {
 		if strings.EqualFold(view.Name, previous) {
-			m.prView = prView(i)
+			m.prList.view = prView(i)
 			break
 		}
 	}
-	m.viewCountsValid = false
-	m.prPages = map[string]prPageState{}
+	m.prList.viewCountsValid = false
+	m.prList.pages = map[string]prPageState{}
 	m.notice = "Views saved to " + path
 	return m, m.applyPRViewState(selected)
 }

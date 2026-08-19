@@ -27,7 +27,7 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.currentBranch = "main"
-	m.openPRs = []gh.PR{{Number: 14, HeadRefName: "feature", HeadRefOID: "abc123"}}
+	m.prList.open = []gh.PR{{Number: 14, HeadRefName: "feature", HeadRefOID: "abc123"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 
@@ -69,7 +69,7 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 	}}
 	m.screen = prListScreen
 	m.currentBranch = "main"
-	m.openPRs = []gh.PR{{Number: 14, HeadRefName: "feature", HeadRefOID: "abc123"}}
+	m.prList.open = []gh.PR{{Number: 14, HeadRefName: "feature", HeadRefOID: "abc123"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	runInner := func(cmd tea.Cmd) {
@@ -128,7 +128,7 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 func TestPRListActionsAreDisabledForLocalEntry(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
-	m.openPRs = []gh.PR{{Title: "Local PR"}}
+	m.prList.open = []gh.PR{{Title: "Local PR"}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	for _, action := range []rune{'m', 'c', 'x'} {
