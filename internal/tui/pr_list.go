@@ -795,40 +795,84 @@ func (m *Model) buildPRListRows() (string, int) {
 	// open is derived from stacks in applyPRFilters, so a non-empty
 	// list always has stacks.
 	stacks := m.prList.stacks
-	lines := make([]string, 0, len(m.prList.open)*3+len(stacks))
-	selectedLine, openIndex := 0, 0
-	for _, stack := range stacks {
-		entries := stack.Entries
-		grouped := len(entries) > 1
-		if grouped {
-			collapsed := m.prList.collapsedStacks[stack.ID]
-			arrow := "▾"
-			if collapsed {
-				arrow, entries = "▸", entries[:1]
+	// Layout pass: place group headers (one line) and PR rows (three lines)
+	// without rendering them, to learn the selected line and total height.
+	type placedRow struct {
+		line, stack, entry int // entry == -1 marks a group header
+		selected           bool
+	}
+	placed := make([]placedRow, 0, len(m.prList.open)+len(stacks))
+	line, openIndex, selectedLine := 0, 0, 0
+	for si := range stacks {
+		entries := stacks[si].Entries
+		if len(entries) > 1 {
+			placed = append(placed, placedRow{line: line, stack: si, entry: -1})
+			line++
+			if m.prList.collapsedStacks[stacks[si].ID] {
+				entries = entries[:1]
 			}
-			header := stMuted.Render(arrow+" ") + stBold.Render(stack.Title) + stMuted.Render(fmt.Sprintf(" · %d PRs", len(stack.Entries)))
-			lines = append(lines, ansi.Truncate(header, max(10, m.list.Width), "…"))
 		}
-		for i, entry := range entries {
-			prefix := ""
-			if grouped {
-				marker := "├ "
-				if i == len(entries)-1 {
-					marker = "└ "
-				}
-				prefix = strings.Repeat("  ", entry.Depth) + marker
-			}
+		for ei := range entries {
 			selected := openIndex == m.prList.cursor
 			if selected {
-				selectedLine = len(lines)
+				selectedLine = line
 			}
-			if selected {
-				lines = append(lines, m.renderPRRow(entry.PR, true, prefix)...)
-			} else {
-				lines = append(lines, m.cachedPRRow(entry.PR, prefix)...)
-			}
+			placed = append(placed, placedRow{line: line, stack: si, entry: ei, selected: selected})
+			line += 3
 			openIndex++
 		}
+	}
+	// Render pass: only the rows within one viewport height of the visible
+	// region and of the selected row become text; the rest stay empty lines.
+	// The line count — and so the scroll geometry — matches a full render,
+	// and syncPRListScreen fixes the offset right after SetContent, where it
+	// either stays put, is clamped to the last page by SetContent, or is
+	// pulled to the selected line by keepLineVisible: always inside the
+	// window rendered here.
+	lo, hi := 0, line
+	if m.list.Height > 0 { // an unsized viewport renders everything
+		lo = min(m.list.YOffset, selectedLine) - m.list.Height
+		hi = max(m.list.YOffset+m.list.Height-1, selectedLine) + m.list.Height + 1
+	}
+	lines := make([]string, line)
+	for _, row := range placed {
+		stack := stacks[row.stack]
+		if row.entry < 0 {
+			if row.line < lo || row.line >= hi {
+				continue
+			}
+			arrow := "▾"
+			if m.prList.collapsedStacks[stack.ID] {
+				arrow = "▸"
+			}
+			header := stMuted.Render(arrow+" ") + stBold.Render(stack.Title) + stMuted.Render(fmt.Sprintf(" · %d PRs", len(stack.Entries)))
+			lines[row.line] = ansi.Truncate(header, max(10, m.list.Width), "…")
+			continue
+		}
+		if row.line+3 <= lo || row.line >= hi {
+			continue
+		}
+		entries := stack.Entries
+		grouped := len(entries) > 1
+		if grouped && m.prList.collapsedStacks[stack.ID] {
+			entries = entries[:1]
+		}
+		entry := entries[row.entry]
+		prefix := ""
+		if grouped {
+			marker := "├ "
+			if row.entry == len(entries)-1 {
+				marker = "└ "
+			}
+			prefix = strings.Repeat("  ", entry.Depth) + marker
+		}
+		var rendered []string
+		if row.selected {
+			rendered = m.renderPRRow(entry.PR, true, prefix)
+		} else {
+			rendered = m.cachedPRRow(entry.PR, prefix)
+		}
+		copy(lines[row.line:], rendered)
 	}
 	return strings.Join(lines, "\n"), selectedLine
 }
