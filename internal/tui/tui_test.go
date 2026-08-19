@@ -643,6 +643,32 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 	}
 }
 
+func TestHeaderShowsPendingReviewDraft(t *testing.T) {
+	m := testModel()
+	m.w = 180
+	m.cache.PR = &gh.PR{Number: 12, State: "OPEN", HeadRefOID: "abc"}
+	if plain := ansi.Strip(m.renderHeader()); strings.Contains(plain, "review draft") {
+		t.Fatalf("header shows a draft badge without a draft: %q", plain)
+	}
+	m.reviewDraft = gh.NewReviewDraft(12, "abc")
+	if plain := ansi.Strip(m.renderHeader()); strings.Contains(plain, "review draft") {
+		t.Fatalf("header shows a draft badge for an empty draft: %q", plain)
+	}
+	m.reviewDraft.Comments = []gh.ReviewComment{
+		{Path: "a.go", Line: 1, Side: "RIGHT", Body: "x"},
+		{Path: "b.go", Line: 2, Side: "RIGHT", Body: "y"},
+	}
+	if plain := ansi.Strip(m.renderHeader()); !strings.Contains(plain, "✎ review draft · 2 comments") {
+		t.Fatalf("header missing the pending draft badge: %q", plain)
+	}
+	m.reviewDraft.Comments = nil
+	m.reviewDraft.Body = "overall verdict"
+	plain := ansi.Strip(m.renderHeader())
+	if !strings.Contains(plain, "✎ review draft") || strings.Contains(plain, "review draft ·") {
+		t.Fatalf("body-only draft badge should not count comments: %q", plain)
+	}
+}
+
 func TestHeaderCarriesWordmarkAndVersionUntilTheTerminalIsNarrow(t *testing.T) {
 	m := testModel()
 	m.version = "0.2.4"
