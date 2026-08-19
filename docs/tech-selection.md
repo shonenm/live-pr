@@ -90,4 +90,4 @@ CLI 一覧（Cobra）:
 
 ## 現在地
 
-PR navigator、固定2pane、local/remote/commit review、Local PR summary/comment CRUD、Agent Skill、GitHub同期、TUI PR publish、top-level comment表示まで実装済み。次はreviews / inline review comments同期と通常コメント投稿outbox。
+PR navigator、固定2pane、local/remote/commit review、Local PR summary/comment CRUD、Agent Skill、GitHub同期、TUI PR publish、top-level comment表示、reviews / inline review comments同期、コメント投稿outboxまで実装済み。次はHomebrew配布。
