@@ -32,7 +32,10 @@ func TestClaudeTimesOutInsteadOfHanging(t *testing.T) {
 	}
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "claude")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+	// The test wipes PATH to install the fake claude, so the script must
+	// reach sleep by absolute path (dash reports "sleep: not found" and
+	// exits 127 immediately otherwise, defeating the timeout assertion).
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec /bin/sleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
