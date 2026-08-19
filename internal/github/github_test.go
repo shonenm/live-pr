@@ -198,6 +198,27 @@ func TestFindChecksLoadsStateHeadAndRollup(t *testing.T) {
 	}
 }
 
+func TestFindChecksCarriesCheckLogURLs(t *testing.T) {
+	client := Client{run: func(args ...string) ([]byte, error) {
+		// A check run reports detailsUrl, a legacy status context targetUrl;
+		// both normalize to URL() so the checks tab can open the log page.
+		return []byte(`{"number":12,"state":"OPEN","headRefOid":"abc","statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://example/runs/1"},{"context":"ci/legacy","state":"FAILURE","targetUrl":"https://example/status/2"},{"name":"pending","status":"QUEUED"}]}`), nil
+	}}
+	pr, err := client.FindChecks(12)
+	if err != nil || len(pr.Checks) != 3 {
+		t.Fatalf("FindChecks = %#v err=%v", pr, err)
+	}
+	if got := pr.Checks[0].URL(); got != "https://example/runs/1" {
+		t.Fatalf("check run URL = %q", got)
+	}
+	if got := pr.Checks[1].URL(); got != "https://example/status/2" {
+		t.Fatalf("status context URL = %q", got)
+	}
+	if got := pr.Checks[2].URL(); got != "" {
+		t.Fatalf("URL-less check URL = %q", got)
+	}
+}
+
 func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	var previewFields string
 	client := Client{run: func(args ...string) ([]byte, error) {
