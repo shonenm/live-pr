@@ -37,3 +37,25 @@ func TestSeedSummaryUsesRepositoryPullRequestTemplate(t *testing.T) {
 		t.Fatalf("updated summary = %q", got)
 	}
 }
+
+func TestEditorCommandRunsThroughShell(t *testing.T) {
+	argv, err := editorCommand(`"/Applications/My Editor.app/editor" --wait`, "/work dir/summary.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"sh", "-c", `"/Applications/My Editor.app/editor" --wait "$1"`, "--", "/work dir/summary.md"}
+	if len(argv) != len(want) {
+		t.Fatalf("argv=%v", argv)
+	}
+	for i := range want {
+		if argv[i] != want[i] {
+			t.Fatalf("argv[%d]=%q, want %q", i, argv[i], want[i])
+		}
+	}
+}
+
+func TestEditorCommandRequiresEditor(t *testing.T) {
+	if _, err := editorCommand("  ", "/tmp/summary.md"); err == nil {
+		t.Fatal("expected an error for an unset editor")
+	}
+}

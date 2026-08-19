@@ -130,7 +130,7 @@ func (f *fakeGitHub) FindOpen(string) (gh.PR, error) {
 	}
 	return f.pr, nil
 }
-func (f *fakeGitHub) Update(_, _ string, bodyFile string) error {
+func (f *fakeGitHub) Update(_ int, _ string, bodyFile string) error {
 	body, err := os.ReadFile(bodyFile)
 	f.updated, f.body = true, string(body)
 	if err != nil {
