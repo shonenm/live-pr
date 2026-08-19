@@ -465,19 +465,19 @@ func TestRichContentKeyIncludesWidthAndSkipsZeroWidth(t *testing.T) {
 	m := testModel()
 	m.cache.PR = pr
 	m.list.Width = 0 // pre-layout: width-7 is negative
-	if m.richContentCmd() != nil {
+	if m.dispatchRichContent() != nil {
 		t.Fatal("zero/negative width still dispatched a render")
 	}
 	m.list.Width = 87
-	if m.richContentCmd() == nil {
+	if m.dispatchRichContent() == nil {
 		t.Fatal("first dispatch skipped")
 	}
 	// Same content and width: no re-render, no avatar re-download.
-	if m.richContentCmd() != nil {
+	if m.dispatchRichContent() != nil {
 		t.Fatal("unchanged content dispatched again")
 	}
 	m.list.Width = 47
-	if m.richContentCmd() == nil {
+	if m.dispatchRichContent() == nil {
 		t.Fatal("width change did not re-dispatch")
 	}
 }
@@ -488,12 +488,12 @@ func TestStaleGenerationRichContentWithMatchingKeyStillApplies(t *testing.T) {
 	pr.Author.Login = "alice"
 	m.cache.PR = pr
 	m.list.Width = 87
-	if m.richContentCmd() == nil {
+	if m.dispatchRichContent() == nil {
 		t.Fatal("first dispatch skipped")
 	}
 	// A refresh mid-render bumps the generation while the content and width
 	// stay the same: nothing resets lastRichContentKey, so if the in-flight
-	// result were discarded, richContentCmd would return nil forever and the
+	// result were discarded, dispatchRichContent would return nil forever and the
 	// mermaid diagrams and avatar colors would never render.
 	m.targetGeneration++
 	key := richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities)

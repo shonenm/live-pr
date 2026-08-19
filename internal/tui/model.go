@@ -257,6 +257,14 @@ type githubClient interface {
 }
 
 // Model holds the living-PR view state.
+//
+// Receiver convention: Update/handle* methods use a value receiver and return
+// the next Model; pure queries and renderers use a value receiver and no side
+// effects; sync/layout/cache management uses a pointer receiver and mutates in
+// place (safe because value-receiver handlers call them on their local copy
+// and return it). Methods that only build a tea.Cmd must not touch Model
+// state — a method that both mutates and dispatches keeps an action name
+// (startLocalLoad, dispatchRichContent), never a plain *Cmd suffix.
 type Model struct {
 	client            githubClient
 	screen            screen
@@ -641,7 +649,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()))
 	}
 	if m.screen == detailScreen {
-		cmds = append(cmds, m.richContentCmd())
+		cmds = append(cmds, m.dispatchRichContent())
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
