@@ -81,6 +81,9 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.applyPRViewState(selected)
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
+	case key.Matches(msg, m.keys.Help):
+		m.help.ShowAll = !m.help.ShowAll
+		return m, nil
 	case key.Matches(msg, m.keys.Status):
 		return m.openPRStatus(m.selectedPR())
 	case key.Matches(msg, m.keys.Merge):

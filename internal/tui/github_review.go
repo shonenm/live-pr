@@ -31,7 +31,11 @@ func (m *Model) loadReviewDraft() error {
 // the branch has a PR, otherwise a local timeline note. Inline review comments
 // live on A; the review verdict + body live on v.
 func (m Model) startAddComment() (Model, tea.Cmd) {
-	if m.active != conversationTab || m.focusDiff || m.focusExplorer {
+	if m.active != conversationTab {
+		m.status = "comments live in the Conversation tab (esc)"
+		return m, nil
+	}
+	if m.focusDiff || m.focusExplorer {
 		return m, nil
 	}
 	if m.cache.PR != nil {
