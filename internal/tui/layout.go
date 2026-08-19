@@ -63,7 +63,7 @@ func (m *Model) layout() {
 		minPaneW = max(8, m.w/2)
 	}
 	var leftPaneW, rightPaneW int
-	conversationWide := m.detailView.reviewWide && !m.detailView.focusDiff && !m.detailView.focusExplorer
+	conversationWide := m.detailView.reviewWide && m.detailView.focus == focusConversation
 	if conversationWide {
 		leftPaneW, rightPaneW = m.w, 0
 	} else if m.detailView.reviewWide {

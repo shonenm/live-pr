@@ -32,13 +32,13 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = u.(Model)
-	if m.detailView.focusDiff || !m.detailView.focusExplorer {
-		t.Fatalf("l focus = diff:%v explorer:%v", m.detailView.focusDiff, m.detailView.focusExplorer)
+	if m.detailView.focus != focusExplorer {
+		t.Fatalf("l focus = %v", m.detailView.focus)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = u.(Model)
-	if m.detailView.focusDiff || !m.detailView.focusExplorer {
-		t.Fatalf("second l focus = diff:%v explorer:%v", m.detailView.focusDiff, m.detailView.focusExplorer)
+	if m.detailView.focus != focusExplorer {
+		t.Fatalf("second l focus = %v", m.detailView.focus)
 	}
 	// q from the explorer should quit (Tab cycles focus instead).
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
@@ -273,7 +273,7 @@ func TestDetailBReturnsToPRList(t *testing.T) {
 	m.currentBranch, m.defaultBranch = "feature", "main"
 	m.localAvailable, m.localTitle = true, "local work"
 	m.prList.open = m.withLocalPR(nil)
-	m.detailView.focusDiff = true
+	m.detailView.focus = focusReview
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
@@ -340,7 +340,7 @@ func TestReviewFocusKeys(t *testing.T) {
 	// Tab from conversation focuses the review.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if !m.detailView.focusDiff {
+	if m.detailView.focus != focusReview {
 		t.Fatal("Tab should focus review")
 	}
 	footer := ansi.Strip(m.renderFooter())
@@ -350,7 +350,7 @@ func TestReviewFocusKeys(t *testing.T) {
 	// Shift+Tab expands the review to full width.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
-	if !m.detailView.reviewWide || !m.detailView.focusDiff {
+	if !m.detailView.reviewWide || m.detailView.focus != focusReview {
 		t.Fatal("Shift+Tab should make the review full width")
 	}
 	// Shift+Tab again restores the split.
@@ -362,13 +362,13 @@ func TestReviewFocusKeys(t *testing.T) {
 	// Tab from review returns to conversation.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if m.detailView.focusDiff || m.detailView.reviewWide {
+	if m.detailView.focus == focusReview || m.detailView.reviewWide {
 		t.Fatal("Tab from review should return to conversation")
 	}
 	// Shift+Tab from conversation expands conversation to full width.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
-	if !m.detailView.reviewWide || m.detailView.focusDiff {
+	if !m.detailView.reviewWide || m.detailView.focus == focusReview {
 		t.Fatal("Shift+Tab from conversation should expand conversation full width")
 	}
 	// Shift+Tab again restores the split.
@@ -392,7 +392,7 @@ func TestStaticReviewFocusKeys(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	m = u.(Model)
-	if !m.detailView.focusDiff {
+	if m.detailView.focus != focusReview {
 		t.Fatal("l should focus the static review fallback")
 	}
 	// q from the review should quit (not return to conversation — use Tab).
