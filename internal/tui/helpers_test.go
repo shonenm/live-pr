@@ -27,10 +27,11 @@ func (m *Model) buildPRList() string {
 
 func testModel() Model {
 	return Model{
-		client:      &fakeGH{},
-		views:       config.DefaultViews(),
-		prList:      prListModel{view: allPRsView},
-		diffCommand: "",
+		client:       &fakeGH{},
+		checkoutHead: func(string) error { return nil },
+		views:        config.DefaultViews(),
+		prList:       prListModel{view: allPRsView},
+		diffCommand:  "",
 		detailView: detailModel{
 			title:    "CodeDiff review mode",
 			base:     "main",

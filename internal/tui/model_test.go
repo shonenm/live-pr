@@ -165,6 +165,23 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 	}
 }
 
+func TestHeaderListsClosingIssues(t *testing.T) {
+	m := testModel()
+	m.w = 180
+	m.cache.PR = &gh.PR{Number: 12, State: "OPEN", ClosingIssues: []gh.IssueRef{{Number: 34, Title: "Crash"}, {Number: 56, Title: "Typo"}}}
+	plain := ansi.Strip(m.renderHeader())
+	if !strings.Contains(plain, "⊙ closes #34, #56") {
+		t.Fatalf("header missing linked issues: %q", plain)
+	}
+	if lines := strings.Count(plain, "\n") + 1; lines != logoHeight {
+		t.Fatalf("closing issues grew the header to %d lines, want %d", lines, logoHeight)
+	}
+	m.cache.PR.ClosingIssues = nil
+	if plain := ansi.Strip(m.renderHeader()); strings.Contains(plain, "closes #") {
+		t.Fatalf("header shows closing issues without any: %q", plain)
+	}
+}
+
 func TestHeaderShowsPendingReviewDraft(t *testing.T) {
 	m := testModel()
 	m.w = 180

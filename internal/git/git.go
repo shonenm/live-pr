@@ -579,3 +579,34 @@ func FetchPull(number int, base, expectedOID string) (string, error) {
 	}
 	return headRef, nil
 }
+
+// CheckoutPullHead checks out the head branch of a same-repository pull
+// request with plain git, mirroring gh pr checkout's non-fork path: fetch the
+// branch from origin, then switch to a local tracking branch, fast-forwarding
+// one that already exists (a diverged branch fails the same way it does under
+// gh). Fork heads need gh's cross-repository remote wiring and must not come
+// here.
+func CheckoutPullHead(branch string) error {
+	if done := debugtime.Start("git checkout pull head"); done != nil {
+		defer done()
+	}
+	if _, err := run("check-ref-format", "--branch", branch); err != nil {
+		return fmt.Errorf("invalid pull request head %q", branch)
+	}
+	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branch, branch)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", refSpec)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch %s: %w: %s", branch, err, strings.TrimSpace(string(out)))
+	}
+	if _, err := run("rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		if _, err := run("switch", "--end-of-options", branch); err != nil {
+			return err
+		}
+		_, err := run("merge", "--ff-only", "--end-of-options", "refs/remotes/origin/"+branch)
+		return err
+	}
+	_, err := run("switch", "-c", branch, "--track", "--end-of-options", "origin/"+branch)
+	return err
+}
