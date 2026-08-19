@@ -458,6 +458,12 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.ciPollFailures = 0
+	// The poll reads the pull request itself, so its state is authoritative:
+	// without taking it, upserting the cached copy below would push a stale
+	// open state back over a row the list already knows is merged.
+	if msg.pr.State != "" {
+		m.cache.PR.State = msg.pr.State
+	}
 	m.cache.PR.Checks = msg.pr.Checks
 	m.cache.PR.CheckRollupState = checkRollupState(msg.pr.Checks)
 	for i := range m.cache.PR.Commits {
@@ -472,7 +478,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	m.githubStatus = "GitHub: CI updated now"
 	m.layout()
 	cmd := m.sync()
-	if prCIHealth(*m.cache.PR) == "pending" {
+	if pollableCI(*m.cache.PR) {
 		return m, tea.Batch(cmd, scheduleCIPoll(msg.generation, msg.pr.Number, 0))
 	}
 	return m, cmd
