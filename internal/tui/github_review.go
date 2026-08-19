@@ -249,7 +249,18 @@ func (m Model) handleReviewSubmitted(msg reviewSubmitted) (Model, tea.Cmd) {
 	m.reviewDraft = gh.ReviewDraft{}
 	m.notice = "Submitted " + string(msg.event) + " review"
 	m.githubStatus = "GitHub: review submitted"
-	return m, m.sync()
+	if m.cache.PR == nil {
+		return m, m.sync()
+	}
+	// Refetch so the submitted review shows up without a manual refresh, via
+	// the same split as handleRemoteCommentDone: a remote PR must go through
+	// fetchRemotePR — fetchGitHub resolves by branch, fails
+	// isCurrentTargetPR, and would wipe the remote detail.
+	m.targetGeneration++
+	if m.remote {
+		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
+	}
+	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 }
 
 func (o reviewSubmitOverlay) render(m Model) string {
