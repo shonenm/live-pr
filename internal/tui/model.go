@@ -153,6 +153,7 @@ type prRowCacheKey struct {
 	number, width, additions, deletions, checkCount int
 	prefix, state, title, author, base, head        string
 	mergeable, mergeState, checkHealth, rollup      string
+	review                                          string
 	draft, previewLoaded, current                   bool
 }
 
