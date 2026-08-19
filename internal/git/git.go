@@ -70,10 +70,26 @@ func CurrentBranch() (string, error) {
 	return run("rev-parse", "--abbrev-ref", "HEAD")
 }
 
-// Push pushes the branch to origin, setting upstream.
+// Push pushes the branch to origin, setting upstream. A stalled SSH/HTTPS
+// transport must not hang the caller forever, so the push is bounded; the
+// limit is longer than FetchPull's because a push carries data up.
 func Push(branch string) error {
-	_, err := run("push", "-u", "origin", branch)
-	return err
+	if done := debugtime.Start("git push"); done != nil {
+		defer done()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "push", "-u", "origin", branch)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if _, err := cmd.Output(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return fmt.Errorf("git push -u origin %s: %w: %s", branch, err, detail)
+		}
+		return fmt.Errorf("git push -u origin %s: %w", branch, err)
+	}
+	return nil
 }
 
 // DefaultBase returns the branch to compare against: the remote's default

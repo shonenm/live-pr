@@ -108,7 +108,7 @@ func deleteRemoteComment(client githubClient, id int64, generation uint64) tea.C
 	}
 }
 
-func updatePRDescription(client githubClient, number int, head, body string, generation uint64) tea.Cmd {
+func updatePRDescription(client githubClient, number int, body string, generation uint64) tea.Cmd {
 	return func() tea.Msg {
 		file, err := os.CreateTemp("", "live-pr-body-*.md")
 		if err != nil {
@@ -123,7 +123,7 @@ func updatePRDescription(client githubClient, number int, head, body string, gen
 		if err := file.Close(); err != nil {
 			return remoteCommentDone{generation: generation, err: err}
 		}
-		err = client.UpdateBody(head, name)
+		err = client.UpdateBody(number, name)
 		return remoteCommentDone{generation: generation, edited: true, err: err}
 	}
 }

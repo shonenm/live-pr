@@ -91,6 +91,20 @@ func TestSaveCacheReplacesExistingFile(t *testing.T) {
 	}
 }
 
+func TestLoadCacheResetsOnVersionMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "github.json")
+	if err := os.WriteFile(path, []byte(`{"version":99,"head":"feature","pr":{"number":1}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := LoadCache(path, "feature")
+	if err != nil {
+		t.Fatalf("version mismatch must reset, not fail: %v", err)
+	}
+	if cache.PR != nil || cache.Head != "feature" || cache.Version != CacheVersion {
+		t.Fatalf("expected fresh cache, got %#v", cache)
+	}
+}
+
 func TestLoadCacheRejectsMalformedData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "github.json")
 	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {

@@ -46,6 +46,20 @@ func TestNavigatorCacheLoadsLegacyAggregateWithoutViewState(t *testing.T) {
 	}
 }
 
+func TestLoadNavigatorCacheResetsOnVersionMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "navigator.json")
+	if err := os.WriteFile(path, []byte(`{"version":99,"prs":[{"number":1}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := LoadNavigatorCache(path)
+	if err != nil {
+		t.Fatalf("version mismatch must reset, not fail: %v", err)
+	}
+	if len(cache.PRs) != 0 || cache.Version != CacheVersion || cache.PRsState != "OPEN" {
+		t.Fatalf("expected fresh cache, got %#v", cache)
+	}
+}
+
 func TestNavigatorCachePrunesRowsOutsideCachedViews(t *testing.T) {
 	cache := NewNavigatorCache()
 	cache.PRs = []PR{{Number: 1}, {Number: 2}, {Number: 3}}

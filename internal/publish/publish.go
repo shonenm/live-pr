@@ -40,7 +40,7 @@ type Result struct {
 
 type githubClient interface {
 	FindOpen(string) (gh.PR, error)
-	Update(string, string, string) error
+	Update(int, string, string) error
 	Create(string, string, string, string, bool) (string, error)
 }
 
@@ -165,7 +165,7 @@ func resolvePublishBase(requested string, cache gh.Cache, pr gh.PR, findErr erro
 // it was newly created.
 func applyRemote(client githubClient, branch string, preview Preview, body, bodyFile string, pr gh.PR, findErr error, draft bool) (gh.PR, bool, error) {
 	if findErr == nil {
-		if err := client.Update(branch, preview.Title, bodyFile); err != nil {
+		if err := client.Update(pr.Number, preview.Title, bodyFile); err != nil {
 			return gh.PR{}, false, err
 		}
 		pr.Title, pr.Body = preview.Title, body

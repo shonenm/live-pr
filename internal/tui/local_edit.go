@@ -266,7 +266,7 @@ func (o localEditOverlay) savePRDescription(m Model) (Model, tea.Cmd) {
 	m.overlay = nil
 	m.remoteCommentBusy = true
 	m.status = "updating PR description…"
-	return m, tea.Batch(updatePRDescription(m.client, number, m.detailView.head, body, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(updatePRDescription(m.client, number, body, m.targetGeneration), m.startSpinner())
 }
 
 func (o localEditOverlay) saveRemoteComment(m Model) (Model, tea.Cmd) {

@@ -146,7 +146,9 @@ func LoadNavigatorCache(path string) (NavigatorCache, error) {
 		return NavigatorCache{}, fmt.Errorf("decode PR navigator cache: %w", err)
 	}
 	if c.Version != CacheVersion {
-		return NavigatorCache{}, fmt.Errorf("unsupported PR navigator cache version %d", c.Version)
+		// The cache is re-fetchable derived data; an unsupported version
+		// resets it instead of blocking the caller.
+		return NewNavigatorCache(), nil
 	}
 	if c.PRsState == "" {
 		// Older caches only contained the default open-PR list.
