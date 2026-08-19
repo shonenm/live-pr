@@ -113,11 +113,11 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.ToggleStack):
 		if stack, ok := m.prList.stackForPR(m.prList.selectedPRNumber()); ok {
-			collapsing := !m.prList.collapsedStacks[stack.id]
-			m.prList.collapsedStacks[stack.id] = collapsing
+			collapsing := !m.prList.collapsedStacks[stack.ID]
+			m.prList.collapsedStacks[stack.ID] = collapsing
 			selected := m.prList.selectedPRNumber()
 			if collapsing {
-				selected = stack.entries[0].pr.Number
+				selected = stack.Entries[0].PR.Number
 			}
 			m.applyPRFilters(selected)
 			return m, m.sync()

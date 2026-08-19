@@ -10,6 +10,7 @@ import (
 
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 	"github.com/shonenm/live-pr/internal/publish"
 	"github.com/shonenm/live-pr/internal/store"
 )
@@ -544,8 +545,8 @@ func TestPendingCIPollsUntilTerminalState(t *testing.T) {
 	}
 	u, cmd = m.Update(ciPolled{generation: 4, pr: gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
 	m = u.(Model)
-	if cmd != nil || prCIHealth(*m.cache.PR) != "passed" || m.githubStatus != "GitHub: CI updated now" {
-		t.Fatalf("completed CI = health:%s status:%q cmd:%v", prCIHealth(*m.cache.PR), m.githubStatus, cmd)
+	if cmd != nil || prfilter.CIHealth(*m.cache.PR) != "passed" || m.githubStatus != "GitHub: CI updated now" {
+		t.Fatalf("completed CI = health:%s status:%q cmd:%v", prfilter.CIHealth(*m.cache.PR), m.githubStatus, cmd)
 	}
 	if _, stale := m.Update(ciPollTick{generation: 3, number: 12}); stale != nil {
 		t.Fatal("stale CI tick started a request")
@@ -582,8 +583,8 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "old", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "new", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
 	m = u.(Model)
-	if cmd != nil || !strings.Contains(m.githubStatus, "head changed") || prCIHealth(*m.cache.PR) != "pending" {
-		t.Fatalf("changed head = health:%s status:%q cmd:%v", prCIHealth(*m.cache.PR), m.githubStatus, cmd)
+	if cmd != nil || !strings.Contains(m.githubStatus, "head changed") || prfilter.CIHealth(*m.cache.PR) != "pending" {
+		t.Fatalf("changed head = health:%s status:%q cmd:%v", prfilter.CIHealth(*m.cache.PR), m.githubStatus, cmd)
 	}
 }
 

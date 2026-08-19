@@ -2,9 +2,7 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +14,8 @@ import (
 	"github.com/shonenm/live-pr/internal/config"
 	gh "github.com/shonenm/live-pr/internal/github"
 	md "github.com/shonenm/live-pr/internal/markdown"
+	"github.com/shonenm/live-pr/internal/prfilter"
+	"github.com/shonenm/live-pr/internal/theme"
 )
 
 // prListModel groups the state that only the PR-list screen touches: the
@@ -40,7 +40,7 @@ type prListModel struct {
 	filterBeforeEdit          string
 	filterSelectionBeforeEdit int
 	filterEditing             bool
-	stacks                    []prStack
+	stacks                    []prfilter.Stack
 	pageIndex                 map[int]prPageRef
 	rowCache                  map[prRowCacheKey][]string
 	collapsedStacks           map[string]bool
@@ -174,53 +174,15 @@ func prPageKey(view prView, state prListState, filter string) string {
 	return fmt.Sprintf("%d:%d:%s", view, state, strings.Join(strings.Fields(strings.ToLower(filter)), " "))
 }
 
-func splitPRFilter(query string) (server, local string) {
-	serverTokens, localTokens := []string{}, []string{}
-	tokens := strings.Fields(query)
-	for i := 0; i < len(tokens); i++ {
-		token := tokens[i]
-		if strings.HasPrefix(token, "(") {
-			// GitHub's issue search understands neither OR nor grouping: it
-			// matches the punctuation as free text and returns nothing, so
-			// groups are evaluated locally instead.
-			end := groupEnd(tokens, i)
-			localTokens = append(localTokens, tokens[i:end+1]...)
-			i = end
-			continue
-		}
-		key, value, structured := strings.Cut(strings.ToLower(token), ":")
-		if structured && (key == "ci" || key == "merge") {
-			localTokens = append(localTokens, token)
-			continue
-		}
-		if structured && (key == "is" || key == "state") && (value == "open" || value == "closed") {
-			continue
-		}
-		serverTokens = append(serverTokens, token)
-	}
-	return strings.Join(serverTokens, " "), strings.Join(localTokens, " ")
-}
-
-// groupEnd returns the index of the token closing the parenthesized group
-// that starts at i, or the last token when the group is never closed.
-func groupEnd(tokens []string, i int) int {
-	for ; i < len(tokens); i++ {
-		if strings.HasSuffix(tokens[i], ")") {
-			return i
-		}
-	}
-	return len(tokens) - 1
-}
-
 // prViewSearch builds the GitHub search for a tab: the requested state, the
 // view's own query (minus its state tokens, which state already carries), and
 // the server-side part of the user's filter.
 func (m Model) prViewSearch(view prView, state prListState, filter string) string {
 	terms := []string{"is:" + strings.ToLower(state.String())}
-	if query, _ := splitPRFilter(m.viewDef(view).Query); query != "" {
+	if query, _ := prfilter.Split(m.viewDef(view).Query); query != "" {
 		terms = append(terms, query)
 	}
-	server, _ := splitPRFilter(filter)
+	server, _ := prfilter.Split(filter)
 	if server != "" {
 		terms = append(terms, server)
 	}
@@ -316,19 +278,7 @@ func (m Model) matchesView(pr gh.PR, view prView) bool {
 	if query == "" {
 		return true
 	}
-	return matchesPRFilter(pr, query, m.viewerLogin)
-}
-
-func hasLogin(users []gh.PRUser, login string) bool {
-	if login == "" {
-		return false
-	}
-	for _, user := range users {
-		if strings.EqualFold(user.Login, login) {
-			return true
-		}
-	}
-	return false
+	return prfilter.Matches(pr, query, m.viewerLogin)
 }
 
 // maxPRRowCacheEntries bounds the render cache; rows key on their full render
@@ -361,38 +311,38 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 	m.prList.all = m.withLocalPR(source)
 	m.recomputeViewCounts(page, paged)
 	m.prList.filtered = make([]gh.PR, 0, len(m.prList.all))
-	_, localFilter := splitPRFilter(m.prList.filterQuery)
+	_, localFilter := prfilter.Split(m.prList.filterQuery)
 	// Server rows are trusted for the qualifiers GitHub ran; whatever it
 	// could not evaluate (OR groups, ci:, merge:) is still ours to apply.
-	_, viewLocal := splitPRFilter(m.viewDef(m.prList.view).Query)
+	_, viewLocal := prfilter.Split(m.viewDef(m.prList.view).Query)
 	for _, pr := range m.prList.all {
 		if page.loaded && pr.Number > 0 && sourceNumbers[pr.Number] {
-			if viewLocal != "" && !matchesPRFilter(pr, viewLocal, m.viewerLogin) {
+			if viewLocal != "" && !prfilter.Matches(pr, viewLocal, m.viewerLogin) {
 				continue
 			}
-			if localFilter == "" || matchesPRFilter(pr, localFilter, m.viewerLogin) {
+			if localFilter == "" || prfilter.Matches(pr, localFilter, m.viewerLogin) {
 				m.prList.filtered = append(m.prList.filtered, pr)
 			}
 			continue
 		}
-		if matchesListState(pr, m.prList.state) && m.matchesView(pr, m.prList.view) && matchesPRFilter(pr, m.prList.filterQuery, m.viewerLogin) {
+		if matchesListState(pr, m.prList.state) && m.matchesView(pr, m.prList.view) && prfilter.Matches(pr, m.prList.filterQuery, m.viewerLogin) {
 			m.prList.filtered = append(m.prList.filtered, pr)
 		}
 	}
 	slices.SortFunc(m.prList.filtered, func(a, b gh.PR) int { return a.Number - b.Number })
 	if m.prList.state == closedPRListState {
-		m.prList.stacks = singlePRStacks(m.prList.filtered)
+		m.prList.stacks = prfilter.SingleStacks(m.prList.filtered)
 	} else {
-		m.prList.stacks = buildPRStacks(m.prList.filtered)
+		m.prList.stacks = prfilter.BuildStacks(m.prList.filtered)
 	}
 	m.prList.open = make([]gh.PR, 0, len(m.prList.filtered))
 	for _, stack := range m.prList.stacks {
-		entries := stack.entries
-		if len(entries) > 1 && m.prList.collapsedStacks[stack.id] {
+		entries := stack.Entries
+		if len(entries) > 1 && m.prList.collapsedStacks[stack.ID] {
 			entries = entries[:1]
 		}
 		for _, entry := range entries {
-			m.prList.open = append(m.prList.open, entry.pr)
+			m.prList.open = append(m.prList.open, entry.PR)
 		}
 	}
 	m.prList.restorePRSelection(selectedNumber)
@@ -405,7 +355,7 @@ func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
 	m.prList.viewCountKnown = make([]bool, len(m.views))
 	for view := prView(0); int(view) < len(m.views); view++ {
 		state := m.standardPRListState(view)
-		_, localOnly := splitPRFilter(m.viewDef(view).Query)
+		_, localOnly := prfilter.Split(m.viewDef(view).Query)
 		cached, ok := m.prList.pages[prPageKey(view, state, "")]
 		switch {
 		case ok && cached.loaded && localOnly == "":
@@ -454,209 +404,18 @@ func (m *Model) recomputeViewCounts(page prPageState, paged bool) {
 	m.prList.viewCountsValid = true
 }
 
-func singlePRStacks(prs []gh.PR) []prStack {
-	stacks := make([]prStack, len(prs))
-	for i, pr := range prs {
-		stacks[i] = prStack{id: fmt.Sprintf("pr:%d", pr.Number), order: i, entries: []stackEntry{{pr: pr}}}
-	}
-	return stacks
-}
-
-func buildPRStacks(prs []gh.PR) []prStack {
-	if len(prs) == 0 {
-		return nil
-	}
-	head := make(map[string]int, len(prs))
-	for i, pr := range prs {
-		if pr.HeadRefName == "" {
-			continue
-		}
-		if _, exists := head[pr.HeadRefName]; exists {
-			head[pr.HeadRefName] = -1 // ambiguous branch names must not invent a parent
-		} else {
-			head[pr.HeadRefName] = i
-		}
-	}
-	parents := make([]int, len(prs))
-	children := make([][]int, len(prs))
-	for i := range parents {
-		parents[i] = -1
-		if parent, ok := head[prs[i].BaseRefName]; ok && parent >= 0 && parent != i {
-			parents[i] = parent
-			children[parent] = append(children[parent], i)
-		}
-	}
-	visited := make([]bool, len(prs))
-	stacks := make([]prStack, 0, len(prs))
-	var addStack func(int)
-	addStack = func(root int) {
-		if visited[root] {
-			return
-		}
-		stack := prStack{order: root}
-		var walk func(int, int)
-		walk = func(index, depth int) {
-			if visited[index] {
-				return
-			}
-			visited[index] = true
-			if index < stack.order {
-				stack.order = index
-			}
-			stack.entries = append(stack.entries, stackEntry{pr: prs[index], depth: depth})
-			for _, child := range children[index] {
-				walk(child, depth+1)
-			}
-		}
-		walk(root, 0)
-		rootPR := stack.entries[0].pr
-		stack.id = fmt.Sprintf("pr:%d", rootPR.Number)
-		if rootPR.Number == 0 {
-			stack.id = "branch:" + rootPR.HeadRefName
-		}
-		if rootPR.Number > 0 {
-			stack.title = fmt.Sprintf("#%d", rootPR.Number)
-		} else {
-			stack.title = "Local PR"
-		}
-		stacks = append(stacks, stack)
-	}
-	for i, parent := range parents {
-		if parent == -1 {
-			addStack(i)
-		}
-	}
-	for i := range prs {
-		addStack(i) // cycle/duplicate safety
-	}
-	sort.SliceStable(stacks, func(i, j int) bool { return stacks[i].order < stacks[j].order })
-	return stacks
-}
-
-func (l prListModel) stackForPR(number int) (prStack, bool) {
+func (l prListModel) stackForPR(number int) (prfilter.Stack, bool) {
 	for _, stack := range l.stacks {
-		if len(stack.entries) < 2 {
+		if len(stack.Entries) < 2 {
 			continue
 		}
-		for _, entry := range stack.entries {
-			if entry.pr.Number == number {
+		for _, entry := range stack.Entries {
+			if entry.PR.Number == number {
 				return stack, true
 			}
 		}
 	}
-	return prStack{}, false
-}
-
-// matchesPRFilter evaluates a GitHub-search-like query against one PR.
-// Parenthesized alternatives — "(assignee:@me OR review-requested:@me)" —
-// match when any alternative matches; everything else is ANDed.
-func matchesPRFilter(pr gh.PR, query, viewer string) bool {
-	matcher := prFilterMatcher{pr: pr, viewer: viewer}
-	tokens := strings.Fields(strings.ToLower(query))
-	for i := 0; i < len(tokens); i++ {
-		if !strings.HasPrefix(tokens[i], "(") {
-			if !matcher.token(tokens[i]) {
-				return false
-			}
-			continue
-		}
-		alternatives, next := filterGroup(tokens, i)
-		i = next
-		matched := false
-		for _, alternative := range alternatives {
-			if matcher.token(alternative) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-	return true
-}
-
-// filterGroup collects the alternatives of a parenthesized group starting at
-// tokens[i], returning them and the index of its last token. An unclosed
-// group runs to the end of the query.
-func filterGroup(tokens []string, i int) ([]string, int) {
-	end := groupEnd(tokens, i)
-	var alternatives []string
-	for _, token := range tokens[i : end+1] {
-		token = strings.TrimSuffix(strings.TrimPrefix(token, "("), ")")
-		if token != "" && token != "or" {
-			alternatives = append(alternatives, token)
-		}
-	}
-	return alternatives, end
-}
-
-// prFilterMatcher evaluates single filter tokens, building the free-text
-// haystack only when a token needs it.
-type prFilterMatcher struct {
-	pr            gh.PR
-	viewer        string
-	haystack      string
-	haystackBuilt bool
-}
-
-func (f *prFilterMatcher) token(token string) bool {
-	pr, viewer := f.pr, f.viewer
-	key, value, structured := strings.Cut(token, ":")
-	if structured {
-		me := value == "@me"
-		if me {
-			if viewer == "" {
-				return false
-			}
-			value = strings.ToLower(viewer)
-		}
-		switch key {
-		case "is", "state":
-			switch value {
-			case "open":
-				return strings.EqualFold(pr.State, "OPEN")
-			case "closed":
-				// Match GitHub search semantics: is:closed covers merged
-				// PRs too, like matchesListState's closed bucket.
-				return strings.EqualFold(pr.State, "CLOSED") || strings.EqualFold(pr.State, "MERGED")
-			case "draft":
-				return key == "is" && pr.IsDraft
-			case "pr":
-				return key == "is"
-			default:
-				return false
-			}
-		case "author":
-			return strings.EqualFold(pr.Author.Login, value)
-		case "assignee":
-			return hasLogin(pr.Assignees, value)
-		case "review-requested":
-			return me && pr.ViewerReviewRequested || hasLogin(pr.ReviewRequests, value)
-		case "label":
-			for _, label := range pr.Labels {
-				if strings.EqualFold(label.Name, value) {
-					return true
-				}
-			}
-			return false
-		case "draft":
-			return (value == "true") == pr.IsDraft
-		case "ci":
-			return prCIHealth(pr) == value
-		case "merge":
-			conflicting := pr.Mergeable == "CONFLICTING" || pr.MergeStateStatus == "DIRTY"
-			return value == "conflicting" && conflicting
-		}
-	}
-	if !f.haystackBuilt {
-		f.haystack = strings.ToLower(fmt.Sprintf("#%d %s %s %s %s", pr.Number, pr.Title, pr.HeadRefName, pr.BaseRefName, pr.Author.Login))
-		for _, label := range pr.Labels {
-			f.haystack += " " + strings.ToLower(label.Name)
-		}
-		f.haystackBuilt = true
-	}
-	return strings.Contains(f.haystack, token)
+	return prfilter.Stack{}, false
 }
 
 func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
@@ -942,39 +701,8 @@ func mergeState(pr gh.PR) (string, lipgloss.Style) {
 	}
 }
 
-func checkCounts(checks []gh.PRCheck) (pending, failed, passed int) {
-	for _, check := range checks {
-		conclusion := strings.ToUpper(check.Conclusion)
-		state := strings.ToUpper(check.State)
-		status := strings.ToUpper(check.Status)
-		switch {
-		case conclusion == "FAILURE" || conclusion == "CANCELLED" || conclusion == "TIMED_OUT" || conclusion == "ACTION_REQUIRED" || conclusion == "STARTUP_FAILURE" || conclusion == "STALE" || state == "FAILURE" || state == "ERROR":
-			failed++
-		case status != "COMPLETED" && conclusion == "" && state != "SUCCESS":
-			pending++
-		default:
-			passed++
-		}
-	}
-	return pending, failed, passed
-}
-
-func checkHealth(checks []gh.PRCheck) (string, int) {
-	pending, failed, passed := checkCounts(checks)
-	switch {
-	case failed > 0:
-		return "failed", failed
-	case pending > 0:
-		return "pending", pending
-	case passed > 0:
-		return "passed", passed
-	default:
-		return "none", 0
-	}
-}
-
 func checkRollupState(checks []gh.PRCheck) string {
-	health, _ := checkHealth(checks)
+	health, _ := prfilter.CheckHealth(checks)
 	switch health {
 	case "passed":
 		return "SUCCESS"
@@ -987,23 +715,6 @@ func checkRollupState(checks []gh.PRCheck) string {
 	}
 }
 
-func prCIHealth(pr gh.PR) string {
-	if pr.PreviewLoaded || len(pr.Checks) > 0 {
-		health, _ := checkHealth(pr.Checks)
-		return health
-	}
-	switch strings.ToUpper(pr.CheckRollupState) {
-	case "SUCCESS":
-		return "passed"
-	case "FAILURE", "ERROR":
-		return "failed"
-	case "PENDING", "EXPECTED", "IN_PROGRESS":
-		return "pending"
-	default:
-		return "unknown"
-	}
-}
-
 func prCheckSummary(pr gh.PR) string {
 	text, style := prCheckState(pr)
 	return style.Render(text)
@@ -1013,7 +724,7 @@ func prCheckCounts(pr gh.PR) string {
 	if !pr.PreviewLoaded && len(pr.Checks) == 0 {
 		return stMuted.Render("CI")
 	}
-	pending, failed, passed := checkCounts(pr.Checks)
+	pending, failed, passed := prfilter.CheckCounts(pr.Checks)
 	counts := make([]string, 0, 3)
 	if pending > 0 {
 		counts = append(counts, stAttention.Render(strconv.Itoa(pending)))
@@ -1032,7 +743,7 @@ func prCheckCounts(pr gh.PR) string {
 
 func prCheckState(pr gh.PR) (string, lipgloss.Style) {
 	if !pr.PreviewLoaded && len(pr.Checks) == 0 {
-		switch prCIHealth(pr) {
+		switch prfilter.CIHealth(pr) {
 		case "passed":
 			return "✓ CI passed", stGreenF
 		case "failed":
@@ -1047,7 +758,7 @@ func prCheckState(pr gh.PR) (string, lipgloss.Style) {
 }
 
 func checkState(checks []gh.PRCheck) (string, lipgloss.Style) {
-	health, count := checkHealth(checks)
+	health, count := prfilter.CheckHealth(checks)
 	switch health {
 	case "failed":
 		return fmt.Sprintf("✗ CI %d failed", count), stRedF
@@ -1084,40 +795,84 @@ func (m *Model) buildPRListRows() (string, int) {
 	// open is derived from stacks in applyPRFilters, so a non-empty
 	// list always has stacks.
 	stacks := m.prList.stacks
-	lines := make([]string, 0, len(m.prList.open)*3+len(stacks))
-	selectedLine, openIndex := 0, 0
-	for _, stack := range stacks {
-		entries := stack.entries
-		grouped := len(entries) > 1
-		if grouped {
-			collapsed := m.prList.collapsedStacks[stack.id]
-			arrow := "▾"
-			if collapsed {
-				arrow, entries = "▸", entries[:1]
+	// Layout pass: place group headers (one line) and PR rows (three lines)
+	// without rendering them, to learn the selected line and total height.
+	type placedRow struct {
+		line, stack, entry int // entry == -1 marks a group header
+		selected           bool
+	}
+	placed := make([]placedRow, 0, len(m.prList.open)+len(stacks))
+	line, openIndex, selectedLine := 0, 0, 0
+	for si := range stacks {
+		entries := stacks[si].Entries
+		if len(entries) > 1 {
+			placed = append(placed, placedRow{line: line, stack: si, entry: -1})
+			line++
+			if m.prList.collapsedStacks[stacks[si].ID] {
+				entries = entries[:1]
 			}
-			header := stMuted.Render(arrow+" ") + stBold.Render(stack.title) + stMuted.Render(fmt.Sprintf(" · %d PRs", len(stack.entries)))
-			lines = append(lines, ansi.Truncate(header, max(10, m.list.Width), "…"))
 		}
-		for i, entry := range entries {
-			prefix := ""
-			if grouped {
-				marker := "├ "
-				if i == len(entries)-1 {
-					marker = "└ "
-				}
-				prefix = strings.Repeat("  ", entry.depth) + marker
-			}
+		for ei := range entries {
 			selected := openIndex == m.prList.cursor
 			if selected {
-				selectedLine = len(lines)
+				selectedLine = line
 			}
-			if selected {
-				lines = append(lines, m.renderPRRow(entry.pr, true, prefix)...)
-			} else {
-				lines = append(lines, m.cachedPRRow(entry.pr, prefix)...)
-			}
+			placed = append(placed, placedRow{line: line, stack: si, entry: ei, selected: selected})
+			line += 3
 			openIndex++
 		}
+	}
+	// Render pass: only the rows within one viewport height of the visible
+	// region and of the selected row become text; the rest stay empty lines.
+	// The line count — and so the scroll geometry — matches a full render,
+	// and syncPRListScreen fixes the offset right after SetContent, where it
+	// either stays put, is clamped to the last page by SetContent, or is
+	// pulled to the selected line by keepLineVisible: always inside the
+	// window rendered here.
+	lo, hi := 0, line
+	if m.list.Height > 0 { // an unsized viewport renders everything
+		lo = min(m.list.YOffset, selectedLine) - m.list.Height
+		hi = max(m.list.YOffset+m.list.Height-1, selectedLine) + m.list.Height + 1
+	}
+	lines := make([]string, line)
+	for _, row := range placed {
+		stack := stacks[row.stack]
+		if row.entry < 0 {
+			if row.line < lo || row.line >= hi {
+				continue
+			}
+			arrow := "▾"
+			if m.prList.collapsedStacks[stack.ID] {
+				arrow = "▸"
+			}
+			header := stMuted.Render(arrow+" ") + stBold.Render(stack.Title) + stMuted.Render(fmt.Sprintf(" · %d PRs", len(stack.Entries)))
+			lines[row.line] = ansi.Truncate(header, max(10, m.list.Width), "…")
+			continue
+		}
+		if row.line+3 <= lo || row.line >= hi {
+			continue
+		}
+		entries := stack.Entries
+		grouped := len(entries) > 1
+		if grouped && m.prList.collapsedStacks[stack.ID] {
+			entries = entries[:1]
+		}
+		entry := entries[row.entry]
+		prefix := ""
+		if grouped {
+			marker := "├ "
+			if row.entry == len(entries)-1 {
+				marker = "└ "
+			}
+			prefix = strings.Repeat("  ", entry.Depth) + marker
+		}
+		var rendered []string
+		if row.selected {
+			rendered = m.renderPRRow(entry.PR, true, prefix)
+		} else {
+			rendered = m.cachedPRRow(entry.PR, prefix)
+		}
+		copy(lines[row.line:], rendered)
 	}
 	return strings.Join(lines, "\n"), selectedLine
 }
@@ -1126,7 +881,7 @@ func (m *Model) cachedPRRow(pr gh.PR, prefix string) []string {
 	if m.prList.rowCache == nil {
 		m.prList.rowCache = map[prRowCacheKey][]string{}
 	}
-	health, count := checkHealth(pr.Checks)
+	health, count := prfilter.CheckHealth(pr.Checks)
 	key := prRowCacheKey{
 		number: pr.Number, width: max(10, m.list.Width), additions: pr.Additions, deletions: pr.Deletions, checkCount: count,
 		prefix: prefix, state: pr.State, title: pr.Title, author: pr.Author.Login, base: pr.BaseRefName, head: pr.HeadRefName,
@@ -1308,35 +1063,9 @@ func labelPill(label gh.PRLabel) string {
 	color := strings.TrimPrefix(label.Color, "#")
 	if rgb, err := strconv.ParseUint(color, 16, 24); err == nil && len(color) == 6 {
 		background = "#" + color
-		foreground = contrastingLabelForeground(rgb)
+		foreground = theme.ContrastingLabelForeground(rgb)
 	}
 	return lipgloss.NewStyle().Background(lipgloss.Color(background)).Foreground(lipgloss.Color(foreground)).Padding(0, 1).Render(label.Name)
-}
-
-func contrastingLabelForeground(background uint64) string {
-	const dark uint64 = 0x0d1117
-	bgLuminance := relativeLuminance(background)
-	whiteContrast := (1.0 + 0.05) / (bgLuminance + 0.05)
-	darkLuminance := relativeLuminance(dark)
-	darkContrast := (math.Max(bgLuminance, darkLuminance) + 0.05) / (math.Min(bgLuminance, darkLuminance) + 0.05)
-	if darkContrast > whiteContrast {
-		return "#0d1117"
-	}
-	return "#ffffff"
-}
-
-func relativeLuminance(rgb uint64) float64 {
-	channel := func(value uint64) float64 {
-		v := float64(value) / 255
-		if v <= 0.04045 {
-			return v / 12.92
-		}
-		return math.Pow((v+0.055)/1.055, 2.4)
-	}
-	r := channel((rgb >> 16) & 0xff)
-	g := channel((rgb >> 8) & 0xff)
-	b := channel(rgb & 0xff)
-	return 0.2126*r + 0.7152*g + 0.0722*b
 }
 
 // stepView cycles the selected tab, tolerating an index left out of range by
