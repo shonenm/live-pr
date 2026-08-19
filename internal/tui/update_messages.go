@@ -132,7 +132,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	if msg.err != nil {
 		m.autoOpenCurrent = false
 		if errors.Is(msg.err, gh.ErrPRNotFound) {
-			m.localAvailable = true
+			m.localAvailable = m.currentBranch != "HEAD" && m.currentBranch != m.defaultBranch
 			m.applyPRFilters(m.selectedPRNumber())
 			return m, m.sync()
 		}

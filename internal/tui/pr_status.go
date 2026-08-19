@@ -145,7 +145,7 @@ func (m Model) handlePRStatusDone(msg prStatusDone) (Model, tea.Cmd) {
 // which GitHub often answers with the old state right after a merge. Pages
 // are marked stale so the next load reconciles with the server.
 func (m Model) applyPRStateChange(pr gh.PR) (Model, tea.Cmd) {
-	if m.screen == detailScreen && m.cache.PR != nil && m.cache.PR.Number == pr.Number {
+	if m.cache.PR != nil && m.cache.PR.Number == pr.Number {
 		*m.cache.PR = pr
 	}
 	m.navigator.PRs = upsertPR(m.navigator.PRs, pr)

@@ -457,6 +457,59 @@ func TestClosedBranchPRLeavesTheOpenList(t *testing.T) {
 	}
 }
 
+func TestListStatusCloseUpdatesCachedBranchPR(t *testing.T) {
+	m := testModel()
+	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.currentBranch = "feature"
+	m.navigator = gh.NewNavigatorCache()
+	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	stale := gh.PR{Number: 12, State: "OPEN", HeadRefName: "feature", Title: "x"}
+	m.cache = gh.NewCache("feature")
+	m.cache.PR = &stale
+	m.prPages = map[string]prPageState{m.activePRPage: {prs: []gh.PR{stale}, total: 1, loaded: true, fresh: true}}
+
+	// Closing via the status popup on the list screen must update the
+	// branch cache too, or withLocalPR keeps re-injecting the stale copy.
+	closed := stale
+	closed.State = "CLOSED"
+	u, _ := m.Update(prStatusDone{pr: closed, target: "closed"})
+	m = u.(Model)
+	if m.cache.PR.State != "CLOSED" {
+		t.Fatalf("cached branch PR state = %q", m.cache.PR.State)
+	}
+	for _, pr := range m.openPRs {
+		if pr.Number == 12 {
+			t.Fatalf("closed PR re-injected into the open list: %#v", m.openPRs)
+		}
+	}
+}
+
+func TestRefreshOnDefaultBranchDoesNotInventLocalPR(t *testing.T) {
+	m := testModel()
+	m.screen, m.prView, m.prListState = prListScreen, allPRsView, openPRListState
+	m.currentBranch, m.defaultBranch = "main", "main"
+	m.navigator = gh.NewNavigatorCache()
+	m.activePRPage = prPageKey(allPRsView, openPRListState, "")
+	m.cache = gh.NewCache("main")
+	m.prPages = map[string]prPageState{m.activePRPage: {
+		prs: []gh.PR{{Number: 2, State: "OPEN", Title: "other"}}, total: 1, loaded: true, fresh: true,
+	}}
+
+	// The refresh-triggered lookup finds no PR for main: that must not
+	// mark the default branch as local work with a synthetic PR row.
+	u, _ := m.Update(currentBranchPRLoaded{err: gh.ErrPRNotFound, stateOnly: true})
+	m = u.(Model)
+	if m.localAvailable {
+		t.Fatal("default branch marked as an unpublished local PR")
+	}
+	for _, pr := range m.openPRs {
+		if pr.State == "LOCAL" {
+			t.Fatalf("synthetic Local PR row injected: %#v", m.openPRs)
+		}
+	}
+}
+
 func TestLocalPRAppearsInEveryOpenView(t *testing.T) {
 	m := testModel()
 	local := gh.PR{}
