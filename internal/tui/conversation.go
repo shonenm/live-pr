@@ -14,22 +14,22 @@ import (
 )
 
 func (m *Model) conversationItems() []conversationItem {
-	if !m.conversationDirty {
-		return m.conversationCache
+	if !m.detailView.conversationDirty {
+		return m.detailView.conversationCache
 	}
 	commitStatuses := 0
 	if m.cache.PR != nil {
 		commitStatuses = len(m.cache.PR.Commits)
 	}
-	items := make([]conversationItem, 0, len(m.events)+len(m.cache.Comments)+len(m.cache.Activities)+len(m.cache.Reviews)+len(m.cache.ReviewComments)+commitStatuses+1)
-	if m.cache.PR == nil && strings.TrimSpace(m.summary) != "" {
-		items = append(items, conversationItem{key: "local-summary", summary: &m.summary})
+	items := make([]conversationItem, 0, len(m.detailView.events)+len(m.cache.Comments)+len(m.cache.Activities)+len(m.cache.Reviews)+len(m.cache.ReviewComments)+commitStatuses+1)
+	if m.cache.PR == nil && strings.TrimSpace(m.detailView.summary) != "" {
+		items = append(items, conversationItem{key: "local-summary", summary: &m.detailView.summary})
 	} else if m.cache.PR != nil {
 		items = append(items, conversationItem{key: "description:" + m.cache.PR.URL, ts: m.cache.PR.CreatedAt, pr: m.cache.PR})
 	}
 	eventOccurrences := map[string]int{}
-	for i := range m.events {
-		e := &m.events[i]
+	for i := range m.detailView.events {
+		e := &m.detailView.events[i]
 		if e.Kind != event.Commit {
 			baseKey := "event:" + e.ID
 			if e.ID == "" {
@@ -82,13 +82,13 @@ func (m *Model) conversationItems() []conversationItem {
 		}
 		return conversationTime(items[i].ts).Before(conversationTime(items[j].ts))
 	})
-	m.conversationCache, m.conversationDirty = items, false
-	return m.conversationCache
+	m.detailView.conversationCache, m.detailView.conversationDirty = items, false
+	return m.detailView.conversationCache
 }
 
 func (m *Model) selectedConversationItem() *conversationItem {
 	items := m.conversationItems()
-	i := m.cursors[conversationTab]
+	i := m.detailView.cursors[conversationTab]
 	if i < 0 || i >= len(items) {
 		return nil
 	}
@@ -108,21 +108,21 @@ func (m *Model) restoreConversationSelection(key string) {
 	}
 	for i, item := range m.conversationItems() {
 		if item.key == key {
-			m.cursors[conversationTab] = i
+			m.detailView.cursors[conversationTab] = i
 			return
 		}
 	}
-	if n := len(m.conversationItems()); n > 0 && m.cursors[conversationTab] >= n {
-		m.cursors[conversationTab] = n - 1
+	if n := len(m.conversationItems()); n > 0 && m.detailView.cursors[conversationTab] >= n {
+		m.detailView.cursors[conversationTab] = n - 1
 	}
 }
 
 func (m *Model) activeLen() int {
-	switch m.active {
+	switch m.detailView.active {
 	case commitsTab:
-		return len(m.commits)
+		return len(m.detailView.commits)
 	case conflictsTab:
-		return len(m.mergeReadiness.ConflictFiles)
+		return len(m.detailView.mergeReadiness.ConflictFiles)
 	case checksTab:
 		if m.cache.PR != nil {
 			return len(m.cache.PR.Checks)
@@ -134,7 +134,7 @@ func (m *Model) activeLen() int {
 }
 
 func (m *Model) buildList() (string, int) {
-	switch m.active {
+	switch m.detailView.active {
 	case commitsTab:
 		return m.buildCommits()
 	case conflictsTab:
@@ -148,7 +148,7 @@ func (m *Model) buildList() (string, int) {
 
 func (m Model) conversationCounts() string {
 	eventCount := 0
-	for _, ev := range m.events {
+	for _, ev := range m.detailView.events {
 		if ev.Kind != event.Commit {
 			eventCount++
 		}
@@ -168,13 +168,13 @@ type convRenderKey struct {
 
 func (m *Model) buildConversation() (string, int) {
 	items := m.conversationItems()
-	key := convRenderKey{cursor: m.cursors[conversationTab], width: m.list.Width, items: len(items)}
-	if m.conversationRenderValid && m.conversationRenderKey == key {
-		return m.conversationRender, m.conversationRenderLine
+	key := convRenderKey{cursor: m.detailView.cursors[conversationTab], width: m.list.Width, items: len(items)}
+	if m.detailView.conversationRenderValid && m.detailView.conversationRenderKey == key {
+		return m.detailView.conversationRender, m.detailView.conversationRenderLine
 	}
 	out, selectedLine := m.renderConversation(items)
-	m.conversationRender, m.conversationRenderLine = out, selectedLine
-	m.conversationRenderKey, m.conversationRenderValid = key, true
+	m.detailView.conversationRender, m.detailView.conversationRenderLine = out, selectedLine
+	m.detailView.conversationRenderKey, m.detailView.conversationRenderValid = key, true
 	return out, selectedLine
 }
 
@@ -185,7 +185,7 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 	var lines []string
 	selectedLine := 0
 	for i, item := range items {
-		selected := i == m.cursors[conversationTab]
+		selected := i == m.detailView.cursors[conversationTab]
 		if selected {
 			selectedLine = len(lines)
 		}
@@ -206,7 +206,7 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 func (m *Model) conversationItemLines(item conversationItem, selected bool) []string {
 	cacheKey := fmt.Sprintf("%s\x00%d", item.key, m.list.Width)
 	if !selected {
-		if cached, ok := m.convItemCache[cacheKey]; ok {
+		if cached, ok := m.detailView.convItemCache[cacheKey]; ok {
 			return cached
 		}
 	}
@@ -239,10 +239,10 @@ func (m *Model) conversationItemLines(item conversationItem, selected bool) []st
 		}
 		return itemLines
 	}
-	if m.convItemCache == nil {
-		m.convItemCache = map[string][]string{}
+	if m.detailView.convItemCache == nil {
+		m.detailView.convItemCache = map[string][]string{}
 	}
-	m.convItemCache[cacheKey] = itemLines
+	m.detailView.convItemCache[cacheKey] = itemLines
 	return itemLines
 }
 
@@ -330,7 +330,7 @@ func reviewVerdict(state string) (string, lipgloss.Style) {
 }
 
 func (m Model) richBody(body string) string {
-	if rendered, ok := m.richBodies[body]; ok {
+	if rendered, ok := m.detailView.richBodies[body]; ok {
 		return rendered
 	}
 	return body

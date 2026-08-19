@@ -32,13 +32,13 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = u.(Model)
-	if m.focusDiff || !m.focusExplorer {
-		t.Fatalf("l focus = diff:%v explorer:%v", m.focusDiff, m.focusExplorer)
+	if m.detailView.focusDiff || !m.detailView.focusExplorer {
+		t.Fatalf("l focus = diff:%v explorer:%v", m.detailView.focusDiff, m.detailView.focusExplorer)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	m = u.(Model)
-	if m.focusDiff || !m.focusExplorer {
-		t.Fatalf("second l focus = diff:%v explorer:%v", m.focusDiff, m.focusExplorer)
+	if m.detailView.focusDiff || !m.detailView.focusExplorer {
+		t.Fatalf("second l focus = diff:%v explorer:%v", m.detailView.focusDiff, m.detailView.focusExplorer)
 	}
 	// q from the explorer should quit (Tab cycles focus instead).
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
@@ -117,7 +117,7 @@ func TestPRListVimNavigationAndNarrowLayout(t *testing.T) {
 func TestConversationVimNavigation(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
-	m.active = conversationTab
+	m.detailView.active = conversationTab
 	for i := 0; i < 8; i++ {
 		m.cache.Comments = append(m.cache.Comments, gh.Comment{NodeID: fmt.Sprintf("comment-%d", i), Body: fmt.Sprintf("comment %d", i), CreatedAt: "2026-08-08T00:00:00Z"})
 	}
@@ -127,13 +127,13 @@ func TestConversationVimNavigation(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = u.(Model)
-	if m.cursors[conversationTab] != 0 {
-		t.Fatalf("conversation gg = %d", m.cursors[conversationTab])
+	if m.detailView.cursors[conversationTab] != 0 {
+		t.Fatalf("conversation gg = %d", m.detailView.cursors[conversationTab])
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	m = u.(Model)
-	if m.cursors[conversationTab] != m.activeLen()-1 {
-		t.Fatalf("conversation G = %d, want %d", m.cursors[conversationTab], m.activeLen()-1)
+	if m.detailView.cursors[conversationTab] != m.activeLen()-1 {
+		t.Fatalf("conversation G = %d, want %d", m.detailView.cursors[conversationTab], m.activeLen()-1)
 	}
 	m.list.Height = 3
 	m.list.SetContent(strings.Repeat("conversation\n", 20))
@@ -262,8 +262,8 @@ func TestPRListEnterOpensRemoteWithoutChangingCheckout(t *testing.T) {
 	m = u.(Model)
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if cmd == nil || m.screen != detailScreen || !m.remote || m.head != "feature" || m.headRev != "refs/live-pr/pulls/14/head" || m.diffTerminal != nil {
-		t.Fatalf("remote target not opened: screen=%v remote=%v head=%q rev=%q terminal=%v", m.screen, m.remote, m.head, m.headRev, m.diffTerminal)
+	if cmd == nil || m.screen != detailScreen || !m.remote || m.detailView.head != "feature" || m.detailView.headRev != "refs/live-pr/pulls/14/head" || m.diffTerminal != nil {
+		t.Fatalf("remote target not opened: screen=%v remote=%v head=%q rev=%q terminal=%v", m.screen, m.remote, m.detailView.head, m.detailView.headRev, m.diffTerminal)
 	}
 }
 
@@ -273,7 +273,7 @@ func TestDetailBReturnsToPRList(t *testing.T) {
 	m.currentBranch, m.defaultBranch = "feature", "main"
 	m.localAvailable, m.localTitle = true, "local work"
 	m.prList.open = m.withLocalPR(nil)
-	m.focusDiff = true
+	m.detailView.focusDiff = true
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
@@ -340,7 +340,7 @@ func TestReviewFocusKeys(t *testing.T) {
 	// Tab from conversation focuses the review.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if !m.focusDiff {
+	if !m.detailView.focusDiff {
 		t.Fatal("Tab should focus review")
 	}
 	footer := ansi.Strip(m.renderFooter())
@@ -350,31 +350,31 @@ func TestReviewFocusKeys(t *testing.T) {
 	// Shift+Tab expands the review to full width.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
-	if !m.reviewWide || !m.focusDiff {
+	if !m.detailView.reviewWide || !m.detailView.focusDiff {
 		t.Fatal("Shift+Tab should make the review full width")
 	}
 	// Shift+Tab again restores the split.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
-	if m.reviewWide {
+	if m.detailView.reviewWide {
 		t.Fatal("second Shift+Tab should restore the split")
 	}
 	// Tab from review returns to conversation.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = u.(Model)
-	if m.focusDiff || m.reviewWide {
+	if m.detailView.focusDiff || m.detailView.reviewWide {
 		t.Fatal("Tab from review should return to conversation")
 	}
 	// Shift+Tab from conversation expands conversation to full width.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
-	if !m.reviewWide || m.focusDiff {
+	if !m.detailView.reviewWide || m.detailView.focusDiff {
 		t.Fatal("Shift+Tab from conversation should expand conversation full width")
 	}
 	// Shift+Tab again restores the split.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = u.(Model)
-	if m.reviewWide {
+	if m.detailView.reviewWide {
 		t.Fatal("Shift+Tab should restore the split")
 	}
 	// q quits from conversation.
@@ -392,7 +392,7 @@ func TestStaticReviewFocusKeys(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	m = u.(Model)
-	if !m.focusDiff {
+	if !m.detailView.focusDiff {
 		t.Fatal("l should focus the static review fallback")
 	}
 	// q from the review should quit (not return to conversation — use Tab).
@@ -438,7 +438,7 @@ func TestOverloadedKeysDisambiguateByScreen(t *testing.T) {
 	}
 
 	m.screen = detailScreen
-	m.active = conversationTab
+	m.detailView.active = conversationTab
 	m.sync()
 	if m.keys.NextView.Enabled() {
 		t.Error("detail: l should be FocusRight, not NextView")
@@ -483,9 +483,9 @@ func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 
 	// Detail screen: y copies the focused conversation item's URL.
 	detail := testModel()
-	detail.screen, detail.active = detailScreen, conversationTab
+	detail.screen, detail.detailView.active = detailScreen, conversationTab
 	detail.cache.PR = &gh.PR{Number: 7, URL: "https://example/pr/7"}
-	detail.conversationDirty = true
+	detail.detailView.conversationDirty = true
 	if url := detail.selectedBrowseURL(); url == "" {
 		t.Fatal("detail conversation exposed no URL")
 	}

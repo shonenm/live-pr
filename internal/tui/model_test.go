@@ -364,7 +364,7 @@ func TestPRTitleAndCurrentCheckoutMarker(t *testing.T) {
 	m.currentBranch = "feature"
 	pr := gh.PR{Number: 12, State: "OPEN", Title: "Human title", HeadRefName: "feature", BaseRefName: "main"}
 	m.cache.PR = &pr
-	m.title = "feature"
+	m.detailView.title = "feature"
 	header := ansi.Strip(m.renderHeader())
 	if !strings.Contains(header, "Human title") || strings.Contains(header, "  feature\n") {
 		t.Fatalf("detail title = %q", header)
@@ -499,7 +499,7 @@ func TestStaleGenerationRichContentWithMatchingKeyStillApplies(t *testing.T) {
 	key := richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities)
 	u, _ := m.Update(richBodiesLoaded{key: key, bodies: map[string]string{pr.Body: "rendered"}})
 	m = u.(Model)
-	if m.richBodies[pr.Body] != "rendered" {
+	if m.detailView.richBodies[pr.Body] != "rendered" {
 		t.Fatal("stale-generation bodies with a matching key were discarded")
 	}
 	u, _ = m.Update(avatarColorsLoaded{key: key, colors: map[string]string{"alice": "#ff0000"}})
@@ -510,7 +510,7 @@ func TestStaleGenerationRichContentWithMatchingKeyStillApplies(t *testing.T) {
 	// A result rendered for other content or width still drops.
 	u, _ = m.Update(richBodiesLoaded{key: richContentKey(1, pr, nil, nil), bodies: map[string]string{"other": "x"}})
 	m = u.(Model)
-	if _, ok := m.richBodies["other"]; ok {
+	if _, ok := m.detailView.richBodies["other"]; ok {
 		t.Fatal("mismatched-key result was applied")
 	}
 }
@@ -597,12 +597,12 @@ func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 	m.screen = detailScreen
 	pr := gh.PR{Number: 7, URL: "https://example/pr/7"}
 	m.cache.PR = &pr
-	m.conversationDirty = true
+	m.detailView.conversationDirty = true
 
 	// c, f, i have no per-row link here (no checks are loaded), so they
 	// offer the pull request itself.
 	for _, tab := range []tab{commitsTab, conflictsTab, checksTab} {
-		m.active = tab
+		m.detailView.active = tab
 		if got := m.selectedBrowseURL(); got != "https://example/pr/7" {
 			t.Fatalf("tab %d URL = %q", tab, got)
 		}
@@ -612,12 +612,12 @@ func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 	comment := gh.Comment{ID: 1, Body: "hi", HTMLURL: "https://example/pr/7#c1"}
 	comment.User.Login = "me"
 	m.cache.Comments = []gh.Comment{comment}
-	m.active = conversationTab
-	m.conversationDirty = true
+	m.detailView.active = conversationTab
+	m.detailView.conversationDirty = true
 	items := m.conversationItems()
 	for i, it := range items {
 		if it.comment != nil {
-			m.cursors[conversationTab] = i
+			m.detailView.cursors[conversationTab] = i
 		}
 	}
 	if got := m.selectedBrowseURL(); got != "https://example/pr/7#c1" {
@@ -626,7 +626,7 @@ func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 	// A row without one falls back rather than disabling the key.
 	for i, it := range items {
 		if it.activity != nil || it.event != nil {
-			m.cursors[conversationTab] = i
+			m.detailView.cursors[conversationTab] = i
 			if got := m.selectedBrowseURL(); got != "https://example/pr/7" {
 				t.Fatalf("row %d URL = %q", i, got)
 			}
@@ -636,7 +636,7 @@ func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 
 	// Without a pull request there is still nothing to open.
 	local := testModel()
-	local.screen, local.active = detailScreen, checksTab
+	local.screen, local.detailView.active = detailScreen, checksTab
 	if got := local.selectedBrowseURL(); got != "" {
 		t.Fatalf("local-only detail URL = %q", got)
 	}
@@ -644,7 +644,7 @@ func TestBrowseURLAvailableOnEveryDetailTab(t *testing.T) {
 
 func TestChecksTabBrowseURLOpensSelectedCheck(t *testing.T) {
 	m := testModel()
-	m.screen, m.active = detailScreen, checksTab
+	m.screen, m.detailView.active = detailScreen, checksTab
 	m.cache.PR = &gh.PR{Number: 7, URL: "https://example/pr/7", Checks: []gh.PRCheck{
 		{Name: "test", Conclusion: "FAILURE", DetailsURL: "https://example/runs/1"},
 		{Context: "ci/legacy", State: "FAILURE", TargetURL: "https://example/status/2"},
@@ -653,16 +653,16 @@ func TestChecksTabBrowseURLOpensSelectedCheck(t *testing.T) {
 
 	// The selected row opens its own log page: detailsUrl for a check run,
 	// targetUrl for a legacy status context.
-	m.cursors[checksTab] = 0
+	m.detailView.cursors[checksTab] = 0
 	if got := m.selectedBrowseURL(); got != "https://example/runs/1" {
 		t.Fatalf("check run URL = %q", got)
 	}
-	m.cursors[checksTab] = 1
+	m.detailView.cursors[checksTab] = 1
 	if got := m.selectedBrowseURL(); got != "https://example/status/2" {
 		t.Fatalf("status context URL = %q", got)
 	}
 	// A check without a log page falls back to the pull request itself.
-	m.cursors[checksTab] = 2
+	m.detailView.cursors[checksTab] = 2
 	if got := m.selectedBrowseURL(); got != "https://example/pr/7" {
 		t.Fatalf("URL-less check fell back to %q", got)
 	}
@@ -697,7 +697,7 @@ func TestDefaultBaseBranchIsAccented(t *testing.T) {
 
 	// Both surfaces keep showing base ← head.
 	m.screen, m.w, m.h = detailScreen, 120, 40
-	m.base, m.head = "origin/main", "feat/x"
+	m.detailView.base, m.detailView.head = "origin/main", "feat/x"
 	if header := ansi.Strip(m.renderHeader()); !strings.Contains(header, "origin/main ← feat/x") {
 		t.Fatalf("detail header = %q", header)
 	}

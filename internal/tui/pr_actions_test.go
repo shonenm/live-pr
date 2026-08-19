@@ -148,10 +148,10 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	m.cache.PR = &pr
 
 	// c still switches to the commits tab on the detail screen.
-	m.active = conversationTab
+	m.detailView.active = conversationTab
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
-	if got := u.(Model); got.active != commitsTab || got.pendingPRAction != noPRAction {
-		t.Fatalf("c = tab:%v pending:%v", got.active, got.pendingPRAction)
+	if got := u.(Model); got.detailView.active != commitsTab || got.pendingPRAction != noPRAction {
+		t.Fatalf("c = tab:%v pending:%v", got.detailView.active, got.pendingPRAction)
 	}
 
 	// C asks to check the shown PR out.

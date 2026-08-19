@@ -82,18 +82,18 @@ func (m Model) openLocalEditor(o localEditOverlay, value string) (Model, tea.Cmd
 }
 
 func (m Model) startLocalComment() (Model, tea.Cmd) {
-	if m.remote || m.active != conversationTab || m.focusDiff || m.focusExplorer {
+	if m.remote || m.detailView.active != conversationTab || m.detailView.focusDiff || m.detailView.focusExplorer {
 		return m, nil
 	}
 	return m.openLocalEditor(localEditOverlay{mode: addLocalComment}, "kind: decision\n\n")
 }
 
 func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
-	if m.active != conversationTab {
+	if m.detailView.active != conversationTab {
 		m.status = "comments live in the Conversation tab (esc)"
 		return m, nil
 	}
-	if m.focusDiff || m.focusExplorer {
+	if m.detailView.focusDiff || m.detailView.focusExplorer {
 		return m, nil
 	}
 	item := m.selectedConversationItem()
@@ -139,11 +139,11 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 }
 
 func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
-	if m.active != conversationTab {
+	if m.detailView.active != conversationTab {
 		m.status = "comments live in the Conversation tab (esc)"
 		return m, nil
 	}
-	if m.focusDiff || m.focusExplorer {
+	if m.detailView.focusDiff || m.detailView.focusExplorer {
 		return m, nil
 	}
 	item := m.selectedConversationItem()
@@ -266,7 +266,7 @@ func (o localEditOverlay) savePRDescription(m Model) (Model, tea.Cmd) {
 	m.overlay = nil
 	m.remoteCommentBusy = true
 	m.status = "updating PR description…"
-	return m, tea.Batch(updatePRDescription(m.client, number, m.head, body, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(updatePRDescription(m.client, number, m.detailView.head, body, m.targetGeneration), m.startSpinner())
 }
 
 func (o localEditOverlay) saveRemoteComment(m Model) (Model, tea.Cmd) {
@@ -348,7 +348,7 @@ func (m *Model) saveEditedLocalComment(st *store.Store, target string) (string, 
 	if err != nil {
 		return "", err
 	}
-	current, ok := localEventByID(m.events, target)
+	current, ok := localEventByID(m.detailView.events, target)
 	if !ok {
 		return "", errors.New("comment no longer exists")
 	}

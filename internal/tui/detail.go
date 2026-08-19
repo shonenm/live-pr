@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"sort"
@@ -21,11 +22,60 @@ import (
 	"github.com/shonenm/live-pr/internal/timeline"
 )
 
-func (m *Model) resetDetailCaches() {
-	m.rawDetailCache = map[string]string{}
-	m.rawPending = map[string]bool{}
-	m.diffCache = map[string]string{}
-	m.diffPending = map[string]bool{}
+// detailModel groups the state that only the detail screen touches: the
+// loaded target (title, refs, commits, files, events, merge readiness), the
+// tab/cursor/focus selection, the raw-diff and rendered-diff caches, reviewed
+// marks, and the conversation render caches. Shared state stays on Model —
+// the detail viewport (the list screen's preview pane renders through it),
+// remote (read by the list's current-PR marker via isCurrentTargetPR),
+// targetGeneration (bumped by list-side navigation and checkout), the diff
+// config, and the diff terminal (torn down by Model-level target switches).
+type detailModel struct {
+	title             string
+	summary           string
+	base, head        string
+	diffBase, headRev string
+	reviewRange       string
+	reviewSHA         string
+	events            []event.Event
+	commits           []git.Commit
+	files             []git.ChangedFile
+	mergeReadiness    git.MergeReadiness
+	mergeReadinessErr error
+
+	active     tab
+	cursors    [tabCount]int
+	listAnchor listAnchor
+
+	focusDiff         bool
+	focusExplorer     bool
+	reviewWide        bool
+	fileCursor        int
+	diffKey           string
+	shownKey          string
+	rawCache          map[string]string
+	rawPending        map[string]bool
+	diffCache         map[string]string
+	diffPending       map[string]bool
+	checkedFiles      map[string]string
+	reviewedMarksPath string
+
+	conversationCache       []conversationItem
+	conversationDirty       bool
+	conversationRender      string
+	conversationRenderLine  int
+	conversationRenderKey   convRenderKey
+	conversationRenderValid bool
+	convItemCache           map[string][]string
+	richBodies              map[string]string
+	lastRichContentKey      [sha256.Size]byte
+}
+
+func (d *detailModel) resetCaches() {
+	d.rawCache = map[string]string{}
+	d.rawPending = map[string]bool{}
+	d.diffCache = map[string]string{}
+	d.diffPending = map[string]bool{}
 	// richBodies survives: it is keyed by body content, so stale entries are
 	// unused rather than wrong, and wiping it here would blank rendered
 	// mermaid on refreshes whose content (and thus dispatch key) is unchanged.
@@ -41,7 +91,7 @@ func (m *Model) reloadLocalConversation() {
 		return
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	m.events = events
+	m.detailView.events = events
 	if dirty, err := git.HasUncommittedChanges(); err == nil {
 		m.workingTreeDirty = dirty
 	} else {
@@ -49,12 +99,12 @@ func (m *Model) reloadLocalConversation() {
 	}
 	conclusion, err := os.ReadFile(store.ForBranch(m.root, m.currentBranch).Conclusion())
 	if err == nil {
-		m.summary = string(conclusion)
-		m.title = prbody.Title(m.summary, m.currentBranch)
+		m.detailView.summary = string(conclusion)
+		m.detailView.title = prbody.Title(m.detailView.summary, m.currentBranch)
 	} else if os.IsNotExist(err) {
-		m.summary = ""
+		m.detailView.summary = ""
 	}
-	m.invalidateConversation()
+	m.detailView.invalidateConversation()
 }
 
 // resolveBase recomputes the review range off the Update goroutine: the merge
@@ -62,7 +112,7 @@ func (m *Model) reloadLocalConversation() {
 // applies the result only when the range actually changed.
 func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	generation := m.targetGeneration
-	headRev, remote, timelinePath := m.headRev, m.remote, m.timelinePath
+	headRev, remote, timelinePath := m.detailView.headRev, m.remote, m.timelinePath
 	var prCopy *gh.PR
 	if pr != nil {
 		c := *pr
@@ -112,30 +162,30 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		if m.cache.PR != nil {
 			readiness, readinessErr = applyGitHubConflictFallback(readiness, readinessErr, *m.cache.PR)
 		}
-		m.mergeReadiness, m.mergeReadinessErr = readiness, readinessErr
+		m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = readiness, readinessErr
 	}
-	if msg.base == m.base && msg.diffBase == m.diffBase && m.reviewRange == msg.reviewRange && m.headRev == msg.headRev {
+	if msg.base == m.detailView.base && msg.diffBase == m.detailView.diffBase && m.detailView.reviewRange == msg.reviewRange && m.detailView.headRev == msg.headRev {
 		// Same range names, but the refs behind them move: refresh the scans
 		// without dropping caches or restarting the review terminal.
-		m.commits, m.files = msg.commits, msg.files
-		if m.fileCursor >= len(m.files) {
-			m.fileCursor = 0
+		m.detailView.commits, m.detailView.files = msg.commits, msg.files
+		if m.detailView.fileCursor >= len(m.detailView.files) {
+			m.detailView.fileCursor = 0
 		}
 		return m, m.sync()
 	}
-	m.base, m.diffBase, m.headRev, m.reviewRange = msg.base, msg.diffBase, msg.headRev, msg.reviewRange
-	m.resetDetailCaches()
+	m.detailView.base, m.detailView.diffBase, m.detailView.headRev, m.detailView.reviewRange = msg.base, msg.diffBase, msg.headRev, msg.reviewRange
+	m.detailView.resetCaches()
 	if msg.eventsOK {
-		m.events = msg.events
-		m.invalidateConversation()
+		m.detailView.events = msg.events
+		m.detailView.invalidateConversation()
 	}
-	m.commits, m.files = msg.commits, msg.files
-	m.fileCursor = 0
-	return m, tea.Batch(m.restartReview(m.reviewSHA, msg.prURL), m.sync())
+	m.detailView.commits, m.detailView.files = msg.commits, msg.files
+	m.detailView.fileCursor = 0
+	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync())
 }
 
 func (m *Model) restartReview(sha, prURL string) tea.Cmd {
-	m.reviewSHA = sha
+	m.detailView.reviewSHA = sha
 	command := m.diffCommand
 	if sha != "" {
 		command = m.diffCommitCommand
@@ -143,8 +193,8 @@ func (m *Model) restartReview(sha, prURL string) tea.Cmd {
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
-	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.reviewRange, m.diffBase, m.head, m.headRev, prURL, sha, m.reviewedMarksPath))
-	m.focusDiff, m.focusExplorer = false, false
+	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, prURL, sha, m.detailView.reviewedMarksPath))
+	m.detailView.focusDiff, m.detailView.focusExplorer = false, false
 	m.layout()
 	if m.diffTerminal != nil {
 		return m.diffTerminal.Init()
@@ -170,7 +220,7 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 	if strings.HasPrefix(m.status, "diff display") {
 		m.status = ""
 	}
-	m.detailKey = ""
+	m.detailView.diffKey = ""
 	output := detail.raw
 	// shownKey identifies the viewport content without comparing the content
 	// itself: cache entries are immutable per key, so the key plus its
@@ -187,25 +237,25 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 	embedded := m.diffTerminal != nil && m.diffTerminal.Available()
 	if !embedded && m.diffDisplay != "" && detail.renderable && detail.raw != "" {
 		key := fmt.Sprintf("%s\x00%d\x00%s", m.diffDisplay, m.detail.Width, detail.key)
-		m.detailKey = key
-		if m.diffCache == nil {
-			m.diffCache = map[string]string{}
+		m.detailView.diffKey = key
+		if m.detailView.diffCache == nil {
+			m.detailView.diffCache = map[string]string{}
 		}
-		if m.diffPending == nil {
-			m.diffPending = map[string]bool{}
+		if m.detailView.diffPending == nil {
+			m.detailView.diffPending = map[string]bool{}
 		}
-		if cached, ok := m.diffCache[key]; ok {
+		if cached, ok := m.detailView.diffCache[key]; ok {
 			output = cached
 			shownKey = "rendered\x00" + key
-		} else if !m.diffPending[key] {
-			m.diffPending[key] = true
+		} else if !m.detailView.diffPending[key] {
+			m.detailView.diffPending[key] = true
 			cmd = renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width)
 		}
 	}
-	if shownKey == m.detailShownKey {
+	if shownKey == m.detailView.shownKey {
 		return cmd
 	}
-	m.detailShownKey = shownKey
+	m.detailView.shownKey = shownKey
 	m.detail.SetContent(output)
 	m.detail.GotoTop()
 	return cmd
@@ -230,20 +280,20 @@ func (m Model) renderReviewPane() string {
 		title, content := "Review", m.detail.View()
 		width := m.detail.Width + paneChromeW
 		height := m.detail.Height + paneChromeH
-		if m.reviewWide {
+		if m.detailView.reviewWide {
 			width = m.w
 			height = max(3, m.h-m.headerHeight()-footerLines)
 		}
-		if m.reviewSHA != "" {
-			title = "Review · " + m.reviewSHA
+		if m.detailView.reviewSHA != "" {
+			title = "Review · " + m.detailView.reviewSHA
 		}
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			content = m.diffTerminal.View(m.detail.Width, m.detail.Height)
 		}
-		return renderPane(title, content, width, height, m.focusDiff)
+		return renderPane(title, content, width, height, m.detailView.focusDiff)
 	}
 	title := "Files"
-	if file := m.selectedFile(); file != nil {
+	if file := m.detailView.selectedFile(); file != nil {
 		title = "Files · " + file.Path
 	}
 	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).
@@ -251,29 +301,29 @@ func (m Model) renderReviewPane() string {
 	divider := lipgloss.NewStyle().Padding(0, 1).Render(rule)
 	content := lipgloss.JoinHorizontal(lipgloss.Top, m.explorer.View(), divider, m.detail.View())
 	width := m.explorer.Width + dividerW + m.detail.Width + paneChromeW
-	return renderPane(title, content, width, m.explorer.Height+paneChromeH, m.focusDiff || m.focusExplorer)
+	return renderPane(title, content, width, m.explorer.Height+paneChromeH, m.detailView.focusDiff || m.detailView.focusExplorer)
 }
 
 func (m Model) buildFileExplorer() (string, int) {
-	conflicts := make(map[string]bool, len(m.mergeReadiness.ConflictFiles))
-	for _, path := range m.mergeReadiness.ConflictFiles {
+	conflicts := make(map[string]bool, len(m.detailView.mergeReadiness.ConflictFiles))
+	for _, path := range m.detailView.mergeReadiness.ConflictFiles {
 		conflicts[path] = true
 	}
-	if len(m.files) == 0 {
+	if len(m.detailView.files) == 0 {
 		return stMuted.Render("Files\n(no changed files)"), 0
 	}
-	title := stBold.Render("Files") + stMuted.Render(fmt.Sprintf(" · %d changed", len(m.files)))
+	title := stBold.Render("Files") + stMuted.Render(fmt.Sprintf(" · %d changed", len(m.detailView.files)))
 	if len(conflicts) > 0 {
 		title += " · " + stRedF.Render(fmt.Sprintf("⚠ %d conflicts", len(conflicts)))
 	}
 	lines := []string{title}
 	selectedLine := 0
-	for i, file := range m.files {
-		if i == m.fileCursor {
+	for i, file := range m.detailView.files {
+		if i == m.detailView.fileCursor {
 			selectedLine = len(lines)
 		}
 		mark := stMuted.Render("□")
-		if m.fileChecked(file) {
+		if m.detailView.fileChecked(file) {
 			mark = stGreenF.Render("✓")
 		}
 		path := file.Path
@@ -284,7 +334,7 @@ func (m Model) buildFileExplorer() (string, int) {
 		if conflicts[file.Path] || file.OldPath != "" && conflicts[file.OldPath] {
 			conflict = stRedF.Render("⚠ ")
 		}
-		line := selectionBar(i == m.fileCursor) + mark + " " + conflict + fileStatusStyle(file.Status).Render(file.Status) + " " + stFg.Render(path)
+		line := selectionBar(i == m.detailView.fileCursor) + mark + " " + conflict + fileStatusStyle(file.Status).Render(file.Status) + " " + stFg.Render(path)
 		lines = append(lines, ansi.Truncate(line, max(10, m.explorer.Width), "…"))
 	}
 	return strings.Join(lines, "\n"), selectedLine
@@ -306,32 +356,32 @@ func fileStatusStyle(status string) lipgloss.Style {
 	}
 }
 
-func (m Model) selectedFile() *git.ChangedFile {
-	if m.fileCursor < 0 || m.fileCursor >= len(m.files) {
+func (d detailModel) selectedFile() *git.ChangedFile {
+	if d.fileCursor < 0 || d.fileCursor >= len(d.files) {
 		return nil
 	}
-	return &m.files[m.fileCursor]
+	return &d.files[d.fileCursor]
 }
 
 // loadReviewedMarks switches the in-memory marks to the given review scope.
 // Each PR (or unpublished branch) owns its own persisted set, so moving
 // between PRs — stacked ones included — never carries progress across.
 func (m *Model) loadReviewedMarks(prNumber int, branch string) {
-	m.reviewedMarksPath = store.ReviewedMarksPath(m.root, prNumber, branch)
-	marks, err := store.LoadReviewedMarks(m.reviewedMarksPath)
+	m.detailView.reviewedMarksPath = store.ReviewedMarksPath(m.root, prNumber, branch)
+	marks, err := store.LoadReviewedMarks(m.detailView.reviewedMarksPath)
 	if err != nil {
 		m.status = "reviewed marks: " + err.Error()
 		marks = map[string]string{}
 	}
-	m.checkedFiles = marks
+	m.detailView.checkedFiles = marks
 }
 
 // fileChecked reports whether the file is still marked reviewed. Marks are
 // keyed by path and remember the diff fingerprint they were made against, so a
 // new commit only clears the files whose own diff changed — like GitHub's
 // "viewed" state, which a commit elsewhere in the PR leaves alone.
-func (m Model) fileChecked(file git.ChangedFile) bool {
-	mark, ok := m.checkedFiles[file.Path]
+func (d detailModel) fileChecked(file git.ChangedFile) bool {
+	mark, ok := d.checkedFiles[file.Path]
 	return ok && mark == file.Fingerprint
 }
 
@@ -340,22 +390,22 @@ func (m Model) fileExplorerMode() bool {
 }
 
 func (m *Model) toggleFileCheck() tea.Cmd {
-	file := m.selectedFile()
+	file := m.detailView.selectedFile()
 	if file == nil {
 		return nil
 	}
-	if m.checkedFiles == nil {
-		m.checkedFiles = map[string]string{}
+	if m.detailView.checkedFiles == nil {
+		m.detailView.checkedFiles = map[string]string{}
 	}
-	if m.fileChecked(*file) {
-		delete(m.checkedFiles, file.Path)
+	if m.detailView.fileChecked(*file) {
+		delete(m.detailView.checkedFiles, file.Path)
 		m.notice = "unchecked " + file.Path
 	} else {
-		m.checkedFiles[file.Path] = file.Fingerprint
+		m.detailView.checkedFiles[file.Path] = file.Fingerprint
 		m.notice = "checked " + file.Path
 	}
-	if m.reviewedMarksPath != "" {
-		if err := store.SaveReviewedMarks(m.reviewedMarksPath, m.checkedFiles); err != nil {
+	if m.detailView.reviewedMarksPath != "" {
+		if err := store.SaveReviewedMarks(m.detailView.reviewedMarksPath, m.detailView.checkedFiles); err != nil {
 			m.status = "reviewed marks: " + err.Error()
 		}
 	}
@@ -385,9 +435,9 @@ func (m Model) baseFreshnessHeader() string {
 		return ""
 	}
 	switch {
-	case m.mergeReadiness.Behind > 0:
-		return stAttention.Render(fmt.Sprintf("⚠ out of date · %d commit%s behind base", m.mergeReadiness.Behind, plural(m.mergeReadiness.Behind)))
-	case m.mergeReadinessErr != nil:
+	case m.detailView.mergeReadiness.Behind > 0:
+		return stAttention.Render(fmt.Sprintf("⚠ out of date · %d commit%s behind base", m.detailView.mergeReadiness.Behind, plural(m.detailView.mergeReadiness.Behind)))
+	case m.detailView.mergeReadinessErr != nil:
 		return stMuted.Render("base freshness unavailable")
 	default:
 		return stGreenF.Render("✓ up to date with base")
@@ -396,9 +446,9 @@ func (m Model) baseFreshnessHeader() string {
 
 func (m Model) buildConflicts() (string, int) {
 	header := m.baseFreshnessHeader()
-	if len(m.mergeReadiness.ConflictFiles) == 0 {
+	if len(m.detailView.mergeReadiness.ConflictFiles) == 0 {
 		conflicts := stGreenF.Render("✓ no conflicting files")
-		if m.mergeReadinessErr != nil {
+		if m.detailView.mergeReadinessErr != nil {
 			conflicts = stMuted.Render("(conflict status unavailable)")
 		}
 		if header == "" {
@@ -406,20 +456,20 @@ func (m Model) buildConflicts() (string, int) {
 		}
 		return header + "\n\n" + conflicts, 0
 	}
-	lines := make([]string, 0, len(m.mergeReadiness.ConflictFiles)+2)
+	lines := make([]string, 0, len(m.detailView.mergeReadiness.ConflictFiles)+2)
 	offset := 0
 	if header != "" {
 		lines = append(lines, header, "")
 		offset = 2
 	}
-	for i, path := range m.mergeReadiness.ConflictFiles {
+	for i, path := range m.detailView.mergeReadiness.ConflictFiles {
 		line := stRedF.Render("⚠ ") + stFg.Render(path)
-		if i == m.cursors[conflictsTab] {
+		if i == m.detailView.cursors[conflictsTab] {
 			line = highlightSelectedBg(line, m.list.Width)
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n"), m.cursors[conflictsTab] + offset
+	return strings.Join(lines, "\n"), m.detailView.cursors[conflictsTab] + offset
 }
 
 func (m Model) buildChecks() (string, int) {
@@ -469,12 +519,12 @@ func (m Model) buildChecks() (string, int) {
 		if dur := checkDuration(check); dur != "" {
 			line += stMuted.Render(" · " + dur)
 		}
-		if i == m.cursors[checksTab] {
+		if i == m.detailView.cursors[checksTab] {
 			line = highlightSelectedBg(line, m.list.Width)
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n"), checksStart + m.cursors[checksTab]
+	return strings.Join(lines, "\n"), checksStart + m.detailView.cursors[checksTab]
 }
 
 func checkDuration(check gh.PRCheck) string {
@@ -509,32 +559,32 @@ func plural(n int) string {
 }
 
 func (m Model) buildCommits() (string, int) {
-	if len(m.commits) == 0 {
-		return stMuted.Render("(no commits in " + m.base + "..HEAD)"), 0
+	if len(m.detailView.commits) == 0 {
+		return stMuted.Render("(no commits in " + m.detailView.base + "..HEAD)"), 0
 	}
-	lines := make([]string, 0, len(m.commits))
+	lines := make([]string, 0, len(m.detailView.commits))
 	ciStates := m.commitCIStates()
-	for i, c := range m.commits {
+	for i, c := range m.detailView.commits {
 		icon, style := "●", stMuted
 		if m.cache.PR != nil {
 			icon, _, style = commitCIStatus(ciStates[c.SHA])
 		}
 		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
-		if i == m.cursors[commitsTab] {
+		if i == m.detailView.cursors[commitsTab] {
 			line = highlightSelectedBg(line, m.list.Width)
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n"), m.cursors[commitsTab]
+	return strings.Join(lines, "\n"), m.detailView.cursors[commitsTab]
 }
 
 func (m Model) commitCIStates() map[string]string {
-	states := make(map[string]string, len(m.commits))
+	states := make(map[string]string, len(m.detailView.commits))
 	if m.cache.PR == nil {
 		return states
 	}
 	lengths := map[int]bool{}
-	for _, commit := range m.commits {
+	for _, commit := range m.detailView.commits {
 		lengths[len(commit.SHA)] = true
 	}
 	for _, commit := range m.cache.PR.Commits {
@@ -571,19 +621,19 @@ type rawDetailLoaded struct {
 // gather it: the git subprocess used to run synchronously on every cache miss,
 // which happens per keystroke while browsing files or commits.
 func (m *Model) cachedRawDetail(key string, load func() string) (string, bool, tea.Cmd) {
-	if m.rawDetailCache == nil {
-		m.rawDetailCache = map[string]string{}
+	if m.detailView.rawCache == nil {
+		m.detailView.rawCache = map[string]string{}
 	}
-	if raw, ok := m.rawDetailCache[key]; ok {
+	if raw, ok := m.detailView.rawCache[key]; ok {
 		return raw, true, nil
 	}
-	if m.rawPending == nil {
-		m.rawPending = map[string]bool{}
+	if m.detailView.rawPending == nil {
+		m.detailView.rawPending = map[string]bool{}
 	}
-	if m.rawPending[key] {
+	if m.detailView.rawPending[key] {
 		return "", false, nil
 	}
-	m.rawPending[key] = true
+	m.detailView.rawPending[key] = true
 	generation := m.targetGeneration
 	return "", false, func() tea.Msg {
 		return rawDetailLoaded{generation: generation, key: key, raw: load()}
@@ -591,29 +641,29 @@ func (m *Model) cachedRawDetail(key string, load func() string) (string, bool, t
 }
 
 func (m Model) handleRawDetailLoaded(msg rawDetailLoaded) (Model, tea.Cmd) {
-	// rawPending is the ticket: resetDetailCaches clears it, so results
+	// rawPending is the ticket: resetCaches clears it, so results
 	// computed against a discarded review range are dropped and the next
 	// sync re-dispatches against the fresh state.
-	if msg.generation != m.targetGeneration || !m.rawPending[msg.key] {
+	if msg.generation != m.targetGeneration || !m.detailView.rawPending[msg.key] {
 		return m, nil
 	}
-	delete(m.rawPending, msg.key)
-	m.rawDetailCache[msg.key] = msg.raw
+	delete(m.detailView.rawPending, msg.key)
+	m.detailView.rawCache[msg.key] = msg.raw
 	return m, m.sync()
 }
 
 func (m *Model) loadDetail() (detailContent, tea.Cmd) {
-	if m.reviewSHA != "" {
-		return m.loadCommitDetail(m.reviewSHA)
+	if m.detailView.reviewSHA != "" {
+		return m.loadCommitDetail(m.detailView.reviewSHA)
 	}
 	if m.fileExplorerMode() {
-		if file := m.selectedFile(); file != nil {
+		if file := m.detailView.selectedFile(); file != nil {
 			paths := []string{file.Path}
 			if file.OldPath != "" {
 				paths = append(paths, file.OldPath)
 			}
-			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.diffBase, m.headRev, file.Status, file.OldPath, file.Path)
-			d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev, paths...) })
+			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.detailView.diffBase, m.detailView.headRev, file.Status, file.OldPath, file.Path)
+			d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev, paths...) })
 			if d != "" {
 				return detailContent{key: key, raw: d, renderable: true}, nil
 			}
@@ -623,15 +673,15 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 		}
 		return detailContent{raw: stMuted.Render("(no changes in selected file)")}, nil
 	}
-	key := "range:" + m.diffBase + "..." + m.headRev
-	d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.diffBase, m.headRev) })
+	key := "range:" + m.detailView.diffBase + "..." + m.detailView.headRev
+	d, cached, cmd := m.cachedRawDetail(key, func() string { return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev) })
 	if d != "" {
 		return detailContent{key: key, raw: d, renderable: true}, nil
 	}
 	if !cached {
 		return detailContent{raw: stMuted.Render("(loading diff…)")}, cmd
 	}
-	return detailContent{raw: stMuted.Render("(no changes in " + m.base + "..." + m.headRev + ")")}, nil
+	return detailContent{raw: stMuted.Render("(no changes in " + m.detailView.base + "..." + m.detailView.headRev + ")")}, nil
 }
 
 func (m *Model) loadCommitDetail(sha string) (detailContent, tea.Cmd) {

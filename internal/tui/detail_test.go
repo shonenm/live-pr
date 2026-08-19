@@ -31,7 +31,7 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	}
 	t.Setenv("PATH", dir)
 	m := testModel()
-	m.screen, m.base, m.headRev = detailScreen, "main", "HEAD"
+	m.screen, m.detailView.base, m.detailView.headRev = detailScreen, "main", "HEAD"
 	m.diffCommand, m.diffTerminal = "", nil
 
 	// A cache miss dispatches the git work as a Cmd instead of blocking.
@@ -52,7 +52,7 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	if second.raw != "cached diff" || hitCmd != nil || string(calls) != "1" {
 		t.Fatalf("detail = %#v cmd=%v calls=%q", second, hitCmd, calls)
 	}
-	m.resetDetailCaches()
+	m.detailView.resetCaches()
 	_, missCmd := m.loadDetail()
 	if missCmd == nil {
 		t.Fatal("cache reset did not re-dispatch")
@@ -69,8 +69,8 @@ func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
 	m.screen = detailScreen
 	m.diffCommand = ""
 	m.diffTerminal = nil
-	m.base, m.headRev = "main", "HEAD"
-	m.files = []git.ChangedFile{
+	m.detailView.base, m.detailView.headRev = "main", "HEAD"
+	m.detailView.files = []git.ChangedFile{
 		{Status: "M", Path: "internal/tui/tui.go"},
 		{Status: "A", Path: "internal/tui/explorer.go"},
 	}
@@ -100,18 +100,18 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 	m.screen = detailScreen
 	m.diffCommand = ""
 	m.ready = true
-	m.files = []git.ChangedFile{
+	m.detailView.files = []git.ChangedFile{
 		{Status: "M", Path: "internal/tui/tui.go"},
 		{Status: "A", Path: "internal/tui/explorer.go"},
 	}
-	m.focusExplorer = true
+	m.detailView.focusExplorer = true
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	m = u.(Model)
-	if m.fileCursor != 1 {
-		t.Fatalf("file cursor = %d, want 1", m.fileCursor)
+	if m.detailView.fileCursor != 1 {
+		t.Fatalf("file cursor = %d, want 1", m.detailView.fileCursor)
 	}
 
-	m.fileCursor = 0
+	m.detailView.fileCursor = 0
 	m.detail.Width, m.detail.Height = 40, 3
 	m.detail.SetContent(strings.Repeat("line\n", 20))
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
@@ -121,20 +121,20 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
 	m = u.(Model)
-	if m.fileCursor != 1 {
-		t.Fatalf("G file cursor = %d, want 1", m.fileCursor)
+	if m.detailView.fileCursor != 1 {
+		t.Fatalf("G file cursor = %d, want 1", m.detailView.fileCursor)
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
 	m = u.(Model)
-	if m.fileCursor != 0 {
-		t.Fatalf("gg file cursor = %d, want 0", m.fileCursor)
+	if m.detailView.fileCursor != 0 {
+		t.Fatalf("gg file cursor = %d, want 0", m.detailView.fileCursor)
 	}
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
-	if !m.fileChecked(m.files[m.fileCursor]) {
+	if !m.detailView.fileChecked(m.detailView.files[m.detailView.fileCursor]) {
 		t.Fatal("c did not check the selected file from Diff")
 	}
 }
@@ -144,8 +144,8 @@ func TestRemotePRHeaderAndExplorerShowMergeReadiness(t *testing.T) {
 	m.w = 180
 	m.remote = true
 	m.cache.PR = &gh.PR{Number: 7, State: "OPEN"}
-	m.mergeReadiness = git.MergeReadiness{Behind: 3, ConflictFiles: []string{"conflict.go"}}
-	m.files = []git.ChangedFile{{Status: "M", Path: "conflict.go"}, {Status: "A", Path: "clean.go"}}
+	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 3, ConflictFiles: []string{"conflict.go"}}
+	m.detailView.files = []git.ChangedFile{{Status: "M", Path: "conflict.go"}, {Status: "A", Path: "clean.go"}}
 	m.explorer.Width = 80
 	header := ansi.Strip(m.renderHeader())
 	if !strings.Contains(header, "3 behind") || !strings.Contains(header, "1 conflict files") {
@@ -161,7 +161,7 @@ func TestRemotePRHeaderAndExplorerShowMergeReadiness(t *testing.T) {
 func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
-	m.mergeReadiness = git.MergeReadiness{Behind: 3, ConflictFiles: []string{"conflict.go", "nested/other.go"}}
+	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 3, ConflictFiles: []string{"conflict.go", "nested/other.go"}}
 	m.cache.PR = &gh.PR{Checks: []gh.PRCheck{
 		{Name: "unit", WorkflowName: "CI", Status: "COMPLETED", Conclusion: "SUCCESS"},
 		{Context: "lint", Status: "IN_PROGRESS"},
@@ -173,8 +173,8 @@ func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
 	m = updated.(Model)
 	plain := ansi.Strip(m.View())
-	if m.active != conflictsTab || !strings.Contains(plain, "Conflicts · 2") || !strings.Contains(plain, "⚠ conflict.go") {
-		t.Fatalf("conflict view = active:%v view:%q", m.active, plain)
+	if m.detailView.active != conflictsTab || !strings.Contains(plain, "Conflicts · 2") || !strings.Contains(plain, "⚠ conflict.go") {
+		t.Fatalf("conflict view = active:%v view:%q", m.detailView.active, plain)
 	}
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
@@ -188,8 +188,8 @@ func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(Model)
-	if m.active != conversationTab {
-		t.Fatalf("Esc active = %v, want Conversation", m.active)
+	if m.detailView.active != conversationTab {
+		t.Fatalf("Esc active = %v, want Conversation", m.detailView.active)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestGitHubConflictingKeepsConflictView(t *testing.T) {
 	m := testModel()
 	m.screen, m.remote = detailScreen, true
 	m.cache.PR = &gh.PR{Number: 8, Mergeable: "CONFLICTING"}
-	m.mergeReadiness, m.mergeReadinessErr = applyGitHubConflictFallback(git.MergeReadiness{}, nil, *m.cache.PR)
+	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(git.MergeReadiness{}, nil, *m.cache.PR)
 	out, _ := m.buildConflicts()
 	if !strings.Contains(ansi.Strip(out), "GitHub reports conflicts") {
 		t.Fatalf("conflicting PR hid conflicts: %q", ansi.Strip(out))
@@ -211,7 +211,7 @@ func TestGitHubConflictingKeepsConflictView(t *testing.T) {
 
 func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
 	m := testModel()
-	m.commits = []git.Commit{{SHA: "abc12341", Subject: "first"}, {SHA: "abc12342", Subject: "second"}}
+	m.detailView.commits = []git.Commit{{SHA: "abc12341", Subject: "first"}, {SHA: "abc12342", Subject: "second"}}
 	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
 		{OID: "abc1234100000000000000000000000000000000", CheckRollupState: "SUCCESS"},
 		{OID: "abc1234200000000000000000000000000000000", CheckRollupState: "FAILURE"},
@@ -226,8 +226,8 @@ func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
-	if m.active != commitsTab || !strings.Contains(ansi.Strip(m.View()), "Commits · 2") {
-		t.Fatalf("remote c did not open commit list: active=%v view=%q", m.active, ansi.Strip(m.View()))
+	if m.detailView.active != commitsTab || !strings.Contains(ansi.Strip(m.View()), "Commits · 2") {
+		t.Fatalf("remote c did not open commit list: active=%v view=%q", m.detailView.active, ansi.Strip(m.View()))
 	}
 }
 
@@ -238,19 +238,19 @@ func TestCommitPickerSelectsCommitAndEscRestoresBranchReview(t *testing.T) {
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 	m = u.(Model)
-	if m.active != commitsTab || !strings.Contains(m.View(), "feat: x") {
+	if m.detailView.active != commitsTab || !strings.Contains(m.View(), "feat: x") {
 		t.Fatalf("c should replace Conversation with the commit picker")
 	}
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
-	if m.reviewSHA != "abc1234" || !strings.Contains(ansi.Strip(m.renderHeader()), "commit abc1234") {
-		t.Fatalf("Enter did not select commit review: sha=%q", m.reviewSHA)
+	if m.detailView.reviewSHA != "abc1234" || !strings.Contains(ansi.Strip(m.renderHeader()), "commit abc1234") {
+		t.Fatalf("Enter did not select commit review: sha=%q", m.detailView.reviewSHA)
 	}
 
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(Model)
-	if m.active != conversationTab || m.reviewSHA != "" || m.cursors[conversationTab] != 0 {
+	if m.detailView.active != conversationTab || m.detailView.reviewSHA != "" || m.detailView.cursors[conversationTab] != 0 {
 		t.Fatalf("Esc should restore branch review and the Conversation cursor")
 	}
 }
@@ -266,7 +266,7 @@ func TestCommitPickerCancelKeepsBranchTerminal(t *testing.T) {
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(Model)
 	defer m.close()
-	if m.active != conversationTab || m.diffTerminal != branchTerminal || m.reviewSHA != "" {
+	if m.detailView.active != conversationTab || m.diffTerminal != branchTerminal || m.detailView.reviewSHA != "" {
 		t.Fatal("canceling an unselected picker restarted branch review")
 	}
 }
@@ -287,10 +287,10 @@ func TestReloadLocalConversationReadsExternalCLIChanges(t *testing.T) {
 	}
 	m := testModel()
 	m.root, m.currentBranch, m.timelinePath = root, "feature", st.Timeline()
-	m.events = nil
+	m.detailView.events = nil
 	m.reloadLocalConversation()
-	if len(m.events) != 1 || m.events[0].ID != created.ID || m.title != "Final title" {
-		t.Fatalf("reloaded local state = title %q events %+v", m.title, m.events)
+	if len(m.detailView.events) != 1 || m.detailView.events[0].ID != created.ID || m.detailView.title != "Final title" {
+		t.Fatalf("reloaded local state = title %q events %+v", m.detailView.title, m.detailView.events)
 	}
 	items := m.conversationItems()
 	if len(items) != 2 || items[0].summary == nil || items[1].event == nil {
@@ -341,7 +341,7 @@ func TestConfiguredDiffDisplayIsAsyncCachedAndRejectsStaleResults(t *testing.T) 
 	}
 
 	m.detail.SetContent("current")
-	m.detailKey = "current-key"
+	m.detailView.diffKey = "current-key"
 	u, _ = m.Update(diffRendered{key: "stale-key", output: "stale", raw: "raw", err: errors.New("diff display stale failure")})
 	m = u.(Model)
 	if strings.Contains(m.detail.View(), "stale") || strings.Contains(m.status, "stale failure") {
@@ -423,14 +423,14 @@ func TestCommitSelectionStartsEmbeddedCommitCommandAndFocusesReview(t *testing.T
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	defer m.close()
-	if cmd == nil || m.reviewSHA != "abc1234" || !m.focusDiff || m.diffTerminal == nil {
-		t.Fatalf("commit selection did not start/focus embedded review: sha=%q focus=%v terminal=%v", m.reviewSHA, m.focusDiff, m.diffTerminal != nil)
+	if cmd == nil || m.detailView.reviewSHA != "abc1234" || !m.detailView.focusDiff || m.diffTerminal == nil {
+		t.Fatalf("commit selection did not start/focus embedded review: sha=%q focus=%v terminal=%v", m.detailView.reviewSHA, m.detailView.focusDiff, m.diffTerminal != nil)
 	}
 }
 
 func TestConflictsViewShowsBehindCount(t *testing.T) {
 	m := testModel()
-	m.mergeReadiness = git.MergeReadiness{Behind: 3}
+	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 3}
 	// No conflicting files, but behind base: the count must still show.
 	out, _ := m.buildConflicts()
 	plain := ansi.Strip(out)
@@ -438,7 +438,7 @@ func TestConflictsViewShowsBehindCount(t *testing.T) {
 		t.Fatalf("conflicts view = %q", plain)
 	}
 	// With conflicts, the behind header still leads.
-	m.mergeReadiness = git.MergeReadiness{Behind: 1, ConflictFiles: []string{"a.go"}}
+	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 1, ConflictFiles: []string{"a.go"}}
 	out, _ = m.buildConflicts()
 	plain = ansi.Strip(out)
 	if !strings.Contains(plain, "1 commit behind base") || !strings.Contains(plain, "a.go") {
@@ -451,31 +451,31 @@ func TestConflictsViewShowsBehindCount(t *testing.T) {
 // by path and validated against the file's diff fingerprint.
 func TestReviewedMarksSurviveCommitsThatTouchOtherFiles(t *testing.T) {
 	m := testModel()
-	m.files = []git.ChangedFile{
+	m.detailView.files = []git.ChangedFile{
 		{Status: "M", Path: "kept.go", Fingerprint: "aaa:bbb"},
 		{Status: "M", Path: "edited.go", Fingerprint: "ccc:ddd"},
 	}
-	m.fileCursor = 0
+	m.detailView.fileCursor = 0
 	m.toggleFileCheck()
-	m.fileCursor = 1
+	m.detailView.fileCursor = 1
 	m.toggleFileCheck()
-	for _, file := range m.files {
-		if !m.fileChecked(file) {
+	for _, file := range m.detailView.files {
+		if !m.detailView.fileChecked(file) {
 			t.Fatalf("%s was not checked", file.Path)
 		}
 	}
 
 	// A commit lands: the range moves and edited.go's diff changes, while
 	// kept.go's diff is untouched.
-	m.diffBase, m.headRev = "newbase", "newhead"
-	m.files = []git.ChangedFile{
+	m.detailView.diffBase, m.detailView.headRev = "newbase", "newhead"
+	m.detailView.files = []git.ChangedFile{
 		{Status: "M", Path: "kept.go", Fingerprint: "aaa:bbb"},
 		{Status: "M", Path: "edited.go", Fingerprint: "ccc:eee"},
 	}
-	if !m.fileChecked(m.files[0]) {
+	if !m.detailView.fileChecked(m.detailView.files[0]) {
 		t.Error("kept.go lost its reviewed mark even though its diff is unchanged")
 	}
-	if m.fileChecked(m.files[1]) {
+	if m.detailView.fileChecked(m.detailView.files[1]) {
 		t.Error("edited.go stayed reviewed even though its diff changed")
 	}
 }
@@ -486,24 +486,24 @@ func TestReviewedMarksAreScopedPerPR(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	m := testModel()
 	m.root = t.TempDir()
-	m.files = []git.ChangedFile{{Status: "M", Path: "shared.go", Fingerprint: "aaa:bbb"}}
+	m.detailView.files = []git.ChangedFile{{Status: "M", Path: "shared.go", Fingerprint: "aaa:bbb"}}
 
 	// PR #1: check the file; the mark is persisted to #1's file.
 	m.loadReviewedMarks(1, "feature")
 	m.toggleFileCheck()
-	if !m.fileChecked(m.files[0]) {
+	if !m.detailView.fileChecked(m.detailView.files[0]) {
 		t.Fatal("mark not set for PR #1")
 	}
 
 	// Switching to stacked PR #2 with the same path+fingerprint: clean slate.
 	m.loadReviewedMarks(2, "feature")
-	if m.fileChecked(m.files[0]) {
+	if m.detailView.fileChecked(m.detailView.files[0]) {
 		t.Fatal("PR #1's mark leaked into PR #2")
 	}
 
 	// Back to PR #1: the persisted mark is restored.
 	m.loadReviewedMarks(1, "feature")
-	if !m.fileChecked(m.files[0]) {
+	if !m.detailView.fileChecked(m.detailView.files[0]) {
 		t.Fatal("PR #1's mark was lost after switching away")
 	}
 }
@@ -512,16 +512,16 @@ func TestReviewedMarksPersistAcrossSessions(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	m := testModel()
 	m.root = t.TempDir()
-	m.files = []git.ChangedFile{{Status: "M", Path: "a.go", Fingerprint: "f1"}}
+	m.detailView.files = []git.ChangedFile{{Status: "M", Path: "a.go", Fingerprint: "f1"}}
 	m.loadReviewedMarks(7, "feature")
 	m.toggleFileCheck()
 
 	// A fresh model (new session) sees the same marks from disk.
 	fresh := testModel()
 	fresh.root = m.root
-	fresh.files = m.files
+	fresh.detailView.files = m.detailView.files
 	fresh.loadReviewedMarks(7, "feature")
-	if !fresh.fileChecked(fresh.files[0]) {
+	if !fresh.detailView.fileChecked(fresh.detailView.files[0]) {
 		t.Fatal("mark did not survive a session restart")
 	}
 }
@@ -529,17 +529,17 @@ func TestReviewedMarksPersistAcrossSessions(t *testing.T) {
 func TestBaseResolvedAppliesOnlyCurrentGeneration(t *testing.T) {
 	m := testModel()
 	m.targetGeneration = 3
-	m.base, m.diffBase, m.headRev, m.reviewRange = "main", "old-base", "HEAD", "old-base"
+	m.detailView.base, m.detailView.diffBase, m.detailView.headRev, m.detailView.reviewRange = "main", "old-base", "HEAD", "old-base"
 
 	// Stale generation: dropped.
 	u, _ := m.Update(baseResolved{generation: 2, base: "main", diffBase: "new-base", headRev: "HEAD", reviewRange: "new-base"})
-	if u.(Model).diffBase != "old-base" {
-		t.Fatalf("stale baseResolved applied: %q", u.(Model).diffBase)
+	if u.(Model).detailView.diffBase != "old-base" {
+		t.Fatalf("stale baseResolved applied: %q", u.(Model).detailView.diffBase)
 	}
 
 	// Unchanged range: no-op.
 	u, _ = m.Update(baseResolved{generation: 3, base: "main", diffBase: "old-base", headRev: "HEAD", reviewRange: "old-base"})
-	if u.(Model).fileCursor != 0 && u.(Model).diffBase != "old-base" {
+	if u.(Model).detailView.fileCursor != 0 && u.(Model).detailView.diffBase != "old-base" {
 		t.Fatal("unchanged range should be a no-op")
 	}
 
@@ -549,17 +549,17 @@ func TestBaseResolvedAppliesOnlyCurrentGeneration(t *testing.T) {
 		commits: []git.Commit{{SHA: "abc"}}, files: []git.ChangedFile{{Status: "M", Path: "x.go"}},
 	})
 	m = u.(Model)
-	if m.diffBase != "new-base" || m.reviewRange != "new-base" || len(m.commits) != 1 || len(m.files) != 1 {
-		t.Fatalf("baseResolved not applied: diffBase=%q commits=%d files=%d", m.diffBase, len(m.commits), len(m.files))
+	if m.detailView.diffBase != "new-base" || m.detailView.reviewRange != "new-base" || len(m.detailView.commits) != 1 || len(m.detailView.files) != 1 {
+		t.Fatalf("baseResolved not applied: diffBase=%q commits=%d files=%d", m.detailView.diffBase, len(m.detailView.commits), len(m.detailView.files))
 	}
 }
 
 func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 	m := testModel()
 	m.targetGeneration = 3
-	m.base, m.diffBase, m.headRev, m.reviewRange = "main", "origin/main", "HEAD", "origin/main"
-	m.mergeReadiness = git.MergeReadiness{Behind: 0}
-	m.commits = []git.Commit{{SHA: "old"}}
+	m.detailView.base, m.detailView.diffBase, m.detailView.headRev, m.detailView.reviewRange = "main", "origin/main", "HEAD", "origin/main"
+	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 0}
+	m.detailView.commits = []git.Commit{{SHA: "old"}}
 
 	// The range string is unchanged, but the base ref moved underneath it:
 	// behind count, conflicts, and the scans must still refresh.
@@ -571,11 +571,11 @@ func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 		readinessOK: true,
 	})
 	m = u.(Model)
-	if m.mergeReadiness.Behind != 4 || len(m.mergeReadiness.ConflictFiles) != 1 {
-		t.Fatalf("stale readiness kept: %#v", m.mergeReadiness)
+	if m.detailView.mergeReadiness.Behind != 4 || len(m.detailView.mergeReadiness.ConflictFiles) != 1 {
+		t.Fatalf("stale readiness kept: %#v", m.detailView.mergeReadiness)
 	}
-	if len(m.commits) != 2 || len(m.files) != 1 {
-		t.Fatalf("stale scans kept: commits=%d files=%d", len(m.commits), len(m.files))
+	if len(m.detailView.commits) != 2 || len(m.detailView.files) != 1 {
+		t.Fatalf("stale scans kept: commits=%d files=%d", len(m.detailView.commits), len(m.detailView.files))
 	}
 	if m.diffTerminal != nil {
 		t.Fatal("unchanged range must not restart the review terminal")
