@@ -180,6 +180,22 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 
 }
 
+// navigatorPRPosition returns number's position in navigator.PRs, keeping a
+// lazy number→index cache. The cached position is verified before use and the
+// cache rebuilt on any miss, so the upsert/prune sites that reshape
+// navigator.PRs never have to invalidate it.
+func (m *Model) navigatorPRPosition(number int) (int, bool) {
+	if i, ok := m.navigatorPRIndex[number]; ok && i < len(m.navigator.PRs) && m.navigator.PRs[i].Number == number {
+		return i, true
+	}
+	m.navigatorPRIndex = make(map[int]int, len(m.navigator.PRs))
+	for i := range m.navigator.PRs {
+		m.navigatorPRIndex[m.navigator.PRs[i].Number] = i
+	}
+	i, ok := m.navigatorPRIndex[number]
+	return i, ok
+}
+
 func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	// Clear the in-flight ticket even for stale results: an orphaned entry
 	// kept the spinner alive and blocked ensureSelectedPRPreview forever.
@@ -199,31 +215,18 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 		m.status = fmt.Sprintf("PR #%d preview: %v", msg.number, msg.err)
 		return m, nil
 	}
-	for i := range m.navigator.PRs {
-		if m.navigator.PRs[i].Number == msg.number {
-			msg.pr.ViewerReviewRequested = m.navigator.PRs[i].ViewerReviewRequested
-			m.navigator.PRs[i] = msg.pr
-			break
-		}
+	if i, ok := m.navigatorPRPosition(msg.number); ok {
+		msg.pr.ViewerReviewRequested = m.navigator.PRs[i].ViewerReviewRequested
+		m.navigator.PRs[i] = msg.pr
 	}
-	// A PR number lives on exactly one page, so stop scanning once found.
-	// page.prs shares its backing array with the map entry, so the in-place
-	// write is visible without reassigning m.prList.pages[key].
-	for _, page := range m.prList.pages {
-		done := false
-		for i := range page.prs {
-			if page.prs[i].Number == msg.number {
-				c := msg.pr
-				c.ViewerReviewRequested = page.prs[i].ViewerReviewRequested
-				page.prs[i] = c
-				done = true
-				break
-			}
-		}
-		if done {
-			break
-		}
+	if row := m.prList.pagePR(msg.number); row != nil {
+		c := msg.pr
+		c.ViewerReviewRequested = row.ViewerReviewRequested
+		*row = c
 	}
+	// The full recompute must stay: preview loads refresh fields the local
+	// filters read (ci:, merge:, label:, draft:, state, title haystack) and
+	// the refs stack building keys on, so filtered/open can genuinely change.
 	m.applyPRFilters(selectedNumber)
 	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prList.generation, []gh.PR{msg.pr})}
 	// Only persist when the visible row's preview loads; background prefetches

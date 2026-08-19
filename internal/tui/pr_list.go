@@ -41,11 +41,42 @@ type prListModel struct {
 	filterSelectionBeforeEdit int
 	filterEditing             bool
 	stacks                    []prStack
+	pageIndex                 map[int]prPageRef
 	rowCache                  map[prRowCacheKey][]string
 	collapsedStacks           map[string]bool
 	cursor                    int
 	refreshing                bool
 	generation                uint64
+}
+
+// prPageRef locates one PR inside prListModel.pages by page key and position.
+type prPageRef struct {
+	key string
+	idx int
+}
+
+// pagePR returns a pointer to the pages entry holding number, keeping a lazy
+// number→position index so per-PR updates avoid rescanning every page. The
+// cached ref is verified before use and the index rebuilt on any miss, so the
+// many sites that replace or reset pages never have to invalidate it. The
+// pointer aliases the page's backing array: writes through it are visible
+// without reassigning pages[key].
+func (l *prListModel) pagePR(number int) *gh.PR {
+	if ref, ok := l.pageIndex[number]; ok {
+		if page, exists := l.pages[ref.key]; exists && ref.idx < len(page.prs) && page.prs[ref.idx].Number == number {
+			return &page.prs[ref.idx]
+		}
+	}
+	l.pageIndex = map[int]prPageRef{}
+	for key, page := range l.pages {
+		for i := range page.prs {
+			l.pageIndex[page.prs[i].Number] = prPageRef{key: key, idx: i}
+		}
+	}
+	if ref, ok := l.pageIndex[number]; ok {
+		return &l.pages[ref.key].prs[ref.idx]
+	}
+	return nil
 }
 
 func (s prListState) String() string {
