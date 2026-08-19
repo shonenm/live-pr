@@ -109,6 +109,7 @@ func BenchmarkPRListRows(b *testing.B) {
 	for _, size := range []int{25, 250, 2500} {
 		b.Run(fmt.Sprintf("rows=%d/cached", size), func(b *testing.B) {
 			m := benchmarkPRModel(size)
+			m.list.Width, m.list.Height = 120, 40
 			_, _ = m.buildPRListRows()
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -118,6 +119,7 @@ func BenchmarkPRListRows(b *testing.B) {
 		})
 		b.Run(fmt.Sprintf("rows=%d/cold", size), func(b *testing.B) {
 			m := benchmarkPRModel(size)
+			m.list.Width, m.list.Height = 120, 40
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
