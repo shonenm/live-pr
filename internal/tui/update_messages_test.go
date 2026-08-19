@@ -80,7 +80,7 @@ func TestMergeAndCloseApplyWithoutAReload(t *testing.T) {
 
 func TestCIPollDoesNotRevertAMergedPR(t *testing.T) {
 	m := testModel()
-	m.screen, m.active = detailScreen, conversationTab
+	m.screen, m.detailView.active = detailScreen, conversationTab
 	m.currentBranch = "feature"
 	m.navigator = gh.NewNavigatorCache()
 	stale := gh.PR{Number: 12, State: "OPEN", HeadRefName: "feature", HeadRefOID: "abc",
@@ -341,11 +341,11 @@ func TestCheckoutReloadEpochRejectsPreCheckoutMessages(t *testing.T) {
 	if len(next.prList.open) != 1 || next.prList.open[0].Number != 2 {
 		t.Fatalf("pre-checkout PR list result replaced list: %#v", next.prList.open)
 	}
-	next.diffCache = map[string]string{"same-range": "new branch"}
+	next.detailView.diffCache = map[string]string{"same-range": "new branch"}
 	u, _ = next.Update(diffRendered{generation: 7, key: "same-range", output: "old branch"})
 	next = u.(Model)
-	if next.diffCache["same-range"] != "new branch" {
-		t.Fatalf("pre-checkout diff replaced new branch: %#v", next.diffCache)
+	if next.detailView.diffCache["same-range"] != "new branch" {
+		t.Fatalf("pre-checkout diff replaced new branch: %#v", next.detailView.diffCache)
 	}
 }
 
@@ -420,13 +420,13 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	if cmd == nil || m.diffTerminal == nil || m.refreshing || len(m.cache.Comments) != 1 {
 		t.Fatalf("remote load incomplete: terminal=%v refreshing=%v cache=%#v", m.diffTerminal, m.refreshing, m.cache)
 	}
-	if m.diffBase != "historical-base" || m.reviewRange != "historical-base...HEAD" {
-		t.Fatalf("remote review range = base:%q range:%q", m.diffBase, m.reviewRange)
+	if m.detailView.diffBase != "historical-base" || m.detailView.reviewRange != "historical-base...HEAD" {
+		t.Fatalf("remote review range = base:%q range:%q", m.detailView.diffBase, m.detailView.reviewRange)
 	}
 	// The handler applies the ranges gathered by fetchRemotePR instead of
 	// spawning git itself.
-	if len(m.commits) != 1 || len(m.files) != 1 || m.files[0].Path != "a.go" {
-		t.Fatalf("remote ranges not applied: commits=%d files=%#v", len(m.commits), m.files)
+	if len(m.detailView.commits) != 1 || len(m.detailView.files) != 1 || m.detailView.files[0].Path != "a.go" {
+		t.Fatalf("remote ranges not applied: commits=%d files=%#v", len(m.detailView.commits), m.detailView.files)
 	}
 	// The snapshot lands in memory synchronously; the disk write rides an
 	// async Cmd so the Update goroutine never blocks on MarshalIndent + IO.
@@ -467,7 +467,7 @@ func TestEmptyLocalPRStaysOpenAfterGitHubLookup(t *testing.T) {
 	m.screen = detailScreen
 	m.root, m.currentBranch, m.defaultBranch = root, "feature", "main"
 	m.timelinePath, m.cachePath = st.Timeline(), st.GitHubCache()
-	m.files = nil
+	m.detailView.files = nil
 
 	u, _ := m.Update(githubRefreshed{err: gh.ErrPRNotFound})
 	m = u.(Model)
@@ -479,7 +479,7 @@ func TestEmptyLocalPRStaysOpenAfterGitHubLookup(t *testing.T) {
 func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 	m := testModel()
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
-	m.cache = gh.NewCache(m.head)
+	m.cache = gh.NewCache(m.detailView.head)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	m.cache.LastPublishedManagedBodyHash = "published-hash"
@@ -567,11 +567,11 @@ func TestCIPollUpdatesHeadCommitActivity(t *testing.T) {
 	m := testModel()
 	m.screen, m.targetGeneration = detailScreen, 2
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true, Commits: []gh.PRCommit{{OID: "head", CheckRollupState: "PENDING"}}}
-	m.conversationDirty = false
+	m.detailView.conversationDirty = false
 	u, _ := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "head", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
 	m = u.(Model)
-	if m.cache.PR.Commits[0].CheckRollupState != "SUCCESS" || !m.conversationDirty {
-		t.Fatalf("commit CI = %#v dirty=%v", m.cache.PR.Commits, m.conversationDirty)
+	if m.cache.PR.Commits[0].CheckRollupState != "SUCCESS" || !m.detailView.conversationDirty {
+		t.Fatalf("commit CI = %#v dirty=%v", m.cache.PR.Commits, m.detailView.conversationDirty)
 	}
 }
 
@@ -594,13 +594,13 @@ func TestCIPollUnchangedResultSkipsCacheInvalidation(t *testing.T) {
 		Checks:           []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}},
 		CheckRollupState: "PENDING",
 		Commits:          []gh.PRCommit{{OID: "head", CheckRollupState: "PENDING"}}}
-	m.conversationDirty = false
+	m.detailView.conversationDirty = false
 	key := prRowCacheKey{number: 12}
 	m.prList.rowCache = map[prRowCacheKey][]string{key: {"row"}}
 	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head",
 		Checks: []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}}}})
 	m = u.(Model)
-	if m.conversationDirty {
+	if m.detailView.conversationDirty {
 		t.Fatal("unchanged CI result rebuilt the conversation cards")
 	}
 	if _, ok := m.prList.rowCache[key]; !ok {
@@ -725,8 +725,8 @@ func TestLocalLoadRunsOffTheUpdateGoroutine(t *testing.T) {
 		data:       localData{cache: cache, base: "main", diffBase: "main", headRev: "HEAD"},
 	})
 	m = done.(Model)
-	if m.screen != detailScreen || m.title != "Seven" {
-		t.Fatalf("localLoaded not applied: screen=%v title=%q", m.screen, m.title)
+	if m.screen != detailScreen || m.detailView.title != "Seven" {
+		t.Fatalf("localLoaded not applied: screen=%v title=%q", m.screen, m.detailView.title)
 	}
 }
 
@@ -817,10 +817,10 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 	// rawDetailLoaded arrives while the editor overlay is open.
 	m = testModel()
 	m.overlay = localEditOverlay{mode: addLocalComment}
-	m.rawPending = map[string]bool{"k": true}
-	m.rawDetailCache = map[string]string{}
+	m.detailView.rawPending = map[string]bool{"k": true}
+	m.detailView.rawCache = map[string]string{}
 	u, _ = m.Update(rawDetailLoaded{generation: m.targetGeneration, key: "k", raw: "diff"})
-	if got := u.(Model); got.rawPending["k"] || got.rawDetailCache["k"] != "diff" {
+	if got := u.(Model); got.detailView.rawPending["k"] || got.detailView.rawCache["k"] != "diff" {
 		t.Fatal("rawDetailLoaded was dropped by the editor overlay")
 	}
 
@@ -828,10 +828,10 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 	m = testModel()
 	m.overlay = localDeleteOverlay{target: "c1"}
 	u, _ = m.Update(baseResolved{
-		generation: m.targetGeneration, base: m.base, diffBase: m.diffBase,
+		generation: m.targetGeneration, base: m.detailView.base, diffBase: m.detailView.diffBase,
 		files: []git.ChangedFile{{Status: "A", Path: "new.go"}},
 	})
-	if got := u.(Model); len(got.files) != 1 || got.files[0].Path != "new.go" {
+	if got := u.(Model); len(got.detailView.files) != 1 || got.detailView.files[0].Path != "new.go" {
 		t.Fatal("baseResolved was dropped by the delete confirm")
 	}
 }

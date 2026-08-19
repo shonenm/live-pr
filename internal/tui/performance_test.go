@@ -12,9 +12,9 @@ import (
 
 func benchmarkConversationModel(size int) Model {
 	m := testModel()
-	m.events = make([]event.Event, size)
-	for i := range m.events {
-		m.events[i] = event.Event{TS: time.Unix(int64(i), 0).UTC().Format(time.RFC3339), Kind: event.Note, Title: fmt.Sprintf("event %d", i)}
+	m.detailView.events = make([]event.Event, size)
+	for i := range m.detailView.events {
+		m.detailView.events[i] = event.Event{TS: time.Unix(int64(i), 0).UTC().Format(time.RFC3339), Kind: event.Note, Title: fmt.Sprintf("event %d", i)}
 	}
 	return m
 }
@@ -35,7 +35,7 @@ func BenchmarkConversationItems(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				m.conversationDirty = true
+				m.detailView.conversationDirty = true
 				_ = m.conversationItems()
 			}
 		})
@@ -73,11 +73,11 @@ func BenchmarkCommitRows(b *testing.B) {
 	for _, size := range []int{10, 100, 1000} {
 		b.Run(fmt.Sprintf("rows=%d", size), func(b *testing.B) {
 			m := testModel()
-			m.commits = make([]git.Commit, size)
+			m.detailView.commits = make([]git.Commit, size)
 			m.cache.PR = &gh.PR{Commits: make([]gh.PRCommit, size)}
 			for i := range size {
 				short := fmt.Sprintf("%07x", i)
-				m.commits[i] = git.Commit{SHA: short, Subject: "commit"}
+				m.detailView.commits[i] = git.Commit{SHA: short, Subject: "commit"}
 				m.cache.PR.Commits[i] = gh.PRCommit{OID: short + "000000000000000000000000000000000", CheckRollupState: "SUCCESS"}
 			}
 			b.ReportAllocs()

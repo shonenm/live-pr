@@ -72,8 +72,8 @@ func TestLocalPRSummaryCanBeEditedFromTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := testModel()
-	m.root, m.currentBranch, m.timelinePath, m.summary = root, "feature", st.Timeline(), "# Initial\n"
-	m.invalidateConversation()
+	m.root, m.currentBranch, m.timelinePath, m.detailView.summary = root, "feature", st.Timeline(), "# Initial\n"
+	m.detailView.invalidateConversation()
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	m = u.(Model)
@@ -84,8 +84,8 @@ func TestLocalPRSummaryCanBeEditedFromTUI(t *testing.T) {
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	m = u.(Model)
 	body, err := os.ReadFile(st.Conclusion())
-	if err != nil || !strings.Contains(string(body), "Implemented result") || m.title != "Final outcome" {
-		t.Fatalf("TUI summary = %q title=%q err=%v", body, m.title, err)
+	if err != nil || !strings.Contains(string(body), "Implemented result") || m.detailView.title != "Final outcome" {
+		t.Fatalf("TUI summary = %q title=%q err=%v", body, m.detailView.title, err)
 	}
 }
 
@@ -96,11 +96,11 @@ func TestRemoteDeleteTitleTruncatesOnRuneBoundary(t *testing.T) {
 	comment := gh.Comment{ID: 5, Body: body}
 	comment.User.Login = "me"
 	m.cache.Comments = []gh.Comment{comment}
-	m.conversationDirty = true
+	m.detailView.conversationDirty = true
 	items := m.conversationItems()
 	for i, it := range items {
 		if it.comment != nil {
-			m.cursors[conversationTab] = i
+			m.detailView.cursors[conversationTab] = i
 		}
 	}
 	next, _ := m.deleteSelectedLocalComment()

@@ -49,11 +49,11 @@ func (m Model) View() string {
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
 	} else {
 		leftTitle := "Conversation"
-		switch m.active {
+		switch m.detailView.active {
 		case commitsTab:
-			leftTitle = fmt.Sprintf("Commits · %d", len(m.commits))
+			leftTitle = fmt.Sprintf("Commits · %d", len(m.detailView.commits))
 		case conflictsTab:
-			leftTitle = fmt.Sprintf("Conflicts · %d", len(m.mergeReadiness.ConflictFiles))
+			leftTitle = fmt.Sprintf("Conflicts · %d", len(m.detailView.mergeReadiness.ConflictFiles))
 		case checksTab:
 			count := 0
 			if m.cache.PR != nil {
@@ -61,12 +61,12 @@ func (m Model) View() string {
 			}
 			leftTitle = fmt.Sprintf("Checks · %d", count)
 		}
-		if m.reviewWide && m.focusDiff {
+		if m.detailView.reviewWide && m.detailView.focusDiff {
 			body := m.renderReviewPane()
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
-		} else if m.reviewWide && !m.focusDiff {
+		} else if m.detailView.reviewWide && !m.detailView.focusDiff {
 			leftContent := m.list.View()
-			if m.active == conversationTab {
+			if m.detailView.active == conversationTab {
 				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
 			}
 			height := max(3, m.h-m.headerHeight()-footerLines)
@@ -74,10 +74,10 @@ func (m Model) View() string {
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), left, m.renderFooter())
 		} else {
 			leftContent := m.list.View()
-			if m.active == conversationTab {
+			if m.detailView.active == conversationTab {
 				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
 			}
-			left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, !m.focusDiff && !m.focusExplorer)
+			left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, !m.detailView.focusDiff && !m.detailView.focusExplorer)
 			body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 		}
@@ -154,15 +154,15 @@ func (m Model) withVersion(block string) string {
 func (m Model) detailStats() git.ChangeStats {
 	if !m.remote {
 		stats := m.localStats
-		if stats.Files == 0 && len(m.files) > 0 {
-			stats.Files = len(m.files)
+		if stats.Files == 0 && len(m.detailView.files) > 0 {
+			stats.Files = len(m.detailView.files)
 		}
 		return stats
 	}
 	if m.cache.PR != nil {
 		return git.ChangeStats{Files: m.cache.PR.ChangedFiles, Additions: m.cache.PR.Additions, Deletions: m.cache.PR.Deletions}
 	}
-	return git.ChangeStats{Files: len(m.files)}
+	return git.ChangeStats{Files: len(m.detailView.files)}
 }
 
 func (m Model) renderHeader() string {
@@ -177,15 +177,15 @@ func (m Model) renderHeader() string {
 	badge := lipgloss.NewStyle().
 		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color("#ffffff")).
 		Padding(0, 1).Render(badgeText)
-	title := m.title
+	title := m.detailView.title
 	if m.cache.PR != nil {
 		title = m.cache.PR.Title
 	}
 	l1 := badge + "  " + stBold.Render(title)
 	stats := m.detailStats()
 	scope := fmt.Sprintf("%d files", stats.Files) + " " + stGreenF.Render(fmt.Sprintf("+%d", stats.Additions)) + " " + stRedF.Render(fmt.Sprintf("-%d", stats.Deletions))
-	if m.reviewSHA != "" {
-		scope = "commit " + m.reviewSHA
+	if m.detailView.reviewSHA != "" {
+		scope = "commit " + m.detailView.reviewSHA
 	}
 	dirty := ""
 	if !m.remote && m.workingTreeDirty {
@@ -201,16 +201,16 @@ func (m Model) renderHeader() string {
 	}
 	readiness := ""
 	if m.cache.PR != nil || !m.remote {
-		readiness = stMuted.Render(fmt.Sprintf("   · %d behind", m.mergeReadiness.Behind))
-		if conflicts := len(m.mergeReadiness.ConflictFiles); conflicts > 0 {
+		readiness = stMuted.Render(fmt.Sprintf("   · %d behind", m.detailView.mergeReadiness.Behind))
+		if conflicts := len(m.detailView.mergeReadiness.ConflictFiles); conflicts > 0 {
 			readiness += "   " + stRedF.Render(fmt.Sprintf("⚠ %d conflict files", conflicts))
-		} else if m.mergeReadinessErr == nil {
+		} else if m.detailView.mergeReadinessErr == nil {
 			readiness += "   " + stGreenF.Render("✓ no conflicts")
 		} else {
 			readiness += "   " + stMuted.Render("merge readiness unavailable")
 		}
 	}
-	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.base).Render(m.base) + stMuted.Render(" ← ") + stFg.Render(m.head) + stMuted.Render("   · ") + scope + dirty + draft + readiness
+	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.detailView.base).Render(m.detailView.base) + stMuted.Render(" ← ") + stFg.Render(m.detailView.head) + stMuted.Render("   · ") + scope + dirty + draft + readiness
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
@@ -223,13 +223,13 @@ func (m Model) footerMode() string {
 		return "PRS"
 	}
 	switch {
-	case m.focusDiff, m.focusExplorer:
+	case m.detailView.focusDiff, m.detailView.focusExplorer:
 		return "REVIEW"
-	case m.active == commitsTab:
+	case m.detailView.active == commitsTab:
 		return "COMMITS"
-	case m.active == conflictsTab:
+	case m.detailView.active == conflictsTab:
 		return "CONFLICTS"
-	case m.active == checksTab:
+	case m.detailView.active == checksTab:
 		return "CHECKS"
 	default:
 		return "CONV"
@@ -258,7 +258,7 @@ func (m Model) footerContent() string {
 	if m.notice != "" && !m.isLoading() {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}
-	if m.focusDiff {
+	if m.detailView.focusDiff {
 		hint := stMuted.Render("Review focused · Tab conversation · Shift+Tab full width · q quit")
 		if m.githubStatus != "" {
 			return stMuted.Render(m.githubStatus) + "  " + hint

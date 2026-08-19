@@ -53,7 +53,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.diffTerminal.Err(); err != nil {
 				m.status = err.Error() + " · showing raw diff"
 			}
-			m.focusDiff, m.reviewWide = false, false
+			m.detailView.focusDiff, m.detailView.reviewWide = false, false
 			m.layout()
 			return m, tea.Batch(cmd, m.sync())
 		}
@@ -160,8 +160,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
-		m.richBodies = msg.bodies
-		m.invalidateConversation()
+		m.detailView.richBodies = msg.bodies
+		m.detailView.invalidateConversation()
 		m.layout()
 		return m, m.sync()
 	case avatarColorsLoaded:
@@ -175,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for login, color := range msg.colors {
 			m.avatarColors[login] = color
 		}
-		m.invalidateConversation()
+		m.detailView.invalidateConversation()
 		m.layout()
 		return m, m.sync()
 	case listAvatarColorsLoaded:
@@ -194,11 +194,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			// The review pane sits after the bordered left pane; +1 row for its own top border.
 			if local, ok := translateDiffMouse(msg, m.list.Width+paneChromeW, m.detail.Width, m.detail.Height, m.headerHeight()+1); ok {
-				m.focusDiff = true
+				m.detailView.focusDiff = true
 				return m, m.diffTerminal.Update(local)
 			}
 			if msg.Action == tea.MouseActionPress {
-				m.focusDiff = false
+				m.detailView.focusDiff = false
 			}
 		}
 		return m, nil
