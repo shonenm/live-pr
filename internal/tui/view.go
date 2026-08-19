@@ -175,7 +175,7 @@ func (m Model) renderHeader() string {
 		badgeText, badgeColor = fmt.Sprintf("⇄ #%d %s", m.cache.PR.Number, state), prStateBadgeColor(state)
 	}
 	badge := lipgloss.NewStyle().
-		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color("#ffffff")).
+		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color(emphasisInk(badgeColor))).
 		Padding(0, 1).Render(badgeText)
 	title := m.detailView.title
 	if m.cache.PR != nil {
