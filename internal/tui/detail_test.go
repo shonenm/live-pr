@@ -106,12 +106,20 @@ func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
 	m.detailView.files = []git.ChangedFile{
 		{Status: "M", Path: "internal/tui/tui.go"},
 		{Status: "A", Path: "internal/tui/explorer.go"},
+		{Status: "D", Path: "internal/tui/legacy.go"},
+		{Status: "R100", OldPath: "internal/tui/old.go", Path: "internal/tui/new.go"},
 	}
 	m.explorer.Width = 80
 
 	content, selected := m.buildFileExplorer()
 	plain := ansi.Strip(content)
-	for _, want := range []string{"Files · 2 changed", "□ M internal/tui/tui.go", "□ A internal/tui/explorer.go"} {
+	for _, want := range []string{
+		"Files · 4 changed",
+		"□ M internal/tui/tui.go",
+		"□ A internal/tui/explorer.go",
+		"□ D internal/tui/legacy.go",
+		"□ R100 internal/tui/old.go → internal/tui/new.go",
+	} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("explorer missing %q: %q", want, plain)
 		}
