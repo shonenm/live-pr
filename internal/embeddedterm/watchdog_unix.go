@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,8 +51,8 @@ func runWatchdog(parent int, command string) int {
 	}
 	group := os.Getpid()
 	if pidFile != "" {
-		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(group)), 0o600)
-		defer os.Remove(pidFile)
+		writePIDFile(pidFile, group)
+		defer removePIDFile(pidFile)
 	}
 
 	done := make(chan error, 1)
@@ -136,8 +137,24 @@ func descendants(root int) []int {
 	return result
 }
 
+// writePIDFile creates the pid file exclusively: the parent kills whatever
+// PID the file names, so a path pre-created by someone else (file or symlink)
+// must never be adopted.
+func writePIDFile(path string, pid int) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return
+	}
+	_, _ = f.WriteString(strconv.Itoa(pid))
+	_ = f.Close()
+}
+
 func removePIDFile(path string) {
 	if path != "" {
 		_ = os.Remove(path)
+		// The parent puts the pid file in a dedicated directory; drop it too
+		// when the parent is gone. Remove refuses non-empty directories, so
+		// this is safe even if the path ever pointed elsewhere.
+		_ = os.Remove(filepath.Dir(path))
 	}
 }

@@ -83,6 +83,13 @@ func TestWriteConclusionTrimsAndReplaces(t *testing.T) {
 	if !st.HasData() {
 		t.Fatal("store should report data after WriteConclusion")
 	}
+	info, err := os.Stat(st.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("state dir mode = %o, want 700", perm)
+	}
 	// Overwriting replaces rather than appends.
 	if err := st.WriteConclusion("second"); err != nil {
 		t.Fatal(err)

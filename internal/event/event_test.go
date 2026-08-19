@@ -37,6 +37,13 @@ func TestAppendLoadRoundTrip(t *testing.T) {
 	if got[0].SHA != "" {
 		t.Errorf("expected empty sha on event 0, got %q", got[0].SHA)
 	}
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatalf("stat timeline: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("timeline mode = %o, want 600", perm)
+	}
 }
 
 func TestUpdateAndDeleteRemainAppendOnly(t *testing.T) {
