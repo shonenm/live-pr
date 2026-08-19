@@ -11,12 +11,47 @@ import (
 	gh "github.com/shonenm/live-pr/internal/github"
 )
 
-func runPRAction(client githubClient, action prAction, pr gh.PR) tea.Cmd {
+// mergeMethodOptions lists the picker choices; the merge commit stays first
+// so the default selection keeps the historical behaviour.
+var mergeMethodOptions = []gh.MergeMethod{gh.MergeCommit, gh.MergeSquash, gh.MergeRebase}
+
+func mergeMethodLabel(method gh.MergeMethod) string {
+	switch method {
+	case gh.MergeSquash:
+		return "Squash"
+	case gh.MergeRebase:
+		return "Rebase"
+	default:
+		return "Merge commit"
+	}
+}
+
+func mergeMethodPrompt(method gh.MergeMethod) string {
+	switch method {
+	case gh.MergeSquash:
+		return "Squash and merge?"
+	case gh.MergeRebase:
+		return "Rebase and merge?"
+	default:
+		return "Merge with a merge commit?"
+	}
+}
+
+// selectedMergeMethod maps the popup cursor to a method, defaulting to the
+// merge commit when the cursor is out of range.
+func (m Model) selectedMergeMethod() gh.MergeMethod {
+	if m.mergeMethodCursor < 0 || m.mergeMethodCursor >= len(mergeMethodOptions) {
+		return gh.MergeCommit
+	}
+	return mergeMethodOptions[m.mergeMethodCursor]
+}
+
+func runPRAction(client githubClient, action prAction, pr gh.PR, method gh.MergeMethod) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		switch action {
 		case mergePR:
-			err = client.Merge(pr.Number, pr.HeadRefOID)
+			err = client.Merge(pr.Number, pr.HeadRefOID, method)
 		case checkoutPR:
 			err = client.Checkout(pr.Number)
 		case closePR:
@@ -46,9 +81,17 @@ func (m Model) renderActionPopup() string {
 	}
 	label := actionLabel(action)
 	message := "Continue?"
+	var options []string
 	switch action {
 	case mergePR:
-		message = "Merge with a merge commit?"
+		message = mergeMethodPrompt(m.selectedMergeMethod())
+		for i, method := range mergeMethodOptions {
+			prefix, style := "  ", stFg
+			if i == m.mergeMethodCursor {
+				prefix, style = "▸ ", stAccent.Bold(true)
+			}
+			options = append(options, prefix+style.Render(mergeMethodLabel(method)))
+		}
 	case checkoutPR:
 		branch := m.prActionPR.HeadRefName
 		if branch == "" {
@@ -58,13 +101,16 @@ func (m Model) renderActionPopup() string {
 	case closePR:
 		message = "Close without merging?"
 	}
-	lines := []string{
-		stBold.Render(fmt.Sprintf("%s PR #%d", label, m.prActionNumber)),
-		"",
-		stFg.Render(message),
+	lines := []string{stBold.Render(fmt.Sprintf("%s PR #%d", label, m.prActionNumber)), ""}
+	if len(options) > 0 && m.prActionRunning == noPRAction {
+		lines = append(lines, options...)
+		lines = append(lines, "")
 	}
+	lines = append(lines, stFg.Render(message))
 	if m.prActionRunning != noPRAction {
 		lines = append(lines, "", stAttention.Render(m.loadSpinner.View()+" "+label+" in progress…"))
+	} else if action == mergePR {
+		lines = append(lines, "", stMuted.Render("j/k select · y confirm · m/s/r · Esc cancel"))
 	} else {
 		lines = append(lines, "", stMuted.Render("y confirm · n / Esc cancel"))
 	}

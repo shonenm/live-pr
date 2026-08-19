@@ -436,7 +436,7 @@ type githubClient interface {
 	FindPreview(number int) (gh.PR, error)
 	FindChecks(number int) (gh.PR, error)
 	LoadPRDetail(number int) gh.PRDetail
-	Merge(number int, headOID string) error
+	Merge(number int, headOID string, method gh.MergeMethod) error
 	Checkout(number int) error
 	Close(number int) error
 	SetStatus(pr gh.PR, target string) error
@@ -554,6 +554,7 @@ type Model struct {
 	pendingPRAction           prAction
 	prActionRunning           prAction
 	prActionNumber            int
+	mergeMethodCursor         int
 	pendingG                  bool
 	prActionPR                gh.PR
 	prListGeneration          uint64
