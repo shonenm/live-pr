@@ -22,6 +22,39 @@ var renderCache = struct {
 	items map[cacheKey]string
 }{items: map[cacheKey]string{}}
 
+// renderers reuses one TermRenderer per wrap width: constructing one (style
+// setup plus goldmark parser assembly) dominates cache-miss render cost.
+// glamour's TermRenderer is not safe for concurrent Render calls (its ANSI
+// node renderer mutates a shared block stack), so each entry carries its own
+// lock. Only a handful of widths occur in practice, so the map is unbounded.
+var renderers = struct {
+	sync.Mutex
+	items map[int]*widthRenderer
+}{items: map[int]*widthRenderer{}}
+
+type widthRenderer struct {
+	sync.Mutex
+	r *glamour.TermRenderer
+}
+
+func rendererFor(width int) (*widthRenderer, error) {
+	renderers.Lock()
+	defer renderers.Unlock()
+	if wr, ok := renderers.items[width]; ok {
+		return wr, nil
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStyles(githubStyle()),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return nil, err
+	}
+	wr := &widthRenderer{r: r}
+	renderers.items[width] = wr
+	return wr, nil
+}
+
 // Render formats Markdown. Glamour renders image links as their source URL;
 // ordinary video URLs remain unchanged.
 func Render(text string, width int) string {
@@ -36,14 +69,13 @@ func Render(text string, width int) string {
 	}
 	renderCache.Unlock()
 
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStyles(githubStyle()),
-		glamour.WithWordWrap(width),
-	)
+	wr, err := rendererFor(width)
 	if err != nil {
 		return text
 	}
-	out, err := r.Render(text)
+	wr.Lock()
+	out, err := wr.r.Render(text)
+	wr.Unlock()
 	if err != nil {
 		return text
 	}

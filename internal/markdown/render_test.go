@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/glamour"
 )
 
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -34,6 +36,31 @@ func TestGitHubStyleUsesPrimerForMarkdownAndSyntax(t *testing.T) {
 		if strings.Contains(out, old) {
 			t.Fatalf("render retained Glamour dark color %q: %q", old, out)
 		}
+	}
+}
+
+func TestRenderReusedRendererMatchesFreshRenderer(t *testing.T) {
+	const width = 60
+	warm := "# Warm-up\n\n> quote\n\n1. one\n2. two\n\n```go\npackage main\n```"
+	input := "# Title\n\nParagraph with **bold**, `code`, and [link](https://example.com).\n\n- item"
+	// Two sequential renders at the same width exercise the reused renderer;
+	// the second must match a fresh renderer, or state leaked between calls.
+	_ = Render(warm, width)
+	got := Render(input, width)
+
+	fresh, err := glamour.NewTermRenderer(
+		glamour.WithStyles(githubStyle()),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		t.Fatalf("NewTermRenderer: %v", err)
+	}
+	want, err := fresh.Render(input)
+	if err != nil {
+		t.Fatalf("fresh Render: %v", err)
+	}
+	if got != strings.TrimSpace(want) {
+		t.Fatalf("reused renderer output diverged from fresh renderer:\nreused: %q\nfresh:  %q", got, strings.TrimSpace(want))
 	}
 }
 
