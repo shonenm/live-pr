@@ -2096,6 +2096,34 @@ func TestUserIconKeepsOneCell(t *testing.T) {
 	}
 }
 
+func TestPRRowShowsLabelPills(t *testing.T) {
+	m := testModel()
+	m.list.Width = 160
+	pr := gh.PR{Number: 5, State: "OPEN", Title: "Labelled", BaseRefName: "main", HeadRefName: "labels",
+		Labels: []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}, {Name: "ui", Color: "238636"}, {Name: "infra", Color: "0e8a16"}}}
+	row := ansi.Strip(strings.Join(m.renderPRRow(pr, false, ""), "\n"))
+	for _, want := range []string{" bug ", " docs ", " ui ", "+1"} {
+		if !strings.Contains(row, want) {
+			t.Fatalf("label pill %q missing from row: %q", want, row)
+		}
+	}
+	if strings.Contains(row, "infra") {
+		t.Fatalf("fourth label should collapse into +N: %q", row)
+	}
+	// A PR without labels keeps its meta line untouched: branch info stays last.
+	bare := gh.PR{Number: 6, State: "OPEN", Title: "Bare", BaseRefName: "main", HeadRefName: "bare"}
+	bareRows := m.renderPRRow(bare, false, "")
+	if meta := strings.TrimRight(ansi.Strip(bareRows[1]), " "); !strings.HasSuffix(meta, "main ← bare") {
+		t.Fatalf("unlabelled meta line changed: %q", meta)
+	}
+	// The synthetic local PR row (Number == 0) never shows pills.
+	local := gh.PR{Number: 0, Title: "Local", BaseRefName: "main", HeadRefName: "wip",
+		Labels: []gh.PRLabel{{Name: "bug", Color: "d73a4a"}}}
+	if localRow := ansi.Strip(strings.Join(m.renderPRRow(local, false, ""), "\n")); strings.Contains(localRow, "bug") {
+		t.Fatalf("local PR row should not render pills: %q", localRow)
+	}
+}
+
 func TestUserIconsAppearAcrossPRSurfaces(t *testing.T) {
 	m := testModel()
 	m.w, m.list.Width, m.detail.Width = 160, 70, 80
