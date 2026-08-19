@@ -17,7 +17,7 @@ Press `?` inside the TUI to toggle the full help.
 | `s` | change PR status (Close / Reopen / Draft) |
 | `c` | checkout the PR branch |
 | `x` | close the PR |
-| `m` | merge the PR |
+| `m` | merge the PR (pick merge commit / squash / rebase in the popup) |
 | `r` | refresh |
 | `gg` / `G`, `Ctrl+U` / `Ctrl+D` | jump / scroll |
 | `q`, `Ctrl+C` | quit |
@@ -41,7 +41,7 @@ Press `?` inside the TUI to toggle the full help.
 | `o` | open on GitHub / copy URL |
 | `y` | copy the URL of the selected item to the clipboard |
 | `p` | publish the PR from the timeline |
-| `m` | merge |
+| `m` | merge (pick merge commit / squash / rebase in the popup) |
 | `C` | checkout the PR branch (`c` stays on the commits view) |
 | `b` | back to the PR list |
 | `r` | refresh |

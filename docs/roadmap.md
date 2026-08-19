@@ -91,7 +91,6 @@ internal/
   store/        .live-pr/<branch> パス解決・conclusion
   git/          shell-out（branch/base/range/pull-ref fetch）
   tui/          Conversation timeline + embedded commit diff・lipgloss スタイル
-  review/       reviewer テンプレ + tea.ExecProcess 起動
   summarize/    claude -p 呼び出し・プロンプト（interface で抽象化）
   pr/           body 組み立て + gh
   config/       TOML ロード
