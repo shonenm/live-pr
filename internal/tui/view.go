@@ -214,7 +214,15 @@ func (m Model) renderHeader() string {
 			readiness += "   " + stMuted.Render("merge readiness unavailable")
 		}
 	}
-	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.detailView.base).Render(m.detailView.base) + stMuted.Render(" ← ") + stFg.Render(m.detailView.head) + stMuted.Render("   · ") + scope + dirty + draft + readiness
+	closes := ""
+	if m.cache.PR != nil && len(m.cache.PR.ClosingIssues) > 0 {
+		refs := make([]string, 0, len(m.cache.PR.ClosingIssues))
+		for _, issue := range m.cache.PR.ClosingIssues {
+			refs = append(refs, fmt.Sprintf("#%d", issue.Number))
+		}
+		closes = "   " + stMuted.Render("⊙ closes "+strings.Join(refs, ", "))
+	}
+	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.detailView.base).Render(m.detailView.base) + stMuted.Render(" ← ") + stFg.Render(m.detailView.head) + stMuted.Render("   · ") + scope + dirty + draft + readiness + closes
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))

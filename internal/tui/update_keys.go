@@ -197,7 +197,7 @@ func (m Model) handlePRActionConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 			m.pendingPRAction = noPRAction
 			m.prActionRunning = action
 			m.notice = ""
-			return m, tea.Batch(runPRAction(m.client, action, pr, gh.MergeCommit), m.startSpinner()), true
+			return m, tea.Batch(runPRAction(m.client, m.checkoutHead, action, pr, gh.MergeCommit), m.startSpinner()), true
 		case "n", "q", "esc":
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
 			return m, nil, true
@@ -222,7 +222,7 @@ func (m Model) submitMerge(method gh.MergeMethod) (Model, tea.Cmd, bool) {
 	m.pendingPRAction = noPRAction
 	m.prActionRunning = mergePR
 	m.notice = ""
-	return m, tea.Batch(runPRAction(m.client, mergePR, pr, method), m.startSpinner()), true
+	return m, tea.Batch(runPRAction(m.client, m.checkoutHead, mergePR, pr, method), m.startSpinner()), true
 }
 
 func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {

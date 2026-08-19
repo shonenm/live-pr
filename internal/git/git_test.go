@@ -84,6 +84,80 @@ func TestFetchPullLeavesCheckoutUntouched(t *testing.T) {
 	}
 }
 
+func TestCheckoutPullHeadTracksAndFastForwardsSameRepoHead(t *testing.T) {
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	seed := filepath.Join(root, "seed")
+	clone := filepath.Join(root, "clone")
+	runIn := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	runIn(root, "init", "--bare", origin)
+	runIn(root, "init", "-b", "main", seed)
+	runIn(seed, "config", "user.email", "test@example.com")
+	runIn(seed, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(seed, "file"), []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runIn(seed, "add", "file")
+	runIn(seed, "commit", "-m", "main")
+	runIn(seed, "remote", "add", "origin", origin)
+	runIn(seed, "push", "origin", "main")
+	runIn(seed, "switch", "-c", "feature")
+	if err := os.WriteFile(filepath.Join(seed, "file"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runIn(seed, "commit", "-am", "feature")
+	firstOID := runIn(seed, "rev-parse", "HEAD")
+	runIn(seed, "push", "origin", "feature")
+	runIn(root, "clone", "--branch", "main", origin, clone)
+	t.Chdir(clone)
+
+	if err := CheckoutPullHead("feature"); err != nil {
+		t.Fatal(err)
+	}
+	if got := runIn(clone, "branch", "--show-current"); got != "feature" {
+		t.Fatalf("checked-out branch = %q", got)
+	}
+	if got := runIn(clone, "rev-parse", "HEAD"); got != firstOID {
+		t.Fatalf("checked-out revision = %q, want %q", got, firstOID)
+	}
+	if got := runIn(clone, "rev-parse", "--abbrev-ref", "feature@{upstream}"); got != "origin/feature" {
+		t.Fatalf("upstream = %q", got)
+	}
+
+	// A later checkout of the same PR fast-forwards the existing local
+	// branch to the freshly fetched head, like gh pr checkout does.
+	if err := os.WriteFile(filepath.Join(seed, "file"), []byte("feature v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runIn(seed, "commit", "-am", "feature v2")
+	secondOID := runIn(seed, "rev-parse", "HEAD")
+	runIn(seed, "push", "origin", "feature")
+	runIn(clone, "switch", "main")
+
+	if err := CheckoutPullHead("feature"); err != nil {
+		t.Fatal(err)
+	}
+	if got := runIn(clone, "branch", "--show-current"); got != "feature" {
+		t.Fatalf("re-checkout branch = %q", got)
+	}
+	if got := runIn(clone, "rev-parse", "HEAD"); got != secondOID {
+		t.Fatalf("re-checkout revision = %q, want fast-forwarded %q", got, secondOID)
+	}
+
+	if err := CheckoutPullHead("-not-a-branch"); err == nil || !strings.Contains(err.Error(), "invalid pull request head") {
+		t.Fatalf("invalid branch error = %v", err)
+	}
+}
+
 func TestCheckMergeReadinessDoesNotTouchCheckout(t *testing.T) {
 	dir := t.TempDir()
 	run := func(args ...string) string {

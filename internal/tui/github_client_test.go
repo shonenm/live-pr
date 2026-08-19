@@ -136,7 +136,7 @@ func TestRunPRActionMergeGuardsOnHeadCommit(t *testing.T) {
 		return nil
 	}}
 	pr := gh.PR{Number: 7, HeadRefOID: "abc123"}
-	msg, ok := runPRAction(client, mergePR, pr, gh.MergeSquash)().(prActionDone)
+	msg, ok := runPRAction(client, nil, mergePR, pr, gh.MergeSquash)().(prActionDone)
 	if !ok {
 		t.Fatal("runPRAction did not return prActionDone")
 	}
@@ -155,7 +155,7 @@ func TestRunPRActionCloseSurfacesClientError(t *testing.T) {
 		gotNumber = number
 		return boom
 	}}
-	msg := runPRAction(client, closePR, gh.PR{Number: 12}, gh.MergeCommit)().(prActionDone)
+	msg := runPRAction(client, nil, closePR, gh.PR{Number: 12}, gh.MergeCommit)().(prActionDone)
 	if gotNumber != 12 {
 		t.Fatalf("Close(%d); want 12", gotNumber)
 	}
@@ -164,14 +164,43 @@ func TestRunPRActionCloseSurfacesClientError(t *testing.T) {
 	}
 }
 
-func TestRunPRActionCheckoutDispatchesCheckout(t *testing.T) {
+func TestRunPRActionSameRepoCheckoutUsesGit(t *testing.T) {
+	ghCalled := false
+	client := &fakeGH{checkout: func(int) error {
+		ghCalled = true
+		return nil
+	}}
+	var gotBranch string
+	checkoutHead := func(branch string) error {
+		gotBranch = branch
+		return nil
+	}
+	pr := gh.PR{Number: 3, HeadRefName: "feature"}
+	msg := runPRAction(client, checkoutHead, checkoutPR, pr, gh.MergeCommit)().(prActionDone)
+	if ghCalled || gotBranch != "feature" || msg.action != checkoutPR || msg.number != 3 || msg.err != nil {
+		t.Fatalf("git checkout branch=%q ghCalled=%v, prActionDone = %+v", gotBranch, ghCalled, msg)
+	}
+}
+
+func TestRunPRActionForkCheckoutFallsBackToGh(t *testing.T) {
 	var gotNumber int
 	client := &fakeGH{checkout: func(number int) error {
 		gotNumber = number
 		return nil
 	}}
-	msg := runPRAction(client, checkoutPR, gh.PR{Number: 3}, gh.MergeCommit)().(prActionDone)
+	checkoutHead := func(branch string) error {
+		t.Fatalf("fork checkout must not run plain git (branch %q)", branch)
+		return nil
+	}
+	pr := gh.PR{Number: 3, HeadRefName: "feature", IsCrossRepository: true}
+	msg := runPRAction(client, checkoutHead, checkoutPR, pr, gh.MergeCommit)().(prActionDone)
 	if gotNumber != 3 || msg.action != checkoutPR || msg.err != nil {
+		t.Fatalf("Checkout(%d), prActionDone = %+v", gotNumber, msg)
+	}
+	// A PR without a known head branch cannot be checked out by name either.
+	gotNumber = 0
+	msg = runPRAction(client, checkoutHead, checkoutPR, gh.PR{Number: 4}, gh.MergeCommit)().(prActionDone)
+	if gotNumber != 4 || msg.err != nil {
 		t.Fatalf("Checkout(%d), prActionDone = %+v", gotNumber, msg)
 	}
 }
