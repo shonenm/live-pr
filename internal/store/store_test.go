@@ -170,3 +170,70 @@ func TestWorktreesShareRepositoryState(t *testing.T) {
 		t.Fatalf("main checkout identity changed: got %q want %q", fromMain, want)
 	}
 }
+
+func TestReviewedMarksPathScopesByPRAndBranch(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	pr := ReviewedMarksPath(root, 101, "feature/x")
+	if filepath.Base(pr) != "101.json" || filepath.Base(filepath.Dir(pr)) != "reviewed" {
+		t.Fatalf("PR marks path = %q", pr)
+	}
+	if stacked := ReviewedMarksPath(root, 102, "feature/x"); stacked == pr {
+		t.Fatalf("stacked PRs on one branch share a marks file: %q", stacked)
+	}
+	branch := ReviewedMarksPath(root, 0, "feature/x")
+	if !strings.HasPrefix(filepath.Base(branch), "branch-feature-x") || branch == pr {
+		t.Fatalf("branch-scoped marks path = %q", branch)
+	}
+	if other := ReviewedMarksPath(root, 0, "feature/y"); other == branch {
+		t.Fatalf("distinct branches share a marks file: %q", other)
+	}
+}
+
+func TestReviewedMarksRoundTrip(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	path := ReviewedMarksPath(t.TempDir(), 7, "main")
+
+	marks, err := LoadReviewedMarks(path)
+	if err != nil || marks == nil || len(marks) != 0 {
+		t.Fatalf("missing file marks = %#v err=%v", marks, err)
+	}
+
+	want := map[string]string{"a.go": "old:new", "dir/b.go": "x:y"}
+	if err := SaveReviewedMarks(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadReviewedMarks(path)
+	if err != nil || len(got) != len(want) || got["a.go"] != want["a.go"] || got["dir/b.go"] != want["dir/b.go"] {
+		t.Fatalf("round-trip marks = %#v err=%v", got, err)
+	}
+
+	if err := SaveReviewedMarks(path, map[string]string{"a.go": "v2"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = LoadReviewedMarks(path)
+	if err != nil || len(got) != 1 || got["a.go"] != "v2" {
+		t.Fatalf("overwritten marks = %#v err=%v", got, err)
+	}
+
+	// The atomic write must not leave its temp file behind.
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".reviewed-") {
+			t.Fatalf("temp file leaked: %s", entry.Name())
+		}
+	}
+}
+
+func TestLoadReviewedMarksRejectsCorruptJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "marks.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadReviewedMarks(path); err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("corrupt marks error = %v", err)
+	}
+}
