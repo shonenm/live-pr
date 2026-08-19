@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/shonenm/live-pr/internal/demo"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/spf13/cobra"
@@ -195,10 +196,10 @@ func quote(s string) string { return `"` + s + `"` }
 
 func TestLoadStatusRefreshUpdatesCache(t *testing.T) {
 	root := t.TempDir()
-	if err := createDemoRepo(root, "git"); err != nil {
+	if err := demo.CreateRepo(root, "git"); err != nil {
 		t.Fatal(err)
 	}
-	binDir, stateDir, err := setupDemoGitHub(root, "git")
+	binDir, stateDir, err := demo.SetupGitHub(root, "git")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-package cmd
+package demo
 
 import (
 	"fmt"
@@ -16,7 +16,10 @@ type demoPR struct {
 	state  string
 }
 
-func setupDemoGitHub(root, mode string) (string, string, error) {
+// SetupGitHub creates the bare demo origin, pushes the fixture branches, and
+// installs a mock gh binary plus its state directory. It returns the bin and
+// state directory paths.
+func SetupGitHub(root, mode string) (string, string, error) {
 	current := "demo/" + mode
 	origin := filepath.Join(root, ".git", "demo-origin.git")
 	if err := demoGit(root, "init", "--bare", origin); err != nil {
