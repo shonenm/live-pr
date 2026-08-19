@@ -82,6 +82,13 @@ func TestSaveCacheReplacesExistingFile(t *testing.T) {
 	if err != nil || len(matches) != 0 {
 		t.Fatalf("temporary files remain: %v, %v", matches, err)
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("cache file mode = %o, want 600", perm)
+	}
 }
 
 func TestLoadCacheRejectsMalformedData(t *testing.T) {

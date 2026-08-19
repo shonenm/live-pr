@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -79,6 +80,28 @@ func TestEnvironment(t *testing.T) {
 	want := []string{"LIVE_PR_REVIEW=1", "LIVE_PR_RANGE=base-sha...head-ref", "LIVE_PR_BASE=main", "LIVE_PR_HEAD=feature/x", "LIVE_PR_HEAD_REV=refs/live-pr/pulls/1/head", "LIVE_PR_PR_URL=https://example.test/pr/1", "LIVE_PR_SHA=abc123", "LIVE_PR_REVIEWED_FILE=/state/reviewed/1.json"}
 	if strings.Join(env, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("env = %#v", env)
+	}
+}
+
+func TestPIDFileLivesInPrivateDirectory(t *testing.T) {
+	terminal := New("true", t.TempDir(), nil)
+	if terminal == nil || terminal.err != nil {
+		t.Fatalf("New failed: %v", terminal.Err())
+	}
+	dir := filepath.Dir(terminal.pidFile)
+	if filepath.Clean(dir) == filepath.Clean(os.TempDir()) {
+		t.Fatalf("pid file %s sits directly in the shared temp dir", terminal.pidFile)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat pid dir: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("pid dir mode = %o, want 700", perm)
+	}
+	terminal.Close()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("pid dir not removed on Close: %v", err)
 	}
 }
 

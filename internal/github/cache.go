@@ -81,10 +81,6 @@ func saveJSON(path string, value any) error {
 	}
 	name := f.Name()
 	defer os.Remove(name)
-	if err := f.Chmod(0o644); err != nil {
-		_ = f.Close()
-		return err
-	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		return err
