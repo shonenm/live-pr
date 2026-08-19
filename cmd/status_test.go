@@ -4,13 +4,14 @@ import (
 	"os"
 	"testing"
 
+	"github.com/shonenm/live-pr/internal/demo"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
 )
 
 func TestLoadStatusUsesCachedPullRequest(t *testing.T) {
 	root := t.TempDir()
-	if err := createDemoRepo(root, "git"); err != nil {
+	if err := demo.CreateRepo(root, "git"); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
