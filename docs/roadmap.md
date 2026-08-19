@@ -95,7 +95,6 @@ internal/
   summarize/    claude -p 呼び出し・プロンプト（interface で抽象化）
   pr/           body 組み立て + gh
   config/       TOML ロード
-prototype/      既存 fzf モック（参照用に残す）
 docs/
 ```
 

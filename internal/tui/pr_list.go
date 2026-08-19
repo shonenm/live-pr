@@ -1011,11 +1011,6 @@ func previewMarkdown(text string, width, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *Model) buildPRList() string {
-	content, _ := m.buildPRListRows()
-	return content
-}
-
 func (m *Model) buildPRListRows() (string, int) {
 	if len(m.openPRs) == 0 {
 		message := stMuted.Render("(no pull requests in this view)")

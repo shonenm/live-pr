@@ -223,7 +223,7 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
 
-	files, err := ChangedFiles("main")
+	files, err := ChangedFilesRange("main", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,10 +272,10 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if modified == nil || modified.Status != "M" || renamed == nil || !strings.HasPrefix(renamed.Status, "R") || renamed.OldPath != "old.go" {
 		t.Fatalf("unexpected files: %#v", files)
 	}
-	if diff := FileDiff("main", "file.txt"); !strings.Contains(diff, "-before") || !strings.Contains(diff, "after") {
+	if diff := FileDiffRange("main", "HEAD", "file.txt"); !strings.Contains(diff, "-before") || !strings.Contains(diff, "after") {
 		t.Fatalf("unexpected diff: %q", diff)
 	}
-	if diff := FileDiff("main", renamed.OldPath, renamed.Path); !strings.Contains(diff, "rename from old.go") || !strings.Contains(diff, "rename to new.go") {
+	if diff := FileDiffRange("main", "HEAD", renamed.OldPath, renamed.Path); !strings.Contains(diff, "rename from old.go") || !strings.Contains(diff, "rename to new.go") {
 		t.Fatalf("unexpected rename diff: %q", diff)
 	}
 	runGit("update-ref", "refs/remotes/origin/release", "HEAD~1")
@@ -301,7 +301,7 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if changed, err := HasChanges("main", "HEAD"); err != nil || changed {
 		t.Fatalf("main changes = %v, err=%v", changed, err)
 	}
-	if local := FileDiff("main"); local != "" {
+	if local := FileDiffRange("main", "HEAD"); local != "" {
 		t.Fatalf("main...HEAD should be empty: %q", local)
 	}
 	if remote := FileDiffRange("main", "refs/live-pr/pulls/1/head"); !strings.Contains(remote, "after") {

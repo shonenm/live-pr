@@ -32,7 +32,7 @@ func TestRenderMermaidUsesOptionalCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
-	got, err := RenderMermaid("graph LR; A-->B", 40)
+	got, err := RenderMermaidContext(context.Background(), "graph LR; A-->B", 40)
 	if err != nil || got != "A ──▶ B" {
 		t.Fatalf("render = %q, %v", got, err)
 	}
