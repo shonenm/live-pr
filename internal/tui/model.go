@@ -428,8 +428,28 @@ func (it conversationItem) compactActivity() bool {
 	return kind == itemActivity || kind == itemPRCommit
 }
 
+// githubClient is the slice of gh.Client the TUI commands use, injectable in
+// tests.
+type githubClient interface {
+	SearchPRs(query, cursor string) (gh.PRPage, error)
+	FindForHead(head string) (gh.PR, error)
+	FindPreview(number int) (gh.PR, error)
+	FindChecks(number int) (gh.PR, error)
+	LoadPRDetail(number int) gh.PRDetail
+	Merge(number int, headOID string) error
+	Checkout(number int) error
+	Close(number int) error
+	SetStatus(pr gh.PR, target string) error
+	PostIssueComment(number int, body string) error
+	EditIssueComment(id int64, body string) error
+	DeleteIssueComment(id int64) error
+	UpdateBody(head, bodyFile string) error
+	SubmitReview(draft gh.ReviewDraft, event gh.ReviewEvent) error
+}
+
 // Model holds the living-PR view state.
 type Model struct {
+	client                    githubClient
 	screen                    screen
 	title                     string
 	root                      string
@@ -630,6 +650,7 @@ func New(version ...string) (Model, error) {
 	}
 
 	m := Model{
+		client:            gh.New(),
 		screen:            prListScreen,
 		version:           first(version),
 		root:              root,
@@ -966,12 +987,12 @@ func Run(version string, opts ...Option) error {
 func (m Model) Init() tea.Cmd {
 	// loadSpinner and spinnerRunning are initialized in New(); the value
 	// receiver here would discard any mutation anyway.
-	cmds := []tea.Cmd{fetchPRList(m.prListGeneration, m.activePRPage, m.prViewSearch(m.prView, m.prListState, m.filterQuery), "", false), m.loadSpinner.Tick}
+	cmds := []tea.Cmd{fetchPRList(m.client, m.prListGeneration, m.activePRPage, m.prViewSearch(m.prView, m.prListState, m.filterQuery), "", false), m.loadSpinner.Tick}
 	if m.screen == prListScreen && m.localAvailable && m.autoOpenCurrent {
-		cmds = append(cmds, fetchCurrentBranchPR(m.currentBranch))
+		cmds = append(cmds, fetchCurrentBranchPR(m.client, m.currentBranch))
 	}
 	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
-		cmds = append(cmds, fetchGitHub(m.head, m.currentPRNumber(), m.targetGeneration))
+		cmds = append(cmds, fetchGitHub(m.client, m.head, m.currentPRNumber(), m.targetGeneration))
 	}
 	if m.screen == detailScreen {
 		cmds = append(cmds, m.richContentCmd())
@@ -1029,40 +1050,39 @@ func (m *Model) invalidateConversation() {
 	m.convItemCache = map[string][]string{}
 }
 
-func fetchPRList(generation uint64, key, query, cursor string, appendPage bool) tea.Cmd {
+func fetchPRList(client githubClient, generation uint64, key, query, cursor string, appendPage bool) tea.Cmd {
 	return func() tea.Msg {
-		page, err := gh.New().SearchPRs(query, cursor)
+		page, err := client.SearchPRs(query, cursor)
 		return prListRefreshed{generation: generation, key: key, appendPage: appendPage, page: page, err: err}
 	}
 }
 
 // fetchCurrentBranchPRState re-checks the branch's PR purely to refresh what
 // the list believes about it.
-func fetchCurrentBranchPRState(head string) tea.Cmd {
+func fetchCurrentBranchPRState(client githubClient, head string) tea.Cmd {
 	return func() tea.Msg {
-		msg, _ := fetchCurrentBranchPR(head)().(currentBranchPRLoaded)
+		msg, _ := fetchCurrentBranchPR(client, head)().(currentBranchPRLoaded)
 		msg.stateOnly = true
 		return msg
 	}
 }
 
-func fetchCurrentBranchPR(head string) tea.Cmd {
+func fetchCurrentBranchPR(client githubClient, head string) tea.Cmd {
 	return func() tea.Msg {
-		pr, err := gh.New().FindForHead(head)
+		pr, err := client.FindForHead(head)
 		return currentBranchPRLoaded{pr: pr, err: err}
 	}
 }
 
-func fetchPRPreview(number int, generation uint64) tea.Cmd {
+func fetchPRPreview(client githubClient, number int, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		pr, err := gh.New().FindPreview(number)
+		pr, err := client.FindPreview(number)
 		return prPreviewLoaded{generation: generation, number: number, pr: pr, err: err}
 	}
 }
 
-func fetchGitHub(head string, number int, generation uint64) tea.Cmd {
+func fetchGitHub(client githubClient, head string, number int, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		client := gh.New()
 		if number == 0 {
 			pr, err := client.FindForHead(head)
 			if err != nil {
@@ -1102,9 +1122,9 @@ func pollableCI(pr gh.PR) bool {
 	return prCIHealth(pr) == "pending"
 }
 
-func pollCI(generation uint64, number int) tea.Cmd {
+func pollCI(client githubClient, generation uint64, number int) tea.Cmd {
 	return func() tea.Msg {
-		pr, err := gh.New().FindChecks(number)
+		pr, err := client.FindChecks(number)
 		return ciPolled{generation: generation, pr: pr, err: err}
 	}
 }
@@ -1240,9 +1260,8 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 	)
 }
 
-func fetchRemotePR(pr gh.PR, generation uint64) tea.Cmd {
+func fetchRemotePR(client githubClient, pr gh.PR, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		client := gh.New()
 		var headRef string
 		var comments []gh.Comment
 		var activities []gh.Activity
@@ -1316,7 +1335,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.status = "loading PR refs…"
 	m.githubStatus = "GitHub: cached · refreshing selected PR…"
 	m.layout()
-	return tea.Batch(fetchRemotePR(pr, m.targetGeneration), m.sync(), m.startSpinner())
+	return tea.Batch(fetchRemotePR(m.client, pr, m.targetGeneration), m.sync(), m.startSpinner())
 }
 
 const (

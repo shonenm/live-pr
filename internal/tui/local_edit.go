@@ -229,7 +229,7 @@ func (m Model) savePRDescription() (Model, tea.Cmd) {
 	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
 	m.remoteCommentBusy = true
 	m.status = "updating PR description…"
-	return m, tea.Batch(updatePRDescription(number, m.head, body, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(updatePRDescription(m.client, number, m.head, body, m.targetGeneration), m.startSpinner())
 }
 
 func (m Model) saveRemoteComment() (Model, tea.Cmd) {
@@ -251,7 +251,7 @@ func (m Model) saveRemoteComment() (Model, tea.Cmd) {
 	m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
 	m.remoteCommentID, m.remoteCommentBusy = 0, true
 	m.status = "sending comment…"
-	return m, tea.Batch(postRemoteComment(number, body, editID, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(postRemoteComment(m.client, number, body, editID, m.targetGeneration), m.startSpinner())
 }
 
 func (m *Model) saveLocalSummary(st *store.Store) (string, error) {
@@ -363,7 +363,7 @@ func (m Model) handleLocalOverlay(msg tea.Msg) (Model, tea.Cmd) {
 			m.remoteDeleteID, m.remoteDeleteTitle = 0, ""
 			m.remoteCommentBusy = true
 			m.status = "deleting comment…"
-			return m, tea.Batch(deleteRemoteComment(id, m.targetGeneration), m.startSpinner())
+			return m, tea.Batch(deleteRemoteComment(m.client, id, m.targetGeneration), m.startSpinner())
 		case "n", "esc", "q":
 			m.remoteDeleteID, m.remoteDeleteTitle = 0, ""
 		}

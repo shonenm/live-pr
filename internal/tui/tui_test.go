@@ -47,6 +47,7 @@ func (m *Model) buildPRList() string {
 
 func testModel() Model {
 	return Model{
+		client:      &fakeGH{},
 		views:       config.DefaultViews(),
 		title:       "CodeDiff review mode",
 		prView:      allPRsView,

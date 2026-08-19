@@ -71,9 +71,9 @@ func optimisticStatus(pr gh.PR, target string) gh.PR {
 	return pr
 }
 
-func runPRStatus(pr gh.PR, target string) tea.Cmd {
+func runPRStatus(client githubClient, pr gh.PR, target string) tea.Cmd {
 	return func() tea.Msg {
-		err := gh.New().SetStatus(pr, target)
+		err := client.SetStatus(pr, target)
 		if err == nil {
 			pr = optimisticStatus(pr, target)
 		}
@@ -126,7 +126,7 @@ func (m Model) submitPRStatusTarget(target string, options []string) (Model, tea
 		return m, nil
 	}
 	m.statusRunning = true
-	return m, tea.Batch(runPRStatus(m.statusPR, target), m.startSpinner())
+	return m, tea.Batch(runPRStatus(m.client, m.statusPR, target), m.startSpinner())
 }
 
 func (m Model) handlePRStatusDone(msg prStatusDone) (Model, tea.Cmd) {

@@ -11,9 +11,8 @@ import (
 	gh "github.com/shonenm/live-pr/internal/github"
 )
 
-func runPRAction(action prAction, pr gh.PR) tea.Cmd {
+func runPRAction(client githubClient, action prAction, pr gh.PR) tea.Cmd {
 	return func() tea.Msg {
-		client := gh.New()
 		var err error
 		switch action {
 		case mergePR:
