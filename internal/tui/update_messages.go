@@ -253,19 +253,27 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.action == mergePR || msg.action == closePR {
+		// Apply the outcome directly: refetching right away often still
+		// returns the old state, which read as "merge did nothing".
+		updated := msg.pr
 		if msg.action == mergePR {
 			m.notice = fmt.Sprintf("Merge submitted for PR #%d", msg.number)
+			updated.State = "MERGED"
 		} else {
 			m.notice = fmt.Sprintf("Closed PR #%d", msg.number)
+			updated.State = "CLOSED"
 		}
-		m.prListGeneration++
+		if m.cache.PR != nil && m.cache.PR.Number == msg.number {
+			m.cache.PR.State = updated.State
+		}
 		if m.prPages == nil {
 			m.prPages = map[string]prPageState{}
 		}
-		page := m.prPages[m.activePRPage]
-		page.fresh, page.loading = false, false
-		m.prPages[m.activePRPage] = page
-		return m, m.requestPRPage(true)
+		next, cmd := m.applyPRStateChange(updated)
+		if next.screen == prListScreen {
+			return next, tea.Batch(cmd, next.requestPRPage(true))
+		}
+		return next, cmd
 	}
 	m.status = fmt.Sprintf("Checked out PR #%d · reloading…", msg.number)
 	m.refreshing = true

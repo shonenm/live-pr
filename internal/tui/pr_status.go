@@ -137,10 +137,18 @@ func (m Model) handlePRStatusDone(msg prStatusDone) (Model, tea.Cmd) {
 	}
 	m.statusPR = gh.PR{}
 	m.notice = fmt.Sprintf("PR #%d is now %s", msg.pr.Number, msg.target)
-	if m.screen == detailScreen && m.cache.PR != nil && m.cache.PR.Number == msg.pr.Number {
-		*m.cache.PR = msg.pr
+	return m.applyPRStateChange(msg.pr)
+}
+
+// applyPRStateChange lands a state transition everywhere the PR is shown —
+// detail header, navigator, loaded pages — without waiting for a refetch,
+// which GitHub often answers with the old state right after a merge. Pages
+// are marked stale so the next load reconciles with the server.
+func (m Model) applyPRStateChange(pr gh.PR) (Model, tea.Cmd) {
+	if m.screen == detailScreen && m.cache.PR != nil && m.cache.PR.Number == pr.Number {
+		*m.cache.PR = pr
 	}
-	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
+	m.navigator.PRs = upsertPR(m.navigator.PRs, pr)
 	for key, page := range m.prPages {
 		parts := strings.SplitN(key, ":", 3)
 		state := m.prListState
@@ -150,14 +158,14 @@ func (m Model) handlePRStatusDone(msg prStatusDone) (Model, tea.Cmd) {
 			}
 		}
 		prs := page.prs[:0]
-		for _, pr := range page.prs {
-			if pr.Number == msg.pr.Number {
-				if matchesListState(msg.pr, state) {
-					prs = append(prs, msg.pr)
+		for _, existing := range page.prs {
+			if existing.Number == pr.Number {
+				if matchesListState(pr, state) {
+					prs = append(prs, pr)
 				}
 				continue
 			}
-			prs = append(prs, pr)
+			prs = append(prs, existing)
 		}
 		page.prs = prs
 		m.prPages[key] = page
