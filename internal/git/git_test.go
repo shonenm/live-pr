@@ -66,14 +66,7 @@ func TestFetchPullLeavesCheckoutUntouched(t *testing.T) {
 	}
 	beforeBranch := runIn(clone, "branch", "--show-current")
 	beforeStatus := runIn(clone, "status", "--porcelain")
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(clone); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(old) }()
+	t.Chdir(clone)
 
 	ref, err := FetchPull(7, "main", oid)
 	if err != nil {
@@ -124,14 +117,7 @@ func TestCheckMergeReadinessDoesNotTouchCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := run("status", "--porcelain")
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
+	t.Chdir(dir)
 
 	readiness, err := CheckMergeReadiness("main", "feature")
 	if err != nil || readiness.Behind != 1 || len(readiness.ConflictFiles) != 1 || readiness.ConflictFiles[0] != "file.txt" {
@@ -170,14 +156,7 @@ func TestCheckMergeReadinessFindsDivergentAppendConflicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("commit", "-am", "theirs")
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
+	t.Chdir(dir)
 
 	readiness, err := CheckMergeReadiness("main", "feature")
 	if err != nil || readiness.Behind != 1 || len(readiness.ConflictFiles) != 1 || readiness.ConflictFiles[0] != "plan" {
@@ -214,14 +193,7 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	runGit("add", "file.txt")
 	runGit("commit", "-m", "change")
 
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
+	t.Chdir(dir)
 
 	files, err := ChangedFilesRange("main", "HEAD")
 	if err != nil {
@@ -325,14 +297,7 @@ func gitRepo(t *testing.T) func(args ...string) {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
+	t.Chdir(dir)
 	return run
 }
 
@@ -451,9 +416,7 @@ func TestChangedFilesRangeHashesFromSubdirectory(t *testing.T) {
 	}
 	// Launching from a subdirectory must still hash the uncommitted file:
 	// --raw paths are repo-root relative, not cwd relative.
-	if err := os.Chdir("sub"); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir("sub")
 	files, err := ChangedFilesRange("HEAD", "")
 	if err != nil || len(files) != 1 {
 		t.Fatalf("changed files = %#v err=%v", files, err)
