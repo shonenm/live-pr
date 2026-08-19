@@ -20,6 +20,7 @@ import (
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prbody"
 	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/internal/theme"
 )
 
 type tab int
@@ -347,6 +348,7 @@ func New(version ...string) (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
+	applyTheme(theme.ByName(cfg.Theme))
 	navigatorPath := store.NavigatorCache(root)
 	navigator, navErr := gh.LoadNavigatorCache(navigatorPath)
 	status := ""

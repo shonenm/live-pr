@@ -103,6 +103,21 @@ func TestLoadDiffDisplayWithRepoOverride(t *testing.T) {
 	}
 }
 
+func TestLoadReadsTheme(t *testing.T) {
+	global := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", global)
+	if got := loadConfig(t, repo).Theme; got != "" {
+		t.Fatalf("default theme = %q, want empty (primer-dark)", got)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("theme = \"catppuccin-mocha\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).Theme; got != "catppuccin-mocha" {
+		t.Fatalf("theme = %q, want catppuccin-mocha", got)
+	}
+}
+
 func TestLoadMissingFilesUsesDefaults(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	got, err := Load(t.TempDir())

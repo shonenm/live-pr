@@ -19,6 +19,7 @@ import (
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prfilter"
+	"github.com/shonenm/live-pr/internal/theme"
 )
 
 func TestModelDoesNotConfigureARealReviewerProcess(t *testing.T) {
@@ -222,6 +223,31 @@ func TestPaletteMatchesPrimerDarkSemantics(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("palette[%d] = %s, want %s", i, got[i], want[i])
+		}
+	}
+}
+
+func TestApplyThemeRebuildsSemanticStyles(t *testing.T) {
+	defer applyTheme(theme.PrimerDark())
+	applyTheme(theme.ByName("primer-light"))
+	if cFg != "#1f2328" || cOpen != "#1f883d" || cDoneEmphasis != "#8250df" {
+		t.Fatalf("primer-light palette = fg %s, open %s, done %s", cFg, cOpen, cDoneEmphasis)
+	}
+	if got := stFg.GetForeground(); got != lipgloss.Color("#1f2328") {
+		t.Fatalf("stFg foreground = %v, want the primer-light foreground", got)
+	}
+}
+
+// TestEmphasisInkKeepsPrimerDarkInks pins the filled-block text colors the
+// default theme has always used: GitHub's dark ink on the accent footer,
+// white on every state badge.
+func TestEmphasisInkKeepsPrimerDarkInks(t *testing.T) {
+	if got := emphasisInk(cAccent); got != "#0d1117" {
+		t.Fatalf("footer ink = %s, want #0d1117", got)
+	}
+	for _, background := range []string{cOpen, cDoneEmphasis, cDangerEmphasis, cClosed, cBorder} {
+		if got := emphasisInk(background); got != "#ffffff" {
+			t.Fatalf("badge ink on %s = %s, want #ffffff", background, got)
 		}
 	}
 }
