@@ -2,6 +2,8 @@ package tui
 
 import (
 	"os"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -134,5 +136,52 @@ func TestEditRemoteCommentOwnershipGate(t *testing.T) {
 	rejected, _ := m.editSelectedLocalItem()
 	if rejected.localEditMode == editRemoteComment {
 		t.Fatal("edited someone else's comment")
+	}
+}
+
+// A comment posted, edited, or deleted on a remote PR (opened from the list)
+// must refetch through fetchRemotePR. The fetchGitHub path resolves by branch,
+// fails isCurrentTargetPR for a PR whose head is not the current branch, and
+// wiped the detail into "Local only · no GitHub PR".
+func TestRemoteCommentDoneRefetchesViaRemotePath(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote = detailScreen, true
+	m.currentBranch = "main"
+	pr := gh.PR{Number: 14, HeadRefName: "feature", URL: "u"}
+	m.cache = gh.NewCache("feature")
+	m.cache.PR = &pr
+
+	generation := m.targetGeneration
+	u, cmd := m.Update(remoteCommentDone{generation: generation})
+	m = u.(Model)
+	if cmd == nil || m.targetGeneration != generation+1 {
+		t.Fatalf("comment done did not schedule a refetch: generation=%d cmd=%v", m.targetGeneration, cmd)
+	}
+	// Identify the scheduled fetch by closure symbol name without invoking
+	// it: running it would hit real git/gh. tea.Batch drops nil cmds, so the
+	// refetch may arrive bare or wrapped in a batch.
+	cmdName := func(c tea.Cmd) string {
+		return runtime.FuncForPC(reflect.ValueOf(c).Pointer()).Name()
+	}
+	cmds := []tea.Cmd{cmd}
+	if !strings.Contains(cmdName(cmd), "fetch") {
+		batch, ok := cmd().(tea.BatchMsg)
+		if !ok {
+			t.Fatalf("scheduled cmd = %s, want a fetch or a batch", cmdName(cmd))
+		}
+		cmds = batch
+	}
+	sawRemote := false
+	for _, sub := range cmds {
+		name := cmdName(sub)
+		if strings.Contains(name, "fetchGitHub") {
+			t.Fatal("remote comment refetch dispatched fetchGitHub, whose result fails isCurrentTargetPR and wipes the remote detail")
+		}
+		if strings.Contains(name, "fetchRemotePR") {
+			sawRemote = true
+		}
+	}
+	if !sawRemote {
+		t.Fatal("remote comment refetch did not dispatch fetchRemotePR")
 	}
 }

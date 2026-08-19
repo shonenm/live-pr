@@ -83,6 +83,9 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 		return m, m.sync()
 	}
 	m.targetGeneration++
+	if m.remote {
+		return m, tea.Batch(fetchRemotePR(*m.cache.PR, m.targetGeneration), m.startSpinner())
+	}
 	return m, tea.Batch(fetchGitHub(m.head, m.cache.PR.Number, m.targetGeneration), m.startSpinner())
 }
 
