@@ -53,6 +53,21 @@ func TestLoadAllowsExplicitlyDisablingDefaultBranchCommand(t *testing.T) {
 	}
 }
 
+func TestLoadSummarizeCommand(t *testing.T) {
+	global := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", global)
+	if cfg := loadConfig(t, repo); cfg.SummarizeCommand != "" {
+		t.Fatalf("default summarize_command = %q, want empty", cfg.SummarizeCommand)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("summarize_command = 'my-agent summarize'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).SummarizeCommand; got != "my-agent summarize" {
+		t.Fatalf("summarize_command = %q", got)
+	}
+}
+
 func TestLoadLegacyRepoOverride(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".live-pr"), 0o755); err != nil {
