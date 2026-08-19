@@ -1,7 +1,9 @@
 package github
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -657,6 +659,111 @@ func TestStatusHint(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := StatusHint(tc.err); got != tc.want {
 				t.Fatalf("StatusHint(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCommentWriteCommandsTargetExplicitEndpoints(t *testing.T) {
+	for name, test := range map[string]struct {
+		call     func(Client) error
+		method   string
+		endpoint string
+		body     string
+	}{
+		"post": {
+			call:     func(c Client) error { return c.PostIssueComment(7, "hello\n\"world\"") },
+			method:   "POST",
+			endpoint: "repos/{owner}/{repo}/issues/7/comments",
+			body:     "hello\n\"world\"",
+		},
+		"edit": {
+			call:     func(c Client) error { return c.EditIssueComment(9001, "updated") },
+			method:   "PATCH",
+			endpoint: "repos/{owner}/{repo}/issues/comments/9001",
+			body:     "updated",
+		},
+		"delete": {
+			call:     func(c Client) error { return c.DeleteIssueComment(9001) },
+			method:   "DELETE",
+			endpoint: "repos/{owner}/{repo}/issues/comments/9001",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var got []string
+			var payload []byte
+			client := Client{run: func(args ...string) ([]byte, error) {
+				got = append([]string(nil), args...)
+				// The --input temp file is deleted after run returns, so the
+				// payload must be captured while the command is "executing".
+				for i, arg := range args[:len(args)-1] {
+					if arg == "--input" {
+						payload, _ = os.ReadFile(args[i+1])
+					}
+				}
+				return nil, nil
+			}}
+			if err := test.call(client); err != nil {
+				t.Fatal(err)
+			}
+			if len(got) < 4 || got[0] != "api" || got[1] != "--method" || got[2] != test.method || got[3] != test.endpoint {
+				t.Fatalf("args = %v, want api --method %s %s", got, test.method, test.endpoint)
+			}
+			if test.body == "" {
+				if len(got) != 4 {
+					t.Fatalf("delete sent extra arguments: %v", got)
+				}
+				return
+			}
+			var sent struct {
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal(payload, &sent); err != nil || sent.Body != test.body {
+				t.Fatalf("payload = %q (%v), want body %q", payload, err, test.body)
+			}
+		})
+	}
+}
+
+func TestCommentWritesRejectEmptyBodies(t *testing.T) {
+	for name, call := range map[string]func(Client) error{
+		"post blank":      func(c Client) error { return c.PostIssueComment(7, "") },
+		"post whitespace": func(c Client) error { return c.PostIssueComment(7, " \n\t") },
+		"edit blank":      func(c Client) error { return c.EditIssueComment(9001, "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ran := false
+			client := Client{run: func(args ...string) ([]byte, error) {
+				ran = true
+				return nil, nil
+			}}
+			err := call(client)
+			if err == nil || !strings.Contains(err.Error(), "comment body must not be empty") {
+				t.Fatalf("error = %v, want empty-body rejection", err)
+			}
+			if ran {
+				t.Fatal("gh ran for an empty body")
+			}
+		})
+	}
+}
+
+func TestCommentWriteErrorsCarryCommandOutput(t *testing.T) {
+	client := Client{run: func(args ...string) ([]byte, error) {
+		return []byte("gh: rate limited"), errors.New("exit status 1")
+	}}
+	for name, test := range map[string]struct {
+		call  func() error
+		label string
+	}{
+		"post":   {call: func() error { return client.PostIssueComment(7, "hi") }, label: "gh api post issue comment"},
+		"edit":   {call: func() error { return client.EditIssueComment(9001, "hi") }, label: "gh api edit issue comment"},
+		"delete": {call: func() error { return client.DeleteIssueComment(9001) }, label: "gh api delete issue comment"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := test.call()
+			if err == nil || !strings.Contains(err.Error(), test.label) || !strings.Contains(err.Error(), "rate limited") {
+				t.Fatalf("error = %v, want %q wrapping the command output", err, test.label)
 			}
 		})
 	}
