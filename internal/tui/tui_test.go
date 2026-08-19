@@ -3942,3 +3942,74 @@ func TestDefaultBaseBranchIsAccented(t *testing.T) {
 		t.Fatalf("preview = %q", preview)
 	}
 }
+
+func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
+	// localLoaded arrives while the status popup is open.
+	m := testModel()
+	m.refreshing = true
+	m.statusPR = gh.PR{Number: 12, State: "OPEN"}
+	u, _ := m.Update(localLoaded{generation: m.targetGeneration, err: errors.New("load failed")})
+	if got := u.(Model); got.refreshing {
+		t.Fatal("localLoaded was dropped by the status popup")
+	}
+
+	// checkoutReloaded arrives while the view manager is open.
+	m = testModel()
+	m.refreshing = true
+	m.viewManager = true
+	u, _ = m.Update(checkoutReloaded{generation: m.targetGeneration, number: 7, err: errors.New("checkout reload: boom")})
+	if got := u.(Model); got.refreshing {
+		t.Fatal("checkoutReloaded was dropped by the view manager")
+	}
+
+	// rawDetailLoaded arrives while the editor overlay is open.
+	m = testModel()
+	m.localEditMode = addLocalComment
+	m.rawPending = map[string]bool{"k": true}
+	m.rawDetailCache = map[string]string{}
+	u, _ = m.Update(rawDetailLoaded{generation: m.targetGeneration, key: "k", raw: "diff"})
+	if got := u.(Model); got.rawPending["k"] || got.rawDetailCache["k"] != "diff" {
+		t.Fatal("rawDetailLoaded was dropped by the editor overlay")
+	}
+
+	// baseResolved arrives while the delete confirm is open.
+	m = testModel()
+	m.localDeleteTarget = "c1"
+	u, _ = m.Update(baseResolved{
+		generation: m.targetGeneration, base: m.base, diffBase: m.diffBase,
+		files: []git.ChangedFile{{Status: "A", Path: "new.go"}},
+	})
+	if got := u.(Model); len(got.files) != 1 || got.files[0].Path != "new.go" {
+		t.Fatal("baseResolved was dropped by the delete confirm")
+	}
+}
+
+func TestStaleCheckoutReloadCannotReplaceModel(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.targetGeneration = 2
+	next := testModel()
+	next.screen = prListScreen
+	u, _ := m.Update(checkoutReloaded{generation: 1, number: 9, next: &next})
+	got := u.(Model)
+	if got.screen != detailScreen || got.notice != "" {
+		t.Fatalf("stale checkout reload replaced the model: screen=%v notice=%q", got.screen, got.notice)
+	}
+}
+
+func TestStalePRPreviewResultClearsLoadingTicket(t *testing.T) {
+	m := testModel()
+	m.prListGeneration = 2
+	m.prPreviewLoading = map[int]bool{7: true}
+	u, _ := m.Update(prPreviewLoaded{generation: 1, number: 7, pr: gh.PR{Number: 7}})
+	got := u.(Model)
+	if len(got.prPreviewLoading) != 0 {
+		t.Fatalf("stale preview result orphaned the loading ticket: %#v", got.prPreviewLoading)
+	}
+	if got.isLoading() {
+		t.Fatal("orphaned ticket kept the spinner alive")
+	}
+	if got.prPreviewLoaded[7] {
+		t.Fatal("stale preview result was applied")
+	}
+}
