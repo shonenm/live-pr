@@ -75,7 +75,6 @@ Mermaid rendering (with `termaid` installed) are included.
   checked-out local PRs, or the historical base-to-fetched-head three-dot
   range for remote PRs. Selected commits use the commit's parent-to-commit
   range. See [diff-tool-integration.md](diff-tool-integration.md).
-- The original fzf experience mock lives in `prototype/`.
 
 ## Releasing
 

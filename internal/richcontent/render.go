@@ -48,13 +48,6 @@ func ReplaceMermaid(markdown string, rendered map[string]string) string {
 	})
 }
 
-// RenderMermaid uses the optional termaid executable.
-func RenderMermaid(source string, width int) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return RenderMermaidContext(ctx, source, width)
-}
-
 // RenderMermaidContext renders within the caller's deadline.
 func RenderMermaidContext(ctx context.Context, source string, width int) (string, error) {
 	path, err := exec.LookPath("termaid")
@@ -79,13 +72,6 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 		return 0, errors.New("rich content output exceeds 256 KiB")
 	}
 	return b.Buffer.Write(p)
-}
-
-// AvatarColor reduces an avatar to one representative color for a one-cell icon.
-func AvatarColor(rawURL string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return AvatarColorContext(ctx, rawURL)
 }
 
 // AvatarColorContext downloads and reduces an avatar within the caller's deadline.

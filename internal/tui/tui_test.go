@@ -38,6 +38,13 @@ const (
 	prViewCount
 )
 
+// buildPRList is a test-only view of the list rows; production code uses
+// buildPRListRows for the selected line as well.
+func (m *Model) buildPRList() string {
+	content, _ := m.buildPRListRows()
+	return content
+}
+
 func testModel() Model {
 	return Model{
 		views:       config.DefaultViews(),
