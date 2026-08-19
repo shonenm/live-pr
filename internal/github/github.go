@@ -726,12 +726,26 @@ func (c Client) writeCommentBody(method, endpoint, body, label string) error {
 	}{Body: body}, label)
 }
 
-// Merge merges a pull request with a merge commit.
-func (c Client) Merge(number int, headOID string) error {
+// MergeMethod selects how gh lands a pull request.
+type MergeMethod string
+
+const (
+	MergeCommit MergeMethod = "merge"
+	MergeSquash MergeMethod = "squash"
+	MergeRebase MergeMethod = "rebase"
+)
+
+// Merge merges a pull request with the given method.
+func (c Client) Merge(number int, headOID string, method MergeMethod) error {
 	if headOID == "" {
 		return errors.New("merge requires the reviewed head commit")
 	}
-	out, err := c.run("pr", "merge", strconv.Itoa(number), "--merge", "--match-head-commit", headOID)
+	switch method {
+	case MergeCommit, MergeSquash, MergeRebase:
+	default:
+		return fmt.Errorf("unknown merge method %q", method)
+	}
+	out, err := c.run("pr", "merge", strconv.Itoa(number), "--"+string(method), "--match-head-commit", headOID)
 	if err != nil {
 		return commandError("gh pr merge", out, err)
 	}

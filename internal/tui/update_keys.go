@@ -90,6 +90,7 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.prListState == openPRListState {
 			if pr := m.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
 				m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, pr.Number, *pr
+				m.mergeMethodCursor = 0
 				m.status, m.notice = "", ""
 			}
 		}
@@ -164,6 +165,31 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 // action and swallows keys while one runs; handled is false when neither
 // state applies. Both screens share this state machine.
 func (m Model) handlePRActionConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.pendingPRAction == mergePR {
+		switch msg.String() {
+		case "up", "k":
+			m.mergeMethodCursor = (m.mergeMethodCursor + len(mergeMethodOptions) - 1) % len(mergeMethodOptions)
+			return m, nil, true
+		case "down", "j":
+			m.mergeMethodCursor = (m.mergeMethodCursor + 1) % len(mergeMethodOptions)
+			return m, nil, true
+		case "m":
+			return m.submitMerge(gh.MergeCommit)
+		case "s":
+			return m.submitMerge(gh.MergeSquash)
+		case "r":
+			return m.submitMerge(gh.MergeRebase)
+		case "y", "enter":
+			return m.submitMerge(m.selectedMergeMethod())
+		case "n", "q", "esc":
+			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
+			return m, nil, true
+		case "ctrl+c":
+			return m, tea.Quit, true
+		default:
+			return m, nil, true
+		}
+	}
 	if m.pendingPRAction != noPRAction {
 		switch msg.String() {
 		case "y":
@@ -171,7 +197,7 @@ func (m Model) handlePRActionConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 			m.pendingPRAction = noPRAction
 			m.prActionRunning = action
 			m.notice = ""
-			return m, tea.Batch(runPRAction(m.client, action, pr), m.startSpinner()), true
+			return m, tea.Batch(runPRAction(m.client, action, pr, gh.MergeCommit), m.startSpinner()), true
 		case "n", "q", "esc":
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
 			return m, nil, true
@@ -188,6 +214,15 @@ func (m Model) handlePRActionConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+// submitMerge fires the pending merge with the chosen method.
+func (m Model) submitMerge(method gh.MergeMethod) (Model, tea.Cmd, bool) {
+	pr := m.prActionPR
+	m.pendingPRAction = noPRAction
+	m.prActionRunning = mergePR
+	m.notice = ""
+	return m, tea.Batch(runPRAction(m.client, mergePR, pr, method), m.startSpinner()), true
 }
 
 func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -359,6 +394,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Merge):
 		if m.canMergeCurrentPR() {
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, m.cache.PR.Number, *m.cache.PR
+			m.mergeMethodCursor = 0
 			m.status, m.notice = "", ""
 		}
 		return m, nil
