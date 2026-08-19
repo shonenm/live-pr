@@ -142,3 +142,48 @@ func TestLoadSkipsTornAndUnknownRecords(t *testing.T) {
 		t.Fatalf("events = %#v", events)
 	}
 }
+
+func TestCreateRejectsOversizedRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.jsonl")
+	if _, err := Create(path, Event{TS: "2026-07-21T10:00", Kind: Note, Title: "small", Author: "user"}); err != nil {
+		t.Fatalf("create small: %v", err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read timeline: %v", err)
+	}
+
+	huge := Event{TS: "2026-07-21T10:01", Kind: Note, Title: "huge", Body: strings.Repeat("a", maxRecordSize)}
+	if _, err := Create(path, huge); err == nil {
+		t.Fatal("expected oversized event to be rejected")
+	} else if !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("want a too-large error, got: %v", err)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read timeline: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("rejected event must not be appended")
+	}
+}
+
+func TestLoadSucceedsAfterOversizedRejection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timeline.jsonl")
+	if _, err := Create(path, Event{TS: "2026-07-21T10:00", Kind: Decision, Title: "keep it", Author: "user"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	huge := Event{TS: "2026-07-21T10:01", Kind: Note, Title: "huge", Body: strings.Repeat("a", maxRecordSize)}
+	if _, err := Create(path, huge); err == nil {
+		t.Fatal("expected oversized event to be rejected")
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("load after rejection: %v", err)
+	}
+	if len(got) != 1 || got[0].Title != "keep it" {
+		t.Fatalf("want the original event to survive, got %+v", got)
+	}
+}

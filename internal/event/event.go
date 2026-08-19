@@ -46,6 +46,12 @@ type record struct {
 
 const timeFormat = "2006-01-02T15:04"
 
+// maxRecordSize caps one serialized record line, including its trailing
+// newline. It matches the buffer limit of Load's scanner: a longer line would
+// make every subsequent Load fail with bufio.ErrTooLong, so appendRecord
+// rejects such records up front.
+const maxRecordSize = 4 * 1024 * 1024
+
 // New stamps an event with the current local time.
 func New(kind Kind, title, body string) Event {
 	return Event{TS: time.Now().Format(timeFormat), Kind: kind, Title: title, Body: body}
@@ -133,7 +139,7 @@ func Load(path string) ([]Event, error) {
 		skipped = append(skipped, fmt.Errorf("line %d: "+format, append([]any{line}, args...)...))
 	}
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	sc.Buffer(make([]byte, 0, 64*1024), maxRecordSize)
 	lineNumber := 0
 	for sc.Scan() {
 		lineNumber++
@@ -200,15 +206,18 @@ func Load(path string) ([]Event, error) {
 }
 
 func appendRecord(path string, rec record) error {
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	if len(b)+1 > maxRecordSize {
+		return fmt.Errorf("timeline event is too large: serialized record is %d bytes, limit is %d; shorten the body", len(b)+1, maxRecordSize)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	b, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
 	_, err = f.Write(append(b, '\n'))
 	return err
 }
