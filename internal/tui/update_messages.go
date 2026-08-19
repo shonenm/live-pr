@@ -405,6 +405,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	m.resetDetailCaches()
 	m.cache.PR = &msg.pr
+	m.refreshReviewDraft()
 	if strings.TrimSpace(msg.pr.Title) != "" {
 		m.title = msg.pr.Title
 	}
@@ -604,6 +605,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	default:
 		m.githubStatus = offlineStatus(msg.err, "showing cached GitHub data")
 	}
+	m.refreshReviewDraft()
 	m.reloadLocalConversation()
 	m.invalidateConversation()
 	m.layout()
