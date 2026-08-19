@@ -406,9 +406,6 @@ type ChangedFile struct {
 	Fingerprint string
 }
 
-// ChangedFiles returns changed paths in base...HEAD order.
-func ChangedFiles(base string) ([]ChangedFile, error) { return ChangedFilesRange(base, "HEAD") }
-
 // ChangedFilesRange returns changed paths in the given range. An empty head
 // compares the working tree against base.
 func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
@@ -452,10 +449,6 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 	}
 	return files, nil
 }
-
-// zeroBlob is git's null object ID, reported for the post-image of a file that
-// only exists in the working tree.
-const zeroBlob = "0000000000000000000000000000000000000000"
 
 // fileFingerprint identifies a file's diff content. Blob IDs alone cover
 // committed revisions; an uncommitted post-image has no blob, so the working
@@ -509,9 +502,6 @@ func workingTreeHash(path string) string {
 	hashMemoMu.Unlock()
 	return entry.sum
 }
-
-// FileDiff returns the colorized base...HEAD patch for the selected paths.
-func FileDiff(base string, paths ...string) string { return FileDiffRange(base, "HEAD", paths...) }
 
 // FileDiffRange returns the colorized base...head patch for selected paths.
 func FileDiffRange(base, head string, paths ...string) string {
@@ -573,16 +563,4 @@ func FetchPull(number int, base, expectedOID string) (string, error) {
 		return "", fmt.Errorf("PR #%d moved during fetch (expected %s, got %s)", number, expectedOID, oid)
 	}
 	return headRef, nil
-}
-
-// ShowStat returns `git show --stat` for a commit, colorized, with a compact
-// author/date header. Empty string if the sha cannot be resolved.
-func ShowStat(sha string) string {
-	out, err := run("show", "--stat", "--color=always",
-		"--format=%C(dim)%an committed · %ad%C(reset)", "--date=short", "--end-of-options", sha)
-	if err != nil {
-		debugtime.Logf("ShowStat %s: %v", sha, err)
-		return ""
-	}
-	return out
 }
