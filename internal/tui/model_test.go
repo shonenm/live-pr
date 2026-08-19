@@ -18,6 +18,7 @@ import (
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
 func TestModelDoesNotConfigureARealReviewerProcess(t *testing.T) {
@@ -523,7 +524,7 @@ func TestNoticeClearsOnTheNextKeyAndRefreshAlwaysReports(t *testing.T) {
 	m.navigator = gh.NewNavigatorCache()
 	pr := gh.PR{Number: 12, State: "OPEN", Title: "x"}
 	m.prList.open = []gh.PR{pr}
-	m.prList.stacks = buildPRStacks(m.prList.open)
+	m.prList.stacks = prfilter.BuildStacks(m.prList.open)
 
 	u, _ := m.Update(prStatusDone{pr: pr, target: "open"})
 	m = u.(Model)
@@ -705,7 +706,7 @@ func TestDefaultBaseBranchIsAccented(t *testing.T) {
 	list.defaultBranch = "main"
 	list.screen, list.w = prListScreen, 120
 	list.prList.open = []gh.PR{{Number: 1, Title: "one", BaseRefName: "main", HeadRefName: "feat/x", URL: "u"}}
-	list.prList.stacks = buildPRStacks(list.prList.open)
+	list.prList.stacks = prfilter.BuildStacks(list.prList.open)
 	if preview := ansi.Strip(list.buildPRPreview()); !strings.Contains(preview, "main ← feat/x") {
 		t.Fatalf("preview = %q", preview)
 	}

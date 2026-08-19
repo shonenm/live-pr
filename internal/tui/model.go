@@ -141,18 +141,6 @@ type detailContent struct {
 	renderable bool
 }
 
-type stackEntry struct {
-	pr    gh.PR
-	depth int
-}
-
-type prStack struct {
-	id      string
-	title   string
-	order   int
-	entries []stackEntry
-}
-
 type prPageState struct {
 	prs                             []gh.PR
 	total                           int
