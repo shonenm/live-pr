@@ -54,7 +54,7 @@ func BenchmarkChangeDetection(b *testing.B) {
 			})
 			b.Run("enumerate", func(b *testing.B) {
 				for range b.N {
-					if _, err := ChangedFiles("main"); err != nil {
+					if _, err := ChangedFilesRange("main", "HEAD"); err != nil {
 						b.Fatal(err)
 					}
 				}
