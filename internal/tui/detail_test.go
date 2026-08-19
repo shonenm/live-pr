@@ -581,3 +581,98 @@ func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 		t.Fatal("unchanged range must not restart the review terminal")
 	}
 }
+
+// Switching the detail target to a different PR prunes richBodies: entries are
+// keyed by full body text, so another target's bodies are never looked up
+// again and previously accumulated for the whole session. Reopening the same
+// PR keeps them, matching the resetCaches comment that preserves rendered
+// mermaid across same-target reloads.
+func TestTargetSwitchPrunesRichBodies(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote = detailScreen, true
+	m.cache = gh.NewCache("feature")
+	m.cache.PR = &gh.PR{Number: 1, HeadRefName: "feature"}
+	m.detailView.richBodies = map[string]string{"body": "rendered"}
+	m.detailView.lastRichContentKey = [32]byte{1}
+
+	_ = m.openRemote(gh.PR{Number: 1, BaseRefName: "main", HeadRefName: "feature"})
+	if len(m.detailView.richBodies) != 1 {
+		t.Fatalf("same-PR reopen pruned richBodies: %#v", m.detailView.richBodies)
+	}
+
+	m.detailView.lastRichContentKey = [32]byte{1}
+	_ = m.openRemote(gh.PR{Number: 2, BaseRefName: "main", HeadRefName: "other"})
+	if len(m.detailView.richBodies) != 0 {
+		t.Fatalf("PR switch kept richBodies: %#v", m.detailView.richBodies)
+	}
+	if m.detailView.lastRichContentKey != ([32]byte{}) {
+		t.Fatal("PR switch kept the rich-content dispatch key")
+	}
+}
+
+func TestApplyLocalFromRemotePrunesRichBodies(t *testing.T) {
+	st := store.ForBranch(t.TempDir(), "feature")
+	m := testModel()
+	m.screen, m.remote = detailScreen, true
+	m.detailView.richBodies = map[string]string{"body": "rendered"}
+	m.applyLocal(st, localData{cache: gh.NewCache("feature")})
+	if len(m.detailView.richBodies) != 0 {
+		t.Fatal("remote-to-local switch kept richBodies")
+	}
+
+	// A local reload of the same branch keeps the rendered bodies.
+	m.detailView.richBodies = map[string]string{"body": "rendered"}
+	m.applyLocal(st, localData{cache: gh.NewCache("feature")})
+	if len(m.detailView.richBodies) != 1 {
+		t.Fatal("local reload pruned richBodies")
+	}
+}
+
+// The commits and checks tabs rebuilt every styled row on each sync; with
+// 1,000 commits that costs several milliseconds per keystroke. The render is
+// cached by (cursor, width, content fingerprint) like the conversation tab.
+func TestBuildCommitsCachesRenderUntilInputsChange(t *testing.T) {
+	m := testModel()
+	m.detailView.commits = []git.Commit{{SHA: "abc12341", Subject: "first"}, {SHA: "abc12342", Subject: "second"}}
+	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
+		{OID: "abc1234100000000000000000000000000000000", CheckRollupState: "SUCCESS"},
+		{OID: "abc1234200000000000000000000000000000000", CheckRollupState: "PENDING"},
+	}}
+	first, _ := m.buildCommits()
+	m.detailView.commitsRender = "sentinel"
+	if out, _ := m.buildCommits(); out != "sentinel" {
+		t.Fatal("unchanged inputs rebuilt the commit rows")
+	}
+	m.cache.PR.Commits[1].CheckRollupState = "FAILURE"
+	out, _ := m.buildCommits()
+	if out == "sentinel" || out == first {
+		t.Fatalf("rollup change did not recompute the rows: %q", ansi.Strip(out))
+	}
+	if !strings.Contains(ansi.Strip(out), "✗ abc12342") {
+		t.Fatalf("recomputed rows missing new CI state: %q", ansi.Strip(out))
+	}
+	m.detailView.commitsRender = "sentinel"
+	m.detailView.cursors[commitsTab] = 1
+	if out, _ := m.buildCommits(); out == "sentinel" {
+		t.Fatal("cursor move did not recompute the rows")
+	}
+}
+
+func TestBuildChecksCachesRenderUntilInputsChange(t *testing.T) {
+	m := testModel()
+	m.cache.PR = &gh.PR{Checks: []gh.PRCheck{{Name: "build", Conclusion: "SUCCESS"}, {Name: "lint", Status: "IN_PROGRESS"}}}
+	first, _ := m.buildChecks()
+	m.detailView.checksRender = "sentinel"
+	if out, _ := m.buildChecks(); out != "sentinel" {
+		t.Fatal("unchanged inputs rebuilt the check rows")
+	}
+	m.cache.PR.Checks[1].Status = ""
+	m.cache.PR.Checks[1].Conclusion = "FAILURE"
+	out, _ := m.buildChecks()
+	if out == "sentinel" || out == first {
+		t.Fatal("check state change did not recompute the rows")
+	}
+	if !strings.Contains(ansi.Strip(out), "✗ lint") {
+		t.Fatalf("recomputed rows missing new state: %q", ansi.Strip(out))
+	}
+}

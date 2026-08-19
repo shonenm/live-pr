@@ -309,7 +309,13 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 						rendered[source] = diagram
 					}
 				}
-				results[body] = richcontent.ReplaceMermaid(body, rendered)
+				// Bodies without mermaid come back unchanged: storing them
+				// would key the map by their full text for a value that is
+				// the same text again. richBody falls back to the raw body
+				// on a miss, so only rewritten bodies are kept.
+				if replaced := richcontent.ReplaceMermaid(body, rendered); replaced != body {
+					results[body] = replaced
+				}
 			}
 			return richBodiesLoaded{key: key, bodies: results}
 		},
