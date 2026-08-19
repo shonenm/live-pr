@@ -185,3 +185,18 @@ func TestRemoteCommentDoneRefetchesViaRemotePath(t *testing.T) {
 		t.Fatal("remote comment refetch did not dispatch fetchRemotePR")
 	}
 }
+
+func TestCommentKeysOutsideConversationTabExplainInsteadOfSilence(t *testing.T) {
+	m := testModel()
+	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "abc123"}
+	m.active = commitsTab
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = u.(Model)
+	if m.localEditMode != noLocalEdit {
+		t.Fatalf("a outside the conversation tab opened an editor: mode=%v", m.localEditMode)
+	}
+	if !strings.Contains(m.status, "Conversation tab") {
+		t.Fatalf("a outside the conversation tab left status = %q, want a pointer to the Conversation tab", m.status)
+	}
+}

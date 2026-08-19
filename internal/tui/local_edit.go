@@ -58,7 +58,11 @@ func (m Model) startLocalComment() (Model, tea.Cmd) {
 }
 
 func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
-	if m.active != conversationTab || m.focusDiff || m.focusExplorer {
+	if m.active != conversationTab {
+		m.status = "comments live in the Conversation tab (esc)"
+		return m, nil
+	}
+	if m.focusDiff || m.focusExplorer {
 		return m, nil
 	}
 	item := m.selectedConversationItem()
@@ -106,7 +110,11 @@ func (m Model) editSelectedLocalItem() (Model, tea.Cmd) {
 }
 
 func (m Model) deleteSelectedLocalComment() (Model, tea.Cmd) {
-	if m.active != conversationTab || m.focusDiff || m.focusExplorer {
+	if m.active != conversationTab {
+		m.status = "comments live in the Conversation tab (esc)"
+		return m, nil
+	}
+	if m.focusDiff || m.focusExplorer {
 		return m, nil
 	}
 	item := m.selectedConversationItem()

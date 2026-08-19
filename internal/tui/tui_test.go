@@ -4198,3 +4198,18 @@ func TestStalePRPreviewResultClearsLoadingTicket(t *testing.T) {
 		t.Fatal("stale preview result was applied")
 	}
 }
+
+func TestPRListHelpKeyTogglesFullHelp(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = u.(Model)
+	if !m.help.ShowAll {
+		t.Fatal("? on the PR list did not open the full help")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	if u.(Model).help.ShowAll {
+		t.Fatal("second ? on the PR list did not close the full help")
+	}
+}
