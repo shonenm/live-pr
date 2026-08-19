@@ -135,7 +135,7 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.prPages[m.activePRPage] = page
 		// Re-check the branch's own PR too: once it leaves the open view,
 		// nothing else would ever tell the list that it closed.
-		return m, tea.Batch(m.requestPRPage(true), fetchCurrentBranchPRState(m.currentBranch))
+		return m, tea.Batch(m.requestPRPage(true), fetchCurrentBranchPRState(m.client, m.currentBranch))
 	case key.Matches(msg, m.keys.Down):
 		return m, m.moveCursorBy(1)
 	case key.Matches(msg, m.keys.Up):
@@ -168,7 +168,7 @@ func (m Model) handlePRActionConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 			m.pendingPRAction = noPRAction
 			m.prActionRunning = action
 			m.notice = ""
-			return m, tea.Batch(runPRAction(action, pr), m.startSpinner()), true
+			return m, tea.Batch(runPRAction(m.client, action, pr), m.startSpinner()), true
 		case "n", "q", "esc":
 			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
 			return m, nil, true
@@ -348,9 +348,9 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.githubStatus = "GitHub: refreshing…"
 		if m.remote && m.cache.PR != nil {
 			m.targetGeneration++
-			return m, tea.Batch(fetchRemotePR(*m.cache.PR, m.targetGeneration), m.startSpinner())
+			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.startSpinner())
 		}
-		return m, tea.Batch(fetchGitHub(m.head, m.currentPRNumber(), m.targetGeneration), m.startSpinner())
+		return m, tea.Batch(fetchGitHub(m.client, m.head, m.currentPRNumber(), m.targetGeneration), m.startSpinner())
 	case key.Matches(msg, m.keys.Status):
 		return m.openPRStatus(m.cache.PR)
 	case key.Matches(msg, m.keys.Merge):

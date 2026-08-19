@@ -182,7 +182,7 @@ func (m *Model) requestPRPage(reset bool) tea.Cmd {
 	m.prPages[key] = page
 	m.listRefreshing = true
 	m.githubStatus = "GitHub: fetching " + m.viewName(m.prView) + " pull requests…"
-	return tea.Batch(fetchPRList(m.prListGeneration, key, m.prViewSearch(m.prView, m.prListState, m.filterQuery), cursor, appendPage), m.startSpinner())
+	return tea.Batch(fetchPRList(m.client, m.prListGeneration, key, m.prViewSearch(m.prView, m.prListState, m.filterQuery), cursor, appendPage), m.startSpinner())
 }
 
 func (m *Model) applyPRViewState(selectedNumber int) tea.Cmd {
@@ -669,7 +669,7 @@ func (m *Model) ensureSelectedPRPreview() tea.Cmd {
 	}
 	m.prPreviewLoading[pr.Number] = true
 	m.status = fmt.Sprintf("loading PR #%d preview…", pr.Number)
-	return fetchPRPreview(pr.Number, m.prListGeneration)
+	return fetchPRPreview(m.client, pr.Number, m.prListGeneration)
 }
 
 func (m Model) renderPRListHeader() string {
