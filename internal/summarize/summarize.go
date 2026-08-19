@@ -44,15 +44,32 @@ func (c Claude) Summarize(transcript string) (Summary, error) {
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
-	timeout := c.Timeout
+	return run("claude summarize", c.Timeout, transcript, "claude", args...)
+}
+
+// Command summarizes via a user-configured shell command (run with `sh -c`),
+// piping the transcript on stdin and parsing stdout like Claude's output:
+// first non-empty line is the title, the rest is the body.
+type Command struct {
+	Command string        // shell command line
+	Timeout time.Duration // bounds the call; zero means 60s
+}
+
+func (c Command) Summarize(transcript string) (Summary, error) {
+	return run("summarize command", c.Timeout, transcript, "sh", "-c", c.Command)
+}
+
+// run executes a summarizer process with the transcript on stdin and parses
+// its stdout. The stop hook must never block the agent, so a stuck process
+// (auth prompt, network wait) is killed at the deadline rather than waited on
+// forever.
+func run(label string, timeout time.Duration, transcript, name string, args ...string) (Summary, error) {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	// The stop hook must never block the agent, so a stuck CLI (auth prompt,
-	// network wait) has to be killed rather than waited on forever.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = strings.NewReader(transcript)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -63,9 +80,9 @@ func (c Claude) Summarize(transcript string) (Summary, error) {
 		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
-			return Summary{}, fmt.Errorf("claude summarize: %w: %s", err, detail)
+			return Summary{}, fmt.Errorf("%s: %w: %s", label, err, detail)
 		}
-		return Summary{}, fmt.Errorf("claude summarize: %w", err)
+		return Summary{}, fmt.Errorf("%s: %w", label, err)
 	}
 	return Parse(string(out)), nil
 }
