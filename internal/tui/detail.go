@@ -132,8 +132,8 @@ func (d *detailModel) resetCaches() {
 // PR's bodies are never looked up again and only accumulate memory across a
 // session. Same-target reloads must not call this — resetCaches keeps
 // richBodies precisely so an unchanged conversation reuses its diagrams.
-// Zeroing the dispatch key makes richContentCmd re-render if the same content
-// is ever opened again.
+// Zeroing the dispatch key makes dispatchRichContent re-render if the same
+// content is ever opened again.
 func (d *detailModel) pruneRichContent() {
 	d.richBodies = map[string]string{}
 	d.lastRichContentKey = [sha256.Size]byte{}
