@@ -309,15 +309,13 @@ type diffRendered struct {
 }
 
 type richBodiesLoaded struct {
-	generation uint64
-	key        [sha256.Size]byte
-	bodies     map[string]string
+	key    [sha256.Size]byte
+	bodies map[string]string
 }
 
 type avatarColorsLoaded struct {
-	generation uint64
-	key        [sha256.Size]byte
-	colors     map[string]string
+	key    [sha256.Size]byte
+	colors map[string]string
 }
 
 type listAvatarColorsLoaded struct {
@@ -1192,10 +1190,10 @@ func (m *Model) richContentCmd() tea.Cmd {
 	for login := range m.avatarColors {
 		resolved[login] = true
 	}
-	return loadRichContent(m.targetGeneration, width, m.cache.PR, m.cache.Comments, m.cache.Activities, resolved)
+	return loadRichContent(width, m.cache.PR, m.cache.Comments, m.cache.Activities, resolved)
 }
 
-func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity, resolved map[string]bool) tea.Cmd {
+func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity, resolved map[string]bool) tea.Cmd {
 	key := richContentKey(width, pr, comments, activities)
 	bodies := make([]string, 0, len(comments)+1)
 	avatars := map[string]string{}
@@ -1230,10 +1228,10 @@ func loadRichContent(generation uint64, width int, pr *gh.PR, comments []gh.Comm
 				}
 				results[body] = richcontent.ReplaceMermaid(body, rendered)
 			}
-			return richBodiesLoaded{generation: generation, key: key, bodies: results}
+			return richBodiesLoaded{key: key, bodies: results}
 		},
 		func() tea.Msg {
-			return avatarColorsLoaded{generation: generation, key: key, colors: loadAvatarColors(avatars)}
+			return avatarColorsLoaded{key: key, colors: loadAvatarColors(avatars)}
 		},
 	)
 }

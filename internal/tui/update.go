@@ -166,7 +166,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.handleGitHubRefreshed(msg)
 		return next, cmd
 	case richBodiesLoaded:
-		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
+		// The key hashes width + bodies, so a match proves the result fits the
+		// current content even if the generation moved on: nothing resets
+		// lastRichContentKey, so discarding here would leave richContentCmd
+		// returning nil forever and mermaid diagrams missing until a resize.
+		if msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
 		m.richBodies = msg.bodies
@@ -174,7 +178,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, m.sync()
 	case avatarColorsLoaded:
-		if msg.generation != m.targetGeneration || msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
+		// Key-only check for the same reason as richBodiesLoaded above.
+		if msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
 		if m.avatarColors == nil {

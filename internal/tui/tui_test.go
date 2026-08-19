@@ -3219,6 +3219,39 @@ func TestRichContentKeyIncludesWidthAndSkipsZeroWidth(t *testing.T) {
 	}
 }
 
+func TestStaleGenerationRichContentWithMatchingKeyStillApplies(t *testing.T) {
+	m := testModel()
+	pr := &gh.PR{Number: 1, Body: "```mermaid\ngraph TD;A-->B;\n```"}
+	pr.Author.Login = "alice"
+	m.cache.PR = pr
+	m.list.Width = 87
+	if m.richContentCmd() == nil {
+		t.Fatal("first dispatch skipped")
+	}
+	// A refresh mid-render bumps the generation while the content and width
+	// stay the same: nothing resets lastRichContentKey, so if the in-flight
+	// result were discarded, richContentCmd would return nil forever and the
+	// mermaid diagrams and avatar colors would never render.
+	m.targetGeneration++
+	key := richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities)
+	u, _ := m.Update(richBodiesLoaded{key: key, bodies: map[string]string{pr.Body: "rendered"}})
+	m = u.(Model)
+	if m.richBodies[pr.Body] != "rendered" {
+		t.Fatal("stale-generation bodies with a matching key were discarded")
+	}
+	u, _ = m.Update(avatarColorsLoaded{key: key, colors: map[string]string{"alice": "#ff0000"}})
+	m = u.(Model)
+	if m.avatarColors["alice"] != "#ff0000" {
+		t.Fatal("stale-generation avatar colors with a matching key were discarded")
+	}
+	// A result rendered for other content or width still drops.
+	u, _ = m.Update(richBodiesLoaded{key: richContentKey(1, pr, nil, nil), bodies: map[string]string{"other": "x"}})
+	m = u.(Model)
+	if _, ok := m.richBodies["other"]; ok {
+		t.Fatal("mismatched-key result was applied")
+	}
+}
+
 func TestRemoteDeleteTitleTruncatesOnRuneBoundary(t *testing.T) {
 	m := testModel()
 	m.viewerLogin = "me"
