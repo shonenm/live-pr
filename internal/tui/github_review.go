@@ -27,6 +27,14 @@ func (m *Model) loadReviewDraft() error {
 	return nil
 }
 
+// refreshReviewDraft reloads the pending review draft from disk so the detail
+// header badge reflects it; without a PR head there is nothing pending.
+func (m *Model) refreshReviewDraft() {
+	if err := m.loadReviewDraft(); err != nil {
+		m.reviewDraft = gh.ReviewDraft{}
+	}
+}
+
 // startAddComment (a) posts a conversation comment: a GitHub issue comment when
 // the branch has a PR, otherwise a local timeline note. Inline review comments
 // live on A; the review verdict + body live on v.
