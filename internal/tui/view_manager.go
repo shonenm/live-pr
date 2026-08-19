@@ -21,17 +21,30 @@ const (
 	viewEditQuery
 )
 
-// openViewManager starts editing a draft copy of the configured views. The
+// viewManagerOverlay edits a draft copy of the configured PR list views. The
 // draft is applied and written to disk on save, so Esc always leaves the
 // running configuration untouched.
+type viewManagerOverlay struct {
+	draft      []config.View
+	cursor     int
+	editField  viewEditField
+	editIndex  int
+	nameInput  textinput.Model
+	queryInput textinput.Model
+	errText    string
+}
+
+// openViewManager starts editing a draft copy of the configured views.
 func (m Model) openViewManager() (Model, tea.Cmd) {
-	m.viewManager = true
-	m.viewDraft = append([]config.View(nil), m.views...)
-	m.viewCursor = int(m.prView)
-	if m.viewCursor >= len(m.viewDraft) {
-		m.viewCursor = 0
+	o := viewManagerOverlay{
+		draft:     append([]config.View(nil), m.views...),
+		cursor:    int(m.prView),
+		editIndex: -1,
 	}
-	m.viewEditField, m.viewEditIndex, m.viewManagerError = viewEditNone, -1, ""
+	if o.cursor >= len(o.draft) {
+		o.cursor = 0
+	}
+	m.overlay = o
 	m.notice, m.status = "", ""
 	return m, nil
 }
@@ -46,145 +59,157 @@ func newViewInput(value, placeholder string, width int) textinput.Model {
 	return input
 }
 
-// startViewEdit opens the two-field form. index < 0 appends a new view.
-func (m Model) startViewEdit(index int) (Model, tea.Cmd) {
+// startEdit opens the two-field form. index < 0 appends a new view.
+func (o viewManagerOverlay) startEdit(m Model, index int) (Model, tea.Cmd) {
 	width := max(20, min(60, m.w-24))
 	name, query := "", ""
-	if index >= 0 && index < len(m.viewDraft) {
-		name, query = m.viewDraft[index].Name, m.viewDraft[index].Query
+	if index >= 0 && index < len(o.draft) {
+		name, query = o.draft[index].Name, o.draft[index].Query
 	}
-	m.viewEditIndex = index
-	m.viewNameInput = newViewInput(name, "Review requested", width)
-	m.viewQueryInput = newViewInput(query, "review-requested:@me", width)
-	m.viewEditField, m.viewManagerError = viewEditName, ""
-	return m, m.viewNameInput.Focus()
+	o.editIndex = index
+	o.nameInput = newViewInput(name, "Review requested", width)
+	o.queryInput = newViewInput(query, "review-requested:@me", width)
+	o.editField, o.errText = viewEditName, ""
+	cmd := o.nameInput.Focus()
+	m.overlay = o
+	return m, cmd
 }
 
-func (m Model) handleViewManagerKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if m.viewEditField != viewEditNone {
-		return m.handleViewEditKey(msg)
+func (o viewManagerOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+	if o.editField != viewEditNone {
+		return o.handleEditKey(m, msg)
 	}
 	switch msg.String() {
 	case "esc", "q":
-		m.viewManager = false
-		m.viewDraft, m.viewManagerError = nil, ""
+		m.overlay = nil
 		return m, nil
 	case "j", "down":
-		if len(m.viewDraft) > 0 {
-			m.viewCursor = (m.viewCursor + 1) % len(m.viewDraft)
+		if len(o.draft) > 0 {
+			o.cursor = (o.cursor + 1) % len(o.draft)
 		}
 	case "k", "up":
-		if len(m.viewDraft) > 0 {
-			m.viewCursor = (m.viewCursor + len(m.viewDraft) - 1) % len(m.viewDraft)
+		if len(o.draft) > 0 {
+			o.cursor = (o.cursor + len(o.draft) - 1) % len(o.draft)
 		}
 	case "J":
-		m = m.moveViewDraft(1)
+		o = o.move(1)
 	case "K":
-		m = m.moveViewDraft(-1)
+		o = o.move(-1)
 	case "n", "a":
-		return m.startViewEdit(-1)
+		return o.startEdit(m, -1)
 	case "enter", "e":
-		if len(m.viewDraft) > 0 {
-			return m.startViewEdit(m.viewCursor)
+		if len(o.draft) > 0 {
+			return o.startEdit(m, o.cursor)
 		}
 	case "d":
-		if len(m.viewDraft) > 0 {
-			m.viewDraft = append(m.viewDraft[:m.viewCursor], m.viewDraft[m.viewCursor+1:]...)
-			if m.viewCursor >= len(m.viewDraft) {
-				m.viewCursor = max(0, len(m.viewDraft)-1)
+		if len(o.draft) > 0 {
+			o.draft = append(o.draft[:o.cursor], o.draft[o.cursor+1:]...)
+			if o.cursor >= len(o.draft) {
+				o.cursor = max(0, len(o.draft)-1)
 			}
-			m.viewManagerError = ""
+			o.errText = ""
 		}
 	case "ctrl+s":
-		return m.saveViewManager()
+		return o.save(m)
 	case "ctrl+c":
 		return m, tea.Quit
 	}
+	m.overlay = o
 	return m, nil
 }
 
-// moveViewDraft reorders the selected view, keeping the cursor on it.
-func (m Model) moveViewDraft(delta int) Model {
-	target := m.viewCursor + delta
-	if m.viewCursor < 0 || m.viewCursor >= len(m.viewDraft) || target < 0 || target >= len(m.viewDraft) {
-		return m
+// move reorders the selected view, keeping the cursor on it.
+func (o viewManagerOverlay) move(delta int) viewManagerOverlay {
+	target := o.cursor + delta
+	if o.cursor < 0 || o.cursor >= len(o.draft) || target < 0 || target >= len(o.draft) {
+		return o
 	}
-	draft := append([]config.View(nil), m.viewDraft...)
-	draft[m.viewCursor], draft[target] = draft[target], draft[m.viewCursor]
-	m.viewDraft, m.viewCursor, m.viewManagerError = draft, target, ""
-	return m
+	draft := append([]config.View(nil), o.draft...)
+	draft[o.cursor], draft[target] = draft[target], draft[o.cursor]
+	o.draft, o.cursor, o.errText = draft, target, ""
+	return o
 }
 
-func (m Model) handleViewEditKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o viewManagerOverlay) handleEditKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.viewEditField, m.viewEditIndex, m.viewManagerError = viewEditNone, -1, ""
+		o.editField, o.editIndex, o.errText = viewEditNone, -1, ""
+		m.overlay = o
 		return m, nil
 	case "tab", "shift+tab", "down", "up":
-		if m.viewEditField == viewEditName {
-			m.viewEditField = viewEditQuery
-			m.viewNameInput.Blur()
-			return m, m.viewQueryInput.Focus()
+		var cmd tea.Cmd
+		if o.editField == viewEditName {
+			o.editField = viewEditQuery
+			o.nameInput.Blur()
+			cmd = o.queryInput.Focus()
+		} else {
+			o.editField = viewEditName
+			o.queryInput.Blur()
+			cmd = o.nameInput.Focus()
 		}
-		m.viewEditField = viewEditName
-		m.viewQueryInput.Blur()
-		return m, m.viewNameInput.Focus()
+		m.overlay = o
+		return m, cmd
 	case "enter", "ctrl+s":
-		return m.commitViewEdit()
+		return o.commitEdit(m)
 	case "ctrl+c":
 		return m, tea.Quit
 	}
 	var cmd tea.Cmd
-	if m.viewEditField == viewEditName {
-		m.viewNameInput, cmd = m.viewNameInput.Update(msg)
+	if o.editField == viewEditName {
+		o.nameInput, cmd = o.nameInput.Update(msg)
 	} else {
-		m.viewQueryInput, cmd = m.viewQueryInput.Update(msg)
+		o.queryInput, cmd = o.queryInput.Update(msg)
 	}
+	m.overlay = o
 	return m, cmd
 }
 
-func (m Model) commitViewEdit() (Model, tea.Cmd) {
+func (o viewManagerOverlay) commitEdit(m Model) (Model, tea.Cmd) {
 	edited := config.View{
-		Name:  strings.TrimSpace(m.viewNameInput.Value()),
-		Query: strings.TrimSpace(m.viewQueryInput.Value()),
+		Name:  strings.TrimSpace(o.nameInput.Value()),
+		Query: strings.TrimSpace(o.queryInput.Value()),
 	}
 	if edited.Name == "" {
-		m.viewManagerError = "name must not be empty"
+		o.errText = "name must not be empty"
+		m.overlay = o
 		return m, nil
 	}
-	for i, view := range m.viewDraft {
-		if i != m.viewEditIndex && strings.EqualFold(view.Name, edited.Name) {
-			m.viewManagerError = "another view already uses that name"
+	for i, view := range o.draft {
+		if i != o.editIndex && strings.EqualFold(view.Name, edited.Name) {
+			o.errText = "another view already uses that name"
+			m.overlay = o
 			return m, nil
 		}
 	}
-	draft := append([]config.View(nil), m.viewDraft...)
-	if m.viewEditIndex >= 0 && m.viewEditIndex < len(draft) {
-		draft[m.viewEditIndex] = edited
-		m.viewCursor = m.viewEditIndex
+	draft := append([]config.View(nil), o.draft...)
+	if o.editIndex >= 0 && o.editIndex < len(draft) {
+		draft[o.editIndex] = edited
+		o.cursor = o.editIndex
 	} else {
 		draft = append(draft, edited)
-		m.viewCursor = len(draft) - 1
+		o.cursor = len(draft) - 1
 	}
-	m.viewDraft = draft
-	m.viewEditField, m.viewEditIndex, m.viewManagerError = viewEditNone, -1, ""
-	m.viewNameInput.Blur()
-	m.viewQueryInput.Blur()
+	o.draft = draft
+	o.editField, o.editIndex, o.errText = viewEditNone, -1, ""
+	o.nameInput.Blur()
+	o.queryInput.Blur()
+	m.overlay = o
 	return m, nil
 }
 
-// saveViewManager writes the draft to the config file and reloads the tabs.
-func (m Model) saveViewManager() (Model, tea.Cmd) {
-	draft := config.NormalizeViews(m.viewDraft)
+// save writes the draft to the config file and reloads the tabs.
+func (o viewManagerOverlay) save(m Model) (Model, tea.Cmd) {
+	draft := config.NormalizeViews(o.draft)
 	path := config.ViewsPath(m.root)
 	if err := config.SaveViews(path, draft); err != nil {
-		m.viewManagerError = err.Error()
+		o.errText = err.Error()
+		m.overlay = o
 		return m, nil
 	}
 	selected := m.selectedPRNumber()
 	previous := m.viewName(m.prView)
 	m.views = draft
-	m.viewManager, m.viewDraft, m.viewManagerError = false, nil, ""
+	m.overlay = nil
 	// Stay on the same tab by name; a removed tab falls back to the first.
 	m.prView = 0
 	for i, view := range m.views {
@@ -199,15 +224,15 @@ func (m Model) saveViewManager() (Model, tea.Cmd) {
 	return m, m.applyPRViewState(selected)
 }
 
-func (m Model) renderViewManagerPopup() string {
+func (o viewManagerOverlay) render(m Model) string {
 	width := max(40, min(84, m.w-10))
 	lines := []string{stBold.Render("Views"), stMuted.Render("saved to " + config.ViewsPath(m.root)), ""}
-	if len(m.viewDraft) == 0 {
+	if len(o.draft) == 0 {
 		lines = append(lines, stMuted.Render("(no views — n adds one; saving an empty list restores the defaults)"))
 	}
-	for i, view := range m.viewDraft {
+	for i, view := range o.draft {
 		prefix, nameStyle := "  ", stFg
-		if i == m.viewCursor {
+		if i == o.cursor {
 			prefix, nameStyle = "▸ ", stAccent.Bold(true)
 		}
 		query := view.Query
@@ -217,19 +242,19 @@ func (m Model) renderViewManagerPopup() string {
 		row := prefix + nameStyle.Render(view.Name) + stMuted.Render("  "+query)
 		lines = append(lines, ansi.Truncate(row, width-6, "…"))
 	}
-	if m.viewEditField != viewEditNone {
+	if o.editField != viewEditNone {
 		title := "Edit view"
-		if m.viewEditIndex < 0 {
+		if o.editIndex < 0 {
 			title = "New view"
 		}
 		lines = append(lines, "", stBold.Render(title))
-		lines = append(lines, m.viewFormRow("name ", viewEditName, m.viewNameInput.View()))
-		lines = append(lines, m.viewFormRow("query", viewEditQuery, m.viewQueryInput.View()))
+		lines = append(lines, o.formRow("name ", viewEditName, o.nameInput.View()))
+		lines = append(lines, o.formRow("query", viewEditQuery, o.queryInput.View()))
 	}
-	if m.viewManagerError != "" {
-		lines = append(lines, "", stRedF.Render(m.viewManagerError))
+	if o.errText != "" {
+		lines = append(lines, "", stRedF.Render(o.errText))
 	}
-	lines = append(lines, "", stMuted.Render(m.viewManagerHint()))
+	lines = append(lines, "", stMuted.Render(o.hint()))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAccent)).
@@ -238,17 +263,17 @@ func (m Model) renderViewManagerPopup() string {
 		Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) viewFormRow(label string, field viewEditField, input string) string {
+func (o viewManagerOverlay) formRow(label string, field viewEditField, input string) string {
 	marker, style := "  ", stMuted
-	if m.viewEditField == field {
+	if o.editField == field {
 		marker, style = "▸ ", stAccent
 	}
 	return marker + style.Render(label) + " " + input
 }
 
-func (m Model) viewManagerHint() string {
-	if m.viewEditField != viewEditNone {
+func (o viewManagerOverlay) hint() string {
+	if o.editField != viewEditNone {
 		return "Tab switch field · Enter apply · Esc back"
 	}
-	return fmt.Sprintf("j/k move · J/K reorder · e edit · n new · d delete · Ctrl+S save (%d) · Esc discard", len(m.viewDraft))
+	return fmt.Sprintf("j/k move · J/K reorder · e edit · n new · d delete · Ctrl+S save (%d) · Esc discard", len(o.draft))
 }

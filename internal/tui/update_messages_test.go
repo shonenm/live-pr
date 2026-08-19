@@ -670,7 +670,7 @@ func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
 	// reviewSubmitted arrives while the status popup is open.
 	m := testModel()
 	m.reviewSubmitting = true
-	m.statusPR = gh.PR{Number: 12, State: "OPEN"}
+	m.overlay = prStatusOverlay{pr: gh.PR{Number: 12, State: "OPEN"}}
 	u, _ := m.Update(reviewSubmitted{event: gh.ReviewApproveEvent})
 	if got := u.(Model); got.reviewSubmitting {
 		t.Fatal("reviewSubmitted was dropped by the status popup")
@@ -679,7 +679,7 @@ func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
 	// githubRefreshed arrives while the local editor is open.
 	m = testModel()
 	m.refreshing = true
-	m.localEditMode = addLocalComment
+	m.overlay = localEditOverlay{mode: addLocalComment}
 	u, _ = m.Update(githubRefreshed{generation: m.targetGeneration, err: gh.ErrPRNotFound})
 	if got := u.(Model); got.refreshing {
 		t.Fatal("githubRefreshed was dropped by the editor overlay")
@@ -687,9 +687,9 @@ func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
 
 	// Keys still go to the modal, not the main handler.
 	m = testModel()
-	m.statusPR = gh.PR{Number: 12, State: "OPEN"}
+	m.overlay = prStatusOverlay{pr: gh.PR{Number: 12, State: "OPEN"}}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	if got := u.(Model); got.statusPR.Number != 0 {
+	if got := u.(Model); got.overlay != nil {
 		t.Fatal("q did not close the status popup")
 	}
 }
@@ -799,7 +799,7 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 	// localLoaded arrives while the status popup is open.
 	m := testModel()
 	m.refreshing = true
-	m.statusPR = gh.PR{Number: 12, State: "OPEN"}
+	m.overlay = prStatusOverlay{pr: gh.PR{Number: 12, State: "OPEN"}}
 	u, _ := m.Update(localLoaded{generation: m.targetGeneration, err: errors.New("load failed")})
 	if got := u.(Model); got.refreshing {
 		t.Fatal("localLoaded was dropped by the status popup")
@@ -808,7 +808,7 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 	// checkoutReloaded arrives while the view manager is open.
 	m = testModel()
 	m.refreshing = true
-	m.viewManager = true
+	m.overlay = viewManagerOverlay{}
 	u, _ = m.Update(checkoutReloaded{generation: m.targetGeneration, number: 7, err: errors.New("checkout reload: boom")})
 	if got := u.(Model); got.refreshing {
 		t.Fatal("checkoutReloaded was dropped by the view manager")
@@ -816,7 +816,7 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 
 	// rawDetailLoaded arrives while the editor overlay is open.
 	m = testModel()
-	m.localEditMode = addLocalComment
+	m.overlay = localEditOverlay{mode: addLocalComment}
 	m.rawPending = map[string]bool{"k": true}
 	m.rawDetailCache = map[string]string{}
 	u, _ = m.Update(rawDetailLoaded{generation: m.targetGeneration, key: "k", raw: "diff"})
@@ -826,7 +826,7 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 
 	// baseResolved arrives while the delete confirm is open.
 	m = testModel()
-	m.localDeleteTarget = "c1"
+	m.overlay = localDeleteOverlay{target: "c1"}
 	u, _ = m.Update(baseResolved{
 		generation: m.targetGeneration, base: m.base, diffBase: m.diffBase,
 		files: []git.ChangedFile{{Status: "A", Path: "new.go"}},

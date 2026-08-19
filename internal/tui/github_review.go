@@ -47,7 +47,7 @@ func (m Model) startAddComment() (Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.cache.PR != nil {
-		return m.openLocalEditor(addRemoteComment, "", "")
+		return m.openLocalEditor(localEditOverlay{mode: addRemoteComment}, "")
 	}
 	return m.startLocalComment()
 }
@@ -143,7 +143,7 @@ func (m Model) startInlineReviewComment() (Model, tea.Cmd) {
 		return m, nil
 	}
 	value := fmt.Sprintf("path: %s\nline: 1\nside: RIGHT\n\n", file.Path)
-	return m.openLocalEditor(addInlineReviewComment, value, "")
+	return m.openLocalEditor(localEditOverlay{mode: addInlineReviewComment}, value)
 }
 
 func parseInlineReviewComment(value string) (gh.ReviewComment, error) {
@@ -163,6 +163,15 @@ func parseInlineReviewComment(value string) (gh.ReviewComment, error) {
 	return comment, gh.ValidateReviewComment(comment)
 }
 
+// reviewSubmitOverlay is the review verdict picker (comment / approve /
+// request changes); typing switches it to the shared localEditor for the
+// general review body.
+type reviewSubmitOverlay struct {
+	event  gh.ReviewEvent
+	cursor int
+	typing bool
+}
+
 func (m Model) openReviewSubmit() (Model, tea.Cmd) {
 	if m.reviewSubmitting || m.cache.PR == nil {
 		return m, nil
@@ -171,7 +180,7 @@ func (m Model) openReviewSubmit() (Model, tea.Cmd) {
 		m.status = err.Error()
 		return m, nil
 	}
-	m.reviewSubmitEvent, m.reviewSubmitCursor, m.reviewSubmitTyping = gh.ReviewCommentEvent, 0, false
+	m.overlay = reviewSubmitOverlay{event: gh.ReviewCommentEvent}
 	return m, nil
 }
 
@@ -179,31 +188,25 @@ func submitReview(client githubClient, draft gh.ReviewDraft, event gh.ReviewEven
 	return func() tea.Msg { return reviewSubmitted{event: event, err: client.SubmitReview(draft, event)} }
 }
 
-func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if m.reviewSubmitEvent == "" {
-		return m, nil
-	}
-	if m.reviewSubmitTyping {
+func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+	if o.typing {
 		switch msg.String() {
 		case "esc":
 			m.localEditor.Blur()
-			m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-			m.reviewSubmitTyping = false
+			o.typing = false
+			m.overlay = o
 			return m, nil
 		case "ctrl+s":
 			m.reviewDraft.Body = strings.TrimSpace(m.localEditor.Value())
-			if m.reviewSubmitEvent == gh.ReviewRequestChangesEvent && m.reviewDraft.Body == "" {
+			if o.event == gh.ReviewRequestChangesEvent && m.reviewDraft.Body == "" {
 				m.status = "request changes requires a general review body"
 				return m, nil
 			}
 			m.localEditor.Blur()
-			m.localEditMode, m.localEditTarget, m.localEditError = noLocalEdit, "", ""
-			m.reviewSubmitTyping = false
+			m.overlay = nil
 			m.reviewSubmitting = true
 			m.status = ""
-			event := m.reviewSubmitEvent
-			m.reviewSubmitEvent = ""
-			return m, tea.Batch(submitReview(m.client, m.reviewDraft, event), m.startSpinner())
+			return m, tea.Batch(submitReview(m.client, m.reviewDraft, o.event), m.startSpinner())
 		default:
 			var cmd tea.Cmd
 			m.localEditor, cmd = m.localEditor.Update(msg)
@@ -213,18 +216,20 @@ func (m Model) handleReviewSubmitKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	events := []gh.ReviewEvent{gh.ReviewCommentEvent, gh.ReviewApproveEvent, gh.ReviewRequestChangesEvent}
 	switch msg.String() {
 	case "up", "k":
-		m.reviewSubmitCursor = (m.reviewSubmitCursor + len(events) - 1) % len(events)
+		o.cursor = (o.cursor + len(events) - 1) % len(events)
+		m.overlay = o
 		return m, nil
 	case "down", "j":
-		m.reviewSubmitCursor = (m.reviewSubmitCursor + 1) % len(events)
+		o.cursor = (o.cursor + 1) % len(events)
+		m.overlay = o
 		return m, nil
 	case "enter":
-		m.reviewSubmitEvent = events[m.reviewSubmitCursor]
-		next, cmd := m.openLocalEditor(editReviewBody, m.reviewDraft.Body, "review-submit")
-		next.reviewSubmitEvent, next.reviewSubmitCursor, next.reviewSubmitTyping = m.reviewSubmitEvent, m.reviewSubmitCursor, true
+		o.event, o.typing = events[o.cursor], true
+		next, cmd := m.setupLocalEditor(m.reviewDraft.Body)
+		next.overlay = o
 		return next, cmd
 	case "esc", "q", "n":
-		m.reviewSubmitEvent = ""
+		m.overlay = nil
 		return m, nil
 	default:
 		return m, nil
@@ -247,7 +252,7 @@ func (m Model) handleReviewSubmitted(msg reviewSubmitted) (Model, tea.Cmd) {
 	return m, m.sync()
 }
 
-func (m Model) renderReviewSubmitPopup() string {
+func (o reviewSubmitOverlay) render(m Model) string {
 	lines := []string{
 		stBold.Render(fmt.Sprintf("Submit review for PR #%d?", m.reviewDraft.PR)),
 		"",
@@ -260,12 +265,12 @@ func (m Model) renderReviewSubmitPopup() string {
 	for i, label := range labels {
 		prefix := "  "
 		style := stFg
-		if i == m.reviewSubmitCursor {
+		if i == o.cursor {
 			prefix, style = "▸ ", stAccent.Bold(true)
 		}
 		lines = append(lines, prefix+style.Render(label))
 	}
-	if m.reviewSubmitTyping {
+	if o.typing {
 		lines = append(lines, "", stMuted.Render("Message"), m.localEditor.View())
 		lines = append(lines, "", stMuted.Render("type message · Ctrl+S submit · Esc back"))
 	} else {
