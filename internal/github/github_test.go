@@ -278,7 +278,13 @@ func TestPRActionsUseExplicitNonInteractiveCommands(t *testing.T) {
 		got = append(got, append([]string(nil), args...))
 		return nil, nil
 	}}
-	if err := client.Merge(12, "abc123"); err != nil {
+	if err := client.Merge(12, "abc123", MergeCommit); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Merge(12, "abc123", MergeSquash); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Merge(12, "abc123", MergeRebase); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.Checkout(34); err != nil {
@@ -287,9 +293,18 @@ func TestPRActionsUseExplicitNonInteractiveCommands(t *testing.T) {
 	if err := client.Close(56); err != nil {
 		t.Fatal(err)
 	}
-	want := [][]string{{"pr", "merge", "12", "--merge", "--match-head-commit", "abc123"}, {"pr", "checkout", "34"}, {"pr", "close", "56"}}
+	want := [][]string{
+		{"pr", "merge", "12", "--merge", "--match-head-commit", "abc123"},
+		{"pr", "merge", "12", "--squash", "--match-head-commit", "abc123"},
+		{"pr", "merge", "12", "--rebase", "--match-head-commit", "abc123"},
+		{"pr", "checkout", "34"},
+		{"pr", "close", "56"},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands = %#v, want %#v", got, want)
+	}
+	if err := client.Merge(12, "abc123", MergeMethod("bogus")); err == nil || !strings.Contains(err.Error(), "unknown merge method") {
+		t.Fatalf("bogus-method Merge error = %v", err)
 	}
 }
 
@@ -318,7 +333,7 @@ func TestPRActionsReturnCommandOutput(t *testing.T) {
 	client := Client{run: func(args ...string) ([]byte, error) {
 		return []byte("merge blocked"), errors.New("exit 1")
 	}}
-	if err := client.Merge(12, "abc123"); err == nil || !strings.Contains(err.Error(), "merge blocked") {
+	if err := client.Merge(12, "abc123", MergeCommit); err == nil || !strings.Contains(err.Error(), "merge blocked") {
 		t.Fatalf("Merge error = %v", err)
 	}
 	if err := client.Checkout(12); err == nil || !strings.Contains(err.Error(), "merge blocked") {
@@ -327,7 +342,7 @@ func TestPRActionsReturnCommandOutput(t *testing.T) {
 	if err := client.Close(12); err == nil || !strings.Contains(err.Error(), "merge blocked") {
 		t.Fatalf("Close error = %v", err)
 	}
-	if err := client.Merge(12, ""); err == nil || !strings.Contains(err.Error(), "reviewed head") {
+	if err := client.Merge(12, "", MergeCommit); err == nil || !strings.Contains(err.Error(), "reviewed head") {
 		t.Fatalf("empty-head Merge error = %v", err)
 	}
 }
