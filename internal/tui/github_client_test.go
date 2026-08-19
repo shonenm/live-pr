@@ -25,7 +25,7 @@ type fakeGH struct {
 	postIssueComment   func(number int, body string) error
 	editIssueComment   func(id int64, body string) error
 	deleteIssueComment func(id int64) error
-	updateBody         func(head, bodyFile string) error
+	updateBody         func(number int, bodyFile string) error
 	submitReview       func(draft gh.ReviewDraft, event gh.ReviewEvent) error
 }
 
@@ -113,9 +113,9 @@ func (f *fakeGH) DeleteIssueComment(id int64) error {
 	return nil
 }
 
-func (f *fakeGH) UpdateBody(head, bodyFile string) error {
+func (f *fakeGH) UpdateBody(number int, bodyFile string) error {
 	if f.updateBody != nil {
-		return f.updateBody(head, bodyFile)
+		return f.updateBody(number, bodyFile)
 	}
 	return nil
 }
