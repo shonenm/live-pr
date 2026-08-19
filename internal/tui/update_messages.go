@@ -389,7 +389,7 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.applyLocal(msg.st, msg.data)
-	cmds := []tea.Cmd{fetchGitHub(m.client, m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync()}
+	cmds := []tea.Cmd{fetchGitHub(m.client, m.currentBranch, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()), m.sync()}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}

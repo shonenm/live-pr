@@ -140,7 +140,7 @@ func fetchPRPreview(client githubClient, number int, generation uint64) tea.Cmd 
 	}
 }
 
-func fetchGitHub(client githubClient, head string, number int, generation uint64) tea.Cmd {
+func fetchGitHub(client githubClient, head string, number int, generation uint64, prev gh.PRDetail) tea.Cmd {
 	return func() tea.Msg {
 		if number == 0 {
 			pr, err := client.FindForHead(head)
@@ -149,7 +149,7 @@ func fetchGitHub(client githubClient, head string, number int, generation uint64
 			}
 			number = pr.Number
 		}
-		detail := client.LoadPRDetail(number)
+		detail := client.LoadPRDetail(number, prev)
 		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, reviews: detail.Reviews, reviewComments: detail.ReviewComments, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr, reviewsErr: detail.ReviewsErr, reviewCommentsErr: detail.ReviewCommentsErr}
 	}
 }
@@ -319,7 +319,7 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 	)
 }
 
-func fetchRemotePR(client githubClient, pr gh.PR, generation uint64) tea.Cmd {
+func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
 	return func() tea.Msg {
 		var headRef string
 		var comments []gh.Comment
@@ -337,7 +337,7 @@ func fetchRemotePR(client githubClient, pr gh.PR, generation uint64) tea.Cmd {
 		}()
 		go func() {
 			defer wg.Done()
-			detail := client.LoadPRDetail(number)
+			detail := client.LoadPRDetail(number, prev)
 			comments, activities = detail.Comments, detail.Activities
 			reviews, reviewComments = detail.Reviews, detail.ReviewComments
 			previewErr, commentsErr, activitiesErr = detail.PreviewErr, detail.CommentsErr, detail.ActivitiesErr
