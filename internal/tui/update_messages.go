@@ -33,6 +33,16 @@ func appendUniquePRs(existing, added []gh.PR) []gh.PR {
 	return result
 }
 
+// offlineStatus renders a fetch failure for the status line: setup problems
+// (gh missing, auth expired, broken custom query) name themselves instead of
+// hiding behind "Offline".
+func offlineStatus(err error, detail string) string {
+	if hint := gh.StatusHint(err); hint != "" {
+		return "GitHub: " + hint + " · " + detail
+	}
+	return "Offline · " + detail
+}
+
 func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	if msg.generation != m.prListGeneration || msg.key != m.activePRPage {
 		if page, ok := m.prPages[msg.key]; ok {
@@ -49,7 +59,7 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	m.listRefreshing = false
 	if msg.err != nil {
 		m.prPages[msg.key] = page
-		m.githubStatus = "Offline · showing cached PR list"
+		m.githubStatus = offlineStatus(msg.err, "showing cached PR list")
 		return m, m.sync()
 	}
 	selectedNumber := m.selectedPRNumber()
@@ -137,7 +147,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 			m.applyPRFilters(m.selectedPRNumber())
 			return m, m.sync()
 		}
-		m.githubStatus = "Offline · current branch PR unavailable"
+		m.githubStatus = offlineStatus(msg.err, "current branch PR unavailable")
 		return m, nil
 	}
 	if !isCurrentPR(msg.pr, m.currentBranch) {
@@ -592,7 +602,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		m.githubStatus = "Local only · no GitHub PR"
 		m.applyPRFilters(0)
 	default:
-		m.githubStatus = "Offline · showing cached GitHub data"
+		m.githubStatus = offlineStatus(msg.err, "showing cached GitHub data")
 	}
 	m.reloadLocalConversation()
 	m.invalidateConversation()
