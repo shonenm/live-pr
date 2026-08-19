@@ -821,3 +821,46 @@ func commandError(op string, out []byte, err error) error {
 	}
 	return fmt.Errorf("%s: %w: %s", op, err, msg)
 }
+
+// StatusHint classifies a fetch failure for the status line so the TUI can
+// tell setup problems apart from being offline. It returns "" when the
+// failure looks like plain network trouble — callers keep their existing
+// offline wording — and a short actionable hint otherwise. Deliberately a
+// dumb string check over the flat error text runError/commandError build.
+func StatusHint(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, exec.ErrNotFound) {
+		return "gh not installed"
+	}
+	lower := strings.ToLower(err.Error())
+	// gh's unauthenticated hint ("To get started with GitHub CLI, please
+	// run:  gh auth login") and expired-token responses (HTTP 401: Bad
+	// credentials) all point the same way.
+	for _, sign := range []string{"gh auth login", "authentication", "bad credentials", "http 401"} {
+		if strings.Contains(lower, sign) {
+			return "run gh auth login"
+		}
+	}
+	for _, sign := range []string{"dial tcp", "no such host", "connection refused", "network is unreachable", "i/o timeout", "timed out", "error connecting to"} {
+		if strings.Contains(lower, sign) {
+			return ""
+		}
+	}
+	// gh failures carry their stderr after the exit status (see runError);
+	// surface its first line so a broken custom query names itself.
+	if _, detail, ok := strings.Cut(err.Error(), "exit status"); ok {
+		if _, detail, ok = strings.Cut(detail, ": "); ok {
+			detail, _, _ = strings.Cut(detail, "\n")
+			detail = strings.TrimPrefix(strings.TrimSpace(detail), "gh: ")
+			if r := []rune(detail); len(r) > 80 {
+				detail = strings.TrimSpace(string(r[:79])) + "…"
+			}
+			if detail != "" {
+				return detail
+			}
+		}
+	}
+	return ""
+}
