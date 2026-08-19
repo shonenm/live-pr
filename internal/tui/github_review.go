@@ -43,7 +43,7 @@ func (m Model) startAddComment() (Model, tea.Cmd) {
 		m.status = "comments live in the Conversation tab (esc)"
 		return m, nil
 	}
-	if m.detailView.focusDiff || m.detailView.focusExplorer {
+	if m.detailView.focus != focusConversation {
 		return m, nil
 	}
 	if m.cache.PR != nil {
