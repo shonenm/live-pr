@@ -48,6 +48,10 @@ func (m *Model) conversationItems() []conversationItem {
 		}
 		items = append(items, conversationItem{key: "comment:" + key, ts: comment.CreatedAt, comment: comment})
 	}
+	for i := range m.outbox {
+		entry := &m.outbox[i]
+		items = append(items, conversationItem{key: "outbox:" + entry.ID, ts: entry.CreatedAt, outbox: entry})
+	}
 	for i := range m.cache.Activities {
 		activity := &m.cache.Activities[i]
 		key := activity.NodeID
@@ -220,6 +224,8 @@ func (m *Model) conversationItemLines(item conversationItem, selected bool) []st
 		itemLines = m.descriptionLines(*item.pr, false, m.list.Width)
 	case itemComment:
 		itemLines = m.commentLines(*item.comment, false, m.list.Width)
+	case itemOutbox:
+		itemLines = m.outboxLines(*item.outbox, false, m.list.Width)
 	case itemReview:
 		itemLines = m.reviewLines(*item.review, false, m.list.Width)
 	case itemReviewComment:

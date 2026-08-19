@@ -25,6 +25,7 @@ func asyncCompletion(msg tea.Msg) bool {
 	switch msg.(type) {
 	case prListRefreshed, currentBranchPRLoaded, prPreviewLoaded, remoteLoaded,
 		githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
+		outboxFlushed,
 		prStatusDone, prActionDone, ciPolled, ciPollTick, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
 		localLoaded, checkoutReloaded, rawDetailLoaded, baseResolved,
@@ -119,6 +120,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	case remoteCommentDone:
 		next, cmd := m.handleRemoteCommentDone(msg)
+		return next, cmd
+	case outboxFlushed:
+		next, cmd := m.handleOutboxFlushed(msg)
 		return next, cmd
 	case prStatusDone:
 		next, cmd := m.handlePRStatusDone(msg)
