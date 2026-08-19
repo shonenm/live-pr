@@ -11,6 +11,7 @@ import (
 
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 	"github.com/shonenm/live-pr/internal/store"
 )
 
@@ -109,7 +110,7 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
 	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.viewName(m.prList.view))
-	_, localFilter := splitPRFilter(m.prList.filterQuery)
+	_, localFilter := prfilter.Split(m.prList.filterQuery)
 	if page.hasNext && (len(msg.page.PRs) == 0 || localFilter != "" && len(m.prList.open) == 0) {
 		cmds = append(cmds, m.requestPRPage(false))
 	}

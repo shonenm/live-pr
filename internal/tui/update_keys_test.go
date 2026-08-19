@@ -13,6 +13,7 @@ import (
 	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
 func TestReservedReviewKeysStayWithLivePR(t *testing.T) {
@@ -172,7 +173,7 @@ func TestBackToListPicksTheOriginOrFirstMatchingView(t *testing.T) {
 	m := newModel()
 	m.screen, m.prList.view = prListScreen, 2
 	m.prList.open = []gh.PR{authored}
-	m.prList.stacks = buildPRStacks(m.prList.open)
+	m.prList.stacks = prfilter.BuildStacks(m.prList.open)
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(Model)
 	if !m.detailOriginSet || m.detailOrigin != 2 {
@@ -455,7 +456,7 @@ func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.prList.open = []gh.PR{{Number: 7, URL: "https://example/pr/7", Title: "seven"}}
-	m.prList.stacks = buildPRStacks(m.prList.open)
+	m.prList.stacks = prfilter.BuildStacks(m.prList.open)
 	m.prList.cursor = 0
 
 	// y copies the selected row's URL without opening a browser.
@@ -476,7 +477,7 @@ func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 	local := testModel()
 	local.screen = prListScreen
 	local.prList.open = []gh.PR{{Number: 0, Title: "local"}}
-	local.prList.stacks = buildPRStacks(local.prList.open)
+	local.prList.stacks = prfilter.BuildStacks(local.prList.open)
 	if local.copySelectedURL() != nil {
 		t.Fatal("local PR offered a URL to copy")
 	}

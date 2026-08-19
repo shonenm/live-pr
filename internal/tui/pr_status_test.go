@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
 func TestListStatusCloseUpdatesCachedBranchPR(t *testing.T) {
@@ -71,10 +72,10 @@ func TestReopenKeepsDraftAndClosedFilterMatchesMerged(t *testing.T) {
 	}
 
 	// is:closed matches MERGED like GitHub search and matchesListState.
-	if !matchesPRFilter(gh.PR{State: "MERGED"}, "is:closed", "") {
+	if !prfilter.Matches(gh.PR{State: "MERGED"}, "is:closed", "") {
 		t.Fatal("is:closed rejected a merged PR")
 	}
-	if matchesPRFilter(gh.PR{State: "OPEN"}, "is:closed", "") {
+	if prfilter.Matches(gh.PR{State: "OPEN"}, "is:closed", "") {
 		t.Fatal("is:closed matched an open PR")
 	}
 }
