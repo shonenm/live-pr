@@ -5,8 +5,14 @@ Releases are built by GoReleaser from version tags.
 ## Prerequisites
 
 - The project is released under the MIT License.
-- Homebrew distribution is a follow-up; releases currently publish GitHub archives only.
 - Ensure the GitHub Actions `GITHUB_TOKEN` can create releases.
+- Homebrew: goreleaser pushes a cask (macOS) to
+  [shonenm/homebrew-live-pr](https://github.com/shonenm/homebrew-live-pr) on
+  every stable tag (prereleases are skipped). This needs the
+  `HOMEBREW_TAP_GITHUB_TOKEN` repository secret — a fine-grained PAT with
+  contents read/write on `homebrew-live-pr`. Without it the release job
+  fails at the cask publish step. Linux users install from the GitHub
+  archive or `go install`.
 
 ## Release
 
