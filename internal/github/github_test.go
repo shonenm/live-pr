@@ -182,15 +182,17 @@ func TestPRDetailStartsPreviewCommentsAndActivityConcurrently(t *testing.T) {
 	}
 }
 
-func TestFindChecksLoadsOnlyHeadAndRollup(t *testing.T) {
+func TestFindChecksLoadsStateHeadAndRollup(t *testing.T) {
 	client := Client{run: func(args ...string) ([]byte, error) {
-		if got := strings.Join(args, " "); got != "pr view 12 --json number,headRefOid,statusCheckRollup" {
+		// State rides along: the poll outlives a merge, and its caller needs
+		// to know that before pushing this copy back into the list.
+		if got := strings.Join(args, " "); got != "pr view 12 --json number,state,headRefOid,statusCheckRollup" {
 			t.Fatalf("FindChecks args = %q", got)
 		}
-		return []byte(`{"number":12,"headRefOid":"abc","statusCheckRollup":[{"name":"test","status":"IN_PROGRESS"}]}`), nil
+		return []byte(`{"number":12,"state":"MERGED","headRefOid":"abc","statusCheckRollup":[{"name":"test","status":"IN_PROGRESS"}]}`), nil
 	}}
 	pr, err := client.FindChecks(12)
-	if err != nil || pr.Number != 12 || pr.HeadRefOID != "abc" || len(pr.Checks) != 1 || !pr.PreviewLoaded {
+	if err != nil || pr.Number != 12 || pr.State != "MERGED" || pr.HeadRefOID != "abc" || len(pr.Checks) != 1 || !pr.PreviewLoaded {
 		t.Fatalf("FindChecks = %#v err=%v", pr, err)
 	}
 }
