@@ -3,6 +3,7 @@ package tui
 import (
 	"crypto/sha256"
 	"fmt"
+	"hash/maphash"
 	"os"
 	"sort"
 	"strings"
@@ -69,6 +70,37 @@ type detailModel struct {
 	convItemCache           map[string][]string
 	richBodies              map[string]string
 	lastRichContentKey      [sha256.Size]byte
+	commitsRenderKey        tabRenderKey
+	commitsRender           string
+	commitsRenderLine       int
+	commitsRenderValid      bool
+	checksRenderKey         tabRenderKey
+	checksRender            string
+	checksRenderLine        int
+	checksRenderValid       bool
+}
+
+// tabRenderKey caches the commits and checks tab renders the way convRenderKey
+// caches the conversation: the cached string is reused when the key matches on
+// access and rebuilt otherwise, with no explicit invalidation. content
+// fingerprints every input the rows render from, so commitCIStates and the
+// per-row styling run only when the underlying data actually changed.
+type tabRenderKey struct {
+	cursor  int
+	width   int
+	content uint64
+}
+
+// tabRenderSeed only needs to be stable within the process: the fingerprints
+// live in in-memory caches and are never persisted. maphash hashes strings
+// without the per-field allocations a crypto or fnv hash would need.
+var tabRenderSeed = maphash.MakeSeed()
+
+func fingerprintStrings(h *maphash.Hash, fields ...string) {
+	for _, field := range fields {
+		_, _ = h.WriteString(field)
+		_ = h.WriteByte(0)
+	}
 }
 
 func (d *detailModel) resetCaches() {
@@ -79,6 +111,19 @@ func (d *detailModel) resetCaches() {
 	// richBodies survives: it is keyed by body content, so stale entries are
 	// unused rather than wrong, and wiping it here would blank rendered
 	// mermaid on refreshes whose content (and thus dispatch key) is unchanged.
+	// Switching to a different target prunes it via pruneRichContent instead.
+}
+
+// pruneRichContent drops the rendered-mermaid cache when the detail target
+// switches to a different PR: entries are keyed by full body text, so another
+// PR's bodies are never looked up again and only accumulate memory across a
+// session. Same-target reloads must not call this — resetCaches keeps
+// richBodies precisely so an unchanged conversation reuses its diagrams.
+// Zeroing the dispatch key makes richContentCmd re-render if the same content
+// is ever opened again.
+func (d *detailModel) pruneRichContent() {
+	d.richBodies = map[string]string{}
+	d.lastRichContentKey = [sha256.Size]byte{}
 }
 
 func (m *Model) reloadLocalConversation() {
@@ -472,24 +517,35 @@ func (m Model) buildConflicts() (string, int) {
 	return strings.Join(lines, "\n"), m.detailView.cursors[conflictsTab] + offset
 }
 
-func (m Model) buildChecks() (string, int) {
-	checkCount := 0
-	if m.cache.PR != nil {
-		checkCount = len(m.cache.PR.Checks)
+// checksFingerprint hashes the freshness header plus every check field the
+// rows render, so the cached render survives syncs whose data is unchanged.
+func (m *Model) checksFingerprint(header string) uint64 {
+	var h maphash.Hash
+	h.SetSeed(tabRenderSeed)
+	fingerprintStrings(&h, header)
+	for _, check := range m.cache.PR.Checks {
+		fingerprintStrings(&h, check.Name, check.Context, check.WorkflowName, check.Status, check.Conclusion, check.State, check.StartedAt, check.CompletedAt)
 	}
-	lines := make([]string, 0, 4+checkCount)
-	if header := m.baseFreshnessHeader(); header != "" {
-		lines = append(lines, header)
-	}
+	return h.Sum64()
+}
+
+func (m *Model) buildChecks() (string, int) {
+	header := m.baseFreshnessHeader()
 	if m.cache.PR == nil || len(m.cache.PR.Checks) == 0 {
-		if len(lines) > 0 {
-			lines = append(lines, "")
+		lines := make([]string, 0, 3)
+		if header != "" {
+			lines = append(lines, header, "")
 		}
 		lines = append(lines, stMuted.Render("(no CI checks)"))
 		return strings.Join(lines, "\n"), 0
 	}
-	if len(lines) > 0 {
-		lines = append(lines, "")
+	key := tabRenderKey{cursor: m.detailView.cursors[checksTab], width: m.list.Width, content: m.checksFingerprint(header)}
+	if m.detailView.checksRenderValid && m.detailView.checksRenderKey == key {
+		return m.detailView.checksRender, m.detailView.checksRenderLine
+	}
+	lines := make([]string, 0, 2+len(m.cache.PR.Checks))
+	if header != "" {
+		lines = append(lines, header, "")
 	}
 	checksStart := len(lines)
 	for i, check := range m.cache.PR.Checks {
@@ -524,7 +580,10 @@ func (m Model) buildChecks() (string, int) {
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n"), checksStart + m.detailView.cursors[checksTab]
+	out, selected := strings.Join(lines, "\n"), checksStart+m.detailView.cursors[checksTab]
+	m.detailView.checksRender, m.detailView.checksRenderLine = out, selected
+	m.detailView.checksRenderKey, m.detailView.checksRenderValid = key, true
+	return out, selected
 }
 
 func checkDuration(check gh.PRCheck) string {
@@ -558,9 +617,31 @@ func plural(n int) string {
 	return "s"
 }
 
-func (m Model) buildCommits() (string, int) {
+// commitsFingerprint hashes everything a commit row renders from: the local
+// commit list plus the PR commit rollups feeding commitCIStates. Hashing is
+// O(rows) but two orders of magnitude cheaper than restyling every row.
+func (m *Model) commitsFingerprint() uint64 {
+	var h maphash.Hash
+	h.SetSeed(tabRenderSeed)
+	for _, c := range m.detailView.commits {
+		fingerprintStrings(&h, c.SHA, c.Subject, c.Date)
+	}
+	if m.cache.PR != nil {
+		_ = h.WriteByte(1)
+		for _, c := range m.cache.PR.Commits {
+			fingerprintStrings(&h, c.OID, c.CheckRollupState)
+		}
+	}
+	return h.Sum64()
+}
+
+func (m *Model) buildCommits() (string, int) {
 	if len(m.detailView.commits) == 0 {
 		return stMuted.Render("(no commits in " + m.detailView.base + "..HEAD)"), 0
+	}
+	key := tabRenderKey{cursor: m.detailView.cursors[commitsTab], width: m.list.Width, content: m.commitsFingerprint()}
+	if m.detailView.commitsRenderValid && m.detailView.commitsRenderKey == key {
+		return m.detailView.commitsRender, m.detailView.commitsRenderLine
 	}
 	lines := make([]string, 0, len(m.detailView.commits))
 	ciStates := m.commitCIStates()
@@ -575,7 +656,10 @@ func (m Model) buildCommits() (string, int) {
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(lines, "\n"), m.detailView.cursors[commitsTab]
+	out := strings.Join(lines, "\n")
+	m.detailView.commitsRender, m.detailView.commitsRenderLine = out, m.detailView.cursors[commitsTab]
+	m.detailView.commitsRenderKey, m.detailView.commitsRenderValid = key, true
+	return out, m.detailView.commitsRenderLine
 }
 
 func (m Model) commitCIStates() map[string]string {

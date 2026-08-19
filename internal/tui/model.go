@@ -548,6 +548,11 @@ func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (
 
 func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.detailView.resetCaches()
+	if m.remote {
+		// Coming from a remote PR is a target switch; a local reload of the
+		// same branch keeps the rendered mermaid.
+		m.detailView.pruneRichContent()
+	}
 	if data.incomplete {
 		m.status = "local git data is incomplete"
 	}
@@ -686,6 +691,11 @@ func (d *detailModel) invalidateConversation() {
 func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.targetGeneration++
 	m.detailView.resetCaches()
+	if !m.remote || m.cache.PR == nil || m.cache.PR.Number != pr.Number {
+		// Reopening the same PR keeps its rendered mermaid; a different
+		// target's bodies would never be looked up again.
+		m.detailView.pruneRichContent()
+	}
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
