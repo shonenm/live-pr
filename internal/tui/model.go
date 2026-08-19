@@ -175,6 +175,7 @@ type conversationItem struct {
 	prCommit      *gh.PRCommit
 	review        *gh.Review
 	reviewComment *gh.ReviewThreadComment
+	outbox        *store.OutboxEntry
 }
 
 type conversationItemKind uint8
@@ -189,6 +190,7 @@ const (
 	itemActivity
 	itemPRCommit
 	itemEvent
+	itemOutbox
 )
 
 // kind classifies which pointer of the hand-rolled sum type is populated, so
@@ -211,6 +213,8 @@ func (it conversationItem) kind() conversationItemKind {
 		return itemActivity
 	case it.prCommit != nil:
 		return itemPRCommit
+	case it.outbox != nil:
+		return itemOutbox
 	case it.event != nil:
 		return itemEvent
 	default:
@@ -290,6 +294,9 @@ type Model struct {
 	overlay           overlay // open modal popup; nil when none
 	localEditor       textarea.Model
 	remoteCommentBusy bool
+	outbox            []store.OutboxEntry
+	outboxPath        string
+	outboxFlushing    bool
 	reviewDraft       gh.ReviewDraft
 	reviewDraftPath   string
 	reviewSubmitting  bool
@@ -576,6 +583,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
 	m.loadReviewedMarks(m.currentPRNumber(), st.Branch)
 	m.refreshReviewDraft()
+	m.refreshOutbox()
 	m.detailView.invalidateConversation()
 	m.githubStatus = "Local only · checking for PR…"
 	if cache.PR != nil {
@@ -710,6 +718,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.cache.PR = &pr
 	m.loadReviewedMarks(pr.Number, pr.HeadRefName)
 	m.refreshReviewDraft()
+	m.refreshOutbox()
 	if snapshot, ok := m.navigator.Snapshot(pr.Number); ok {
 		m.cache.Comments = snapshot.Comments
 		m.cache.Activities = snapshot.Activities
