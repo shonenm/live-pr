@@ -14,11 +14,7 @@ import (
 )
 
 func currentReviewDraft() (*store.Store, gh.PR, gh.ReviewDraft, error) {
-	st, err := store.Discover()
-	if err != nil {
-		return nil, gh.PR{}, gh.ReviewDraft{}, err
-	}
-	cache, err := gh.LoadCache(st.GitHubCache(), st.Branch)
+	st, cache, err := store.LoadSession()
 	if err != nil {
 		return nil, gh.PR{}, gh.ReviewDraft{}, err
 	}

@@ -174,7 +174,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	}
 	m.autoOpenCurrent = false
 	st := store.ForBranch(m.root, m.currentBranch)
-	cache, _ := gh.LoadCache(st.GitHubCache(), m.currentBranch)
+	cache, _ := st.LoadGitHubCache()
 	cache.PR = &msg.pr
 	return m, tea.Batch(saveCmd, m.startLocalLoad(st, cache, &msg.pr), m.startSpinner())
 
