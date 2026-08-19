@@ -253,11 +253,13 @@ func loadListAvatarColors(generation uint64, prs []gh.PR) tea.Cmd {
 	}
 }
 
-// richContentCmd dispatches mermaid rendering and avatar resolution only when
-// the content key (bodies + width) changed since the last dispatch: refreshes
-// with unchanged conversations re-rendered every diagram and re-downloaded
-// every avatar otherwise.
-func (m *Model) richContentCmd() tea.Cmd {
+// dispatchRichContent dispatches mermaid rendering and avatar resolution only
+// when the content key (bodies + width) changed since the last dispatch:
+// refreshes with unchanged conversations re-rendered every diagram and
+// re-downloaded every avatar otherwise. It records the dispatched key on
+// m.detailView.lastRichContentKey — a mutation, not a pure Cmd builder — so
+// callers must keep the receiver they invoked it on.
+func (m *Model) dispatchRichContent() tea.Cmd {
 	width := m.list.Width - 7
 	if width <= 0 {
 		// Init can run before the first WindowSizeMsg; rendering mermaid at a

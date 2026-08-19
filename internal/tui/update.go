@@ -80,7 +80,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == detailScreen {
 			// Mermaid diagrams are rendered at the pane width; re-render them
 			// for the new size.
-			return m, tea.Batch(m.sync(), m.richContentCmd())
+			return m, tea.Batch(m.sync(), m.dispatchRichContent())
 		}
 		return m, m.sync()
 
@@ -155,7 +155,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case richBodiesLoaded:
 		// The key hashes width + bodies, so a match proves the result fits the
 		// current content even if the generation moved on: nothing resets
-		// lastRichContentKey, so discarding here would leave richContentCmd
+		// lastRichContentKey, so discarding here would leave dispatchRichContent
 		// returning nil forever and mermaid diagrams missing until a resize.
 		if msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil

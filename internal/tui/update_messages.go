@@ -438,7 +438,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 		// chain, so this return is the only place a new one can start: without
 		// it a PR whose review ref fails never polls CI (or loads rich
 		// content) again.
-		return m, tea.Batch(saveCmd, m.sync(), m.nextCIPoll(), m.richContentCmd())
+		return m, tea.Batch(saveCmd, m.sync(), m.nextCIPoll(), m.dispatchRichContent())
 	}
 	m.detailView.headRev = msg.headRef
 	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
@@ -470,7 +470,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.pr.URL, "", m.detailView.reviewedMarksPath))
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	cmds := []tea.Cmd{saveCmd, m.sync(), m.nextCIPoll(), m.richContentCmd()}
+	cmds := []tea.Cmd{saveCmd, m.sync(), m.nextCIPoll(), m.dispatchRichContent()}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
@@ -613,7 +613,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	m.detailView.invalidateConversation()
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	return m, tea.Batch(diffCmd, saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.richContentCmd())
+	return m, tea.Batch(diffCmd, saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent())
 
 }
 
