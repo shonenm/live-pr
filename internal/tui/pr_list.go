@@ -1025,9 +1025,14 @@ func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta 
 	}
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	glyph, glyphStyle := stateGlyph(state)
+	// The number carries the glyph's state color so the row reads as open,
+	// merged, or closed without decoding a single dot; the stack prefix stays
+	// muted because it draws the graph, not the state.
 	line = []rowSegment{
 		{text: glyph, style: glyphStyle},
-		{text: " " + prefix + identifier + " ", style: stMuted},
+		{text: " " + prefix, style: stMuted},
+		{text: identifier, style: glyphStyle},
+		{text: " ", style: stMuted},
 		{text: pr.Title, style: stBold},
 	}
 	// The state word would repeat what the colored glyph above already says,
