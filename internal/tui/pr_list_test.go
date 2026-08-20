@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -725,5 +726,32 @@ func TestPRPreviewGroupsCommentsWithReviewState(t *testing.T) {
 	m.prList.open = []gh.PR{pr}
 	if out := ansi.Strip(m.buildPRPreview()); !strings.Contains(out, "3 comments") {
 		t.Fatalf("comments disappeared without a review decision: %q", out)
+	}
+}
+
+func TestPRNumberCarriesStateColor(t *testing.T) {
+	m := testModel()
+	m.list.SetWidth(120)
+	for _, test := range []struct {
+		name  string
+		pr    gh.PR
+		style lipgloss.Style
+	}{
+		{"open", gh.PR{Number: 7, State: "OPEN", Title: "open one"}, stGreenF},
+		{"merged", gh.PR{Number: 8, State: "MERGED", Title: "merged one"}, lipgloss.NewStyle().Foreground(lipgloss.Color(cDoneEmphasis))},
+		{"closed", gh.PR{Number: 9, State: "CLOSED", Title: "closed one"}, stRedF},
+		{"draft", gh.PR{Number: 10, State: "OPEN", IsDraft: true, Title: "draft one"}, stMuted},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			row := strings.Join(m.renderPRRow(test.pr, false, ""), "\n")
+			if want := test.style.Render(fmt.Sprintf("#%d", test.pr.Number)); !strings.Contains(row, want) {
+				t.Fatalf("PR number not styled like its state glyph: %q", row)
+			}
+		})
+	}
+	// The stack prefix draws the graph, not the state, so it stays muted.
+	stacked := ansi.Strip(strings.Join(m.renderPRRow(gh.PR{Number: 11, State: "OPEN", Title: "child"}, false, "└ "), "\n"))
+	if !strings.Contains(stacked, "└ #11 child") {
+		t.Fatalf("stack prefix layout changed: %q", stacked)
 	}
 }
