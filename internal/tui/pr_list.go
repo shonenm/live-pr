@@ -501,6 +501,22 @@ func filterPrompt() string { return stAccent.Render(" ") }
 // tabs that no longer fit. The filter line renders directly below these rows,
 // so filterCursor shares the same layout.
 func (m Model) prListTabRows() []string {
+	rows, _ := m.prListTabLayout()
+	return rows
+}
+
+// tabZone is the clickable span of one view tab inside the header rows. x0
+// and x1 are cells relative to the header text block, which withLogo offsets
+// by the wordmark when it is shown.
+type tabZone struct {
+	view   prView
+	row    int
+	x0, x1 int
+}
+
+// prListTabLayout builds the header tab rows and, from the same placement,
+// the clickable zone of every tab, so mouse hit-testing shares the layout.
+func (m Model) prListTabLayout() ([]string, []tabZone) {
 	tabs := make([]string, 0, len(m.views))
 	activeBg := lipgloss.Color(cSelectedBg)
 	for view := prView(0); int(view) < len(m.views); view++ {
@@ -524,7 +540,8 @@ func (m Model) prListTabRows() []string {
 	if available > 0 && available < 60 {
 		tabRows[0] = stBold.Render(m.repository)
 	}
-	for _, tab := range tabs {
+	zones := make([]tabZone, 0, len(tabs))
+	for i, tab := range tabs {
 		separator := " "
 		if tabRows[len(tabRows)-1] == "" {
 			separator = ""
@@ -532,11 +549,14 @@ func (m Model) prListTabRows() []string {
 		candidate := tabRows[len(tabRows)-1] + separator + tab
 		if available > 0 && lipgloss.Width(candidate) > available && tabRows[len(tabRows)-1] != "" {
 			tabRows = append(tabRows, tab)
+			zones = append(zones, tabZone{view: prView(i), row: len(tabRows) - 1, x0: 0, x1: lipgloss.Width(tab)})
 		} else {
+			x1 := lipgloss.Width(candidate)
 			tabRows[len(tabRows)-1] = candidate
+			zones = append(zones, tabZone{view: prView(i), row: len(tabRows) - 1, x0: x1 - lipgloss.Width(tab), x1: x1})
 		}
 	}
-	return tabRows
+	return tabRows, zones
 }
 
 // filterCursor puts the real terminal cursor at the end of the filter query
@@ -823,6 +843,61 @@ func previewMarkdown(text string, width, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
+// placedPRRow locates one laid-out PR-list row: a stack group header
+// (entry == -1, one line) or a PR row (three lines: row, meta, separator)
+// with its index into prList.open.
+type placedPRRow struct {
+	line, stack, entry int // entry == -1 marks a group header
+	openIndex          int // index into prList.open; -1 for group headers
+	selected           bool
+}
+
+// prListRowLayout places group headers and PR rows without rendering them.
+// buildPRListRows renders from this placement and prIndexAtListLine maps
+// mouse clicks through it, so the click math can never drift from the render.
+func (m *Model) prListRowLayout() (placed []placedPRRow, totalLines, selectedLine int) {
+	stacks := m.prList.stacks
+	placed = make([]placedPRRow, 0, len(m.prList.open)+len(stacks))
+	line, openIndex := 0, 0
+	for si := range stacks {
+		entries := stacks[si].Entries
+		if len(entries) > 1 {
+			placed = append(placed, placedPRRow{line: line, stack: si, entry: -1, openIndex: -1})
+			line++
+			if m.prList.collapsedStacks[stacks[si].ID] {
+				entries = entries[:1]
+			}
+		}
+		for ei := range entries {
+			selected := openIndex == m.prList.cursor
+			if selected {
+				selectedLine = line
+			}
+			placed = append(placed, placedPRRow{line: line, stack: si, entry: ei, openIndex: openIndex, selected: selected})
+			line += 3
+			openIndex++
+		}
+	}
+	return placed, line, selectedLine
+}
+
+// prIndexAtListLine maps a PR-list content line to the index of the PR row
+// rendered there, or -1 when the line is a stack header, a row's blank
+// separator line, or padding past the last row.
+func (m *Model) prIndexAtListLine(line int) int {
+	placed, _, _ := m.prListRowLayout()
+	for _, row := range placed {
+		if row.entry < 0 {
+			continue
+		}
+		// Only the two visible lines count; the third is the separator.
+		if line >= row.line && line < row.line+2 {
+			return row.openIndex
+		}
+	}
+	return -1
+}
+
 func (m *Model) buildPRListRows() (string, int) {
 	if len(m.prList.open) == 0 {
 		message := stMuted.Render("(no pull requests in this view)")
@@ -834,33 +909,7 @@ func (m *Model) buildPRListRows() (string, int) {
 	// open is derived from stacks in applyPRFilters, so a non-empty
 	// list always has stacks.
 	stacks := m.prList.stacks
-	// Layout pass: place group headers (one line) and PR rows (three lines)
-	// without rendering them, to learn the selected line and total height.
-	type placedRow struct {
-		line, stack, entry int // entry == -1 marks a group header
-		selected           bool
-	}
-	placed := make([]placedRow, 0, len(m.prList.open)+len(stacks))
-	line, openIndex, selectedLine := 0, 0, 0
-	for si := range stacks {
-		entries := stacks[si].Entries
-		if len(entries) > 1 {
-			placed = append(placed, placedRow{line: line, stack: si, entry: -1})
-			line++
-			if m.prList.collapsedStacks[stacks[si].ID] {
-				entries = entries[:1]
-			}
-		}
-		for ei := range entries {
-			selected := openIndex == m.prList.cursor
-			if selected {
-				selectedLine = line
-			}
-			placed = append(placed, placedRow{line: line, stack: si, entry: ei, selected: selected})
-			line += 3
-			openIndex++
-		}
-	}
+	placed, line, selectedLine := m.prListRowLayout()
 	// Render pass: only the rows within one viewport height of the visible
 	// region and of the selected row become text; the rest stay empty lines.
 	// The line count — and so the scroll geometry — matches a full render,
