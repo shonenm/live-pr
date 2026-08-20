@@ -137,7 +137,7 @@ func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 35})
 	m = u.(Model)
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"description", "comment", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author ● @bob", "assigned ● @carol", "feature", "╭", "╰"} {
+	for _, want := range []string{"description", "comment", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author ● @bob", "feature", "╭", "╰"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("preview missing %q: %q", want, out)
 		}
@@ -521,8 +521,17 @@ func TestUserIconsAppearAcrossPRSurfaces(t *testing.T) {
 	if !strings.Contains(row, "● @alice") {
 		t.Fatalf("row user icon missing: %q", row)
 	}
-	if !strings.Contains(preview, "author ● @alice") || !strings.Contains(preview, "assigned ● @bob") {
-		t.Fatalf("preview user icons missing: %q", preview)
+	// The author leads the meta line; the state word would only repeat the
+	// colored glyph on the title line.
+	if strings.Contains(row, "open") {
+		t.Fatalf("row still spells out the state: %q", row)
+	}
+	localRow := ansi.Strip(strings.Join(m.renderPRRow(gh.PR{Number: 0, Title: "Local", BaseRefName: "main", HeadRefName: "wip"}, false, ""), "\n"))
+	if !strings.Contains(localRow, "local") {
+		t.Fatalf("authorless local row lost its state word: %q", localRow)
+	}
+	if !strings.Contains(preview, "author ● @alice") || strings.Contains(preview, "assigned") {
+		t.Fatalf("preview should show the author and no assignees: %q", preview)
 	}
 	if !strings.Contains(header, "assigned ● @bob") {
 		t.Fatalf("header user icon missing: %q", header)
