@@ -185,23 +185,41 @@ func (m *Model) buildConversation() (string, int) {
 
 func (m *Model) renderConversation(items []conversationItem) (string, int) {
 	if len(items) == 0 {
+		m.detailView.conversationRows = nil
 		return stMuted.Render("(no conversation yet — try `live-pr note …`)"), 0
 	}
 	var lines []string
 	selectedLine := 0
+	rows := make([][2]int, len(items))
 	for i, item := range items {
 		selected := i == m.detailView.cursors[conversationTab]
 		if selected {
 			selectedLine = len(lines)
 		}
 		itemLines := m.conversationItemLines(item, selected)
+		rows[i] = [2]int{len(lines), len(lines) + len(itemLines)}
 		lines = append(lines, itemLines...)
 		nextCompactActivity := i+1 < len(items) && items[i+1].compactActivity()
 		if !item.compactActivity() || !nextCompactActivity {
 			lines = append(lines, "")
 		}
 	}
+	m.detailView.conversationRows = rows
 	return strings.TrimSuffix(strings.Join(lines, "\n"), "\n"), selectedLine
+}
+
+// conversationIndexAtLine maps a rendered conversation line to the index of
+// the item drawn there, or -1 on separator lines and padding. The ranges are
+// recorded by the same render pass that fills the viewport, so a click can
+// never land on a different item than the one it visually hit.
+func (m *Model) conversationIndexAtLine(line int) int {
+	m.buildConversation() // ensure the cached render (and its rows) is current
+	for i, r := range m.detailView.conversationRows {
+		if line >= r[0] && line < r[1] {
+			return i
+		}
+	}
+	return -1
 }
 
 // conversationItemLines renders one card. Unselected renders are cached by

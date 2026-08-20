@@ -143,20 +143,26 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		return m, m.moveCursorBy(-1)
 	case key.Matches(msg, m.keys.Select):
-		pr := m.prList.selectedPR()
-		if pr == nil {
-			return m, nil
-		}
-		// Remember the tab so b returns here rather than guessing.
-		m.detailOrigin, m.detailOriginSet = m.prList.view, true
-		if !m.isCurrentTargetPR(*pr) {
-			return m, m.openRemote(*pr)
-		}
-		st := store.ForBranch(m.root, m.currentBranch)
-		cache, _ := st.LoadGitHubCache()
-		return m, tea.Batch(m.startLocalLoad(st, cache, pr), m.startSpinner())
+		return m.openSelectedPR()
 	}
 	return m, nil
+}
+
+// openSelectedPR opens the selected pull request on the detail screen — the
+// Enter action, shared with a mouse click on the already-selected row.
+func (m Model) openSelectedPR() (Model, tea.Cmd) {
+	pr := m.prList.selectedPR()
+	if pr == nil {
+		return m, nil
+	}
+	// Remember the tab so b returns here rather than guessing.
+	m.detailOrigin, m.detailOriginSet = m.prList.view, true
+	if !m.isCurrentTargetPR(*pr) {
+		return m, m.openRemote(*pr)
+	}
+	st := store.ForBranch(m.root, m.currentBranch)
+	cache, _ := st.LoadGitHubCache()
+	return m, tea.Batch(m.startLocalLoad(st, cache, pr), m.startSpinner())
 }
 
 // handlePRActionConfirmKey drives the y/n confirmation for a pending PR
