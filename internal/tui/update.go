@@ -42,6 +42,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			return m.overlay.handleKey(m, keyMsg)
 		}
+		// A modal popup owns the mouse too: wheel and stray clicks must not
+		// scroll or activate anything underneath. Overlays opt in to their
+		// own mouse handling via overlayMouseHandler; this runs before the
+		// overlayMsgHandler dispatch so the editor overlay's textarea never
+		// sees mouse events.
+		if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+			if handler, ok := m.overlay.(overlayMouseHandler); ok {
+				return handler.handleMouse(m, mouseMsg)
+			}
+			return m, nil
+		}
 		// The editor overlay also needs non-key messages (cursor blink).
 		if handler, ok := m.overlay.(overlayMsgHandler); ok {
 			return handler.handleMsg(m, msg)
@@ -198,17 +209,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		clear(m.prList.rowCache)
 		return m, m.sync()
 	case tea.MouseMsg:
-		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			// The review pane sits after the bordered left pane; +1 row for its own top border.
-			if local, ok := translateDiffMouse(msg, m.list.Width()+paneChromeW, m.detail.Width(), m.detail.Height(), m.headerHeight()+1); ok {
-				m.detailView.focus = focusReview
-				return m, m.diffTerminal.Update(local)
-			}
-			if _, click := msg.(tea.MouseClickMsg); click && m.detailView.focus == focusReview {
-				m.detailView.focus = focusConversation
-			}
-		}
-		return m, nil
+		next, cmd := m.handleMouse(msg)
+		return next, cmd
 
 	case tea.PasteMsg:
 		// v1 delivered pastes as key messages; v2 splits them out, so route

@@ -29,6 +29,15 @@ type overlayMsgHandler interface {
 	handleMsg(m Model, msg tea.Msg) (Model, tea.Cmd)
 }
 
+// overlayMouseHandler is implemented by overlays that respond to the mouse:
+// option pickers move and confirm their cursor on clicks, confirm popups
+// cancel on a click outside. Overlays without it — the editor overlays in
+// particular, whose typed text must survive a stray click — swallow every
+// mouse event while open, so nothing scrolls or activates underneath a modal.
+type overlayMouseHandler interface {
+	handleMouse(m Model, msg tea.MouseMsg) (Model, tea.Cmd)
+}
+
 // cursorOverlay is implemented by overlays that host a text input. cursor
 // returns the caret position relative to the popup's top-left cell, or nil
 // when no input is focused; View adds the popup's centering offset so the
