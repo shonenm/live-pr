@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/config"
@@ -566,7 +566,7 @@ func (m Model) buildPRPreview() string {
 	if pr == nil {
 		return stMuted.Render("Select a pull request to preview it.")
 	}
-	width := max(20, m.detail.Width-2)
+	width := max(20, m.detail.Width()-2)
 	identifier := "Local PR"
 	if pr.Number > 0 {
 		identifier = fmt.Sprintf("#%d", pr.Number)
@@ -799,7 +799,7 @@ func (m *Model) buildPRListRows() (string, int) {
 		if m.prList.refreshing {
 			message = stMuted.Render("fetching " + strings.ToLower(m.prList.state.Label()) + " pull requests…")
 		}
-		return lipgloss.Place(max(1, m.list.Width), max(1, m.list.Height), lipgloss.Center, lipgloss.Center, message), 0
+		return lipgloss.Place(max(1, m.list.Width()), max(1, m.list.Height()), lipgloss.Center, lipgloss.Center, message), 0
 	}
 	// open is derived from stacks in applyPRFilters, so a non-empty
 	// list always has stacks.
@@ -839,9 +839,9 @@ func (m *Model) buildPRListRows() (string, int) {
 	// pulled to the selected line by keepLineVisible: always inside the
 	// window rendered here.
 	lo, hi := 0, line
-	if m.list.Height > 0 { // an unsized viewport renders everything
-		lo = min(m.list.YOffset, selectedLine) - m.list.Height
-		hi = max(m.list.YOffset+m.list.Height-1, selectedLine) + m.list.Height + 1
+	if m.list.Height() > 0 { // an unsized viewport renders everything
+		lo = min(m.list.YOffset(), selectedLine) - m.list.Height()
+		hi = max(m.list.YOffset()+m.list.Height()-1, selectedLine) + m.list.Height() + 1
 	}
 	lines := make([]string, line)
 	for _, row := range placed {
@@ -855,7 +855,7 @@ func (m *Model) buildPRListRows() (string, int) {
 				arrow = "▸"
 			}
 			header := stMuted.Render(arrow+" ") + stBold.Render(stack.Title) + stMuted.Render(fmt.Sprintf(" · %d PRs", len(stack.Entries)))
-			lines[row.line] = ansi.Truncate(header, max(10, m.list.Width), "…")
+			lines[row.line] = ansi.Truncate(header, max(10, m.list.Width()), "…")
 			continue
 		}
 		if row.line+3 <= lo || row.line >= hi {
@@ -892,7 +892,7 @@ func (m *Model) cachedPRRow(pr gh.PR, prefix string) []string {
 	}
 	health, count := prfilter.CheckHealth(pr.Checks)
 	key := prRowCacheKey{
-		number: pr.Number, width: max(10, m.list.Width), additions: pr.Additions, deletions: pr.Deletions, checkCount: count,
+		number: pr.Number, width: max(10, m.list.Width()), additions: pr.Additions, deletions: pr.Deletions, checkCount: count,
 		prefix: prefix, state: pr.State, title: pr.Title, author: pr.Author.Login, base: pr.BaseRefName, head: pr.HeadRefName,
 		mergeable: pr.Mergeable, mergeState: pr.MergeStateStatus, checkHealth: health, rollup: pr.CheckRollupState,
 		review: pr.ReviewDecision, draft: pr.IsDraft, previewLoaded: pr.PreviewLoaded, current: m.isCurrentTargetPR(pr),
@@ -1003,7 +1003,7 @@ func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta 
 }
 
 func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
-	width := max(10, m.list.Width)
+	width := max(10, m.list.Width())
 	current := m.isCurrentTargetPR(pr)
 	lineSegments, metaSegments := m.prRowSegments(pr, prefix, current)
 	if !selected {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/embeddedterm"
@@ -109,7 +109,7 @@ func TestStaticDiffUsesFileExplorerAndChecksFiles(t *testing.T) {
 		{Status: "D", Path: "internal/tui/legacy.go"},
 		{Status: "R100", OldPath: "internal/tui/old.go", Path: "internal/tui/new.go"},
 	}
-	m.explorer.Width = 80
+	m.explorer.SetWidth(80)
 
 	content, selected := m.buildFileExplorer()
 	plain := ansi.Strip(content)
@@ -146,34 +146,35 @@ func TestStaticDiffExplorerAndDiffNavigation(t *testing.T) {
 		{Status: "A", Path: "internal/tui/explorer.go"},
 	}
 	m.detailView.focus = focusExplorer
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	u, _ := m.Update(keyPress("j"))
 	m = u.(Model)
 	if m.detailView.fileCursor != 1 {
 		t.Fatalf("file cursor = %d, want 1", m.detailView.fileCursor)
 	}
 
 	m.detailView.fileCursor = 0
-	m.detail.Width, m.detail.Height = 40, 3
+	m.detail.SetWidth(40)
+	m.detail.SetHeight(3)
 	m.detail.SetContent(strings.Repeat("line\n", 20))
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	u, _ = m.Update(keyPress("ctrl+d"))
 	m = u.(Model)
-	if m.detail.YOffset == 0 {
+	if m.detail.YOffset() == 0 {
 		t.Fatal("ctrl+d did not scroll the diff")
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	u, _ = m.Update(keyPress("G"))
 	m = u.(Model)
 	if m.detailView.fileCursor != 1 {
 		t.Fatalf("G file cursor = %d, want 1", m.detailView.fileCursor)
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	u, _ = m.Update(keyPress("g"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	u, _ = m.Update(keyPress("g"))
 	m = u.(Model)
 	if m.detailView.fileCursor != 0 {
 		t.Fatalf("gg file cursor = %d, want 0", m.detailView.fileCursor)
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
 	if !m.detailView.fileChecked(m.detailView.files[m.detailView.fileCursor]) {
 		t.Fatal("c did not check the selected file from Diff")
@@ -187,7 +188,7 @@ func TestRemotePRHeaderAndExplorerShowMergeReadiness(t *testing.T) {
 	m.cache.PR = &gh.PR{Number: 7, State: "OPEN"}
 	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 3, ConflictFiles: []string{"conflict.go"}}
 	m.detailView.files = []git.ChangedFile{{Status: "M", Path: "conflict.go"}, {Status: "A", Path: "clean.go"}}
-	m.explorer.Width = 80
+	m.explorer.SetWidth(80)
 	header := ansi.Strip(m.renderHeader())
 	if !strings.Contains(header, "3 behind") || !strings.Contains(header, "1 conflict files") {
 		t.Fatalf("merge readiness header = %q", header)
@@ -211,23 +212,23 @@ func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m = updated.(Model)
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	updated, _ = m.Update(keyPress("f"))
 	m = updated.(Model)
-	plain := ansi.Strip(m.View())
+	plain := ansi.Strip(m.viewContent())
 	if m.detailView.active != conflictsTab || !strings.Contains(plain, "Conflicts · 2") || !strings.Contains(plain, "⚠ conflict.go") {
 		t.Fatalf("conflict view = active:%v view:%q", m.detailView.active, plain)
 	}
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	updated, _ = m.Update(keyPress("i"))
 	m = updated.(Model)
-	plain = ansi.Strip(m.View())
+	plain = ansi.Strip(m.viewContent())
 	for _, want := range []string{"Checks · 3", "out of date · 3 commits behind base", "✓ unit · CI · success", "◐ lint · in progress", "✗ deploy · failure"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("check view missing %q: %q", want, plain)
 		}
 	}
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ = m.Update(keyPress("esc"))
 	m = updated.(Model)
 	if m.detailView.active != conversationTab {
 		t.Fatalf("Esc active = %v, want Conversation", m.detailView.active)
@@ -265,10 +266,10 @@ func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
 	m.remote = true
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
-	if m.detailView.active != commitsTab || !strings.Contains(ansi.Strip(m.View()), "Commits · 2") {
-		t.Fatalf("remote c did not open commit list: active=%v view=%q", m.detailView.active, ansi.Strip(m.View()))
+	if m.detailView.active != commitsTab || !strings.Contains(ansi.Strip(m.viewContent()), "Commits · 2") {
+		t.Fatalf("remote c did not open commit list: active=%v view=%q", m.detailView.active, ansi.Strip(m.viewContent()))
 	}
 }
 
@@ -277,19 +278,19 @@ func TestCommitPickerSelectsCommitAndEscRestoresBranchReview(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
-	if m.detailView.active != commitsTab || !strings.Contains(m.View(), "feat: x") {
+	if m.detailView.active != commitsTab || !strings.Contains(m.viewContent(), "feat: x") {
 		t.Fatalf("c should replace Conversation with the commit picker")
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, _ = m.Update(keyPress("enter"))
 	m = u.(Model)
 	if m.detailView.reviewSHA != "abc1234" || !strings.Contains(ansi.Strip(m.renderHeader()), "commit abc1234") {
 		t.Fatalf("Enter did not select commit review: sha=%q", m.detailView.reviewSHA)
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	u, _ = m.Update(keyPress("esc"))
 	m = u.(Model)
 	if m.detailView.active != conversationTab || m.detailView.reviewSHA != "" || m.detailView.cursors[conversationTab] != 0 {
 		t.Fatalf("Esc should restore branch review and the Conversation cursor")
@@ -302,9 +303,9 @@ func TestCommitPickerCancelKeepsBranchTerminal(t *testing.T) {
 	branchTerminal := m.diffTerminal
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	u, _ = m.Update(keyPress("esc"))
 	m = u.(Model)
 	defer m.close()
 	if m.detailView.active != conversationTab || m.diffTerminal != branchTerminal || m.detailView.reviewSHA != "" {
@@ -341,12 +342,15 @@ func TestReloadLocalConversationReadsExternalCLIChanges(t *testing.T) {
 
 func TestTranslateDiffMouseUsesContentBounds(t *testing.T) {
 	headerHeight := logoHeight + 1 // header rows plus the review pane's top border
-	msg := tea.MouseMsg{X: 42, Y: headerHeight, Action: tea.MouseActionPress}
+	msg := tea.MouseClickMsg{X: 42, Y: headerHeight, Button: tea.MouseLeft}
 	local, ok := translateDiffMouse(msg, 40, 80, 20, headerHeight)
-	if !ok || local.X != 0 || local.Y != 0 {
+	if !ok || local.Mouse().X != 0 || local.Mouse().Y != 0 {
 		t.Fatalf("translated = %+v, ok=%v", local, ok)
 	}
-	for _, outside := range []tea.MouseMsg{
+	if _, click := local.(tea.MouseClickMsg); !click {
+		t.Fatalf("translated message changed type: %T", local)
+	}
+	for _, outside := range []tea.MouseClickMsg{
 		{X: 41, Y: headerHeight},
 		{X: 122, Y: headerHeight},
 		{X: 42, Y: headerHeight - 1},
@@ -425,13 +429,13 @@ func TestSyncDetailKeepsScrollWhenContentUnchanged(t *testing.T) {
 	m.syncDetail(detail)
 	m.detail.SetYOffset(7)
 	m.syncDetail(detail)
-	if m.detail.YOffset != 7 {
-		t.Fatalf("re-sync of unchanged content moved scroll to %d, want 7", m.detail.YOffset)
+	if m.detail.YOffset() != 7 {
+		t.Fatalf("re-sync of unchanged content moved scroll to %d, want 7", m.detail.YOffset())
 	}
 	other := strings.Repeat("other\n", 100)
 	m.syncDetail(detailContent{key: "commit:def", raw: other, renderable: true})
-	if m.detail.YOffset != 0 || !strings.Contains(m.detail.View(), "other") {
-		t.Fatalf("new content should reset to top: offset=%d view=%q", m.detail.YOffset, m.detail.View())
+	if m.detail.YOffset() != 0 || !strings.Contains(m.detail.View(), "other") {
+		t.Fatalf("new content should reset to top: offset=%d view=%q", m.detail.YOffset(), m.detail.View())
 	}
 }
 
@@ -448,8 +452,8 @@ func TestSyncDetailKeepsScrollOnRenderedDiffCacheHits(t *testing.T) {
 	u, _ = m.Update(cmd())
 	m = u.(Model)
 	m.detail.SetYOffset(7)
-	if extra := m.syncDetail(detail); extra != nil || m.detail.YOffset != 7 {
-		t.Fatalf("cached rendered diff re-sync moved scroll to %d, want 7", m.detail.YOffset)
+	if extra := m.syncDetail(detail); extra != nil || m.detail.YOffset() != 7 {
+		t.Fatalf("cached rendered diff re-sync moved scroll to %d, want 7", m.detail.YOffset())
 	}
 }
 
@@ -459,9 +463,9 @@ func TestCommitSelectionStartsEmbeddedCommitCommandAndFocusesReview(t *testing.T
 	m.diffCommitCommand = "cat"
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, cmd := m.Update(keyPress("enter"))
 	m = u.(Model)
 	defer m.close()
 	if cmd == nil || m.detailView.reviewSHA != "abc1234" || m.detailView.focus != focusReview || m.diffTerminal == nil {

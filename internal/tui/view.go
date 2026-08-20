@@ -6,7 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/git"
@@ -28,7 +29,18 @@ func (m Model) baseBranchStyle(ref string) lipgloss.Style {
 	return stBold
 }
 
-func (m Model) View() string {
+// View assembles the frame and declares terminal features: the alt screen
+// and cell-motion mouse mode that v1 passed as program options, plus the real
+// terminal cursor when a text input is focused.
+func (m Model) View() tea.View {
+	view := tea.NewView(m.viewContent())
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
+	return view
+}
+
+// viewContent renders the whole frame as a string.
+func (m Model) viewContent() string {
 	if !m.ready {
 		return "loading…"
 	}
@@ -43,8 +55,8 @@ func (m Model) View() string {
 				previewTitle = "Preview · local"
 			}
 		}
-		listPane := renderPane(listTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, true)
-		previewPane := renderPane(previewTitle, m.detail.View(), m.detail.Width+paneChromeW, m.detail.Height+paneChromeH, false)
+		listPane := renderPane(listTitle, m.list.View(), m.list.Width()+paneChromeW, m.list.Height()+paneChromeH, true)
+		previewPane := renderPane(previewTitle, m.detail.View(), m.detail.Width()+paneChromeW, m.detail.Height()+paneChromeH, false)
 		body := lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane)
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
 	} else {
@@ -81,7 +93,7 @@ func (m Model) View() string {
 			if m.detailView.active == conversationTab {
 				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
 			}
-			left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, m.detailView.focus == focusConversation)
+			left := renderPane(leftTitle, leftContent, m.list.Width()+paneChromeW, m.detail.Height()+paneChromeH, m.detailView.focus == focusConversation)
 			body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 		}
@@ -314,7 +326,10 @@ func selectionBgOpen() string {
 // re-applying the background after each reset so pre-styled segments keep it.
 func highlightSelectedBg(line string, width int) string {
 	open := selectionBgOpen()
-	if open == "" {
+	// Lip Gloss v2 always emits SGR codes (the renderer downsamples), so a
+	// zero width no longer implies "no color, return as-is"; skip explicitly
+	// before layout has given the pane a real width.
+	if open == "" || width <= 0 {
 		return line
 	}
 	line = ansi.Truncate(line, width, "…")

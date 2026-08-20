@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	portalis "github.com/Starframe/portalis"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestWatchdogHelper(t *testing.T) {

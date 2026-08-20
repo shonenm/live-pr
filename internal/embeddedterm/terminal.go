@@ -12,7 +12,7 @@ import (
 
 	portalis "github.com/Starframe/portalis"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/shonenm/live-pr/internal/clipboard"
 )
 
@@ -78,7 +78,7 @@ func (t *Terminal) Init() tea.Cmd {
 	// embedded terminal, so make the cursor visible without waiting for a
 	// global blink broadcaster.
 	t.emulator.Update(portalis.CursorBlinkMsg{})
-	return t.emulator.Listen()
+	return wrapCmd(t.emulator.Listen())
 }
 
 // Handles reports whether msg belongs to the embedded PTY lifecycle.
@@ -124,12 +124,12 @@ func (t *Terminal) Update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 	}
-	cmd := t.emulator.Update(msg)
+	cmd := t.emulator.Update(toEmulatorMsg(msg))
 	if output, ok := msg.(portalis.PtyOutputMsg); ok && output.SessionID == t.sessionID {
 		t.copyClipboardWrites(output.Data)
 		t.drainOutput()
 	}
-	return cmd
+	return wrapCmd(cmd)
 }
 
 // copyClipboardWrites honors OSC 52 from the embedded process. The emulator

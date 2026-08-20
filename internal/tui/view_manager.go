@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/config"
@@ -55,7 +55,7 @@ func newViewInput(value, placeholder string, width int) textinput.Model {
 	input.Placeholder = placeholder
 	input.CharLimit = 512
 	input.SetValue(value)
-	input.Width = width
+	input.SetWidth(width)
 	return input
 }
 
@@ -75,7 +75,7 @@ func (o viewManagerOverlay) startEdit(m Model, index int) (Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (o viewManagerOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o viewManagerOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if o.editField != viewEditNone {
 		return o.handleEditKey(m, msg)
 	}
@@ -130,7 +130,7 @@ func (o viewManagerOverlay) move(delta int) viewManagerOverlay {
 	return o
 }
 
-func (o viewManagerOverlay) handleEditKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o viewManagerOverlay) handleEditKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		o.editField, o.editIndex, o.errText = viewEditNone, -1, ""
@@ -153,6 +153,23 @@ func (o viewManagerOverlay) handleEditKey(m Model, msg tea.KeyMsg) (Model, tea.C
 		return o.commitEdit(m)
 	case "ctrl+c":
 		return m, tea.Quit
+	}
+	var cmd tea.Cmd
+	if o.editField == viewEditName {
+		o.nameInput, cmd = o.nameInput.Update(msg)
+	} else {
+		o.queryInput, cmd = o.queryInput.Update(msg)
+	}
+	m.overlay = o
+	return m, cmd
+}
+
+// handleMsg feeds non-key messages (paste, cursor blink) to the focused form
+// input; v1 delivered pastes as key messages, so they used to arrive through
+// handleEditKey.
+func (o viewManagerOverlay) handleMsg(m Model, msg tea.Msg) (Model, tea.Cmd) {
+	if o.editField == viewEditNone {
+		return m, nil
 	}
 	var cmd tea.Cmd
 	if o.editField == viewEditName {

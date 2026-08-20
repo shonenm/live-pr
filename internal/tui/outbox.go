@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	gh "github.com/shonenm/live-pr/internal/github"
 	md "github.com/shonenm/live-pr/internal/markdown"
@@ -157,7 +157,7 @@ type outboxDiscardOverlay struct {
 	title string
 }
 
-func (o outboxDiscardOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o outboxDiscardOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "y":
 		m.overlay = nil

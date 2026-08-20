@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/event"
@@ -59,8 +59,10 @@ func (m Model) setupLocalEditor(value string) (Model, tea.Cmd) {
 	editor := textarea.New()
 	editor.Prompt = ""
 	editor.ShowLineNumbers = false
-	editor.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	editor.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	styles := editor.Styles()
+	styles.Focused.CursorLine = lipgloss.NewStyle()
+	styles.Blurred.CursorLine = lipgloss.NewStyle()
+	editor.SetStyles(styles)
 	editor.CharLimit = 65536
 	// Terminals disagree on Shift+Enter: most send CR (already a newline
 	// here), some send LF, which bubbletea reports as ctrl+j. Accept both,
@@ -375,7 +377,7 @@ func localEventByID(events []event.Event, id string) (event.Event, bool) {
 	return event.Event{}, false
 }
 
-func (o localEditOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o localEditOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	// Ctrl+S only: bubbletea cannot report ctrl+enter (the terminal sends
 	// plain CR for it), and Enter has to stay a newline in the editor.
@@ -400,7 +402,7 @@ func (o localEditOverlay) handleMsg(m Model, msg tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (o localDeleteOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o localDeleteOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "y":
 		if err := event.Delete(m.timelinePath, o.target); err != nil {
@@ -417,7 +419,7 @@ func (o localDeleteOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) 
 	return m, nil
 }
 
-func (o remoteDeleteOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o remoteDeleteOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "y":
 		m.overlay = nil
