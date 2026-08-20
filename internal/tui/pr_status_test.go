@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -47,7 +46,7 @@ func TestPRStatusPopupOpensFromListAndDetail(t *testing.T) {
 		pr := gh.PR{Number: 12, State: "OPEN", Title: "status"}
 		m.cache.PR = &pr
 		m.prList.open = []gh.PR{pr}
-		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+		u, _ := m.Update(keyPress("s"))
 		m = u.(Model)
 		o, ok := m.overlay.(prStatusOverlay)
 		if !ok {

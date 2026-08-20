@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/shonenm/live-pr/internal/clipboard"
 	"github.com/shonenm/live-pr/internal/debugtime"
@@ -261,7 +261,7 @@ func loadListAvatarColors(generation uint64, prs []gh.PR) tea.Cmd {
 // m.detailView.lastRichContentKey — a mutation, not a pure Cmd builder — so
 // callers must keep the receiver they invoked it on.
 func (m *Model) dispatchRichContent() tea.Cmd {
-	width := m.list.Width - 7
+	width := m.list.Width() - 7
 	if width <= 0 {
 		// Init can run before the first WindowSizeMsg; rendering mermaid at a
 		// negative width wastes the work and caches garbage.

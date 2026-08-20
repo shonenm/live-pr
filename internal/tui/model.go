@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	bspinner "github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	bspinner "charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/debugtime"
@@ -86,7 +86,7 @@ var keys = keyMap{
 	PrevView:     key.NewBinding(key.WithKeys("[", "h"), key.WithHelp("h/[", "previous view")),
 	NextView:     key.NewBinding(key.WithKeys("]", "l"), key.WithHelp("l/]", "next view")),
 	Filter:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	ToggleStack:  key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "collapse stack")),
+	ToggleStack:  key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "collapse stack")),
 	Focus:        key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "move focus")),
 	FocusRight:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "focus review")),
 	FocusLeft:    key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "focus left")),
@@ -632,7 +632,7 @@ func Run(version string, opts ...Option) error {
 	for _, opt := range opts {
 		opt(&m)
 	}
-	final, runErr := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	final, runErr := tea.NewProgram(m).Run()
 	if model, ok := final.(Model); ok {
 		model.close()
 	} else {
@@ -741,7 +741,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	return tea.Batch(fetchRemotePR(m.client, pr, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
 }
 
-func (m *Model) handleVimNavigation(msg tea.KeyMsg) (bool, tea.Cmd) {
+func (m *Model) handleVimNavigation(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	if msg.String() == "g" {
 		if m.pendingG {
 			m.pendingG = false
@@ -770,7 +770,7 @@ func (m *Model) navigationLength() int {
 }
 
 func scrollQuarter(v *viewport.Model, down bool) {
-	lines := max(1, v.Height/4)
+	lines := max(1, v.Height()/4)
 	if down {
 		v.ScrollDown(lines)
 	} else {
@@ -1006,12 +1006,12 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 }
 
 func keepLineVisible(v *viewport.Model, line int) {
-	if line < v.YOffset {
+	if line < v.YOffset() {
 		v.SetYOffset(line)
 		return
 	}
-	if bottom := v.YOffset + v.Height - 1; line > bottom {
-		v.SetYOffset(line - v.Height + 1)
+	if bottom := v.YOffset() + v.Height() - 1; line > bottom {
+		v.SetYOffset(line - v.Height() + 1)
 	}
 }
 

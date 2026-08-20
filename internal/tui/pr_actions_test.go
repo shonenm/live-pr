@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/git"
@@ -24,7 +24,7 @@ func TestMergePopupShowsMergeConditions(t *testing.T) {
 	m.cache.PR = &pr
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
 	popup := ansi.Strip(m.renderActionPopup())
 	for _, want := range []string{"⇄ mergeable", "✓ CI 1 passed", "review approved", "✓ up to date with base"} {
@@ -73,7 +73,7 @@ func TestDetailMergeStartsConfirmation(t *testing.T) {
 	m.cache.PR = &gh.PR{Number: 9, State: "OPEN", HeadRefOID: "head", HeadRefName: "feature/x"}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	u, cmd := m.Update(keyPress("m"))
 	m = u.(Model)
 	if cmd != nil || m.pendingPRAction != mergePR || m.prActionNumber != 9 {
 		t.Fatalf("detail merge confirmation = pending:%v number:%d cmd:%v", m.pendingPRAction, m.prActionNumber, cmd)
@@ -88,27 +88,27 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	u, cmd := m.Update(keyPress("m"))
 	m = u.(Model)
-	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "merge commit") || !strings.Contains(ansi.Strip(m.View()), "Merge PR #14") {
+	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "merge commit") || !strings.Contains(ansi.Strip(m.viewContent()), "Merge PR #14") {
 		t.Fatalf("merge confirmation not shown: pending=%v popup=%q", m.pendingPRAction, ansi.Strip(m.renderActionPopup()))
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	u, _ = m.Update(keyPress("n"))
 	m = u.(Model)
 	if m.pendingPRAction != noPRAction {
 		t.Fatalf("merge confirmation not cancelled: %v", m.pendingPRAction)
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
-	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	u, cmd = m.Update(keyPress("y"))
 	m = u.(Model)
 	if cmd == nil || m.pendingPRAction != noPRAction || m.prActionRunning != checkoutPR || m.prActionNumber != 14 {
 		t.Fatalf("checkout not confirmed: pending=%v running=%v number=%d cmd=%v", m.pendingPRAction, m.prActionRunning, m.prActionNumber, cmd)
 	}
 
 	m.prActionRunning = noPRAction
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	u, _ = m.Update(keyPress("x"))
 	m = u.(Model)
 	if m.pendingPRAction != closePR || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Close PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Close without merging") {
 		t.Fatalf("close confirmation not shown: pending=%v popup=%q", m.pendingPRAction, ansi.Strip(m.renderActionPopup()))
@@ -138,15 +138,15 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 	}
 
 	// j moves the cursor to Squash and the prompt follows the selection.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	u, _ = m.Update(keyPress("j"))
 	m = u.(Model)
 	popup := ansi.Strip(m.renderActionPopup())
 	if m.mergeMethodCursor != 1 || !strings.Contains(popup, "Squash and merge?") || !strings.Contains(popup, "Rebase") {
 		t.Fatalf("squash selection not shown: cursor=%d popup=%q", m.mergeMethodCursor, popup)
 	}
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, cmd := m.Update(keyPress("enter"))
 	m = u.(Model)
 	if cmd == nil || m.pendingPRAction != noPRAction || m.prActionRunning != mergePR {
 		t.Fatalf("enter did not fire the merge: pending=%v running=%v", m.pendingPRAction, m.prActionRunning)
@@ -158,12 +158,12 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 
 	// Reopening resets the cursor to the merge commit; r submits a rebase.
 	m.prActionRunning = noPRAction
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
 	if m.mergeMethodCursor != 0 || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge with a merge commit?") {
 		t.Fatalf("reopened popup did not reset to the merge commit: cursor=%d", m.mergeMethodCursor)
 	}
-	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	u, cmd = m.Update(keyPress("r"))
 	m = u.(Model)
 	runInner(cmd)
 	if m.prActionRunning != mergePR || gotMethod != gh.MergeRebase {
@@ -173,9 +173,9 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 	// Esc cancels without touching the client.
 	m.prActionRunning = noPRAction
 	gotNumber, gotMethod = 0, ""
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
-	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	u, cmd = m.Update(keyPress("esc"))
 	m = u.(Model)
 	if cmd != nil || m.pendingPRAction != noPRAction || m.prActionNumber != 0 || gotNumber != 0 {
 		t.Fatalf("esc did not cancel: pending=%v number=%d merged=%d", m.pendingPRAction, m.prActionNumber, gotNumber)
@@ -189,7 +189,7 @@ func TestPRListActionsAreDisabledForLocalEntry(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	for _, action := range []rune{'m', 'c', 'x'} {
-		u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{action}})
+		u, cmd := m.Update(keyPress(string(action)))
 		m = u.(Model)
 		if cmd != nil || m.pendingPRAction != noPRAction {
 			t.Fatalf("local action %q was enabled", action)
@@ -206,13 +206,13 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 
 	// c still switches to the commits tab on the detail screen.
 	m.detailView.active = conversationTab
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	u, _ := m.Update(keyPress("c"))
 	if got := u.(Model); got.detailView.active != commitsTab || got.pendingPRAction != noPRAction {
 		t.Fatalf("c = tab:%v pending:%v", got.detailView.active, got.pendingPRAction)
 	}
 
 	// C asks to check the shown PR out.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	u, _ = m.Update(keyPress("C"))
 	m = u.(Model)
 	if m.pendingPRAction != checkoutPR || m.prActionNumber != 14 {
 		t.Fatalf("C = pending:%v number:%d", m.pendingPRAction, m.prActionNumber)
@@ -220,7 +220,7 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	if popup := ansi.Strip(m.renderActionPopup()); !strings.Contains(popup, "Checkout feature?") {
 		t.Fatalf("confirm popup = %q", popup)
 	}
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	u, cmd := m.Update(keyPress("y"))
 	if got := u.(Model); got.prActionRunning != checkoutPR || cmd == nil {
 		t.Fatalf("confirm = running:%v cmd:%v", got.prActionRunning, cmd)
 	}
@@ -230,7 +230,7 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	current.screen, current.currentBranch = detailScreen, "feature"
 	currentPR := gh.PR{Number: 14, HeadRefName: "feature"}
 	current.cache.PR = &currentPR
-	u, _ = current.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	u, _ = current.Update(keyPress("C"))
 	if got := u.(Model); got.pendingPRAction != noPRAction {
 		t.Fatal("offered to check out the branch already checked out")
 	}

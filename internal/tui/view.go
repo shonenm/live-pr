@@ -6,7 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/git"
@@ -28,7 +29,65 @@ func (m Model) baseBranchStyle(ref string) lipgloss.Style {
 	return stBold
 }
 
-func (m Model) View() string {
+// View assembles the frame and declares terminal features: the alt screen
+// and cell-motion mouse mode that v1 passed as program options, plus the real
+// terminal cursor. When a text input is focused the cursor sits on its caret
+// cell so IME preedit text composes in place; otherwise it stays hidden.
+func (m Model) View() tea.View {
+	view := tea.NewView("")
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
+	base := m.baseContent()
+	popup, hasPopup := m.popupContent()
+	if !hasPopup {
+		view.SetContent(base)
+		view.Cursor = m.filterCursor()
+		return view
+	}
+	view.SetContent(overlayPopup(base, popup, m.w))
+	view.Cursor = m.overlayCursor(base, popup)
+	return view
+}
+
+// viewContent renders the whole frame as a string.
+func (m Model) viewContent() string {
+	base := m.baseContent()
+	if popup, ok := m.popupContent(); ok {
+		return overlayPopup(base, popup, m.w)
+	}
+	return base
+}
+
+// popupContent renders the open modal popup, if any.
+func (m Model) popupContent() (string, bool) {
+	if m.overlay != nil {
+		return m.overlay.render(m), true
+	}
+	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
+		return m.renderActionPopup(), true
+	}
+	return "", false
+}
+
+// overlayCursor translates an input-hosting popup's caret to screen
+// coordinates by adding the same centering offset overlayPopup uses.
+func (m Model) overlayCursor(base, popup string) *tea.Cursor {
+	host, ok := m.overlay.(cursorOverlay)
+	if !ok {
+		return nil
+	}
+	c := host.cursor(m)
+	if c == nil {
+		return nil
+	}
+	left, top := overlayOrigin(base, popup, m.w)
+	c.X += left
+	c.Y += top
+	return c
+}
+
+// baseContent renders the current screen without any popup.
+func (m Model) baseContent() string {
 	if !m.ready {
 		return "loading…"
 	}
@@ -43,8 +102,8 @@ func (m Model) View() string {
 				previewTitle = "Preview · local"
 			}
 		}
-		listPane := renderPane(listTitle, m.list.View(), m.list.Width+paneChromeW, m.list.Height+paneChromeH, true)
-		previewPane := renderPane(previewTitle, m.detail.View(), m.detail.Width+paneChromeW, m.detail.Height+paneChromeH, false)
+		listPane := renderPane(listTitle, m.list.View(), m.list.Width()+paneChromeW, m.list.Height()+paneChromeH, true)
+		previewPane := renderPane(previewTitle, m.detail.View(), m.detail.Width()+paneChromeW, m.detail.Height()+paneChromeH, false)
 		body := lipgloss.JoinHorizontal(lipgloss.Top, listPane, previewPane)
 		view = lipgloss.JoinVertical(lipgloss.Left, m.renderPRListHeader(), body, m.renderFooter())
 	} else {
@@ -81,16 +140,10 @@ func (m Model) View() string {
 			if m.detailView.active == conversationTab {
 				leftContent = lipgloss.JoinVertical(lipgloss.Left, leftContent, m.conversationCounts())
 			}
-			left := renderPane(leftTitle, leftContent, m.list.Width+paneChromeW, m.detail.Height+paneChromeH, m.detailView.focus == focusConversation)
+			left := renderPane(leftTitle, leftContent, m.list.Width()+paneChromeW, m.detail.Height()+paneChromeH, m.detailView.focus == focusConversation)
 			body := lipgloss.JoinHorizontal(lipgloss.Top, left, m.renderReviewPane())
 			view = lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter())
 		}
-	}
-	if m.overlay != nil {
-		return overlayPopup(view, m.overlay.render(m), m.w)
-	}
-	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
-		return overlayPopup(view, m.renderActionPopup(), m.w)
 	}
 	return view
 }
@@ -99,14 +152,21 @@ func (m Model) View() string {
 // never taller, so the metadata row costs no extra space.
 func (m Model) headerHeight() int { return logoHeight }
 
+// headerTextWidth is the width available to header text: the full terminal
+// minus the wordmark when it is shown. withLogo and the filter-cursor math
+// share this rule so the caret lands where the header actually drew the text.
+func (m Model) headerTextWidth() int {
+	if m.w >= logoWidth+40 {
+		return m.w - logoWidth
+	}
+	return m.w
+}
+
 // withLogo anchors the wordmark at the far left of a header block and pads the
 // text to the wordmark's height. Narrow terminals drop the wordmark but keep
 // the height, so the layout never jumps.
 func (m Model) withLogo(text string) string {
-	width := m.w
-	if m.w >= logoWidth+40 {
-		width = m.w - logoWidth
-	}
+	width := m.headerTextWidth()
 	lines := strings.Split(text, "\n")
 	for i := range lines {
 		lines[i] = ansi.Truncate(lines[i], max(1, width), "…")
@@ -314,7 +374,10 @@ func selectionBgOpen() string {
 // re-applying the background after each reset so pre-styled segments keep it.
 func highlightSelectedBg(line string, width int) string {
 	open := selectionBgOpen()
-	if open == "" {
+	// Lip Gloss v2 always emits SGR codes (the renderer downsamples), so a
+	// zero width no longer implies "no color, return as-is"; skip explicitly
+	// before layout has given the pane a real width.
+	if open == "" || width <= 0 {
 		return line
 	}
 	line = ansi.Truncate(line, width, "…")

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	gh "github.com/shonenm/live-pr/internal/github"
 )
@@ -98,7 +98,7 @@ func runPRStatus(client githubClient, pr gh.PR, target string) tea.Cmd {
 	}
 }
 
-func (o prStatusOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o prStatusOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if o.running {
 		return m, nil
 	}

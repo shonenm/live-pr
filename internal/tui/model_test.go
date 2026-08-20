@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/embeddedterm"
@@ -67,24 +67,24 @@ func TestLayoutWaitsForTerminalSize(t *testing.T) {
 	m := testModel()
 	m.ready, m.w, m.h = false, 0, 0
 	m.layout()
-	if m.ready || m.list.Width != 0 || m.detail.Width != 0 {
-		t.Fatalf("layout initialized before terminal size: ready=%v list=%dx%d detail=%dx%d", m.ready, m.list.Width, m.list.Height, m.detail.Width, m.detail.Height)
+	if m.ready || m.list.Width() != 0 || m.detail.Width() != 0 {
+		t.Fatalf("layout initialized before terminal size: ready=%v list=%dx%d detail=%dx%d", m.ready, m.list.Width(), m.list.Height(), m.detail.Width(), m.detail.Height())
 	}
-	if got := m.View(); got != "loading…" {
+	if got := m.viewContent(); got != "loading…" {
 		t.Fatalf("pre-size view = %q", got)
 	}
 }
 
 func TestQuarterViewportScroll(t *testing.T) {
-	v := viewport.New(40, 20)
+	v := viewport.New(viewport.WithWidth(40), viewport.WithHeight(20))
 	v.SetContent(strings.Repeat("line\n", 100))
 	scrollQuarter(&v, true)
-	if v.YOffset != 5 {
-		t.Fatalf("quarter down offset = %d, want 5", v.YOffset)
+	if v.YOffset() != 5 {
+		t.Fatalf("quarter down offset = %d, want 5", v.YOffset())
 	}
 	scrollQuarter(&v, false)
-	if v.YOffset != 0 {
-		t.Fatalf("quarter up offset = %d, want 0", v.YOffset)
+	if v.YOffset() != 0 {
+		t.Fatalf("quarter up offset = %d, want 0", v.YOffset())
 	}
 }
 
@@ -404,7 +404,8 @@ func TestExplicitForkCheckoutRemainsCurrentTarget(t *testing.T) {
 
 func TestPRTitleAndCurrentCheckoutMarker(t *testing.T) {
 	m := testModel()
-	m.w, m.list.Width = 160, 120
+	m.w = 160
+	m.list.SetWidth(120)
 	m.currentBranch = "feature"
 	pr := gh.PR{Number: 12, State: "OPEN", Title: "Human title", HeadRefName: "feature", BaseRefName: "main"}
 	m.cache.PR = &pr
@@ -431,7 +432,7 @@ func TestViewRendersHeaderAndTimeline(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = updated.(Model)
 
-	out := m.View()
+	out := m.viewContent()
 	for _, want := range []string{"Local", "main", "feature/x", "1 files", "decision", "chose Go"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q", want)
@@ -444,13 +445,13 @@ func TestPRRefreshAddsMetadataRowWithinTheHeader(t *testing.T) {
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	before := m.detail.Height
+	before := m.detail.Height()
 	u, _ = m.Update(githubRefreshed{pr: gh.PR{Number: 12, State: "OPEN"}})
 	m = u.(Model)
 	// The wordmark already reserves three header rows, so the metadata row
 	// costs no body height.
-	if m.detail.Height != before || m.headerHeight() != logoHeight {
-		t.Fatalf("metadata row disturbed the layout: before=%d after=%d header=%d", before, m.detail.Height, m.headerHeight())
+	if m.detail.Height() != before || m.headerHeight() != logoHeight {
+		t.Fatalf("metadata row disturbed the layout: before=%d after=%d header=%d", before, m.detail.Height(), m.headerHeight())
 	}
 	if !strings.Contains(ansi.Strip(m.renderHeader()), "#12 open") {
 		t.Fatalf("metadata row missing from the header: %q", ansi.Strip(m.renderHeader()))
@@ -490,14 +491,14 @@ func TestBackgroundSyncKeepsPreviewScroll(t *testing.T) {
 	// A re-sync with the same selection (background preview/avatar arrivals)
 	// must not reset the preview scroll.
 	m.sync()
-	if m.detail.YOffset == 0 {
+	if m.detail.YOffset() == 0 {
 		t.Fatal("background sync reset the preview scroll")
 	}
 	// Changing the selection resets it.
 	m.prList.cursor = 1
 	m.sync()
-	if m.detail.YOffset != 0 {
-		t.Fatalf("selection change kept stale scroll offset %d", m.detail.YOffset)
+	if m.detail.YOffset() != 0 {
+		t.Fatalf("selection change kept stale scroll offset %d", m.detail.YOffset())
 	}
 }
 
@@ -508,11 +509,11 @@ func TestRichContentKeyIncludesWidthAndSkipsZeroWidth(t *testing.T) {
 	}
 	m := testModel()
 	m.cache.PR = pr
-	m.list.Width = 0 // pre-layout: width-7 is negative
+	m.list.SetWidth(0) // pre-layout: width-7 is negative
 	if m.dispatchRichContent() != nil {
 		t.Fatal("zero/negative width still dispatched a render")
 	}
-	m.list.Width = 87
+	m.list.SetWidth(87)
 	if m.dispatchRichContent() == nil {
 		t.Fatal("first dispatch skipped")
 	}
@@ -520,7 +521,7 @@ func TestRichContentKeyIncludesWidthAndSkipsZeroWidth(t *testing.T) {
 	if m.dispatchRichContent() != nil {
 		t.Fatal("unchanged content dispatched again")
 	}
-	m.list.Width = 47
+	m.list.SetWidth(47)
 	if m.dispatchRichContent() == nil {
 		t.Fatal("width change did not re-dispatch")
 	}
@@ -531,7 +532,7 @@ func TestStaleGenerationRichContentWithMatchingKeyStillApplies(t *testing.T) {
 	pr := &gh.PR{Number: 1, Body: "```mermaid\ngraph TD;A-->B;\n```"}
 	pr.Author.Login = "alice"
 	m.cache.PR = pr
-	m.list.Width = 87
+	m.list.SetWidth(87)
 	if m.dispatchRichContent() == nil {
 		t.Fatal("first dispatch skipped")
 	}
@@ -540,7 +541,7 @@ func TestStaleGenerationRichContentWithMatchingKeyStillApplies(t *testing.T) {
 	// result were discarded, dispatchRichContent would return nil forever and the
 	// mermaid diagrams and avatar colors would never render.
 	m.targetGeneration++
-	key := richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities)
+	key := richContentKey(m.list.Width()-7, m.cache.PR, m.cache.Comments, m.cache.Activities)
 	u, _ := m.Update(richBodiesLoaded{key: key, bodies: map[string]string{pr.Body: "rendered"}})
 	m = u.(Model)
 	if m.detailView.richBodies[pr.Body] != "rendered" {
@@ -575,7 +576,7 @@ func TestNoticeClearsOnTheNextKeyAndRefreshAlwaysReports(t *testing.T) {
 		t.Fatal("setup: expected a notice from the status change")
 	}
 	// Any key retires it, not just refresh.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	u, _ = m.Update(keyPress("j"))
 	if got := u.(Model).notice; got != "" {
 		t.Fatalf("notice survived a keypress: %q", got)
 	}
@@ -584,7 +585,7 @@ func TestNoticeClearsOnTheNextKeyAndRefreshAlwaysReports(t *testing.T) {
 	// nothing at all.
 	m.notice = "URL copied to clipboard"
 	m.prList.refreshing = true
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	u, _ = m.Update(keyPress("r"))
 	busy := u.(Model)
 	if busy.notice != "" {
 		t.Fatalf("notice survived refresh: %q", busy.notice)
@@ -598,7 +599,7 @@ func TestNoticeClearsOnTheNextKeyAndRefreshAlwaysReports(t *testing.T) {
 	d.screen, d.refreshing = detailScreen, true
 	d.cache.PR = &pr
 	d.notice = "Checked out PR #12"
-	u, _ = d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	u, _ = d.Update(keyPress("r"))
 	detail := u.(Model)
 	if detail.notice != "" || !strings.Contains(ansi.Strip(detail.footerContent()), "refreshing") {
 		t.Fatalf("detail refresh feedback = notice:%q footer:%q", detail.notice, ansi.Strip(detail.footerContent()))
@@ -623,14 +624,14 @@ func TestNoticeYieldsToProgressAndClearsOnRefresh(t *testing.T) {
 	m.refreshing = false
 
 	// r clears the notice on both screens.
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	u, _ := m.Update(keyPress("r"))
 	if got := u.(Model); got.notice != "" {
 		t.Fatalf("detail refresh kept notice %q", got.notice)
 	}
 	list := testModel()
 	list.screen = prListScreen
 	list.notice = "Merge submitted for PR #7"
-	u, _ = list.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	u, _ = list.Update(keyPress("r"))
 	if got := u.(Model); got.notice != "" {
 		t.Fatalf("list refresh kept notice %q", got.notice)
 	}
