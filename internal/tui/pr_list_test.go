@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/config"
@@ -71,7 +71,7 @@ func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
 
 func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
 	m := testModel()
-	m.list.Width = 140
+	m.list.SetWidth(140)
 	pr := gh.PR{
 		Number:           12,
 		Title:            "status colors",
@@ -99,7 +99,7 @@ func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
 
 func TestPRRowCacheReusesUnselectedRowsAndInvalidatesWithFilters(t *testing.T) {
 	m := testModel()
-	m.list.Width = 120
+	m.list.SetWidth(120)
 	m.prList.open = []gh.PR{{Number: 1, Title: "one"}, {Number: 2, Title: "two"}, {Number: 3, Title: "three"}}
 	m.prList.stacks = prfilter.BuildStacks(m.prList.open)
 	_, _ = m.buildPRListRows()
@@ -136,7 +136,7 @@ func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 	}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 35})
 	m = u.(Model)
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(m.viewContent())
 	for _, want := range []string{"description", "comment", "Summary", "Preview body", "@alice", "Looks good", "mergeable", "CI 1 passed", "18 files", "+1123", "-128", "5 commits", "1 comments", "author ● @bob", "feature", "╭", "╰"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("preview missing %q: %q", want, out)
@@ -145,8 +145,8 @@ func TestPRListPreviewShowsConversationAndHealth(t *testing.T) {
 	if strings.Contains(out, "Conversation top") {
 		t.Fatalf("preview should use cards instead of a Conversation top heading: %q", out)
 	}
-	if m.list.Width >= m.w || m.detail.Width <= m.list.Width {
-		t.Fatalf("list preview layout = %d/%d total=%d", m.list.Width, m.detail.Width, m.w)
+	if m.list.Width() >= m.w || m.detail.Width() <= m.list.Width() {
+		t.Fatalf("list preview layout = %d/%d total=%d", m.list.Width(), m.detail.Width(), m.w)
 	}
 }
 
@@ -156,7 +156,7 @@ func TestPRListPreviewShowsConflictAndFailedCI(t *testing.T) {
 	m.prList.open = []gh.PR{{Number: 1, Mergeable: "CONFLICTING", MergeStateStatus: "DIRTY", Checks: []gh.PRCheck{{Conclusion: "FAILURE"}}}}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(m.viewContent())
 	if !strings.Contains(out, "conflicts") || !strings.Contains(out, "CI 1 failed") {
 		t.Fatalf("health preview = %q", out)
 	}
@@ -345,7 +345,7 @@ func TestPRListLoadsClosedFromView(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	m.prList.view = needsMeView
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	u, _ = m.Update(keyPress("]"))
 	m = u.(Model)
 	if m.prList.view != closedPRsView || m.prList.state != closedPRListState || !m.prList.refreshing || len(m.prList.open) != 0 {
 		t.Fatalf("closed view switch = view:%v state:%v refreshing:%v prs:%#v", m.prList.view, m.prList.state, m.prList.refreshing, m.prList.open)
@@ -359,7 +359,7 @@ func TestPRListLoadsClosedFromView(t *testing.T) {
 	if m.keys.Merge.Enabled() || m.keys.Close.Enabled() {
 		t.Fatal("closed PR actions must be disabled")
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	u, _ = m.Update(keyPress("]"))
 	m = u.(Model)
 	if m.prList.view != assignedView || !m.prList.refreshing || len(m.prList.open) != 1 || m.prList.open[0].Number != 1 {
 		t.Fatalf("cache-first assigned view = view:%v refreshing:%v prs:%#v", m.prList.view, m.prList.refreshing, m.prList.open)
@@ -389,18 +389,18 @@ func TestPRListLoadsClosedFromSearch(t *testing.T) {
 	m.applyPRFilters(0)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	u, _ = m.Update(keyPress("/"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("is:closed")})
+	u, _ = m.Update(keyPress("is:closed"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, _ = m.Update(keyPress("enter"))
 	m = u.(Model)
 	if m.prList.view != allPRsView || m.prList.state != closedPRListState || !m.prList.refreshing || len(m.prList.open) != 0 {
 		t.Fatalf("closed search = view:%v state:%v refreshing:%v prs:%#v", m.prList.view, m.prList.state, m.prList.refreshing, m.prList.open)
 	}
 	u, _ = m.Update(prListRefreshed{generation: m.prList.generation, key: m.prList.activePage, page: gh.PRPage{PRs: []gh.PR{{Number: 2, State: "CLOSED", Title: "closed"}}, TotalCount: 1}})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	u, _ = m.Update(keyPress("esc"))
 	m = u.(Model)
 	if m.prList.filterQuery != "" || m.prList.state != openPRListState || !m.prList.refreshing || len(m.prList.open) != 1 || m.prList.open[0].Number != 1 {
 		t.Fatalf("cleared closed search = query:%q state:%v refreshing:%v prs:%#v", m.prList.filterQuery, m.prList.state, m.prList.refreshing, m.prList.open)
@@ -452,7 +452,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	if strings.Contains(plain, "3 PRs ·") {
 		t.Fatalf("stack header leaked aggregate PR state: %q", plain)
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	u, _ = m.Update(keyPress("space"))
 	m = u.(Model)
 	if len(m.prList.open) != 1 || m.prList.open[0].Number != 1 || !m.prList.collapsedStacks[m.prList.stacks[0].ID] {
 		t.Fatalf("collapsed stack = prs:%#v collapsed:%#v", m.prList.open, m.prList.collapsedStacks)
@@ -460,7 +460,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	if !strings.Contains(ansi.Strip(m.buildPRList()), "▸ #1") {
 		t.Fatalf("collapsed header = %q", ansi.Strip(m.buildPRList()))
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	u, _ = m.Update(keyPress("space"))
 	m = u.(Model)
 	if len(m.prList.open) != 3 || m.prList.collapsedStacks[m.prList.stacks[0].ID] {
 		t.Fatalf("expanded stack = prs:%#v collapsed:%#v", m.prList.open, m.prList.collapsedStacks)
@@ -477,14 +477,14 @@ func TestPRListScrollTracksRenderedRows(t *testing.T) {
 	m.prList.cursor = 10
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 	m = u.(Model)
-	if m.list.YOffset < 20 {
-		t.Fatalf("list offset did not follow rendered rows: %d", m.list.YOffset)
+	if m.list.YOffset() < 20 {
+		t.Fatalf("list offset did not follow rendered rows: %d", m.list.YOffset())
 	}
 }
 
 func TestPRRowShowsLabelPills(t *testing.T) {
 	m := testModel()
-	m.list.Width = 160
+	m.list.SetWidth(160)
 	pr := gh.PR{Number: 5, State: "OPEN", Title: "Labelled", BaseRefName: "main", HeadRefName: "labels",
 		Labels: []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}, {Name: "ui", Color: "238636"}, {Name: "infra", Color: "0e8a16"}}}
 	row := ansi.Strip(strings.Join(m.renderPRRow(pr, false, ""), "\n"))
@@ -512,7 +512,9 @@ func TestPRRowShowsLabelPills(t *testing.T) {
 
 func TestUserIconsAppearAcrossPRSurfaces(t *testing.T) {
 	m := testModel()
-	m.w, m.list.Width, m.detail.Width = 160, 70, 80
+	m.w = 160
+	m.list.SetWidth(70)
+	m.detail.SetWidth(80)
 	pr := gh.PR{Number: 7, State: "OPEN", Title: "icons", BaseRefName: "main", HeadRefName: "icons", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "bob"}}, PreviewLoaded: true}
 	row := ansi.Strip(strings.Join(m.renderPRRow(pr, false, ""), "\n"))
 	preview := ansi.Strip(func() string { m.prList.open = []gh.PR{pr}; return m.buildPRPreview() }())
@@ -635,7 +637,7 @@ func TestConfiguredViewsDriveTabsSearchAndCounts(t *testing.T) {
 
 func TestPRRowMarksCheckedOutBranch(t *testing.T) {
 	m := testModel()
-	m.list.Width = 140
+	m.list.SetWidth(140)
 	m.currentBranch = "feature"
 	current := gh.PR{Number: 12, State: "OPEN", Title: "Current", BaseRefName: "main", HeadRefName: "feature"}
 	if row := ansi.Strip(strings.Join(m.renderPRRow(current, false, ""), "\n")); !strings.Contains(row, "⎇ checked out") {
@@ -654,7 +656,7 @@ func TestPRRowMarksCheckedOutBranch(t *testing.T) {
 
 func TestPRRowShowsReviewDecisionBadge(t *testing.T) {
 	m := testModel()
-	m.list.Width = 140
+	m.list.SetWidth(140)
 	for decision, want := range map[string]string{
 		"APPROVED":          stGreenF.Render("✓ approved"),
 		"CHANGES_REQUESTED": stRedF.Render("± changes"),
@@ -677,7 +679,7 @@ func TestPRRowShowsReviewDecisionBadge(t *testing.T) {
 
 func TestPRRowKeepsAuthorVisibleWithLabels(t *testing.T) {
 	m := testModel()
-	m.list.Width = 160
+	m.list.SetWidth(160)
 	pr := gh.PR{Number: 8, State: "OPEN", Title: "authored", BaseRefName: "main", HeadRefName: "feature",
 		Author: gh.PRUser{Login: "alice"},
 		Labels: []gh.PRLabel{{Name: "bug", Color: "d73a4a"}, {Name: "docs", Color: "fef2c0"}, {Name: "infra", Color: "0e8a16"}}}
@@ -687,7 +689,7 @@ func TestPRRowKeepsAuthorVisibleWithLabels(t *testing.T) {
 		t.Fatalf("author should precede label pills: %q", meta)
 	}
 	// A width that cuts into the pills still leaves the author visible.
-	m.list.Width = lipgloss.Width(strings.TrimRight(meta, " ")) - 4
+	m.list.SetWidth(lipgloss.Width(strings.TrimRight(meta, " ")) - 4)
 	narrow := ansi.Strip(m.renderPRRow(pr, false, "")[1])
 	if !strings.Contains(narrow, "@alice") || strings.Contains(narrow, "infra") {
 		t.Fatalf("narrow row lost the author before the pills: %q", narrow)
@@ -696,7 +698,9 @@ func TestPRRowKeepsAuthorVisibleWithLabels(t *testing.T) {
 
 func TestPRPreviewGroupsCommentsWithReviewState(t *testing.T) {
 	m := testModel()
-	m.w, m.list.Width, m.detail.Width = 160, 70, 80
+	m.w = 160
+	m.list.SetWidth(70)
+	m.detail.SetWidth(80)
 	pr := gh.PR{Number: 9, State: "OPEN", Title: "preview", BaseRefName: "main", HeadRefName: "feature",
 		ReviewDecision: "APPROVED", CommentCount: 3, ChangedFiles: 2, Additions: 10, Deletions: 4, CommitCount: 1, PreviewLoaded: true}
 	m.prList.open = []gh.PR{pr}

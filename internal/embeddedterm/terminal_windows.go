@@ -6,7 +6,7 @@ import (
 	"errors"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 var errUnsupported = errors.New("embedded CodeDiff is not supported on Windows")

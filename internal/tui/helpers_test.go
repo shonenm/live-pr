@@ -1,10 +1,47 @@
 package tui
 
 import (
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/shonenm/live-pr/internal/config"
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 )
+
+// keyPress builds a Bubble Tea v2 key-press message from a readable name:
+// a single rune ("a", "G", "?"), a named key ("enter", "esc", "tab",
+// "shift+tab", "space", "up", "down"), or "ctrl+<letter>". Multi-rune input
+// becomes a single text event, which the filter editor consumes via Text.
+func keyPress(name string) tea.KeyPressMsg {
+	switch name {
+	case "enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+	case "space":
+		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "down":
+		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
+	}
+	if rest, ok := strings.CutPrefix(name, "ctrl+"); ok && len([]rune(rest)) == 1 {
+		return tea.KeyPressMsg{Code: []rune(rest)[0], Mod: tea.ModCtrl}
+	}
+	runes := []rune(name)
+	if len(runes) == 1 {
+		return tea.KeyPressMsg{Code: runes[0], Text: name}
+	}
+	return tea.KeyPressMsg{Code: tea.KeyExtended, Text: name}
+}
 
 // The default view order, named for readability in tests. Production code
 // indexes Model.views, which config supplies.

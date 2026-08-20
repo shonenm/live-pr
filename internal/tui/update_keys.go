@@ -4,22 +4,22 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/publish"
 	"github.com/shonenm/live-pr/internal/store"
 )
 
-func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.screen == prListScreen {
 		return m.handlePRListKey(msg)
 	}
 	return m.handleDetailKey(msg)
 }
 
-func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.prList.filterEditing {
 		selected := m.prList.selectedPRNumber()
 		switch msg.String() {
@@ -39,10 +39,8 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.prList.filterQuery = string(runes[:len(runes)-1])
 			}
 		default:
-			if msg.Type == tea.KeyRunes {
-				m.prList.filterQuery += string(msg.Runes)
-			} else if msg.String() == " " {
-				m.prList.filterQuery += " "
+			if msg.Text != "" {
+				m.prList.filterQuery += msg.Text
 			}
 		}
 		return m, nil
@@ -164,7 +162,7 @@ func (m Model) handlePRListKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 // handlePRActionConfirmKey drives the y/n confirmation for a pending PR
 // action and swallows keys while one runs; handled is false when neither
 // state applies. Both screens share this state machine.
-func (m Model) handlePRActionConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func (m Model) handlePRActionConfirmKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.pendingPRAction == mergePR {
 		switch msg.String() {
 		case "up", "k":
@@ -225,7 +223,7 @@ func (m Model) submitMerge(method gh.MergeMethod) (Model, tea.Cmd, bool) {
 	return m, tea.Batch(runPRAction(m.client, m.checkoutHead, mergePR, pr, method), m.startSpinner()), true
 }
 
-func (m Model) handleDetailKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	if next, cmd, handled := m.handlePRActionConfirmKey(msg); handled {
 		return next, cmd

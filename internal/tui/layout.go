@@ -2,7 +2,7 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/viewport"
+	"charm.land/bubbles/v2/viewport"
 )
 
 const (
@@ -42,15 +42,17 @@ func (m *Model) layout() {
 		listW := max(4, listPaneW-paneChromeW)
 		detailW := max(4, m.w-listPaneW-paneChromeW)
 		if !m.ready {
-			m.list = viewport.New(listW, bodyH)
-			m.detail = viewport.New(detailW, bodyH)
+			m.list = viewport.New(viewport.WithWidth(listW), viewport.WithHeight(bodyH))
+			m.detail = viewport.New(viewport.WithWidth(detailW), viewport.WithHeight(bodyH))
 			m.ready = true
 		} else {
-			if m.list.Width != listW {
+			if m.list.Width() != listW {
 				clear(m.prList.rowCache)
 			}
-			m.list.Width, m.list.Height = listW, bodyH
-			m.detail.Width, m.detail.Height = detailW, bodyH
+			m.list.SetWidth(listW)
+			m.list.SetHeight(bodyH)
+			m.detail.SetWidth(detailW)
+			m.detail.SetHeight(bodyH)
 		}
 		return
 	}
@@ -98,18 +100,20 @@ func (m *Model) layout() {
 		detailW = max(4, rightW-explorerW-dividerW)
 	}
 	if !m.ready {
-		m.list = viewport.New(listW, max(1, bodyH-1))
-		m.explorer = viewport.New(explorerW, bodyH)
-		m.detail = viewport.New(detailW, bodyH)
+		m.list = viewport.New(viewport.WithWidth(listW), viewport.WithHeight(max(1, bodyH-1)))
+		m.explorer = viewport.New(viewport.WithWidth(explorerW), viewport.WithHeight(bodyH))
+		m.detail = viewport.New(viewport.WithWidth(detailW), viewport.WithHeight(bodyH))
 		m.ready = true
 	} else {
-		m.list.Width = listW
-		m.list.Height = bodyH
+		m.list.SetWidth(listW)
+		m.list.SetHeight(bodyH)
 		if m.detailView.active == conversationTab {
-			m.list.Height = max(1, bodyH-1)
+			m.list.SetHeight(max(1, bodyH-1))
 		}
-		m.explorer.Width, m.explorer.Height = explorerW, bodyH
-		m.detail.Width, m.detail.Height = detailW, bodyH
+		m.explorer.SetWidth(explorerW)
+		m.explorer.SetHeight(bodyH)
+		m.detail.SetWidth(detailW)
+		m.detail.SetHeight(bodyH)
 	}
 	if m.diffTerminal != nil {
 		m.diffTerminal.Resize(detailW, bodyH)

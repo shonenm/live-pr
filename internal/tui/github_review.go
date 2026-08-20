@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
@@ -197,7 +197,7 @@ func submitReview(client githubClient, draft gh.ReviewDraft, event gh.ReviewEven
 	return func() tea.Msg { return reviewSubmitted{event: event, err: client.SubmitReview(draft, event)} }
 }
 
-func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if o.typing {
 		switch msg.String() {
 		case "esc":
@@ -243,6 +243,18 @@ func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd)
 	default:
 		return m, nil
 	}
+}
+
+// handleMsg feeds non-key messages (paste, cursor blink) to the shared
+// editor while the review body is being typed; v1 delivered pastes as key
+// messages, so they used to reach the editor through handleKey.
+func (o reviewSubmitOverlay) handleMsg(m Model, msg tea.Msg) (Model, tea.Cmd) {
+	if !o.typing {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.localEditor, cmd = m.localEditor.Update(msg)
+	return m, cmd
 }
 
 func (m Model) handleReviewSubmitted(msg reviewSubmitted) (Model, tea.Cmd) {

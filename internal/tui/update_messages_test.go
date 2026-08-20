@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -379,17 +379,17 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	m.navigator.PRs = append([]gh.PR(nil), m.prList.open...)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, _ = m.Update(keyPress("enter"))
 	m = u.(Model)
 	generationA := m.targetGeneration
 	m.autoOpenCurrent = true
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	u, _ = m.Update(keyPress("b"))
 	m = u.(Model)
 	if m.autoOpenCurrent {
 		t.Fatal("explicit PR-list navigation must disable startup auto-open")
 	}
 	m.prList.cursor = 1
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, _ = m.Update(keyPress("enter"))
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
 		t.Fatalf("target B not opened: %#v", m.cache.PR)
@@ -489,12 +489,12 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 		t.Fatal("opening the TUI should schedule one background refresh")
 	}
 
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	u, cmd := m.Update(keyPress("r"))
 	m = u.(Model)
 	if cmd == nil || !m.refreshing {
 		t.Fatal("r should start one GitHub refresh")
 	}
-	if _, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}); duplicate != nil {
+	if _, duplicate := m.Update(keyPress("r")); duplicate != nil {
 		t.Fatal("r must not start a second in-flight refresh")
 	}
 
@@ -506,7 +506,7 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 	if m.cache.LastPublishedManagedBodyHash != "published-hash" {
 		t.Fatal("refresh must not move the last-published conflict baseline")
 	}
-	if !strings.Contains(m.View(), "#9 open") {
+	if !strings.Contains(m.viewContent(), "#9 open") {
 		t.Fatal("cached PR metadata should be visible in the header")
 	}
 
@@ -689,7 +689,7 @@ func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
 	// Keys still go to the modal, not the main handler.
 	m = testModel()
 	m.overlay = prStatusOverlay{pr: gh.PR{Number: 12, State: "OPEN"}}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	u, _ = m.Update(keyPress("q"))
 	if got := u.(Model); got.overlay != nil {
 		t.Fatal("q did not close the status popup")
 	}
