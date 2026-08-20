@@ -81,8 +81,11 @@ summarize_command = ""       # summary backend: transcript on stdin, summary on 
 [diff]
 command = 'nvim -c "CodeDiff --inline $LIVE_PR_RANGE"'  # embedded reviewer ("" = built-in git diff)
 display = "delta --color-only"                          # static diff filter
-split_ratio = 20                                        # conversation : review width
+split_ratio = 20                                        # conversation : review width (detail screen)
 min_pane_width = 60
+
+[list]
+split_ratio = 50             # list : preview width on the PR list screen (default 45)
 ```
 
 See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details.
