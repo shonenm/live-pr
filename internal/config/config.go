@@ -40,6 +40,9 @@ type Config struct {
 	// Diff controls the optional right-pane diff display filter.
 	Diff DiffConfig `toml:"diff"`
 
+	// List controls the PR list screen.
+	List ListConfig `toml:"list"`
+
 	// Views are the PR list tabs, in display order. A config that sets any
 	// view replaces the built-in set entirely, so tabs can be removed,
 	// renamed, reordered, or added.
@@ -108,6 +111,13 @@ func NormalizeViews(views []View) []View {
 	return result
 }
 
+// ListConfig customizes the PR list screen.
+type ListConfig struct {
+	// SplitRatio is the list pane's share in percent on the PR list screen.
+	// It is independent of diff.split_ratio, which shapes the detail screen.
+	SplitRatio int `toml:"split_ratio"`
+}
+
 // DiffConfig customizes how raw Git diff is rendered in the right pane.
 type DiffConfig struct {
 	// Command runs an interactive reviewer in the right pane's embedded PTY.
@@ -139,6 +149,7 @@ func Default() Config {
 			SplitRatio:   52,
 			MinPaneWidth: 24,
 		},
+		List:  ListConfig{SplitRatio: 45},
 		Views: DefaultViews(),
 	}
 }
@@ -214,6 +225,9 @@ func Load(repoRoot string) (Config, error) {
 	}
 	if cfg.Diff.MinPaneWidth <= 0 {
 		cfg.Diff.MinPaneWidth = Default().Diff.MinPaneWidth
+	}
+	if cfg.List.SplitRatio <= 0 || cfg.List.SplitRatio >= 100 {
+		cfg.List.SplitRatio = Default().List.SplitRatio
 	}
 	cfg.Views = NormalizeViews(cfg.Views)
 	return cfg, nil

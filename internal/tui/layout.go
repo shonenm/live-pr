@@ -21,7 +21,10 @@ func (m *Model) layout() {
 	}
 	if m.screen == prListScreen {
 		bodyH := max(3, m.h-m.headerHeight()-footerLines-paneChromeH)
-		ratio := m.diffSplitRatio
+		// The list screen has its own ratio: diff.split_ratio shapes the
+		// detail screen's conversation/review split, and a narrow reviewer
+		// setting must not squeeze the PR list too.
+		ratio := m.listSplitRatio
 		if ratio <= 0 {
 			ratio = prListPaneRatio
 		}
