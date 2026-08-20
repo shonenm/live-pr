@@ -639,22 +639,13 @@ func (m Model) buildPRPreview() string {
 	return strings.Join(lines, "\n")
 }
 
+// previewPeople names the author; assignees stay off the preview, which the
+// detail header still lists.
 func (m Model) previewPeople(pr gh.PR) string {
-	parts := []string{}
-	if pr.Author.Login != "" {
-		parts = append(parts, stMuted.Render("author ")+m.userLabel(pr.Author))
+	if pr.Author.Login == "" {
+		return ""
 	}
-	if len(pr.Assignees) > 0 {
-		users := make([]string, 0, len(pr.Assignees))
-		for _, user := range pr.Assignees {
-			users = append(users, m.userLabel(user))
-		}
-		parts = append(parts, stMuted.Render("assigned ")+strings.Join(users, " "))
-	}
-	if len(parts) == 0 {
-		return stMuted.Render("unassigned")
-	}
-	return strings.Join(parts, stMuted.Render(" · "))
+	return stMuted.Render("author ") + m.userLabel(pr.Author)
 }
 
 func reviewSummary(decision string) string {
@@ -960,9 +951,16 @@ func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta 
 		{text: " " + prefix + identifier + " ", style: stMuted},
 		{text: pr.Title, style: stBold},
 	}
-	meta = []rowSegment{
-		{text: "   " + indent, style: stMuted},
-		{text: state, style: glyphStyle},
+	// The state word would repeat what the colored glyph above already says,
+	// so the author leads the meta line instead; the synthetic local row has
+	// no author and keeps its state word.
+	meta = []rowSegment{{text: "   " + indent, style: stMuted}}
+	if pr.Number > 0 && pr.Author.Login != "" {
+		meta = append(meta,
+			rowSegment{login: pr.Author.Login},
+			rowSegment{text: " @" + pr.Author.Login, style: stMuted})
+	} else {
+		meta = append(meta, rowSegment{text: state, style: glyphStyle})
 	}
 	if current && pr.Number > 0 {
 		meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: "⎇ checked out", style: stAttention})
@@ -985,12 +983,6 @@ func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta 
 			rowSegment{text: fmt.Sprintf("-%d", pr.Deletions), style: stRedF})
 	}
 	meta = append(meta, rowSegment{text: fmt.Sprintf(" · %s ← %s", pr.BaseRefName, pr.HeadRefName), style: stMuted})
-	if pr.Number > 0 && pr.Author.Login != "" {
-		meta = append(meta,
-			rowSegment{text: " · ", style: stMuted},
-			rowSegment{login: pr.Author.Login},
-			rowSegment{text: " @" + pr.Author.Login, style: stMuted})
-	}
 	// Label pills close the meta line; cap at three so heavily-labelled PRs
 	// don't dominate the row, with the overflow collapsed into "+N".
 	const maxRowLabelPills = 3
