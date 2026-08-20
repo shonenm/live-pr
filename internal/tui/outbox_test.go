@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
 )
@@ -180,7 +178,7 @@ func TestHandleOutboxFlushedKeepsQueueWhileStillOffline(t *testing.T) {
 func TestRefreshDispatchesOutboxFlush(t *testing.T) {
 	m := outboxTestModel(t, 7)
 	queueTestComment(t, &m, "hello")
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	next, cmd := m.Update(keyPress("r"))
 	model := next.(Model)
 	if !model.outboxFlushing || cmd == nil {
 		t.Fatalf("refresh must dispatch an outbox flush: flushing=%v cmd=%v", model.outboxFlushing, cmd)
@@ -200,12 +198,12 @@ func TestDiscardQueuedCommentWithD(t *testing.T) {
 		t.Fatalf("queued comment missing from the conversation: %+v", m.conversationItems())
 	}
 	m.detailView.cursors[conversationTab] = cursor
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	next, _ := m.Update(keyPress("d"))
 	model := next.(Model)
 	if _, ok := model.overlay.(outboxDiscardOverlay); !ok {
 		t.Fatalf("overlay = %#v; want the discard confirm", model.overlay)
 	}
-	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	next, _ = model.Update(keyPress("y"))
 	model = next.(Model)
 	if model.overlay != nil || len(model.outbox) != 0 {
 		t.Fatalf("overlay=%#v outbox=%+v; want the entry discarded", model.overlay, model.outbox)

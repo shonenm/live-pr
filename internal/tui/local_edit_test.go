@@ -6,8 +6,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/event"
@@ -25,38 +25,38 @@ func TestLocalPRCommentsCanBeManagedFromTUI(t *testing.T) {
 	m := testModel()
 	m.root, m.currentBranch, m.timelinePath = root, "feature", st.Timeline()
 
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	u, _ := m.Update(keyPress("a"))
 	m = u.(Model)
 	if o, ok := m.overlay.(localEditOverlay); !ok || o.mode != addLocalComment {
 		t.Fatalf("a did not open comment editor: %#v", m.overlay)
 	}
-	if background := m.localEditor.FocusedStyle.CursorLine.GetBackground(); background != (lipgloss.NoColor{}) {
+	if background := m.localEditor.Styles().Focused.CursorLine.GetBackground(); background != (lipgloss.NoColor{}) {
 		t.Fatalf("comment editor cursor line background = %v, want transparent", background)
 	}
 	m.localEditor.SetValue("kind: decision\n\nKeep append-only history\n\nAvoid lost concurrent comments.")
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u, _ = m.Update(keyPress("ctrl+s"))
 	m = u.(Model)
 	events, err := event.Load(st.Timeline())
 	if err != nil || len(events) != 1 || events[0].Author != "user" || events[0].Title != "Keep append-only history" {
 		t.Fatalf("TUI add = %+v, %v", events, err)
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	u, _ = m.Update(keyPress("e"))
 	m = u.(Model)
 	m.localEditor.SetValue("kind: pivot\n\nUse operation records\n\nPreserve the original decision too.")
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u, _ = m.Update(keyPress("ctrl+s"))
 	m = u.(Model)
 	events, _ = event.Load(st.Timeline())
 	if len(events) != 1 || events[0].Kind != event.Pivot || events[0].UpdatedAt == "" {
 		t.Fatalf("TUI edit = %+v", events)
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	u, _ = m.Update(keyPress("d"))
 	m = u.(Model)
 	if o, ok := m.overlay.(localDeleteOverlay); !ok || o.target == "" {
 		t.Fatal("d did not request comment deletion")
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	u, _ = m.Update(keyPress("y"))
 	m = u.(Model)
 	events, _ = event.Load(st.Timeline())
 	if len(events) != 0 || m.screen != detailScreen {
@@ -75,13 +75,13 @@ func TestLocalPRSummaryCanBeEditedFromTUI(t *testing.T) {
 	m.root, m.currentBranch, m.timelinePath, m.detailView.summary = root, "feature", st.Timeline(), "# Initial\n"
 	m.detailView.invalidateConversation()
 
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	u, _ := m.Update(keyPress("e"))
 	m = u.(Model)
 	if o, ok := m.overlay.(localEditOverlay); !ok || o.mode != editLocalSummary {
 		t.Fatalf("e did not open summary editor: %#v", m.overlay)
 	}
 	m.localEditor.SetValue("# Final outcome\n\n## Summary\n\nImplemented result.")
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u, _ = m.Update(keyPress("ctrl+s"))
 	m = u.(Model)
 	body, err := os.ReadFile(st.Conclusion())
 	if err != nil || !strings.Contains(string(body), "Implemented result") || m.detailView.title != "Final outcome" {
@@ -123,10 +123,10 @@ func TestRemoteDeleteTitleTruncatesOnRuneBoundary(t *testing.T) {
 // does not contain.
 func TestEditorNewlineKeysAndWidthFitPopup(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	for _, key := range []tea.KeyMsg{
-		{Type: tea.KeyEnter},
-		{Type: tea.KeyCtrlJ},
-		{Type: tea.KeyRunes, Runes: []rune("\r"), Alt: true},
+	for _, key := range []tea.KeyPressMsg{
+		{Code: tea.KeyEnter},
+		{Code: 'j', Mod: tea.ModCtrl},
+		{Code: tea.KeyEnter, Mod: tea.ModAlt},
 	} {
 		m := testModel()
 		m.w, m.h = 120, 40
@@ -176,13 +176,13 @@ func TestEditorAdvertisesTheKeyThatActuallySaves(t *testing.T) {
 
 	// Enter stays a newline; Ctrl+S sends.
 	next.localEditor.SetValue("hello")
-	typed, _ := next.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	typed, _ := next.Update(keyPress("enter"))
 	if got := typed.(Model); !strings.Contains(got.localEditor.Value(), "\n") {
 		t.Fatalf("enter did not insert a newline: value=%q", got.localEditor.Value())
 	} else if o, ok := got.overlay.(localEditOverlay); !ok || o.mode != addRemoteComment {
 		t.Fatalf("enter closed or replaced the editor overlay: %#v", got.overlay)
 	}
-	sent, cmd := next.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	sent, cmd := next.Update(keyPress("ctrl+s"))
 	if got := sent.(Model); got.overlay != nil || cmd == nil {
 		t.Fatalf("ctrl+s did not send: overlay=%#v cmd=%v", got.overlay, cmd)
 	}

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/diffview"
@@ -294,7 +294,7 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 	var cmd tea.Cmd
 	embedded := m.diffTerminal != nil && m.diffTerminal.Available()
 	if !embedded && m.diffDisplay != "" && detail.renderable && detail.raw != "" {
-		key := fmt.Sprintf("%s\x00%d\x00%s", m.diffDisplay, m.detail.Width, detail.key)
+		key := fmt.Sprintf("%s\x00%d\x00%s", m.diffDisplay, m.detail.Width(), detail.key)
 		m.detailView.diffKey = key
 		if m.detailView.diffCache == nil {
 			m.detailView.diffCache = map[string]string{}
@@ -307,7 +307,7 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 			shownKey = "rendered\x00" + key
 		} else if !m.detailView.diffPending[key] {
 			m.detailView.diffPending[key] = true
-			cmd = renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width)
+			cmd = renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width())
 		}
 	}
 	if shownKey == m.detailView.shownKey {
@@ -320,14 +320,25 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 }
 
 func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight, headerHeight int) (tea.MouseMsg, bool) {
+	mouse := msg.Mouse()
 	contentX := listWidth + 2 // detail left border + padding
-	if msg.X < contentX || msg.X >= contentX+detailWidth ||
-		msg.Y < headerHeight || msg.Y >= headerHeight+detailHeight {
-		return tea.MouseMsg{}, false
+	if mouse.X < contentX || mouse.X >= contentX+detailWidth ||
+		mouse.Y < headerHeight || mouse.Y >= headerHeight+detailHeight {
+		return nil, false
 	}
-	msg.X -= contentX
-	msg.Y -= headerHeight
-	return msg, true
+	mouse.X -= contentX
+	mouse.Y -= headerHeight
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		return tea.MouseClickMsg(mouse), true
+	case tea.MouseReleaseMsg:
+		return tea.MouseReleaseMsg(mouse), true
+	case tea.MouseWheelMsg:
+		return tea.MouseWheelMsg(mouse), true
+	case tea.MouseMotionMsg:
+		return tea.MouseMotionMsg(mouse), true
+	}
+	return nil, false
 }
 
 // renderReviewPane frames the review side. In file-explorer mode the changed
@@ -336,8 +347,8 @@ func translateDiffMouse(msg tea.MouseMsg, listWidth, detailWidth, detailHeight, 
 func (m Model) renderReviewPane() string {
 	if !m.fileExplorerMode() {
 		title, content := "Review", m.detail.View()
-		width := m.detail.Width + paneChromeW
-		height := m.detail.Height + paneChromeH
+		width := m.detail.Width() + paneChromeW
+		height := m.detail.Height() + paneChromeH
 		if m.detailView.reviewWide {
 			width = m.w
 			height = max(3, m.h-m.headerHeight()-footerLines)
@@ -346,7 +357,7 @@ func (m Model) renderReviewPane() string {
 			title = "Review · " + m.detailView.reviewSHA
 		}
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			content = m.diffTerminal.View(m.detail.Width, m.detail.Height)
+			content = m.diffTerminal.View(m.detail.Width(), m.detail.Height())
 		}
 		return renderPane(title, content, width, height, m.detailView.focus == focusReview)
 	}
@@ -355,11 +366,11 @@ func (m Model) renderReviewPane() string {
 		title = "Files · " + file.Path
 	}
 	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).
-		Render(strings.TrimSuffix(strings.Repeat("│\n", m.explorer.Height), "\n"))
+		Render(strings.TrimSuffix(strings.Repeat("│\n", m.explorer.Height()), "\n"))
 	divider := lipgloss.NewStyle().Padding(0, 1).Render(rule)
 	content := lipgloss.JoinHorizontal(lipgloss.Top, m.explorer.View(), divider, m.detail.View())
-	width := m.explorer.Width + dividerW + m.detail.Width + paneChromeW
-	return renderPane(title, content, width, m.explorer.Height+paneChromeH, m.detailView.focus != focusConversation)
+	width := m.explorer.Width() + dividerW + m.detail.Width() + paneChromeW
+	return renderPane(title, content, width, m.explorer.Height()+paneChromeH, m.detailView.focus != focusConversation)
 }
 
 func (m Model) buildFileExplorer() (string, int) {
@@ -393,7 +404,7 @@ func (m Model) buildFileExplorer() (string, int) {
 			conflict = stRedF.Render("⚠ ")
 		}
 		line := selectionBar(i == m.detailView.fileCursor) + mark + " " + conflict + fileStatusStyle(file.Status).Render(file.Status) + " " + stFg.Render(path)
-		lines = append(lines, ansi.Truncate(line, max(10, m.explorer.Width), "…"))
+		lines = append(lines, ansi.Truncate(line, max(10, m.explorer.Width()), "…"))
 	}
 	return strings.Join(lines, "\n"), selectedLine
 }
@@ -523,7 +534,7 @@ func (m Model) buildConflicts() (string, int) {
 	for i, path := range m.detailView.mergeReadiness.ConflictFiles {
 		line := stRedF.Render("⚠ ") + stFg.Render(path)
 		if i == m.detailView.cursors[conflictsTab] {
-			line = highlightSelectedBg(line, m.list.Width)
+			line = highlightSelectedBg(line, m.list.Width())
 		}
 		lines = append(lines, line)
 	}
@@ -552,7 +563,7 @@ func (m *Model) buildChecks() (string, int) {
 		lines = append(lines, stMuted.Render("(no CI checks)"))
 		return strings.Join(lines, "\n"), 0
 	}
-	key := tabRenderKey{cursor: m.detailView.cursors[checksTab], width: m.list.Width, content: m.checksFingerprint(header)}
+	key := tabRenderKey{cursor: m.detailView.cursors[checksTab], width: m.list.Width(), content: m.checksFingerprint(header)}
 	if m.detailView.checksRenderValid && m.detailView.checksRenderKey == key {
 		return m.detailView.checksRender, m.detailView.checksRenderLine
 	}
@@ -589,7 +600,7 @@ func (m *Model) buildChecks() (string, int) {
 			line += stMuted.Render(" · " + dur)
 		}
 		if i == m.detailView.cursors[checksTab] {
-			line = highlightSelectedBg(line, m.list.Width)
+			line = highlightSelectedBg(line, m.list.Width())
 		}
 		lines = append(lines, line)
 	}
@@ -652,7 +663,7 @@ func (m *Model) buildCommits() (string, int) {
 	if len(m.detailView.commits) == 0 {
 		return stMuted.Render("(no commits in " + m.detailView.base + "..HEAD)"), 0
 	}
-	key := tabRenderKey{cursor: m.detailView.cursors[commitsTab], width: m.list.Width, content: m.commitsFingerprint()}
+	key := tabRenderKey{cursor: m.detailView.cursors[commitsTab], width: m.list.Width(), content: m.commitsFingerprint()}
 	if m.detailView.commitsRenderValid && m.detailView.commitsRenderKey == key {
 		return m.detailView.commitsRender, m.detailView.commitsRenderLine
 	}
@@ -665,7 +676,7 @@ func (m *Model) buildCommits() (string, int) {
 		}
 		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
 		if i == m.detailView.cursors[commitsTab] {
-			line = highlightSelectedBg(line, m.list.Width)
+			line = highlightSelectedBg(line, m.list.Width())
 		}
 		lines = append(lines, line)
 	}

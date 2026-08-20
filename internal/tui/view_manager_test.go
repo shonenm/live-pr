@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/config"
@@ -26,18 +26,18 @@ func TestViewManagerEditsReorderAndSave(t *testing.T) {
 	press := func(model Model, keys ...string) Model {
 		t.Helper()
 		for _, k := range keys {
-			var msg tea.KeyMsg
+			var msg tea.KeyPressMsg
 			switch k {
 			case "enter":
-				msg = tea.KeyMsg{Type: tea.KeyEnter}
+				msg = keyPress("enter")
 			case "tab":
-				msg = tea.KeyMsg{Type: tea.KeyTab}
+				msg = keyPress("tab")
 			case "esc":
-				msg = tea.KeyMsg{Type: tea.KeyEsc}
+				msg = keyPress("esc")
 			case "ctrl+s":
-				msg = tea.KeyMsg{Type: tea.KeyCtrlS}
+				msg = keyPress("ctrl+s")
 			default:
-				msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+				msg = keyPress(k)
 			}
 			u, _ := model.Update(msg)
 			model = u.(Model)

@@ -3,17 +3,17 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	bspinner "github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	bspinner "charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 )
 
-func isShiftTab(msg tea.KeyMsg) bool {
-	return msg.Type == tea.KeyShiftTab || msg.String() == "shift+tab" || msg.String() == "backtab"
+func isShiftTab(msg tea.KeyPressMsg) bool {
+	return msg.String() == "shift+tab"
 }
 
 func reservedReviewKey(msg tea.Msg) bool {
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	return ok && (key.Matches(keyMsg, keys.FocusLeft) || key.Matches(keyMsg, keys.Focus) || isShiftTab(keyMsg))
 }
 
@@ -39,7 +39,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// A modal popup owns the keyboard only; async completions fall through to
 	// the main switch below so background work keeps landing.
 	if m.overlay != nil && !asyncCompletion(msg) {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			return m.overlay.handleKey(m, keyMsg)
 		}
 		// The editor overlay also needs non-key messages (cursor blink).
@@ -76,7 +76,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
-		m.help.Width = msg.Width
+		m.help.SetWidth(msg.Width)
 		if m.overlayHostsEditor() {
 			m.sizeLocalEditor() // keep the open editor overlay fitting the new size
 		}
@@ -164,7 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// current content even if the generation moved on: nothing resets
 		// lastRichContentKey, so discarding here would leave dispatchRichContent
 		// returning nil forever and mermaid diagrams missing until a resize.
-		if msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
+		if msg.key != richContentKey(m.list.Width()-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
 		m.detailView.richBodies = msg.bodies
@@ -173,7 +173,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.sync()
 	case avatarColorsLoaded:
 		// Key-only check for the same reason as richBodiesLoaded above.
-		if msg.key != richContentKey(m.list.Width-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
+		if msg.key != richContentKey(m.list.Width()-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
 		if m.avatarColors == nil {
@@ -200,17 +200,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		if m.diffTerminal != nil && m.diffTerminal.Available() {
 			// The review pane sits after the bordered left pane; +1 row for its own top border.
-			if local, ok := translateDiffMouse(msg, m.list.Width+paneChromeW, m.detail.Width, m.detail.Height, m.headerHeight()+1); ok {
+			if local, ok := translateDiffMouse(msg, m.list.Width()+paneChromeW, m.detail.Width(), m.detail.Height(), m.headerHeight()+1); ok {
 				m.detailView.focus = focusReview
 				return m, m.diffTerminal.Update(local)
 			}
-			if msg.Action == tea.MouseActionPress && m.detailView.focus == focusReview {
+			if _, click := msg.(tea.MouseClickMsg); click && m.detailView.focus == focusReview {
 				m.detailView.focus = focusConversation
 			}
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.PasteMsg:
+		// v1 delivered pastes as key messages; v2 splits them out, so route
+		// them to whichever input the equivalent key would have reached.
+		if m.screen == prListScreen && m.prList.filterEditing {
+			m.prList.filterQuery += msg.Content
+			return m, nil
+		}
+		if m.detailView.focus == focusReview && m.diffTerminal != nil && m.diffTerminal.Available() {
+			return m, m.diffTerminal.Update(msg)
+		}
+		return m, nil
+
+	case tea.KeyPressMsg:
 		// A notice reports the last action. Acting again makes it stale, and
 		// leaving it up hides the status of whatever runs next — including
 		// whether a refresh is running at all.

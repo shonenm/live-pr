@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -33,19 +33,19 @@ func TestCommentKeysSplitConversationAndInlineReview(t *testing.T) {
 	m.diffCommand, m.diffTerminal = "", nil
 
 	// a opens a GitHub conversation comment (not the review body, which is now on v).
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	u, _ := m.Update(keyPress("a"))
 	if got, ok := u.(Model).overlay.(localEditOverlay); !ok || got.mode != addRemoteComment {
 		t.Fatalf("a editor = %#v, want addRemoteComment", u.(Model).overlay)
 	}
 
 	// A adds an inline review comment on the selected file.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+	u, _ = m.Update(keyPress("A"))
 	m = u.(Model)
 	if got, ok := m.overlay.(localEditOverlay); !ok || got.mode != addInlineReviewComment || !strings.Contains(m.localEditor.Value(), "path: main.go") {
 		t.Fatalf("A inline editor = %#v value=%q", m.overlay, m.localEditor.Value())
 	}
 	m.localEditor.SetValue("path: main.go\nline: 3\nside: RIGHT\n\nFix this.")
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u, _ = m.Update(keyPress("ctrl+s"))
 	m = u.(Model)
 
 	path := store.PullRequestReviewDraft(m.root, 12)
@@ -67,17 +67,17 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	u, _ := m.Update(keyPress("v"))
 	m = u.(Model)
 	o, ok := m.overlay.(reviewSubmitOverlay)
 	if !ok || o.event == "" || o.typing || !strings.Contains(o.render(m), "Request changes") {
 		t.Fatalf("submit popup not opened: overlay=%#v", m.overlay)
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	u, _ = m.Update(keyPress("down"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	u, _ = m.Update(keyPress("down"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, _ = m.Update(keyPress("enter"))
 	m = u.(Model)
 	o, ok = m.overlay.(reviewSubmitOverlay)
 	if !ok || !o.typing || o.event != gh.ReviewRequestChangesEvent {
@@ -85,13 +85,13 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 	}
 	m.localEditor.SetValue("Please fix this before approve")
 	// Enter stays in the editor as a newline; only Ctrl+S submits.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, _ = m.Update(keyPress("enter"))
 	m = u.(Model)
 	o, ok = m.overlay.(reviewSubmitOverlay)
 	if !ok || !o.typing || m.reviewSubmitting || !strings.Contains(m.localEditor.Value(), "\n") {
 		t.Fatalf("enter did not insert newline: overlay=%#v submitting=%v value=%q", m.overlay, m.reviewSubmitting, m.localEditor.Value())
 	}
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u, cmd := m.Update(keyPress("ctrl+s"))
 	m = u.(Model)
 	if cmd == nil || !m.reviewSubmitting {
 		t.Fatalf("changes request not scheduled: submitting=%v cmd=%v", m.reviewSubmitting, cmd)
@@ -195,7 +195,7 @@ func TestCommentKeysOutsideConversationTabExplainInsteadOfSilence(t *testing.T) 
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "abc123"}
 	m.detailView.active = commitsTab
 
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	u, _ := m.Update(keyPress("a"))
 	m = u.(Model)
 	if m.overlay != nil {
 		t.Fatalf("a outside the conversation tab opened an editor: overlay=%#v", m.overlay)

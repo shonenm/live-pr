@@ -3,7 +3,7 @@
 // View.
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // overlay is a modal popup layered over the current screen. Model.overlay
 // holds the open popup; nil means none. While an overlay is open it owns the
@@ -18,7 +18,7 @@ import tea "github.com/charmbracelet/bubbletea"
 // forbidden: bubbletea models are values, and older copies must not observe
 // later edits.
 type overlay interface {
-	handleKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd)
+	handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd)
 	render(m Model) string
 }
 
@@ -27,6 +27,15 @@ type overlay interface {
 // swallow non-key messages, keeping the keyboard-only modal contract.
 type overlayMsgHandler interface {
 	handleMsg(m Model, msg tea.Msg) (Model, tea.Cmd)
+}
+
+// cursorOverlay is implemented by overlays that host a text input. cursor
+// returns the caret position relative to the popup's top-left cell, or nil
+// when no input is focused; View adds the popup's centering offset so the
+// real terminal cursor — and the IME composition window that follows it —
+// lands on the caret.
+type cursorOverlay interface {
+	cursor(m Model) *tea.Cursor
 }
 
 // overlayHostsEditor reports whether the open overlay displays the shared

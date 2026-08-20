@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/event"
@@ -50,13 +50,13 @@ func TestConversationCountsStayAtPaneBottom(t *testing.T) {
 	m.layout()
 	m.sync()
 	m.list.GotoBottom()
-	plain := ansi.Strip(m.View())
+	plain := ansi.Strip(m.viewContent())
 	counts := "1 events · 2 comments · 3 activity"
 	if strings.Count(plain, counts) != 1 {
 		t.Fatalf("Conversation counts are not fixed once: %q", plain)
 	}
 	lines := strings.Split(plain, "\n")
-	leftBottom := lines[m.headerHeight()+m.detail.Height]
+	leftBottom := lines[m.headerHeight()+m.detail.Height()]
 	if !strings.Contains(leftBottom, counts) {
 		t.Fatalf("Conversation counts are not at pane bottom: %q", leftBottom)
 	}
@@ -111,7 +111,7 @@ func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 	if len(items) != 2 || items[0].pr == nil || items[0].event != nil || items[1].comment == nil {
 		t.Fatalf("conversation items = %#v", items)
 	}
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(m.viewContent())
 	for _, want := range []string{"@shonenm", "description", "opening", "https://example.com/image.png", "review comment"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("description view missing %q: %q", want, out)
@@ -123,7 +123,7 @@ func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 	if got := m.selectedBrowseURL(); got != m.cache.PR.URL {
 		t.Fatalf("description browse URL = %q", got)
 	}
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}); cmd == nil {
+	if _, cmd := m.Update(keyPress("o")); cmd == nil {
 		t.Fatal("o should open the selected PR description")
 	}
 }
@@ -154,11 +154,11 @@ func TestCachedCommentRendersMarkdownAndOpensBrowser(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	u, _ = m.Update(keyPress("j"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	u, _ = m.Update(keyPress("j"))
 	m = u.(Model)
-	out := m.View()
+	out := m.viewContent()
 	for _, want := range []string{"@alice", "reviewed", "https://example.com/image.png"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("comment view missing %q", want)
@@ -167,7 +167,7 @@ func TestCachedCommentRendersMarkdownAndOpensBrowser(t *testing.T) {
 	if strings.Contains(out, "**reviewed**") || strings.Contains(out, "![image]") {
 		t.Fatalf("comment Markdown was not rendered: %q", out)
 	}
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")}); cmd == nil {
+	if _, cmd := m.Update(keyPress("o")); cmd == nil {
 		t.Fatal("o should open the selected GitHub comment")
 	}
 	cmd := browserCommand(comment.HTMLURL)
@@ -351,18 +351,19 @@ func TestConversationKeepsScrollAcrossSyncsAndReloads(t *testing.T) {
 
 	scrollQuarter(&m.list, true)
 	scrollQuarter(&m.list, true)
-	scrolled := m.list.YOffset
+	scrolled := m.list.YOffset()
 	if scrolled == 0 {
 		t.Fatal("setup: the conversation did not scroll")
 	}
 
 	m.sync()
-	if m.list.YOffset != scrolled {
-		t.Fatalf("a background sync moved the view to %d, want %d", m.list.YOffset, scrolled)
+	if m.list.YOffset() != scrolled {
+		t.Fatalf("a background sync moved the view to %d, want %d", m.list.YOffset(), scrolled)
 	}
 
 	u, _ := m.Update(githubRefreshed{generation: m.targetGeneration, pr: pr, comments: m.cache.Comments})
-	if got := u.(Model).list.YOffset; got != scrolled {
+	reloaded := u.(Model)
+	if got := reloaded.list.YOffset(); got != scrolled {
 		t.Fatalf("a reload moved the view to %d, want %d", got, scrolled)
 	}
 
@@ -370,14 +371,14 @@ func TestConversationKeepsScrollAcrossSyncsAndReloads(t *testing.T) {
 	m.list.SetYOffset(scrolled)
 	m.detailView.cursors[conversationTab] = len(m.conversationItems()) - 1
 	m.sync()
-	if m.list.YOffset == scrolled {
+	if m.list.YOffset() == scrolled {
 		t.Fatal("selection change no longer scrolls the conversation")
 	}
 }
 
 func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
 	m := testModel()
-	m.list.Width = 80
+	m.list.SetWidth(80)
 	c := gh.Comment{ID: 1, Body: "old body", CreatedAt: "2026-08-01T10:00:00Z"}
 	c.User.Login = "alice"
 	m.cache.Comments = []gh.Comment{c}
@@ -399,7 +400,7 @@ func TestConversationRefreshInvalidatesRenderCache(t *testing.T) {
 
 func TestConversationCursorMoveReusesUnselectedCardRenders(t *testing.T) {
 	m := testModel()
-	m.list.Width = 80
+	m.list.SetWidth(80)
 	one := gh.Comment{ID: 1, Body: "first"}
 	two := gh.Comment{ID: 2, Body: "second"}
 	m.cache.Comments = []gh.Comment{one, two}
@@ -459,7 +460,7 @@ func TestSpecialCardsGetTheirOwnBorder(t *testing.T) {
 	// Rendering in tests strips color, so just confirm the cards still frame
 	// their content.
 	m := testModel()
-	m.list.Width = 80
+	m.list.SetWidth(80)
 	for name, lines := range map[string][]string{
 		"approval":    m.reviewLines(gh.Review{State: "APPROVED", Body: "lgtm"}, false, 80),
 		"description": m.descriptionLines(gh.PR{Number: 1, Body: "why"}, false, 80),

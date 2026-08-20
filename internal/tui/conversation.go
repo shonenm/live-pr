@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/shonenm/live-pr/internal/event"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -173,7 +173,7 @@ type convRenderKey struct {
 
 func (m *Model) buildConversation() (string, int) {
 	items := m.conversationItems()
-	key := convRenderKey{cursor: m.detailView.cursors[conversationTab], width: m.list.Width, items: len(items)}
+	key := convRenderKey{cursor: m.detailView.cursors[conversationTab], width: m.list.Width(), items: len(items)}
 	if m.detailView.conversationRenderValid && m.detailView.conversationRenderKey == key {
 		return m.detailView.conversationRender, m.detailView.conversationRenderLine
 	}
@@ -209,7 +209,7 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 // changes, so cursor moves re-render only the selected card instead of every
 // card in the conversation.
 func (m *Model) conversationItemLines(item conversationItem, selected bool) []string {
-	cacheKey := fmt.Sprintf("%s\x00%d", item.key, m.list.Width)
+	cacheKey := fmt.Sprintf("%s\x00%d", item.key, m.list.Width())
 	if !selected {
 		if cached, ok := m.detailView.convItemCache[cacheKey]; ok {
 			return cached
@@ -220,29 +220,29 @@ func (m *Model) conversationItemLines(item conversationItem, selected bool) []st
 	var itemLines []string
 	switch item.kind() {
 	case itemSummary:
-		itemLines = m.summaryLines(*item.summary, false, m.list.Width)
+		itemLines = m.summaryLines(*item.summary, false, m.list.Width())
 	case itemPRDescription:
-		itemLines = m.descriptionLines(*item.pr, false, m.list.Width)
+		itemLines = m.descriptionLines(*item.pr, false, m.list.Width())
 	case itemComment:
-		itemLines = m.commentLines(*item.comment, false, m.list.Width)
+		itemLines = m.commentLines(*item.comment, false, m.list.Width())
 	case itemOutbox:
-		itemLines = m.outboxLines(*item.outbox, false, m.list.Width)
+		itemLines = m.outboxLines(*item.outbox, false, m.list.Width())
 	case itemReview:
-		itemLines = m.reviewLines(*item.review, false, m.list.Width)
+		itemLines = m.reviewLines(*item.review, false, m.list.Width())
 	case itemReviewComment:
-		itemLines = m.reviewCommentLines(*item.reviewComment, false, m.list.Width)
+		itemLines = m.reviewCommentLines(*item.reviewComment, false, m.list.Width())
 	case itemActivity:
 		itemLines = m.activityLines(*item.activity, false)
 	case itemPRCommit:
 		itemLines = m.commitCIActivityLines(*item.prCommit, false)
 	case itemEvent:
-		itemLines = m.eventLines(*item.event, false, m.list.Width)
+		itemLines = m.eventLines(*item.event, false, m.list.Width())
 	default:
 		itemLines = []string{stMuted.Render("(unrenderable item)")}
 	}
 	if selected {
 		for j := range itemLines {
-			itemLines[j] = highlightSelectedBg(itemLines[j], m.list.Width)
+			itemLines[j] = highlightSelectedBg(itemLines[j], m.list.Width())
 		}
 		return itemLines
 	}
