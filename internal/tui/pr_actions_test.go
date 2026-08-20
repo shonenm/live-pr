@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/internal/git"
@@ -233,5 +234,33 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	u, _ = current.Update(keyPress("C"))
 	if got := u.(Model); got.pendingPRAction != noPRAction {
 		t.Fatal("offered to check out the branch already checked out")
+	}
+}
+
+func TestOverlayPopupKeepsAlignmentOverWideRunes(t *testing.T) {
+	// Every base cell is a double-width rune, so whatever origin the popup
+	// gets, both cut boundaries straddle a rune and used to shear the rows.
+	wide := strings.Repeat("あ", 20) // 40 cells
+	base := strings.Join([]string{wide, wide, wide, wide, wide}, "\n")
+	popup := strings.Join([]string{"+-----+", "| box |", "+-----+"}, "\n")
+	merged := overlayPopup(base, popup, 40)
+	for i, line := range strings.Split(merged, "\n") {
+		if got := lipgloss.Width(line); got != 40 {
+			t.Fatalf("line %d width = %d, want 40: %q", i, got, line)
+		}
+	}
+	if !strings.Contains(merged, "| box |") {
+		t.Fatalf("popup content lost: %q", merged)
+	}
+	// The popup's columns must be identical on every popup row: a shear shows
+	// up as differing indent between the box's top and middle lines.
+	var cols []int
+	for _, line := range strings.Split(ansi.Strip(merged), "\n") {
+		if i := strings.IndexAny(line, "+|"); i >= 0 {
+			cols = append(cols, lipgloss.Width(line[:i]))
+		}
+	}
+	if len(cols) != 3 || cols[0] != cols[1] || cols[1] != cols[2] {
+		t.Fatalf("popup columns shifted between rows: %v", cols)
 	}
 }
