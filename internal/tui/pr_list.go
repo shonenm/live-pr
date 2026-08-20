@@ -493,7 +493,14 @@ func (m *Model) ensureSelectedPRPreview() tea.Cmd {
 	return fetchPRPreview(m.client, pr.Number, m.prList.generation)
 }
 
-func (m Model) renderPRListHeader() string {
+// filterPrompt is the styled filter-input prefix; the cursor math measures
+// the same rendered string the header draws.
+func filterPrompt() string { return stAccent.Render(" ") }
+
+// prListTabRows lays the heading and view tabs out into header rows, wrapping
+// tabs that no longer fit. The filter line renders directly below these rows,
+// so filterCursor shares the same layout.
+func (m Model) prListTabRows() []string {
 	tabs := make([]string, 0, len(m.views))
 	activeBg := lipgloss.Color(cSelectedBg)
 	for view := prView(0); int(view) < len(m.views); view++ {
@@ -508,10 +515,7 @@ func (m Model) renderPRListHeader() string {
 		}
 		tabs = append(tabs, border.Render("[")+content.Render(fmt.Sprintf(" %s %s ", name, count))+border.Render("]"))
 	}
-	available := m.w
-	if m.w >= logoWidth+40 {
-		available -= logoWidth
-	}
+	available := m.headerTextWidth()
 	heading := "Pull requests"
 	if m.repository != "" {
 		heading = m.repository + " · " + heading
@@ -532,11 +536,37 @@ func (m Model) renderPRListHeader() string {
 			tabRows[len(tabRows)-1] = candidate
 		}
 	}
+	return tabRows
+}
+
+// filterCursor puts the real terminal cursor at the end of the filter query
+// while it is being edited, so IME preedit text composes in place. The header
+// draws the filter line right below the tab rows, offset by the wordmark when
+// it is shown.
+func (m Model) filterCursor() *tea.Cursor {
+	if !m.ready || m.screen != prListScreen || !m.prList.filterEditing {
+		return nil
+	}
+	x := lipgloss.Width(filterPrompt()) + lipgloss.Width(stFg.Render(m.prList.filterQuery))
+	if m.headerTextWidth() != m.w {
+		x += logoWidth
+	}
+	if m.w > 0 && x >= m.w {
+		x = m.w - 1
+	}
+	return tea.NewCursor(x, len(m.prListTabRows()))
+}
+
+func (m Model) renderPRListHeader() string {
+	tabRows := m.prListTabRows()
 	filter := stMuted.Render("/ filter (is:closed) · [/] views · space stacks")
 	if m.prList.filterEditing {
-		filter = stAccent.Render(" ") + stFg.Render(m.prList.filterQuery+"▌") + stMuted.Render(" · Enter search · Esc cancel")
+		// No inline cursor glyph: the real terminal cursor sits at the end
+		// of the query (filterCursor), which is what lets IME composition
+		// happen in place.
+		filter = filterPrompt() + stFg.Render(m.prList.filterQuery) + stMuted.Render(" · Enter search · Esc cancel")
 	} else if m.prList.filterQuery != "" {
-		filter = stAccent.Render(" ") + stFg.Render(m.prList.filterQuery) + stMuted.Render(" · Esc clear")
+		filter = filterPrompt() + stFg.Render(m.prList.filterQuery) + stMuted.Render(" · Esc clear")
 	}
 	metrics := []string{}
 	if page, ok := m.prList.pages[m.prList.activePage]; ok && page.loaded {

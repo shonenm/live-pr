@@ -178,6 +178,18 @@ func (m Model) renderActionPopup() string {
 		Render(strings.Join(lines, "\n"))
 }
 
+// overlayOrigin computes the top-left screen cell where overlayPopup centers
+// popup over base. The cursor path shares it so the real terminal cursor
+// lands inside the popup exactly where the render placed it.
+func overlayOrigin(base, popup string, width int) (left, top int) {
+	if width <= 0 {
+		width = lipgloss.Width(base)
+	}
+	left = max(0, (width-lipgloss.Width(popup))/2)
+	top = max(0, (strings.Count(base, "\n")+1-(strings.Count(popup, "\n")+1))/2)
+	return left, top
+}
+
 func overlayPopup(base, popup string, width int) string {
 	if width <= 0 {
 		width = lipgloss.Width(base)
@@ -188,8 +200,7 @@ func overlayPopup(base, popup string, width int) string {
 	if popupWidth == 0 || len(baseLines) == 0 {
 		return base
 	}
-	left := max(0, (width-popupWidth)/2)
-	top := max(0, (len(baseLines)-len(popupLines))/2)
+	left, top := overlayOrigin(base, popup, width)
 	for i, popupLine := range popupLines {
 		lineIndex := top + i
 		if lineIndex >= len(baseLines) {
