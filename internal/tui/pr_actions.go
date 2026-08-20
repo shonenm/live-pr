@@ -190,6 +190,34 @@ func overlayOrigin(base, popup string, width int) (left, top int) {
 	return left, top
 }
 
+// cutCells returns line's cells [from, to) at exactly to-from visible cells.
+// A double-width rune straddling a boundary makes ansi.Cut come back one cell
+// short or one cell wide, which used to shear every popup row over CJK text;
+// the segment is re-trimmed and space-padded on the cut side to stay exact.
+func cutCells(line string, from, to int, padLeft bool) string {
+	if to <= from {
+		return ""
+	}
+	want := to - from
+	seg := ansi.Cut(line, from, to)
+	if over := lipgloss.Width(seg) - want; over > 0 {
+		if padLeft {
+			// TruncateLeft cannot split the straddling wide rune (it keeps
+			// it whole), so skip past it by re-cutting one cell later.
+			seg = ansi.Cut(line, from+over, to)
+		} else {
+			seg = ansi.Truncate(seg, want, "")
+		}
+	}
+	if missing := want - lipgloss.Width(seg); missing > 0 {
+		if padLeft {
+			return strings.Repeat(" ", missing) + seg
+		}
+		return seg + strings.Repeat(" ", missing)
+	}
+	return seg
+}
+
 func overlayPopup(base, popup string, width int) string {
 	if width <= 0 {
 		width = lipgloss.Width(base)
@@ -211,7 +239,7 @@ func overlayPopup(base, popup string, width int) string {
 			line += strings.Repeat(" ", width-lineWidth)
 		}
 		cutRight := min(width, left+popupWidth)
-		merged := ansi.Cut(line, 0, left) + popupLine + ansi.Cut(line, cutRight, width)
+		merged := cutCells(line, 0, left, false) + popupLine + cutCells(line, cutRight, width, true)
 		if lineWidth := lipgloss.Width(merged); lineWidth < width {
 			merged += strings.Repeat(" ", width-lineWidth)
 		}
