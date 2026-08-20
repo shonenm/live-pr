@@ -176,9 +176,9 @@ func parseInlineReviewComment(value string) (gh.ReviewComment, error) {
 // request changes); typing switches it to the shared localEditor for the
 // general review body.
 type reviewSubmitOverlay struct {
-	event  gh.ReviewEvent
-	cursor int
-	typing bool
+	event         gh.ReviewEvent
+	verdictCursor int
+	typing        bool
 }
 
 func (m Model) openReviewSubmit() (Model, tea.Cmd) {
@@ -225,15 +225,15 @@ func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea
 	events := []gh.ReviewEvent{gh.ReviewCommentEvent, gh.ReviewApproveEvent, gh.ReviewRequestChangesEvent}
 	switch msg.String() {
 	case "up", "k":
-		o.cursor = (o.cursor + len(events) - 1) % len(events)
+		o.verdictCursor = (o.verdictCursor + len(events) - 1) % len(events)
 		m.overlay = o
 		return m, nil
 	case "down", "j":
-		o.cursor = (o.cursor + 1) % len(events)
+		o.verdictCursor = (o.verdictCursor + 1) % len(events)
 		m.overlay = o
 		return m, nil
 	case "enter":
-		o.event, o.typing = events[o.cursor], true
+		o.event, o.typing = events[o.verdictCursor], true
 		next, cmd := m.setupLocalEditor(m.reviewDraft.Body)
 		next.overlay = o
 		return next, cmd
@@ -284,7 +284,16 @@ func (m Model) handleReviewSubmitted(msg reviewSubmitted) (Model, tea.Cmd) {
 	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 }
 
-func (o reviewSubmitOverlay) render(m Model) string {
+// bodyWidth is the popup's declared width; its content wraps at bodyWidth
+// minus the horizontal padding.
+func (o reviewSubmitOverlay) bodyWidth(m Model) int {
+	return max(36, min(80, m.w-14))
+}
+
+// headerLines builds every body row rendered above the editor (or above the
+// closing hint when the verdict picker is shown). cursor measures these rows
+// after wrapping, so the caret stays correct however many rows they occupy.
+func (o reviewSubmitOverlay) headerLines(m Model) []string {
 	lines := []string{
 		stBold.Render(fmt.Sprintf("Submit review for PR #%d?", m.reviewDraft.PR)),
 		"",
@@ -297,13 +306,32 @@ func (o reviewSubmitOverlay) render(m Model) string {
 	for i, label := range labels {
 		prefix := "  "
 		style := stFg
-		if i == o.cursor {
+		if i == o.verdictCursor {
 			prefix, style = "▸ ", stAccent.Bold(true)
 		}
 		lines = append(lines, prefix+style.Render(label))
 	}
 	if o.typing {
-		lines = append(lines, "", stMuted.Render("Message"), m.localEditor.View())
+		lines = append(lines, "", stMuted.Render("Message"))
+	}
+	return lines
+}
+
+// cursor places the caret inside the editor while the review body is typed.
+func (o reviewSubmitOverlay) cursor(m Model) *tea.Cursor {
+	if !o.typing {
+		return nil
+	}
+	// The popup wraps its body at the declared width minus padding; measure
+	// the rows above the editor after that wrapping.
+	header := lipgloss.NewStyle().Width(o.bodyWidth(m) - 4).Render(strings.Join(o.headerLines(m), "\n"))
+	return m.editorPopupCursor(lipgloss.Height(header))
+}
+
+func (o reviewSubmitOverlay) render(m Model) string {
+	lines := o.headerLines(m)
+	if o.typing {
+		lines = append(lines, m.localEditor.View())
 		lines = append(lines, "", stMuted.Render("type message · Ctrl+S submit · Esc back"))
 	} else {
 		lines = append(lines, "", stMuted.Render("j/k select · Enter write message · Esc cancel"))
@@ -312,6 +340,6 @@ func (o reviewSubmitOverlay) render(m Model) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAttention)).
 		Padding(1, 2).
-		Width(max(36, min(80, m.w-14))).
+		Width(o.bodyWidth(m)).
 		Render(strings.Join(lines, "\n"))
 }
