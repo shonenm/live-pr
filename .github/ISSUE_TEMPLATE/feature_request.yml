@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest a workflow live-pr should support
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: |
+        Describe the workflow rather than the implementation — a feature that
+        fits the existing shape of the TUI is easier to accept than one that
+        fits a patch.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you handle it today?
+      description: With live-pr, with `gh`, in the browser, or not at all.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like instead?
