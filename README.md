@@ -107,6 +107,9 @@ the timeline automatically.
 - [docs/keybindings.md](docs/keybindings.md) — full key reference
 - [docs/development.md](docs/development.md) — CLI reference, building, debugging
 - [docs/prior-art.md](docs/prior-art.md) — how live-pr relates to neighboring tools
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to report bugs and send pull requests
+- [SECURITY.md](SECURITY.md) — reporting a vulnerability, and what live-pr runs
+  on your machine
 
 ## License
 
