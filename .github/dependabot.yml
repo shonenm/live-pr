@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # The Charm libraries move together; a split update tends to fail to
+      # build against itself.
+      charm:
+        patterns:
+          - charm.land/*
+          - github.com/charmbracelet/*
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

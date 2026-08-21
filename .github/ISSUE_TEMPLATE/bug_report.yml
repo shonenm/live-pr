@@ -1,0 +1,65 @@
+name: Bug report
+description: Something behaves differently than documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Terminal UI bugs are hard to reproduce without the environment, so
+        please fill in the version and terminal fields even if the bug looks
+        obvious.
+  - type: input
+    id: version
+    attributes:
+      label: live-pr version
+      description: Output of `live-pr --version`.
+      placeholder: live-pr version 0.8.3
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 26.1 (arm64)
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: Terminal emulator, and whether it runs under a multiplexer.
+      placeholder: WezTerm 20240203 inside tmux 3.7c
+    validations:
+      required: true
+  - type: input
+    id: review-pane
+    attributes:
+      label: Review pane
+      description: The `--diff` value or `[diff]` configuration in use.
+      placeholder: --diff=delta (default config otherwise)
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: |
+        `live-pr demo` gives a disposable repository — if the bug reproduces
+        there, steps from `live-pr demo` are the most useful ones.
+      placeholder: |
+        1. Run `live-pr demo`
+        2. Press `m` on the second PR
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: |
+        Screenshots help for rendering bugs. `LIVE_PR_DEBUG_TIMING=1` prints
+        timings to stderr if the problem is about slowness or hangs.
