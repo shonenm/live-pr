@@ -69,8 +69,25 @@ homebrew_casks:
 
 changelog:
   sort: asc
+  # Conventional Commit subjects carry the type, so the notes group by it
+  # instead of listing raw hashes. Anything that does not match a group falls
+  # into Other rather than disappearing.
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Other
+      order: 99
   filters:
     exclude:
       - '^Merge '
       - '^docs:'
       - '^test:'
+      - '^chore:'
+      - '^ci:'
