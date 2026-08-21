@@ -6,6 +6,11 @@
 
 # live-pr
 
+[![CI](https://img.shields.io/github/actions/workflow/status/shonenm/live-pr/ci.yml?branch=main&label=CI)](https://github.com/shonenm/live-pr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/shonenm/live-pr)](https://github.com/shonenm/live-pr/releases/latest)
+[![License](https://img.shields.io/github/license/shonenm/live-pr)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/shonenm/live-pr)](https://goreportcard.com/report/github.com/shonenm/live-pr)
+
 Living pull request for LLM-assisted development.
 
 ![demo](assets/demo.gif)
@@ -29,6 +34,14 @@ a real pull request.
 - Pluggable review pane — embedded Neovim CodeDiff, `delta`, or built-in git diff; switch with `--diff`
 - Live CI — checks with per-run durations, refreshed automatically while pending
 - PR export — `live-pr pr publish` creates or updates the GitHub PR with the timeline as its body
+- Mouse support — wheel scrolling per pane, click to select or open a PR, view tabs, and popup options
+
+## Status
+
+Alpha, and versioned `0.x`. Releases go out several times a day; keybindings,
+configuration keys, and on-disk state can change between `0.x` releases without
+a deprecation period. `v1.0` is the point where those three stop moving without
+a migration path — a goal, not a date.
 
 ## Install
 
@@ -41,12 +54,14 @@ brew install shonenm/live-pr/live-pr
 Or download a platform archive from [GitHub Releases](https://github.com/shonenm/live-pr/releases):
 
 ```sh
-version=v0.5.1
-asset=live-pr_0.5.1_$(uname -s)_$(uname -m).tar.gz
+version=$(curl -fsSI https://github.com/shonenm/live-pr/releases/latest | tr -d '\r' | sed -n 's#.*/tag/##p')
+case $(uname -m) in x86_64) arch=amd64 ;; *) arch=$(uname -m) ;; esac
+asset="live-pr_${version#v}_$(uname -s)_${arch}.tar.gz"
 tmp=$(mktemp -d)
 curl -fL "https://github.com/shonenm/live-pr/releases/download/$version/$asset" -o "$tmp/$asset"
 tar -xzf "$tmp/$asset" -C "$tmp"
-install -Dm755 "$tmp/live-pr" "$HOME/.local/bin/live-pr"
+mkdir -p "$HOME/.local/bin"
+install -m755 "$tmp/live-pr" "$HOME/.local/bin/live-pr"
 ```
 
 Or with Go:
@@ -59,12 +74,18 @@ Requirements: Git. An authenticated GitHub CLI (`gh`) for GitHub browsing,
 commenting, reviewing, and publishing. Neovim CodeDiff and `delta` are
 optional; raw git diff is built in.
 
+Platforms: macOS and Linux are the supported targets — macOS is what live-pr is
+developed on, and the full test suite (plus `go vet` and the race detector) runs
+on Linux in CI. The macOS and Windows CI jobs only compile everything and run
+the terminal-embedding tests. Releases include a Windows archive, but Windows is
+build-verified only: nobody exercises the TUI there, so treat it as untested.
+
 ## Quick start
 
 ```sh
 live-pr demo             # disposable demo, no GitHub resources touched
 live-pr                  # open the TUI for the current repository and branch
-live-pr --diff=delta     # pick the review pane: git, delta, codediff, or a command
+live-pr --diff=delta     # pick the review pane: git, delta, codediff, codereview, or a command
 live-pr pr publish       # push and create/update the GitHub PR from the timeline
 ```
 
@@ -89,6 +110,13 @@ split_ratio = 50             # list : preview width on the PR list screen (defau
 ```
 
 See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details.
+
+`diff.command`, `diff.commit_command`, and `summarize_command` are run through a
+shell, and `.live-pr.toml` is read from the repository you are viewing — so a
+repository you clone can run a command of its author's choosing when you start
+live-pr in it, the same exposure as Vim's `exrc`. Review the per-repo
+configuration of repositories you do not trust; [SECURITY.md](SECURITY.md)
+covers the trust boundaries in full.
 
 ## Agent Skill
 
