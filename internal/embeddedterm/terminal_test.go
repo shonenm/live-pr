@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,9 +32,6 @@ func TestWatchdogHelper(t *testing.T) {
 }
 
 func TestWatchdogKillsReviewerWhenParentIsSIGKILLed(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses Unix process groups")
-	}
 	pidFile := t.TempDir() + "/reviewer.pid"
 	parent := exec.Command(os.Args[0], "-test.run=^TestWatchdogHelper$")
 	parent.Env = append(os.Environ(), "LIVE_PR_WATCHDOG_TEST_HELPER=1", "LIVE_PR_WATCHDOG_PID_FILE="+pidFile)
@@ -236,9 +232,6 @@ func TestReplacementRejectsOldTerminalMessages(t *testing.T) {
 // TUI client re-spawns itself as an --embed server in its own process group,
 // which a plain group SIGKILL misses. killTree must reach it via the PPID walk.
 func TestKillTreeReachesGroupEscapedDescendants(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix process groups")
-	}
 	// sh spawns a child that escapes into its own process group (like nvim's
 	// embedded server), then keeps a same-group child alive too.
 	cmd := exec.Command("sh", "-c", `perl -e 'setpgrp(0,0); sleep 30' & sleep 30 & wait`)

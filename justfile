@@ -11,9 +11,20 @@ test:
 race:
     go test -race ./internal/github ./internal/tui
 
-# Run static analysis.
-vet:
-    go vet ./...
+# Check gofmt formatting.
+fmt-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unformatted=$(gofmt -l .)
+    if [[ -n "$unformatted" ]]; then
+        echo "These files are not gofmt-clean; run 'gofmt -w' on them:" >&2
+        echo "$unformatted" >&2
+        exit 1
+    fi
+
+# Run static analysis (govet runs inside golangci-lint).
+lint:
+    golangci-lint run ./...
 
 # Verify downloaded modules.
 mod-verify:
@@ -24,7 +35,7 @@ diff-check:
     git diff --check
 
 # Run all local checks.
-check: test race vet mod-verify diff-check
+check: test race fmt-check lint mod-verify diff-check
 
 # Build the binary.
 build:

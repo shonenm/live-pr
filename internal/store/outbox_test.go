@@ -29,11 +29,10 @@ func TestLoadOutboxMissingFileIsEmptyQueue(t *testing.T) {
 func TestOutboxRoundTrip(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	path := CommentOutbox(t.TempDir(), 7)
-	entries, err := AppendOutbox(path, OutboxEntry{PR: 7, Body: "first"})
-	if err != nil {
+	if _, err := AppendOutbox(path, OutboxEntry{PR: 7, Body: "first"}); err != nil {
 		t.Fatal(err)
 	}
-	entries, err = AppendOutbox(path, OutboxEntry{PR: 7, Body: "second", CommentID: 31})
+	entries, err := AppendOutbox(path, OutboxEntry{PR: 7, Body: "second", CommentID: 31})
 	if err != nil {
 		t.Fatal(err)
 	}

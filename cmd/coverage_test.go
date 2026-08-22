@@ -180,7 +180,7 @@ func TestHookStopNeverBlocksOutsideRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	old := os.Stdin
 	os.Stdin = f
 	t.Cleanup(func() { os.Stdin = old })

@@ -59,8 +59,7 @@ func BuildStacks(prs []gh.PR) []Stack {
 	}
 	visited := make([]bool, len(prs))
 	stacks := make([]Stack, 0, len(prs))
-	var addStack func(int)
-	addStack = func(root int) {
+	addStack := func(root int) {
 		if visited[root] {
 			return
 		}

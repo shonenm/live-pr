@@ -123,7 +123,7 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
-	defer os.Remove(bodyFile)
+	defer func() { _ = os.Remove(bodyFile) }()
 	if err := push(st.Branch); err != nil {
 		return Result{}, fmt.Errorf("git push: %w", err)
 	}

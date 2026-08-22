@@ -82,7 +82,7 @@ func saveJSON(path string, value any) error {
 		return err
 	}
 	name := f.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		return err

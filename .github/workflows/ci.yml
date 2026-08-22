@@ -21,7 +21,18 @@ jobs:
           cache: true
       - run: go test ./...
       - run: go test -race ./internal/github ./internal/tui
-      - run: go vet ./...
+      - name: Check gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [[ -n "$unformatted" ]]; then
+            echo "These files are not gofmt-clean; run 'gofmt -w' on them:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
       - run: go mod verify
       - name: Check committed whitespace
         shell: bash

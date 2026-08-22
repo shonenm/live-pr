@@ -124,7 +124,7 @@ func updatePRDescription(client githubClient, number int, body string, generatio
 			return remoteCommentDone{generation: generation, err: err}
 		}
 		name := file.Name()
-		defer os.Remove(name)
+		defer func() { _ = os.Remove(name) }()
 		if _, err := file.WriteString(body); err != nil {
 			_ = file.Close()
 			return remoteCommentDone{generation: generation, err: err}

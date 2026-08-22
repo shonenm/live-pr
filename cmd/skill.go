@@ -38,7 +38,7 @@ var skillPathCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), path)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), path)
 		return nil
 	},
 }
