@@ -678,12 +678,12 @@ func (m Model) buildPRPreview() string {
 			body = "(no description provided)"
 		}
 		header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
-		lines = append(lines, cardLines(header, previewMarkdown(body, width-7, 10), false, width, cCloudBorder)...)
+		lines = append(lines, cardLines(header, previewMarkdown(body, width-8, 10), false, width, cCloudBorder)...)
 		if len(pr.Conversation) > 0 {
 			comment := pr.Conversation[0]
 			header = m.userIcon(comment.Author.Login) + stMuted.Render(" @"+comment.Author.Login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
 			lines = append(lines, "")
-			lines = append(lines, cardLines(header, previewMarkdown(comment.Body, width-7, 5), false, width, cCloudBorder)...)
+			lines = append(lines, cardLines(header, previewMarkdown(comment.Body, width-8, 5), false, width, cCloudBorder)...)
 		}
 	}
 	return strings.Join(lines, "\n")
