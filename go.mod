@@ -7,11 +7,11 @@ require (
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/BurntSushi/toml v1.6.0
-	github.com/Starframe/portalis v0.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/mattn/go-runewidth v0.0.24
+	github.com/shonenm/portalis v0.1.0
 	github.com/spf13/cobra v1.10.2
 )
 
@@ -54,5 +54,3 @@ require (
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 )
-
-replace github.com/Starframe/portalis => github.com/starframe-dev/portalis v0.0.0-20260725152259-e20856dcea01

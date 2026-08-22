@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	portalis "github.com/Starframe/portalis"
+	portalis "github.com/shonenm/portalis"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/shonenm/live-pr/internal/clipboard"
