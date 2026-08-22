@@ -1,3 +1,8 @@
+> **Internal planning note (in Japanese).** This is a historical implementation roadmap kept for
+> maintainers. It predates the public release and does not necessarily
+> reflect the current state of the project. For user-facing documentation,
+> see the [docs index](../README.md).
+
 # 実装ロードマップ
 
 ## 原則
