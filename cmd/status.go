@@ -95,10 +95,10 @@ var statusCmd = &cobra.Command{
 			encoder.SetIndent("", "  ")
 			return encoder.Encode(status)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", status.Repository, status.Branch)
-		fmt.Fprintf(cmd.OutOrStdout(), "target: %s\nbase: %s\nevents: %d\n", status.Target, status.Base, status.Events)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", status.Repository, status.Branch)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "target: %s\nbase: %s\nevents: %d\n", status.Target, status.Base, status.Events)
 		if status.PR != nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "pr: #%d %s (%s)\n%s\n", status.PR.Number, status.PR.Title, status.PR.State, status.PR.URL)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "pr: #%d %s (%s)\n%s\n", status.PR.Number, status.PR.Title, status.PR.State, status.PR.URL)
 		}
 		return nil
 	},

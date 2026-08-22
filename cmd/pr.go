@@ -20,7 +20,7 @@ func runPreview(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "# %s\n_(base: %s ← %s)_\n\n%s", preview.Title, preview.Base, preview.Head, preview.Body)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "# %s\n_(base: %s ← %s)_\n\n%s", preview.Title, preview.Base, preview.Head, preview.Body)
 	return nil
 }
 
@@ -33,9 +33,9 @@ func runPublish(cmd *cobra.Command) error {
 		return err
 	}
 	if result.Created {
-		fmt.Fprintln(cmd.OutOrStdout(), result.PR.URL)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), result.PR.URL)
 	} else {
-		fmt.Fprintln(cmd.OutOrStdout(), "updated", result.PR.URL)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "updated", result.PR.URL)
 	}
 	return nil
 }

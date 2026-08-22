@@ -124,7 +124,7 @@ var commentListCmd = &cobra.Command{
 			if ev.UpdatedAt != "" {
 				edited = "\tedited"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s%s\n", ev.ID, ev.Kind, author, ev.Title, edited)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s%s\n", ev.ID, ev.Kind, author, ev.Title, edited)
 		}
 		return nil
 	},
@@ -178,7 +178,7 @@ var commentEditCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", updated.ID, updated.Kind, updated.Title)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", updated.ID, updated.Kind, updated.Title)
 		return nil
 	},
 }
@@ -202,7 +202,7 @@ var commentDeleteCmd = &cobra.Command{
 		if err := event.Delete(path, current.ID); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), current.ID)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), current.ID)
 		return nil
 	},
 }

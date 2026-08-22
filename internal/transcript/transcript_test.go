@@ -63,7 +63,7 @@ func TestTextTailCap(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		lines = append(lines, `{"type":"user","message":{"role":"user","content":"message number `+string(rune('A'+i%26))+`"}}`)
 	}
-	os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644)
+	_ = os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644)
 
 	got, err := Text(p, 100)
 	if err != nil {

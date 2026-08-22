@@ -62,7 +62,7 @@ var summarySetCmd = &cobra.Command{
 		if err := st.WriteConclusion(body); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), st.Conclusion())
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), st.Conclusion())
 		return nil
 	},
 }

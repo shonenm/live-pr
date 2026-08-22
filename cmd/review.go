@@ -46,9 +46,9 @@ var reviewShowCmd = &cobra.Command{
 		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(draft)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "PR #%d @ %s\n\n%s\n", draft.PR, draft.Commit, draft.Body)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "PR #%d @ %s\n\n%s\n", draft.PR, draft.Commit, draft.Body)
 		for i, comment := range draft.Comments {
-			fmt.Fprintf(cmd.OutOrStdout(), "%d\t%s:%d\t%s\t%s\n", i+1, comment.Path, comment.Line, comment.Side, comment.Body)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%d\t%s:%d\t%s\t%s\n", i+1, comment.Path, comment.Line, comment.Side, comment.Body)
 		}
 		return nil
 	},
@@ -69,7 +69,7 @@ var reviewBodyCmd = &cobra.Command{
 		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(st.Root, draft.PR), draft); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), store.PullRequestReviewDraft(st.Root, draft.PR))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), store.PullRequestReviewDraft(st.Root, draft.PR))
 		return nil
 	},
 }
@@ -98,7 +98,7 @@ var reviewAddCmd = &cobra.Command{
 		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(st.Root, draft.PR), draft); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), len(draft.Comments))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), len(draft.Comments))
 		return nil
 	},
 }
@@ -153,7 +153,7 @@ var reviewSubmitCmd = &cobra.Command{
 		if err := os.Remove(store.PullRequestReviewDraft(st.Root, draft.PR)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "submitted %s review for PR #%d\n", strings.ToUpper(event), draft.PR)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "submitted %s review for PR #%d\n", strings.ToUpper(event), draft.PR)
 		return nil
 	},
 }
