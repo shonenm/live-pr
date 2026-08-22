@@ -44,6 +44,22 @@ archives:
 checksum:
   name_template: checksums.txt
 
+sboms:
+  # One SPDX SBOM per archive, uploaded alongside it.
+  - artifacts: archive
+
+signs:
+  # Keyless Sigstore signing (GitHub OIDC) of the checksum file; the bundle
+  # combines signature + certificate so verification is a single file.
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+
 homebrew_casks:
   - name: live-pr
     repository:
