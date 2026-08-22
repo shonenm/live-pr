@@ -148,7 +148,7 @@ func (m Model) outboxLines(entry store.OutboxEntry, selected bool, width int) []
 		label = "pending edit"
 	}
 	header := stMuted.Render("👤 you · ") + stAttention.Render("◌ "+label) + stMuted.Render(" · outbox · "+relativeTS(time.Now(), entry.CreatedAt)+" · sends on refresh (r)")
-	return cardLines(header, md.Render(entry.Body, width-7), selected, width, cBorder)
+	return cardLines(header, md.Render(entry.Body, width-8), selected, width, cBorder)
 }
 
 // outboxDiscardOverlay is the y/n confirm for dropping a queued comment.

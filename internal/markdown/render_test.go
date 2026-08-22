@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/glamour"
 )
 
@@ -50,7 +51,7 @@ func TestRenderReusedRendererMatchesFreshRenderer(t *testing.T) {
 
 	fresh, err := glamour.NewTermRenderer(
 		glamour.WithStyles(githubStyle()),
-		glamour.WithWordWrap(width),
+		glamour.WithWordWrap(glamourWrapWidth),
 	)
 	if err != nil {
 		t.Fatalf("NewTermRenderer: %v", err)
@@ -59,8 +60,8 @@ func TestRenderReusedRendererMatchesFreshRenderer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fresh Render: %v", err)
 	}
-	if got != strings.TrimSpace(want) {
-		t.Fatalf("reused renderer output diverged from fresh renderer:\nreused: %q\nfresh:  %q", got, strings.TrimSpace(want))
+	if got != wrapRendered(want, width) {
+		t.Fatalf("reused renderer output diverged from fresh renderer:\ngot:  %q\nwant: %q", got, wrapRendered(want, width))
 	}
 }
 
@@ -69,5 +70,25 @@ func TestRenderCachesByBodyAndWidth(t *testing.T) {
 	second := Render("**cached**", 40)
 	if first != second {
 		t.Fatal("cached render changed")
+	}
+}
+
+func TestWrapTextFillsLinesAndRespectsKinsoku(t *testing.T) {
+	const width = 48
+	in := "これは日本語の長い文章です。句読点や「括弧」を含んだテキストが、端末幅に対してどこで折り返されるかを確認します。英語のsome long wordsも混ぜてみます。"
+	out := WrapText(in, width)
+	for _, line := range strings.Split(out, "\n") {
+		plain := ansi.ReplaceAllString(line, "")
+		if w := xansi.StringWidth(line); w > width {
+			t.Fatalf("line exceeds width %d: %q", w, plain)
+		}
+		if strings.ContainsRune("、。，．！？」』）〕｝〉》」】…?!%)]}.,:;", []rune(plain)[0]) {
+			t.Fatalf("line starts with closing punctuation: %q", plain)
+		}
+		for _, word := range []string{"some", "long", "words"} {
+			if !strings.Contains(out, word) {
+				t.Fatalf("Latin word %q split across lines", word)
+			}
+		}
 	}
 }
