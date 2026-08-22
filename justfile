@@ -24,7 +24,9 @@ fmt-check:
 
 # Run static analysis (govet runs inside golangci-lint).
 lint:
-    golangci-lint run ./...
+    # Pinned to the version CI uses, and run through `go run` so a contributor
+    # needs nothing installed beyond Go: same config, same findings, no setup.
+    go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1 run ./...
 
 # Scan for known vulnerabilities in reachable code.
 vuln:
