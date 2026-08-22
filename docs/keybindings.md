@@ -50,6 +50,25 @@ Press `?` inside the TUI to toggle the full help.
 While the embedded reviewer (e.g. Neovim CodeDiff) is focused, all keys
 except `Tab`, `Shift+Tab`, and `q` are forwarded to it.
 
+## Mouse
+
+| Action | Result |
+| --- | --- |
+| Wheel over the PR list | move the selection three rows (same pagination as `j` / `k`) |
+| Wheel over a preview / conversation / diff pane | scroll that pane; the pointer decides which one |
+| Wheel over the file explorer | move the file selection |
+| Click a PR row | select it; clicking the already-selected row opens it |
+| Click a view tab in the header | switch to that view |
+| Click a conversation or file row | focus that pane and select the row |
+| Click the review pane | focus it |
+| Click an option in the merge or PR-status popup | move the cursor there; clicking the selected option confirms it |
+| Click outside a popup | cancel it (the `Esc` equivalent) |
+
+Only the left button is used. Confirmation popups (checkout, close, delete,
+discard) still answer to `y` / `n` only, so no destructive action fires from a
+stray click. While the embedded reviewer is focused, mouse events inside its
+region are forwarded to it.
+
 ## Editor popup
 
 | Key | Action |
