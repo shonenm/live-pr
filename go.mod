@@ -1,6 +1,6 @@
 module github.com/shonenm/live-pr
 
-go 1.25.6
+go 1.25.14
 
 require (
 	charm.land/bubbles/v2 v2.2.0
