@@ -281,22 +281,25 @@ func (m Model) eventLines(e event.Event, selected bool, width int) []string {
 		meta += " · edited"
 	}
 	header := stMuted.Render(who+" · ") + kindLabel(e.Kind) + stMuted.Render(meta)
-	body := stBold.Render(e.Title)
+	// WrapText wraps the title with kinsoku-aware breaking; a long Japanese
+	// title left to the card box's hard wrap would break mid-clause and put
+	// closing punctuation at line starts.
+	body := md.WrapText(stBold.Render(e.Title), width-8)
 	if strings.TrimSpace(e.Body) != "" {
-		body += "\n" + md.Render(e.Body, width-7)
+		body += "\n" + md.Render(e.Body, width-8)
 	}
 	return cardLines(header, body, selected, width, cBorder)
 }
 
 func (m Model) summaryLines(summary string, selected bool, width int) []string {
 	header := stMuted.Render("📝 local PR · final summary")
-	return cardLines(header, md.Render(summary, width-7), selected, width, cBorder)
+	return cardLines(header, md.Render(summary, width-8), selected, width, cBorder)
 }
 
 func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
-	body := md.Render("(no description provided)", width-7)
+	body := md.Render("(no description provided)", width-8)
 	if strings.TrimSpace(pr.Body) != "" {
-		body = m.renderRichMarkdown(pr.Body, width-7)
+		body = m.renderRichMarkdown(pr.Body, width-8)
 	}
 	header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
 	return cardLines(header, body, selected, width, cDescriptionBorder)
@@ -304,7 +307,7 @@ func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
 	header := m.userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
-	return cardLines(header, m.renderRichMarkdown(comment.Body, width-7), selected, width, cCloudBorder)
+	return cardLines(header, m.renderRichMarkdown(comment.Body, width-8), selected, width, cCloudBorder)
 }
 
 // reviewLines renders a submitted review verdict with GitHub's semantic color.
@@ -315,7 +318,7 @@ func (m Model) reviewLines(review gh.Review, selected bool, width int) []string 
 	if body == "" {
 		return []string{selectionBar(selected) + header}
 	}
-	return cardLines(header, m.renderRichMarkdown(body, width-7), selected, width, reviewBorder(review.State))
+	return cardLines(header, m.renderRichMarkdown(body, width-8), selected, width, reviewBorder(review.State))
 }
 
 // reviewBorder frames a verdict in its own color so an approval or a change
@@ -337,7 +340,7 @@ func (m Model) reviewCommentLines(rc gh.ReviewThreadComment, selected bool, widt
 		loc = fmt.Sprintf("%s:%d", rc.Path, rc.Line)
 	}
 	header := m.userIcon(rc.User.Login) + stMuted.Render(" @"+rc.User.Login+" · review comment · ") + stAccent.Render(loc) + stMuted.Render(" · "+relativeTS(time.Now(), rc.CreatedAt))
-	return cardLines(header, m.renderRichMarkdown(rc.Body, width-7), selected, width, cBorder)
+	return cardLines(header, m.renderRichMarkdown(rc.Body, width-8), selected, width, cBorder)
 }
 
 // reviewVerdict maps a review state to its label and GitHub color.
