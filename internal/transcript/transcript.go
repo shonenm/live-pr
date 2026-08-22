@@ -31,7 +31,7 @@ func Text(path string, maxBytes int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	chunks := make([]string, 0, 128)
 	start, retained := 0, 0

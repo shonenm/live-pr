@@ -87,7 +87,7 @@ func (s *Store) WriteConclusion(body string) error {
 		return err
 	}
 	name := f.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err := f.WriteString(strings.TrimSpace(body) + "\n"); err != nil {
 		_ = f.Close()
 		return err
@@ -271,7 +271,7 @@ func SaveReviewedMarks(path string, marks map[string]string) error {
 		return err
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err := tmp.Write(append(data, '\n')); err != nil {
 		_ = tmp.Close()
 		return err

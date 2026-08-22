@@ -24,7 +24,7 @@ func addEvent(cmd *cobra.Command, kind event.Kind, title, body, sha, author stri
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", created.ID, kind, title)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", created.ID, kind, title)
 	return nil
 }
 

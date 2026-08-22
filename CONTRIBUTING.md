@@ -23,13 +23,13 @@ even when the code is fine — please ask first for anything larger than a fix.
 
 ```sh
 go build -o live-pr .   # build
-just check              # tests, race checks, vet, module verification, diff check
+just check              # tests, race checks, gofmt, golangci-lint, module verification, diff check
 ```
 
 `just check` is what CI runs. Run it before pushing.
 
-Requirements: Go (see `go.mod`), Git, and an authenticated `gh` for anything
-that talks to GitHub. `LIVE_PR_DEBUG_TIMING=1` prints startup, Git, GitHub, and
+Requirements: Go (see `go.mod`), Git, [golangci-lint](https://golangci-lint.run/docs/welcome/install/)
+(for `just lint`), and an authenticated `gh` for anything that talks to GitHub. `LIVE_PR_DEBUG_TIMING=1` prints startup, Git, GitHub, and
 render timings to stderr.
 
 See [docs/development.md](docs/development.md) for the CLI reference,

@@ -1,0 +1,42 @@
+# High-signal linter set. Deliberately small: a default-heavy ruleset on this
+# codebase produces hundreds of findings and gets switched off. Add a linter
+# only when its findings are worth fixing on sight.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - bodyclose    # leaked HTTP response bodies (avatar fetching does real HTTP)
+    - copyloopvar  # stale loop-variable captures
+    - errcheck     # unchecked errors, the most common real bug class here
+    - errorlint    # %v/type-assert on wrapped errors
+    - govet        # the standard vet suite; the only place it runs now
+    - ineffassign  # assignments that are never read
+    - misspell     # typos in user-visible strings and comments
+    - nilerr       # `if err != nil { return nil }`
+    - staticcheck  # correctness + simplification
+    - unconvert    # redundant type conversions
+    - unused       # dead code
+
+  settings:
+    misspell:
+      ignore-rules:
+        - portalis # the github.com/shonenm/portalis dependency, not "portals"
+    staticcheck:
+      # Keep the correctness (SA) and simplification (S) families; drop the two
+      # style families. QF* are editor quick-fixes and ST* is doc-comment
+      # phrasing -- neither finds bugs, and this package layout puts a topic
+      # comment at the top of each file on purpose.
+      checks:
+        - all
+        - -QF*
+        - -ST*
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  # Report everything; a truncated list hides work from contributors.
+  max-issues-per-linter: 0
+  max-same-issues: 0
