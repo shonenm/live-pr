@@ -25,7 +25,6 @@ jobs:
       - uses: github/codeql-action/init@37f2634a92ba38a0926ef79a0748ac8ae7d95ab2 # v4.37.8
         with:
           languages: go
-          build-mode: none
       - uses: github/codeql-action/analyze@37f2634a92ba38a0926ef79a0748ac8ae7d95ab2 # v4.37.8
         with:
           category: "/language:go"
