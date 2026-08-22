@@ -104,7 +104,7 @@ func TestAvatarColorContextFetchAndDecodeFallbacks(t *testing.T) {
 		case "/redirect":
 			http.Redirect(w, r, "https://evil.example.com/u/1", http.StatusFound)
 		case "/garbage":
-			fmt.Fprint(w, "definitely not an image")
+			_, _ = fmt.Fprint(w, "definitely not an image")
 		case "/oversized":
 			_, _ = w.Write(make([]byte, 5<<20+1))
 		case "/solid":

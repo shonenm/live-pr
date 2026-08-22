@@ -37,7 +37,7 @@ func SaveViews(path string, views []View) error {
 		return err
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err := tmp.WriteString(updated); err != nil {
 		_ = tmp.Close()
 		return err

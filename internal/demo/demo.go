@@ -18,7 +18,7 @@ func Run(mode, version string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(root)
+	defer func() { _ = os.RemoveAll(root) }()
 
 	if err := CreateRepo(root, mode); err != nil {
 		return err
@@ -31,7 +31,7 @@ func Run(mode, version string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Chdir(oldDir)
+	defer func() { _ = os.Chdir(oldDir) }()
 	if err := os.Chdir(root); err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func Run(mode, version string) error {
 	oldPath := os.Getenv("PATH")
 	defer restoreEnv("XDG_STATE_HOME", oldState, hadState)
 	defer restoreEnv("LIVE_PR_DEMO_STATE", oldDemoState, hadDemoState)
-	defer os.Setenv("PATH", oldPath)
+	defer func() { _ = os.Setenv("PATH", oldPath) }()
 	if err := os.Setenv("XDG_STATE_HOME", filepath.Join(root, ".state")); err != nil {
 		return err
 	}

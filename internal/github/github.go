@@ -780,7 +780,7 @@ func (c Client) runWithJSONInput(method, endpoint string, payload any, label str
 		return fmt.Errorf("%s: %w", label, err)
 	}
 	name := file.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("%s: %w", label, err)

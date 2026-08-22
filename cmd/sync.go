@@ -25,7 +25,7 @@ var syncCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "synced %d new commit(s) from %s..HEAD\n", n, base)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "synced %d new commit(s) from %s..HEAD\n", n, base)
 		return nil
 	},
 }

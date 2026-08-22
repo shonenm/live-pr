@@ -83,7 +83,7 @@ func SaveOutbox(path string, entries []OutboxEntry) error {
 		return err
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err := tmp.Write(append(data, '\n')); err != nil {
 		_ = tmp.Close()
 		return err

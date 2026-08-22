@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/glamour"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)

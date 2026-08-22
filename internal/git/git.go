@@ -268,7 +268,7 @@ func contentConflicts(base, head string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	var files []string
 	for _, path := range overlap {
 		ours, oursOK := blob(head, path)

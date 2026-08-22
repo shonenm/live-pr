@@ -21,7 +21,18 @@ jobs:
           cache: true
       - run: go test ./...
       - run: go test -race ./internal/github ./internal/tui
-      - run: go vet ./...
+      - name: Check gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [[ -n "$unformatted" ]]; then
+            echo "These files are not gofmt-clean; run 'gofmt -w' on them:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
       - run: go mod verify
       - name: Check committed whitespace
         shell: bash
@@ -34,6 +45,18 @@ jobs:
           else
             git diff --check "$BASE_SHA...$HEAD_SHA"
           fi
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Fails only on vulnerabilities govulncheck proves this binary calls;
+      # unreachable ones in imported packages are reported without failing.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   build:
     strategy:

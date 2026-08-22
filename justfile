@@ -11,9 +11,26 @@ test:
 race:
     go test -race ./internal/github ./internal/tui
 
-# Run static analysis.
-vet:
-    go vet ./...
+# Check gofmt formatting.
+fmt-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unformatted=$(gofmt -l .)
+    if [[ -n "$unformatted" ]]; then
+        echo "These files are not gofmt-clean; run 'gofmt -w' on them:" >&2
+        echo "$unformatted" >&2
+        exit 1
+    fi
+
+# Run static analysis (govet runs inside golangci-lint).
+lint:
+    # Pinned to the version CI uses, and run through `go run` so a contributor
+    # needs nothing installed beyond Go: same config, same findings, no setup.
+    go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1 run ./...
+
+# Scan for known vulnerabilities in reachable code.
+vuln:
+    go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 # Verify downloaded modules.
 mod-verify:
@@ -24,7 +41,7 @@ diff-check:
     git diff --check
 
 # Run all local checks.
-check: test race vet mod-verify diff-check
+check: test race fmt-check lint vuln mod-verify diff-check
 
 # Build the binary.
 build:

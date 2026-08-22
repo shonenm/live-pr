@@ -24,7 +24,7 @@ var initCmd = &cobra.Command{
 	Short: "Initialize the live-pr store for the current branch",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if hooks, _ := cmd.Flags().GetBool("hooks"); hooks {
-			fmt.Fprintln(cmd.OutOrStdout(), hookSnippet)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), hookSnippet)
 			return nil
 		}
 		st, err := store.Discover()
@@ -42,7 +42,7 @@ var initCmd = &cobra.Command{
 		}
 		_ = f.Close()
 
-		fmt.Fprintf(cmd.OutOrStdout(), "initialized %s\n", st.Dir)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "initialized %s\n", st.Dir)
 		return nil
 	},
 }
