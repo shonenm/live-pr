@@ -46,6 +46,18 @@ jobs:
             git diff --check "$BASE_SHA...$HEAD_SHA"
           fi
 
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Fails only on vulnerabilities govulncheck proves this binary calls;
+      # unreachable ones in imported packages are reported without failing.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
   build:
     strategy:
       matrix:
