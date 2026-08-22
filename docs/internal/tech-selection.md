@@ -1,3 +1,8 @@
+> **Internal planning note (in Japanese).** This is a technology selection record from the project's inception kept for
+> maintainers. It predates the public release and does not necessarily
+> reflect the current state of the project. For user-facing documentation,
+> see the [docs index](../README.md).
+
 # 技術選定 (2026-07)
 
 ## 決定サマリ
