@@ -26,6 +26,10 @@ fmt-check:
 lint:
     golangci-lint run ./...
 
+# Scan for known vulnerabilities in reachable code.
+vuln:
+    go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
 # Verify downloaded modules.
 mod-verify:
     go mod verify
@@ -35,7 +39,7 @@ diff-check:
     git diff --check
 
 # Run all local checks.
-check: test race fmt-check lint mod-verify diff-check
+check: test race fmt-check lint vuln mod-verify diff-check
 
 # Build the binary.
 build:

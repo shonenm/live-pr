@@ -23,7 +23,7 @@ even when the code is fine — please ask first for anything larger than a fix.
 
 ```sh
 go build -o live-pr .   # build
-just check              # tests, race checks, gofmt, golangci-lint, module verification, diff check
+just check              # tests, race checks, gofmt, golangci-lint, govulncheck, module verification, diff check
 ```
 
 `just check` is what CI runs. Run it before pushing.
