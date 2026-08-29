@@ -532,10 +532,11 @@ func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	}
 }
 
-func TestPendingCIPollsUntilTerminalState(t *testing.T) {
+func TestLivePollingContinuesAfterTerminalCI(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
 	m.targetGeneration = 4
+	m.localHeadOID = "head"
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 
 	u, cmd := m.Update(ciPollTick{generation: 4, number: 12})
@@ -545,7 +546,7 @@ func TestPendingCIPollsUntilTerminalState(t *testing.T) {
 	}
 	u, cmd = m.Update(ciPolled{generation: 4, pr: gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
 	m = u.(Model)
-	if cmd != nil || prfilter.CIHealth(*m.cache.PR) != "passed" || m.githubStatus != "GitHub: CI updated now" {
+	if cmd == nil || prfilter.CIHealth(*m.cache.PR) != "passed" || m.githubStatus != "GitHub: CI updated now" {
 		t.Fatalf("completed CI = health:%s status:%q cmd:%v", prfilter.CIHealth(*m.cache.PR), m.githubStatus, cmd)
 	}
 	if _, stale := m.Update(ciPollTick{generation: 3, number: 12}); stale != nil {
@@ -580,10 +581,11 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
 	m.targetGeneration = 2
+	m.localHeadOID = "old"
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "old", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "new", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
 	m = u.(Model)
-	if cmd != nil || !strings.Contains(m.githubStatus, "head changed") || prfilter.CIHealth(*m.cache.PR) != "pending" {
+	if cmd == nil || !strings.Contains(m.githubStatus, "head changed") || prfilter.CIHealth(*m.cache.PR) != "pending" || m.detailMode() != modeLocal {
 		t.Fatalf("changed head = health:%s status:%q cmd:%v", prfilter.CIHealth(*m.cache.PR), m.githubStatus, cmd)
 	}
 }
@@ -591,6 +593,7 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 func TestCIPollUnchangedResultSkipsCacheInvalidation(t *testing.T) {
 	m := testModel()
 	m.screen, m.targetGeneration = detailScreen, 2
+	m.localHeadOID = "head"
 	m.cache.PR = &gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head", PreviewLoaded: true,
 		Checks:           []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}},
 		CheckRollupState: "PENDING",
@@ -657,11 +660,9 @@ func TestReviewRefFailureKeepsCIPollAlive(t *testing.T) {
 		Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 	done := pending
 	done.Checks = []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}
-	// The refresh orphaned the previous poll chain, so the refErr return is
-	// the only place a new one can start: a pending PR must batch exactly one
-	// cmd more (the CI poll) than one whose checks are already terminal.
-	if got, want := load(pending), load(done)+1; got != want {
-		t.Fatalf("refErr result did not schedule the CI poll: pending batches %d cmds, terminal %d", got, want-1)
+	// LIVE polling monitors head/state even after CI reaches a terminal state.
+	if pendingCount, doneCount := load(pending), load(done); pendingCount != doneCount || pendingCount == 0 {
+		t.Fatalf("refErr result did not keep LIVE polling: pending=%d terminal=%d", pendingCount, doneCount)
 	}
 }
 

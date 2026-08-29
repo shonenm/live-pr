@@ -236,6 +236,30 @@ func (m *Model) detailListIndexAtLine(line int) int {
 	if m.detailView.active == conversationTab {
 		return m.conversationIndexAtLine(line)
 	}
+	if m.detailView.active == commitsTab {
+		published := m.publishedCommits
+		if m.remote {
+			published = len(m.detailView.commits)
+		}
+		published = min(published, len(m.detailView.commits))
+		row := 0
+		for i := range m.detailView.commits {
+			if i == 0 && published > 0 {
+				row++
+			}
+			if i == published && published < len(m.detailView.commits) {
+				if row > 0 {
+					row++
+				}
+				row++
+			}
+			if line == row {
+				return i
+			}
+			row++
+		}
+		return -1
+	}
 	_, selectedLine := m.buildList()
 	index := line - (selectedLine - m.detailView.cursors[m.detailView.active])
 	if index < 0 || index >= m.activeLen() {
