@@ -491,8 +491,11 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		return m, scheduleCIPoll(msg.generation, m.cache.PR.Number, m.ciPollFailures)
 	}
 	if msg.pr.HeadRefOID != m.cache.PR.HeadRefOID {
+		// Record the new publication boundary so the derived mode immediately
+		// leaves LIVE, but keep the local review range untouched until r.
+		m.cache.PR.HeadRefOID = msg.pr.HeadRefOID
 		m.githubStatus = "GitHub: PR head changed · refresh required"
-		return m, nil
+		return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync())
 	}
 	m.ciPollFailures = 0
 	rollup := checkRollupState(msg.pr.Checks)
@@ -502,16 +505,14 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	// comparison covers everything the mutations below would change.
 	unchanged := m.cache.PR.PreviewLoaded &&
 		(msg.pr.State == "" || msg.pr.State == m.cache.PR.State) &&
+		msg.pr.IsDraft == m.cache.PR.IsDraft &&
 		rollup == m.cache.PR.CheckRollupState &&
 		slices.Equal(msg.pr.Checks, m.cache.PR.Checks) &&
 		!slices.ContainsFunc(m.cache.PR.Commits, func(c gh.PRCommit) bool {
 			return c.OID == msg.pr.HeadRefOID && c.CheckRollupState != rollup
 		})
 	if unchanged {
-		if pollableCI(*m.cache.PR) {
-			return m, scheduleCIPoll(msg.generation, msg.pr.Number, 0)
-		}
-		return m, nil
+		return m, m.nextCIPoll()
 	}
 	// The poll reads the pull request itself, so its state is authoritative:
 	// without taking it, upserting the cached copy below would push a stale
@@ -519,6 +520,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	if msg.pr.State != "" {
 		m.cache.PR.State = msg.pr.State
 	}
+	m.cache.PR.IsDraft = msg.pr.IsDraft
 	m.cache.PR.Checks = msg.pr.Checks
 	m.cache.PR.CheckRollupState = rollup
 	// Clone before mutating: saveCacheCmd copies the PR struct but shares
@@ -538,10 +540,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	m.githubStatus = "GitHub: CI updated now"
 	m.layout()
 	cmd := m.sync()
-	if pollableCI(*m.cache.PR) {
-		return m, tea.Batch(cmd, scheduleCIPoll(msg.generation, msg.pr.Number, 0))
-	}
-	return m, cmd
+	return m, tea.Batch(cmd, m.nextCIPoll(), saveCacheCmd(m.cachePath, m.cache))
 }
 
 func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {

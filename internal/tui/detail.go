@@ -151,6 +151,9 @@ func (m *Model) reloadLocalConversation() {
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	m.detailView.events = events
+	if oid, err := git.Revision("HEAD"); err == nil {
+		m.localHeadOID = oid
+	}
 	if dirty, err := git.HasUncommittedChanges(); err == nil {
 		m.workingTreeDirty = dirty
 	} else {
@@ -193,8 +196,18 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 			}
 		}
 		msg.commits, _ = git.CommitsRange(diffBase, newHead)
-		if publishedReviewHead(prCopy) == "" && !remote {
+		if !remote {
 			msg.files, _ = git.ChangedFilesRange(diffBase, "")
+			msg.localHeadOID, _ = git.Revision("HEAD")
+			if prCopy != nil && prCopy.HeadRefOID != "" {
+				if ancestor, err := git.IsAncestor(prCopy.HeadRefOID, "HEAD"); err == nil && ancestor {
+					if localOnly, err := git.CommitsRange(prCopy.HeadRefOID, "HEAD"); err == nil {
+						msg.publishedCommits = max(0, len(msg.commits)-len(localOnly))
+					}
+				} else if err == nil {
+					msg.localDiverged = true
+				}
+			}
 		} else {
 			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
 		}
@@ -227,6 +240,9 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		// Same range names, but the refs behind them move: refresh the scans
 		// without dropping caches or restarting the review terminal.
 		m.detailView.commits, m.detailView.files = msg.commits, msg.files
+		if !m.remote {
+			m.localHeadOID, m.publishedCommits, m.localDiverged = msg.localHeadOID, msg.publishedCommits, msg.localDiverged
+		}
 		if m.detailView.fileCursor >= len(m.detailView.files) {
 			m.detailView.fileCursor = 0
 		}
@@ -239,6 +255,9 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.detailView.invalidateConversation()
 	}
 	m.detailView.commits, m.detailView.files = msg.commits, msg.files
+	if !m.remote {
+		m.localHeadOID, m.publishedCommits, m.localDiverged = msg.localHeadOID, msg.publishedCommits, msg.localDiverged
+	}
 	m.detailView.fileCursor = 0
 	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync())
 }
@@ -648,6 +667,7 @@ func plural(n int) string {
 func (m *Model) commitsFingerprint() uint64 {
 	var h maphash.Hash
 	h.SetSeed(tabRenderSeed)
+	fingerprintStrings(&h, fmt.Sprint(m.publishedCommits), fmt.Sprint(m.localDiverged), fmt.Sprint(m.remote))
 	for _, c := range m.detailView.commits {
 		fingerprintStrings(&h, c.SHA, c.Subject, c.Date)
 	}
@@ -668,21 +688,43 @@ func (m *Model) buildCommits() (string, int) {
 	if m.detailView.commitsRenderValid && m.detailView.commitsRenderKey == key {
 		return m.detailView.commitsRender, m.detailView.commitsRenderLine
 	}
-	lines := make([]string, 0, len(m.detailView.commits))
+	lines := make([]string, 0, len(m.detailView.commits)+4)
 	ciStates := m.commitCIStates()
+	published := m.publishedCommits
+	if m.remote {
+		published = len(m.detailView.commits)
+	}
+	if published > len(m.detailView.commits) {
+		published = len(m.detailView.commits)
+	}
+	selectedLine := 0
 	for i, c := range m.detailView.commits {
+		if i == 0 && published > 0 {
+			lines = append(lines, stBold.Render("Published on PR"))
+		}
+		if i == published && published < len(m.detailView.commits) {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			heading := "Local only"
+			if m.localDiverged {
+				heading = "Local history diverged from PR head"
+			}
+			lines = append(lines, stAttention.Render(heading))
+		}
 		icon, style := "●", stMuted
-		if m.cache.PR != nil {
+		if i < published && m.cache.PR != nil {
 			icon, _, style = commitCIStatus(ciStates[c.SHA])
 		}
 		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
 		if i == m.detailView.cursors[commitsTab] {
+			selectedLine = len(lines)
 			line = highlightSelectedBg(line, m.list.Width())
 		}
 		lines = append(lines, line)
 	}
 	out := strings.Join(lines, "\n")
-	m.detailView.commitsRender, m.detailView.commitsRenderLine = out, m.detailView.cursors[commitsTab]
+	m.detailView.commitsRender, m.detailView.commitsRenderLine = out, selectedLine
 	m.detailView.commitsRenderKey, m.detailView.commitsRenderValid = key, true
 	return out, m.detailView.commitsRenderLine
 }
@@ -789,8 +831,12 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 				paths = append(paths, file.OldPath)
 			}
 			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.detailView.diffBase, m.detailView.headRev, file.Status, file.OldPath, file.Path)
+			head := m.detailView.headRev
+			if !m.remote {
+				head = ""
+			}
 			d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) {
-				return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev, paths...)
+				return git.FileDiffRange(m.detailView.diffBase, head, paths...)
 			})
 			if loadErr != "" {
 				return detailContent{raw: stMuted.Render("(diff unavailable: " + loadErr + ")")}, nil
@@ -805,7 +851,11 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 		return detailContent{raw: stMuted.Render("(no changes in selected file)")}, nil
 	}
 	key := "range:" + m.detailView.diffBase + "..." + m.detailView.headRev
-	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.FileDiffRange(m.detailView.diffBase, m.detailView.headRev) })
+	head := m.detailView.headRev
+	if !m.remote {
+		head = ""
+	}
+	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.FileDiffRange(m.detailView.diffBase, head) })
 	if loadErr != "" {
 		return detailContent{raw: stMuted.Render("(diff unavailable: " + loadErr + ")")}, nil
 	}

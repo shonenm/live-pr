@@ -274,10 +274,10 @@ func TestDetailClickSelectsConversationFilesCommitsAndChecks(t *testing.T) {
 		t.Fatalf("conversation click after explorer: focus=%v cursor=%d", m.detailView.focus, m.detailView.cursors[conversationTab])
 	}
 
-	// Commits tab: row i is content line i.
+	// Commits tab includes a publication-section heading above its rows.
 	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
-	u, _ = m.Update(click(5, contentTop+1))
+	u, _ = m.Update(click(5, contentTop+2))
 	m = u.(Model)
 	if m.detailView.cursors[commitsTab] != 1 || m.detailView.focus != focusConversation {
 		t.Fatalf("commit click: cursor=%d focus=%v", m.detailView.cursors[commitsTab], m.detailView.focus)

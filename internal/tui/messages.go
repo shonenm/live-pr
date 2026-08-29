@@ -124,6 +124,9 @@ type baseResolved struct {
 	eventsOK                             bool
 	commits                              []git.Commit
 	files                                []git.ChangedFile
+	localHeadOID                         string
+	publishedCommits                     int
+	localDiverged                        bool
 	readiness                            git.MergeReadiness
 	readinessErr                         error
 	readinessOK                          bool
@@ -200,6 +203,9 @@ type localData struct {
 	commits           []git.Commit
 	files             []git.ChangedFile
 	stats             git.ChangeStats
+	localHeadOID      string
+	publishedCommits  int
+	localDiverged     bool
 	dirty             bool
 	incomplete        bool
 	conclusion        string
