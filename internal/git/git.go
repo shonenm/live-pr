@@ -70,6 +70,22 @@ func CurrentBranch() (string, error) {
 	return run("rev-parse", "--abbrev-ref", "HEAD")
 }
 
+// Revision resolves rev to its full object ID.
+func Revision(rev string) (string, error) { return run("rev-parse", "--verify", rev+"^{commit}") }
+
+// IsAncestor reports whether ancestor is reachable from descendant.
+func IsAncestor(ancestor, descendant string) (bool, error) {
+	cmd := exec.Command("git", "merge-base", "--is-ancestor", "--end-of-options", ancestor, descendant)
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("git merge-base --is-ancestor %s %s: %w", ancestor, descendant, err)
+	}
+	return true, nil
+}
+
 // Push pushes the branch to origin, setting upstream. A stalled SSH/HTTPS
 // transport must not hang the caller forever, so the push is bounded; the
 // limit is longer than FetchPull's because a push carries data up.
@@ -423,7 +439,7 @@ type ChangedFile struct {
 }
 
 // ChangedFilesRange returns changed paths in the given range. An empty head
-// compares the working tree against base.
+// compares the working tree against base and includes untracked files.
 func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 	rangeSpec := base
 	if head != "" {
@@ -462,6 +478,21 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 		}
 		file.Fingerprint = fileFingerprint(srcBlob, dstBlob, root, file.Path)
 		files = append(files, file)
+	}
+	if head == "" {
+		untracked, err := run("ls-files", "--others", "--exclude-standard", "-z")
+		if err != nil {
+			return nil, err
+		}
+		if root == "" {
+			root, _ = RepoRoot()
+		}
+		for _, path := range strings.Split(untracked, "\x00") {
+			if path == "" {
+				continue
+			}
+			files = append(files, ChangedFile{Status: "A", Path: path, Fingerprint: "untracked:" + workingTreeHash(filepath.Join(root, path))})
+		}
 	}
 	return files, nil
 }
@@ -520,13 +551,50 @@ func workingTreeHash(path string) string {
 }
 
 // FileDiffRange returns the colorized base...head patch for selected paths.
-// An empty patch with a nil error means the range really has no changes.
+// An empty head compares through the working tree and includes selected
+// untracked files without changing the index.
 func FileDiffRange(base, head string, paths ...string) (string, error) {
-	args := []string{"diff", "--color=always", "--end-of-options", base + "..." + head, "--"}
+	rangeSpec := base
+	if head != "" {
+		rangeSpec = base + "..." + head
+	}
+	args := []string{"diff", "--color=always", "--end-of-options", rangeSpec, "--"}
 	args = append(args, paths...)
 	out, err := run(args...)
 	if err != nil {
 		return "", err
+	}
+	if head == "" {
+		untracked, _ := run("ls-files", "--others", "--exclude-standard", "-z")
+		untrackedSet := map[string]bool{}
+		for _, path := range strings.Split(untracked, "\x00") {
+			untrackedSet[path] = path != ""
+		}
+		selected := paths
+		if len(selected) == 0 {
+			selected = make([]string, 0, len(untrackedSet))
+			for path := range untrackedSet {
+				selected = append(selected, path)
+			}
+			sort.Strings(selected)
+		}
+		for _, path := range selected {
+			if !untrackedSet[path] {
+				continue
+			}
+			cmd := exec.Command("git", "diff", "--no-index", "--color=always", "--", os.DevNull, path)
+			data, diffErr := cmd.Output()
+			var exitErr *exec.ExitError
+			if diffErr != nil && !(errors.As(diffErr, &exitErr) && exitErr.ExitCode() == 1) {
+				continue
+			}
+			if len(data) > 0 {
+				if out != "" {
+					out += "\n"
+				}
+				out += strings.TrimSpace(string(data))
+			}
+		}
 	}
 	return truncate(out, 800), nil
 }

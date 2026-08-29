@@ -32,7 +32,9 @@ a real pull request.
 - Comment from the TUI — post, edit, and delete GitHub conversation comments; edit the PR description
 - Review from the TUI — inline comments plus a verdict (comment / approve / request changes) submitted together
 - Pluggable review pane — embedded Neovim CodeDiff, `delta`, or built-in git diff; switch with `--diff`
-- Live CI — checks with per-run durations, refreshed automatically while pending
+- Local-first review — checked-out PRs include unpushed commits and staged, unstaged, and untracked files
+- LOCAL / LIVE / REMOTE status line — distinguishes local work, a clean checkout matching its PR, and fetched PRs
+- Live PR monitoring — LIVE checkouts poll lightweight head, state, draft, and CI metadata without replacing the local review
 - PR export — `live-pr pr publish` creates or updates the GitHub PR with the timeline as its body
 - Mouse support — wheel scrolling per pane, click to select or open a PR, view tabs, and popup options
 

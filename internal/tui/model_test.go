@@ -51,15 +51,47 @@ func TestReviewRangesUseLocalMergeBaseAndRemoteHistoricalBase(t *testing.T) {
 	}
 }
 
-func TestPublishedCheckoutUsesGitHubHeadNotWorktree(t *testing.T) {
+func TestPublishedCheckoutStillUsesLatestLocalWorktree(t *testing.T) {
 	pr := &gh.PR{Number: 12, BaseRefOID: "baseoid", HeadRefOID: "pushedhead"}
 	diffBase, headRev, reviewRange := localReviewRange("main", pr, "HEAD", false)
-	if diffBase != "baseoid" || headRev != "pushedhead" || reviewRange != "baseoid...pushedhead" {
-		t.Fatalf("published range = %q %q %q", diffBase, headRev, reviewRange)
+	if headRev != "HEAD" || reviewRange != diffBase {
+		t.Fatalf("published local range = %q %q %q", diffBase, headRev, reviewRange)
 	}
 	diffBase, headRev, reviewRange = localReviewRange("main", nil, "HEAD", false)
 	if headRev != "HEAD" || reviewRange != diffBase {
 		t.Fatalf("unpublished local range = %q %q %q", diffBase, headRev, reviewRange)
+	}
+}
+
+func TestDetailModeLocalLiveRemote(t *testing.T) {
+	m := testModel()
+	m.screen = detailScreen
+	m.localHeadOID = "local"
+	if got := m.detailMode(); got != modeLocal {
+		t.Fatalf("PR-less detail mode = %v", got)
+	}
+	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "local"}
+	if got := m.detailMode(); got != modeLive {
+		t.Fatalf("matching clean detail mode = %v", got)
+	}
+	m.workingTreeDirty = true
+	if got := m.detailMode(); got != modeLocal {
+		t.Fatalf("dirty detail mode = %v", got)
+	}
+	m.workingTreeDirty, m.remote = false, true
+	if got := m.detailMode(); got != modeRemote {
+		t.Fatalf("remote detail mode = %v", got)
+	}
+}
+
+func TestFooterAlwaysShowsDataAndUIModes(t *testing.T) {
+	m := testModel()
+	m.screen, m.ready = detailScreen, true
+	m.localHeadOID = "head"
+	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "head"}
+	footer := ansi.Strip(m.renderFooter())
+	if !strings.Contains(footer, "LIVE") || !strings.Contains(footer, "CONV") {
+		t.Fatalf("footer modes missing: %q", footer)
 	}
 }
 

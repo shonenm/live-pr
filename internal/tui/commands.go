@@ -76,18 +76,25 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		return localData{}, err
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	var commits []git.Commit
-	var files []git.ChangedFile
-	var stats git.ChangeStats
-	var commitErr, fileErr error
-	if headRev == "HEAD" {
-		commits, commitErr = git.Commits(diffBase)
-		files, fileErr = git.ChangedFilesRange(diffBase, "")
-		stats, _ = git.DiffStats(diffBase, "")
-	} else {
-		commits, commitErr = git.CommitsRange(diffBase, headRev)
-		files, fileErr = git.ChangedFilesRange(diffBase, headRev)
-		stats, _ = git.DiffStats(diffBase, headRev)
+	commits, commitErr := git.Commits(diffBase)
+	files, fileErr := git.ChangedFilesRange(diffBase, "")
+	stats, _ := git.DiffStats(diffBase, "")
+	if len(files) > stats.Files {
+		stats.Files = len(files)
+	}
+	localHeadOID, headErr := git.Revision("HEAD")
+	publishedCommits, localDiverged := 0, false
+	if cache.PR != nil && cache.PR.HeadRefOID != "" {
+		if ancestor, err := git.IsAncestor(cache.PR.HeadRefOID, "HEAD"); err == nil && ancestor {
+			if localOnly, err := git.CommitsRange(cache.PR.HeadRefOID, "HEAD"); err == nil {
+				publishedCommits = len(commits) - len(localOnly)
+				if publishedCommits < 0 {
+					publishedCommits = 0
+				}
+			}
+		} else if err == nil {
+			localDiverged = true
+		}
 	}
 	dirty, dirtyErr := git.HasUncommittedChanges()
 	conclusion, _ := os.ReadFile(st.Conclusion())
@@ -102,8 +109,11 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		commits:           commits,
 		files:             files,
 		stats:             stats,
+		localHeadOID:      localHeadOID,
+		publishedCommits:  publishedCommits,
+		localDiverged:     localDiverged,
 		dirty:             dirty,
-		incomplete:        commitErr != nil || fileErr != nil || dirtyErr != nil,
+		incomplete:        commitErr != nil || fileErr != nil || dirtyErr != nil || headErr != nil,
 		conclusion:        string(conclusion),
 		mergeReadiness:    mergeReadiness,
 		mergeReadinessErr: mergeReadinessErr,
@@ -166,7 +176,7 @@ func scheduleCIPoll(generation uint64, number, failures int) tea.Cmd {
 }
 
 func (m Model) nextCIPoll() tea.Cmd {
-	if m.screen == detailScreen && m.cache.PR != nil && pollableCI(*m.cache.PR) {
+	if m.screen == detailScreen && m.cache.PR != nil && m.detailMode() == modeLive && (m.cache.PR.State == "" || strings.EqualFold(m.cache.PR.State, "OPEN")) {
 		return scheduleCIPoll(m.targetGeneration, m.cache.PR.Number, m.ciPollFailures)
 	}
 	return nil

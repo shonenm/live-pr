@@ -298,8 +298,11 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 		t.Fatalf("worktree stats = %#v, err=%v", worktree, err)
 	}
 	worktreeFiles, err := ChangedFilesRange("main", "")
-	if err != nil || len(worktreeFiles) != 2 {
+	if err != nil || len(worktreeFiles) != 3 || worktreeFiles[2].Path != "uncommitted.txt" || worktreeFiles[2].Status != "A" {
 		t.Fatalf("worktree files = %#v, err=%v", worktreeFiles, err)
+	}
+	if diff, err := FileDiffRange("main", "", "uncommitted.txt"); err != nil || !strings.Contains(diff, "dirty") {
+		t.Fatalf("untracked diff = %q, err=%v", diff, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("after\n"), 0o644); err != nil {
 		t.Fatal(err)
