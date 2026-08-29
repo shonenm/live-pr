@@ -69,12 +69,12 @@ func TestFetchPullLeavesCheckoutUntouched(t *testing.T) {
 	beforeStatus := runIn(clone, "status", "--porcelain")
 	t.Chdir(clone)
 
-	ref, err := FetchPull(7, "main", oid)
+	ref, fetchedOID, err := FetchPull(7, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ref != "refs/live-pr/pulls/7/head" || runIn(clone, "rev-parse", ref) != oid {
-		t.Fatalf("fetched ref=%q", ref)
+	if ref != "refs/live-pr/pulls/7/head" || fetchedOID != oid || runIn(clone, "rev-parse", ref) != oid {
+		t.Fatalf("fetched ref=%q oid=%q", ref, fetchedOID)
 	}
 	if got := runIn(clone, "branch", "--show-current"); got != beforeBranch {
 		t.Fatalf("branch changed: %q", got)
