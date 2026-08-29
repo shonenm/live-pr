@@ -330,19 +330,19 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 
 func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
 	return func() tea.Msg {
-		var headRef string
+		var headRef, headOID string
 		var comments []gh.Comment
 		var activities []gh.Activity
 		var reviews []gh.Review
 		var reviewComments []gh.ReviewThreadComment
 		var refErr, previewErr, commentsErr, activitiesErr, reviewsErr, reviewCommentsErr, readinessErr error
 		var readiness git.MergeReadiness
-		number, base, headOID := pr.Number, pr.BaseRefName, pr.HeadRefOID
+		number, base := pr.Number, pr.BaseRefName
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			headRef, refErr = git.FetchPull(number, base, headOID)
+			headRef, headOID, refErr = git.FetchPull(number, base)
 		}()
 		go func() {
 			defer wg.Done()
@@ -356,6 +356,9 @@ func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRD
 			}
 		}()
 		wg.Wait()
+		if refErr == nil {
+			pr.HeadRefOID = headOID
+		}
 		// The range scans run here so handleRemoteLoaded stays subprocess-free
 		// on the Update goroutine.
 		var resolvedBase, diffBase string

@@ -551,15 +551,15 @@ func truncate(s string, maxLines int) string {
 
 // FetchPull fetches a GitHub pull ref and its base without changing HEAD,
 // the index, or the worktree. It returns the namespaced local head ref.
-func FetchPull(number int, base, expectedOID string) (string, error) {
+func FetchPull(number int, base string) (string, string, error) {
 	if done := debugtime.Start("git fetch pull"); done != nil {
 		defer done()
 	}
 	if number <= 0 {
-		return "", fmt.Errorf("invalid pull request number %d", number)
+		return "", "", fmt.Errorf("invalid pull request number %d", number)
 	}
 	if _, err := run("check-ref-format", "--branch", base); err != nil {
-		return "", fmt.Errorf("invalid pull request base %q", base)
+		return "", "", fmt.Errorf("invalid pull request base %q", base)
 	}
 	headRef := fmt.Sprintf("refs/live-pr/pulls/%d/head", number)
 	baseSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", base, base)
@@ -568,16 +568,13 @@ func FetchPull(number int, base, expectedOID string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("git fetch PR #%d: %w: %s", number, err, strings.TrimSpace(string(out)))
+		return "", "", fmt.Errorf("git fetch PR #%d: %w: %s", number, err, strings.TrimSpace(string(out)))
 	}
 	oid, err := run("rev-parse", headRef)
 	if err != nil {
-		return "", fmt.Errorf("resolve fetched PR #%d: %w", number, err)
+		return "", "", fmt.Errorf("resolve fetched PR #%d: %w", number, err)
 	}
-	if expectedOID != "" && oid != expectedOID {
-		return "", fmt.Errorf("PR #%d moved during fetch (expected %s, got %s)", number, expectedOID, oid)
-	}
-	return headRef, nil
+	return headRef, oid, nil
 }
 
 // CheckoutPullHead checks out the head branch of a same-repository pull
