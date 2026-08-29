@@ -296,24 +296,6 @@ func (m Model) renderHeader() string {
 	return m.withLogo(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
-func (m Model) footerMode() string {
-	if m.screen == prListScreen {
-		return "PRS"
-	}
-	switch {
-	case m.detailView.focus != focusConversation:
-		return "REVIEW"
-	case m.detailView.active == commitsTab:
-		return "COMMITS"
-	case m.detailView.active == conflictsTab:
-		return "CONFLICTS"
-	case m.detailView.active == checksTab:
-		return "CHECKS"
-	default:
-		return "CONV"
-	}
-}
-
 func (m Model) dataModeLabel() string {
 	if m.screen == prListScreen {
 		return "REMOTE"
@@ -329,7 +311,7 @@ func (m Model) dataModeLabel() string {
 }
 
 func (m Model) renderFooter() string {
-	return footerSegment(m.dataModeLabel()) + " " + footerSegment(m.footerMode()) + " " + m.footerContent()
+	return footerSegment(m.dataModeLabel()) + " " + m.footerContent()
 }
 
 func (m Model) footerContent() string {
