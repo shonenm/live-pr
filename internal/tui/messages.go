@@ -59,6 +59,20 @@ type remoteLoaded struct {
 	readinessErr      error
 }
 
+type localPollTick struct{ generation uint64 }
+
+type localStatePolled struct {
+	generation uint64
+	state      git.LocalState
+	err        error
+}
+
+type localBranchReloaded struct {
+	generation uint64
+	next       *Model
+	err        error
+}
+
 type ciPollTick struct {
 	generation uint64
 	number     int
@@ -204,6 +218,7 @@ type localData struct {
 	files             []git.ChangedFile
 	stats             git.ChangeStats
 	localHeadOID      string
+	localFingerprint  string
 	publishedCommits  int
 	localDiverged     bool
 	dirty             bool

@@ -83,6 +83,7 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		stats.Files = len(files)
 	}
 	localHeadOID, headErr := git.Revision("HEAD")
+	localState, stateErr := git.CurrentLocalState()
 	publishedCommits, localDiverged := 0, false
 	if cache.PR != nil && cache.PR.HeadRefOID != "" {
 		if ancestor, err := git.IsAncestor(cache.PR.HeadRefOID, "HEAD"); err == nil && ancestor {
@@ -110,10 +111,11 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		files:             files,
 		stats:             stats,
 		localHeadOID:      localHeadOID,
+		localFingerprint:  localState.Fingerprint,
 		publishedCommits:  publishedCommits,
 		localDiverged:     localDiverged,
 		dirty:             dirty,
-		incomplete:        commitErr != nil || fileErr != nil || dirtyErr != nil || headErr != nil,
+		incomplete:        commitErr != nil || fileErr != nil || dirtyErr != nil || headErr != nil || stateErr != nil,
 		conclusion:        string(conclusion),
 		mergeReadiness:    mergeReadiness,
 		mergeReadinessErr: mergeReadinessErr,
@@ -163,6 +165,26 @@ func fetchGitHub(client githubClient, head string, number int, generation uint64
 		detail := client.LoadPRDetail(number, prev)
 		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, reviews: detail.Reviews, reviewComments: detail.ReviewComments, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr, reviewsErr: detail.ReviewsErr, reviewCommentsErr: detail.ReviewCommentsErr}
 	}
+}
+
+const localPollInterval = 2 * time.Second
+
+func scheduleLocalPoll(generation uint64) tea.Cmd {
+	return tea.Tick(localPollInterval, func(time.Time) tea.Msg { return localPollTick{generation: generation} })
+}
+
+func pollLocalState(generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		state, err := git.CurrentLocalState()
+		return localStatePolled{generation: generation, state: state, err: err}
+	}
+}
+
+func (m Model) nextLocalPoll() tea.Cmd {
+	if m.screen == detailScreen && !m.remote {
+		return scheduleLocalPoll(m.targetGeneration)
+	}
+	return nil
 }
 
 func scheduleCIPoll(generation uint64, number, failures int) tea.Cmd {
