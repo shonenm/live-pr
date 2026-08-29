@@ -160,7 +160,7 @@ func fetchGitHub(client githubClient, head string, number int, generation uint64
 			}
 			number = pr.Number
 		}
-		detail := client.LoadPRDetail(number, prev)
+		detail := client.LoadLocalPRDetail(number, prev)
 		return githubRefreshed{generation: generation, pr: detail.PR, comments: detail.Comments, activities: detail.Activities, reviews: detail.Reviews, reviewComments: detail.ReviewComments, err: detail.PreviewErr, commentsErr: detail.CommentsErr, activitiesErr: detail.ActivitiesErr, reviewsErr: detail.ReviewsErr, reviewCommentsErr: detail.ReviewCommentsErr}
 	}
 }

@@ -230,6 +230,35 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	}
 }
 
+func TestFindLocalPreviewOmitsGitDerivedFields(t *testing.T) {
+	var previewFields, graphqlQuery string
+	client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
+		if args[0] == "pr" {
+			previewFields = args[len(args)-1]
+			return []byte(`{"number":12,"title":"local","labels":[{"name":"bug"}],"assignees":[{"login":"alice"}]}`), nil
+		}
+		graphqlQuery = args[len(args)-1]
+		return []byte(`{"data":{"repository":{"pullRequest":{"closingIssuesReferences":{"nodes":[]},"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":{"state":"SUCCESS"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
+	}}
+	pr, err := client.FindLocalPreview(12)
+	if err != nil || pr.Title != "local" || len(pr.Labels) != 1 || len(pr.Assignees) != 1 || len(pr.Commits) != 1 || pr.Commits[0].CheckRollupState != "SUCCESS" {
+		t.Fatalf("local preview = %#v err=%v", pr, err)
+	}
+	for _, omitted := range []string{"additions", "deletions", "changedFiles"} {
+		if strings.Contains(previewFields, omitted) {
+			t.Fatalf("local preview requested git-derived %s: %q", omitted, previewFields)
+		}
+	}
+	for _, remoteCommitField := range []string{"committedDate", "messageHeadline"} {
+		if strings.Contains(graphqlQuery, remoteCommitField) {
+			t.Fatalf("local commit rollup requested %s: %q", remoteCommitField, graphqlQuery)
+		}
+	}
+	if !strings.Contains(graphqlQuery, "statusCheckRollup") || !strings.Contains(graphqlQuery, "closingIssuesReferences") {
+		t.Fatalf("local preview dropped remote-only metadata: %q", graphqlQuery)
+	}
+}
+
 func TestCommitStatusRollupsPaginates(t *testing.T) {
 	calls := 0
 	client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {

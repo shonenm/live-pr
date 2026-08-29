@@ -247,6 +247,7 @@ type githubClient interface {
 	FindPreview(number int) (gh.PR, error)
 	FindChecks(number int) (gh.PR, error)
 	LoadPRDetail(number int, prev gh.PRDetail) gh.PRDetail
+	LoadLocalPRDetail(number int, prev gh.PRDetail) gh.PRDetail
 	Merge(number int, headOID string, method gh.MergeMethod) error
 	Checkout(number int) error
 	Close(number int) error
