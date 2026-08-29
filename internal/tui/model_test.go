@@ -84,6 +84,22 @@ func TestDetailModeLocalLiveRemote(t *testing.T) {
 	}
 }
 
+func TestDataModesUseDistinctSemanticColors(t *testing.T) {
+	m := testModel()
+	m.screen, m.localHeadOID = detailScreen, "head"
+	if got := m.dataModeColor(); got != cAttention {
+		t.Fatalf("LOCAL color = %q", got)
+	}
+	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "head"}
+	if got := m.dataModeColor(); got != cGreenF {
+		t.Fatalf("LIVE color = %q", got)
+	}
+	m.remote = true
+	if got := m.dataModeColor(); got != cAccent {
+		t.Fatalf("REMOTE color = %q", got)
+	}
+}
+
 func TestFooterShowsOnlyDataMode(t *testing.T) {
 	m := testModel()
 	m.screen, m.ready = detailScreen, true
