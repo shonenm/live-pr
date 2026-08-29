@@ -18,6 +18,7 @@ type fakeGH struct {
 	findPreview        func(number int) (gh.PR, error)
 	findChecks         func(number int) (gh.PR, error)
 	loadPRDetail       func(number int, prev gh.PRDetail) gh.PRDetail
+	loadLocalPRDetail  func(number int, prev gh.PRDetail) gh.PRDetail
 	merge              func(number int, headOID string, method gh.MergeMethod) error
 	checkout           func(number int) error
 	close              func(number int) error
@@ -58,6 +59,16 @@ func (f *fakeGH) FindChecks(number int) (gh.PR, error) {
 }
 
 func (f *fakeGH) LoadPRDetail(number int, prev gh.PRDetail) gh.PRDetail {
+	if f.loadPRDetail != nil {
+		return f.loadPRDetail(number, prev)
+	}
+	return gh.PRDetail{}
+}
+
+func (f *fakeGH) LoadLocalPRDetail(number int, prev gh.PRDetail) gh.PRDetail {
+	if f.loadLocalPRDetail != nil {
+		return f.loadLocalPRDetail(number, prev)
+	}
 	if f.loadPRDetail != nil {
 		return f.loadPRDetail(number, prev)
 	}
@@ -347,20 +358,27 @@ func TestCIPollTickDispatchesPollForCurrentPR(t *testing.T) {
 	}
 }
 
-func TestFetchGitHubPassesCachedDetail(t *testing.T) {
+func TestFetchGitHubUsesLocalMetadataAndPassesCachedDetail(t *testing.T) {
 	var got gh.PRDetail
-	client := &fakeGH{loadPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
-		got = prev
-		return gh.PRDetail{}
-	}}
+	remoteCalled := false
+	client := &fakeGH{
+		loadLocalPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
+			got = prev
+			return gh.PRDetail{}
+		},
+		loadPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
+			remoteCalled = true
+			return gh.PRDetail{}
+		},
+	}
 	m := testModel()
 	m.client = client
 	pr := gh.PR{Number: 15}
 	m.cache.PR = &pr
 	m.cache.Comments = []gh.Comment{{ID: 7, UpdatedAt: "2026-08-01T10:00:00Z"}}
 	fetchGitHub(m.client, "feature", 15, 3, m.cachedDetail())()
-	if got.PR.Number != 15 || len(got.Comments) != 1 || got.Comments[0].ID != 7 {
-		t.Fatalf("cached detail did not reach LoadPRDetail: %#v", got)
+	if remoteCalled || got.PR.Number != 15 || len(got.Comments) != 1 || got.Comments[0].ID != 7 {
+		t.Fatalf("local detail route = remote:%v cached:%#v", remoteCalled, got)
 	}
 }
 

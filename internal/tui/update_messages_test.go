@@ -446,6 +446,19 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	}
 }
 
+func TestLocalRefreshKeepsGitMetadataAuthoritative(t *testing.T) {
+	m := testModel()
+	m.localStats = git.ChangeStats{Files: 3, Additions: 12, Deletions: 4}
+	m.detailView.commits = []git.Commit{{SHA: "abc1234", Date: "2026-08-29T10:00", Subject: "local subject"}}
+	pr := gh.PR{Number: 9, HeadRefName: m.currentBranch, Additions: 999, Deletions: 999, ChangedFiles: 999,
+		Commits: []gh.PRCommit{{OID: "abc123456789", CommittedDate: "remote", MessageHeadline: "remote subject", CheckRollupState: "SUCCESS"}}}
+	u, _ := m.Update(githubRefreshed{generation: m.targetGeneration, pr: pr})
+	got := u.(Model).cache.PR
+	if got == nil || got.Additions != 12 || got.Deletions != 4 || got.ChangedFiles != 3 || got.CommitCount != 1 || got.Commits[0].CommittedDate != "2026-08-29T10:00" || got.Commits[0].MessageHeadline != "local subject" || got.Commits[0].CheckRollupState != "SUCCESS" {
+		t.Fatalf("local Git metadata was not authoritative: %#v", got)
+	}
+}
+
 func TestLocalRefreshRejectsSameNamedFork(t *testing.T) {
 	m := testModel()
 	m.currentBranch = "feature"

@@ -471,9 +471,17 @@ func (c Client) FindChecks(number int) (PR, error) {
 	return PR{Number: result.Number, State: result.State, IsDraft: result.IsDraft, HeadRefOID: result.HeadRefOID, Checks: result.Checks, PreviewLoaded: true}, nil
 }
 
-// FindPreview loads the expensive preview fields for one PR only.
-func (c Client) FindPreview(number int) (PR, error) {
-	const fields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup"
+// FindPreview loads the expensive preview fields for one remote PR.
+func (c Client) FindPreview(number int) (PR, error) { return c.findPreview(number, false) }
+
+// FindLocalPreview omits diff statistics supplied authoritatively by local Git.
+func (c Client) FindLocalPreview(number int) (PR, error) { return c.findPreview(number, true) }
+
+func (c Client) findPreview(number int, local bool) (PR, error) {
+	fields := "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup"
+	if !local {
+		fields += ",additions,deletions,changedFiles"
+	}
 	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
 	if err != nil {
 		return PR{}, commandError("gh pr view", out, err)
@@ -486,7 +494,7 @@ func (c Client) FindPreview(number int) (PR, error) {
 	// A failed rollup fetch only costs the per-commit CI states and the
 	// linked issues; discarding the whole preview over it left the PR with
 	// no metadata at all.
-	if commits, issues, err := c.commitStatusRollups(number); err == nil {
+	if commits, issues, err := c.loadCommitStatusRollups(number, local); err == nil {
 		preview.CommitCount, preview.Commits = len(commits), commits
 		preview.ClosingIssues = issues
 	}
@@ -499,6 +507,10 @@ func (c Client) FindPreview(number int) (PR, error) {
 // preview's per-PR GraphQL round trip, and gh pr view --json cannot return
 // the issue titles.
 func (c Client) commitStatusRollups(number int) ([]PRCommit, []IssueRef, error) {
+	return c.loadCommitStatusRollups(number, false)
+}
+
+func (c Client) loadCommitStatusRollups(number int, local bool) ([]PRCommit, []IssueRef, error) {
 	repoName, err := c.repositoryName()
 	if err != nil {
 		return nil, nil, err
@@ -507,7 +519,10 @@ func (c Client) commitStatusRollups(number int) ([]PRCommit, []IssueRef, error) 
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid repository %q", repoName)
 	}
-	const query = `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:10){nodes{number title}} commits(first:100,after:$after){nodes{commit{oid committedDate messageHeadline statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
+	query := `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:10){nodes{number title}} commits(first:100,after:$after){nodes{commit{oid statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
+	if !local {
+		query = `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:10){nodes{number title}} commits(first:100,after:$after){nodes{commit{oid committedDate messageHeadline statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
+	}
 	var commits []PRCommit
 	var issues []IssueRef
 	after := ""
@@ -692,6 +707,16 @@ func (c Client) IssueActivities(number int) ([]Activity, error) {
 // are fetched and merged in by ID. An empty prev, a number mismatch, or any
 // doubt about the cache loads everything, exactly like a first load.
 func (c Client) LoadPRDetail(number int, prev PRDetail) PRDetail {
+	return c.loadPRDetail(number, prev, false)
+}
+
+// LoadLocalPRDetail keeps remote conversation/review metadata fresh while
+// leaving diff, file, and commit content to the checked-out repository.
+func (c Client) LoadLocalPRDetail(number int, prev PRDetail) PRDetail {
+	return c.loadPRDetail(number, prev, true)
+}
+
+func (c Client) loadPRDetail(number int, prev PRDetail, local bool) PRDetail {
 	since, incremental := "", false
 	if number != 0 && prev.PR.Number == number && len(prev.Comments) > 0 {
 		since, incremental = latestCommentUpdate(prev.Comments)
@@ -702,7 +727,11 @@ func (c Client) LoadPRDetail(number int, prev PRDetail) PRDetail {
 	wg.Add(4)
 	go func() {
 		defer wg.Done()
-		detail.PR, detail.PreviewErr = c.FindPreview(number)
+		if local {
+			detail.PR, detail.PreviewErr = c.FindLocalPreview(number)
+		} else {
+			detail.PR, detail.PreviewErr = c.FindPreview(number)
+		}
 	}()
 	go func() {
 		defer wg.Done()
