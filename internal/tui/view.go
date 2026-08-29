@@ -310,8 +310,22 @@ func (m Model) dataModeLabel() string {
 	}
 }
 
+func (m Model) dataModeColor() string {
+	if m.screen == prListScreen {
+		return cAccent
+	}
+	switch m.detailMode() {
+	case modeLive:
+		return cGreenF
+	case modeRemote:
+		return cAccent
+	default:
+		return cAttention
+	}
+}
+
 func (m Model) renderFooter() string {
-	return footerSegment(m.dataModeLabel()) + " " + m.footerContent()
+	return footerSegment(m.dataModeLabel(), m.dataModeColor()) + " " + m.footerContent()
 }
 
 func (m Model) footerContent() string {

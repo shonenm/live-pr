@@ -139,10 +139,10 @@ func renderPane(title, content string, width, height int, focused bool) string {
 	return strings.Join(rows, "\n")
 }
 
-// footerSegment is the lualine-style mode block naming the focused pane.
-func footerSegment(label string) string {
+// footerSegment is the lualine-style mode block naming the current data source.
+func footerSegment(label, color string) string {
 	return lipgloss.NewStyle().
-		Background(lipgloss.Color(cAccent)).Foreground(lipgloss.Color(emphasisInk(cAccent))).
+		Background(lipgloss.Color(color)).Foreground(lipgloss.Color(emphasisInk(color))).
 		Bold(true).Padding(0, 1).Render(label)
 }
 
