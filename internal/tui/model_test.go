@@ -84,14 +84,14 @@ func TestDetailModeLocalLiveRemote(t *testing.T) {
 	}
 }
 
-func TestFooterAlwaysShowsDataAndUIModes(t *testing.T) {
+func TestFooterShowsOnlyDataMode(t *testing.T) {
 	m := testModel()
 	m.screen, m.ready = detailScreen, true
 	m.localHeadOID = "head"
 	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "head"}
 	footer := ansi.Strip(m.renderFooter())
-	if !strings.Contains(footer, "LIVE") || !strings.Contains(footer, "CONV") {
-		t.Fatalf("footer modes missing: %q", footer)
+	if !strings.Contains(footer, "LIVE") || strings.Contains(footer, "CONV") {
+		t.Fatalf("footer data mode = %q", footer)
 	}
 }
 
