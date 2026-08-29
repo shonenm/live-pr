@@ -388,16 +388,83 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.err != nil {
-		m.refreshing = false
+		m.refreshing, m.localReloading = false, false
 		m.status = msg.err.Error()
-		return m, nil
+		return m, m.nextLocalPoll()
 	}
+	reloading := m.localReloading
+	active, cursors, focus := m.detailView.active, m.detailView.cursors, m.detailView.focus
+	fileCursor, reviewSHA := m.detailView.fileCursor, m.detailView.reviewSHA
+	listOffset, explorerOffset, detailOffset := m.list.YOffset(), m.explorer.YOffset(), m.detail.YOffset()
 	m.applyLocal(msg.st, msg.data)
-	cmds := []tea.Cmd{fetchGitHub(m.client, m.currentBranch, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()), m.sync()}
+	m.localReloading = false
+	if reloading {
+		m.refreshing = false
+		m.detailView.active, m.detailView.cursors, m.detailView.focus = active, cursors, focus
+		m.detailView.fileCursor = min(fileCursor, max(0, len(m.detailView.files)-1))
+		m.detailView.reviewSHA = reviewSHA
+		m.list.SetYOffset(listOffset)
+		m.explorer.SetYOffset(explorerOffset)
+		m.detail.SetYOffset(detailOffset)
+		m.notice = "Local changes updated"
+		cmds := []tea.Cmd{m.sync(), m.nextLocalPoll()}
+		if m.diffTerminal != nil {
+			cmds = append(cmds, m.diffTerminal.Init())
+		}
+		return m, tea.Batch(cmds...)
+	}
+	cmds := []tea.Cmd{fetchGitHub(m.client, m.currentBranch, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()), m.sync(), m.nextLocalPoll()}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
+	if msg.generation != m.targetGeneration || m.screen != detailScreen || m.remote {
+		return m, nil
+	}
+	if msg.err != nil {
+		return m, m.nextLocalPoll()
+	}
+	if msg.state.Branch != m.currentBranch {
+		m.refreshing = true
+		return m, tea.Batch(rebuildForLocalBranchChange(m.version, msg.generation), m.startSpinner())
+	}
+	if msg.state.Fingerprint == m.localFingerprint {
+		return m, m.nextLocalPoll()
+	}
+	m.localReloading = true
+	st := store.ForBranch(m.root, m.currentBranch)
+	return m, tea.Batch(m.startLocalLoad(st, m.cache, m.cache.PR), m.startSpinner())
+}
+
+func rebuildForLocalBranchChange(version string, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		next, err := New(version)
+		if err != nil {
+			return localBranchReloaded{generation: generation, err: err}
+		}
+		return localBranchReloaded{generation: generation, next: &next}
+	}
+}
+
+func (m Model) handleLocalBranchReloaded(msg localBranchReloaded) (Model, tea.Cmd) {
+	if msg.generation != m.targetGeneration {
+		return m, nil
+	}
+	if msg.err != nil {
+		m.refreshing = false
+		m.status = "branch reload: " + msg.err.Error()
+		return m, m.nextLocalPoll()
+	}
+	m.close()
+	next := *msg.next
+	next.w, next.h = m.w, m.h
+	next.advanceAsyncGenerations(m)
+	next.notice = "Checked-out branch changed"
+	next.layout()
+	return next, tea.Batch(next.Init(), next.sync())
 }
 
 func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
