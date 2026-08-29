@@ -32,6 +32,14 @@ type prView int
 
 type prListState uint8
 
+type detailMode uint8
+
+const (
+	modeLocal detailMode = iota
+	modeLive
+	modeRemote
+)
+
 const (
 	openPRListState prListState = iota
 	closedPRListState
@@ -289,6 +297,9 @@ type Model struct {
 	localTitle        string
 	localStats        git.ChangeStats
 	localCommitCount  int
+	localHeadOID      string
+	publishedCommits  int
+	localDiverged     bool
 	workingTreeDirty  bool
 	autoOpenCurrent   bool
 	refreshing        bool
@@ -488,6 +499,16 @@ func (m Model) isCurrentTargetPR(pr gh.PR) bool {
 	return true
 }
 
+func (m Model) detailMode() detailMode {
+	if m.remote {
+		return modeRemote
+	}
+	if m.cache.PR != nil && m.cache.PR.HeadRefOID != "" && m.localHeadOID == m.cache.PR.HeadRefOID && !m.workingTreeDirty {
+		return modeLive
+	}
+	return modeLocal
+}
+
 func (m Model) currentPRNumber() int {
 	if m.cache.PR != nil {
 		return m.cache.PR.Number
@@ -547,13 +568,16 @@ func publishedReviewHead(pr *gh.PR) string {
 }
 
 func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (diffBase, headRev, reviewRange string) {
-	diffBase = localReviewBase(base, pr)
-	if head := publishedReviewHead(pr); head != "" {
-		return remoteReviewBase(*pr), head, remoteReviewBase(*pr) + "..." + head
-	}
 	if remote {
+		diffBase = localReviewBase(base, pr)
+		if head := publishedReviewHead(pr); head != "" {
+			return remoteReviewBase(*pr), head, remoteReviewBase(*pr) + "..." + head
+		}
 		return diffBase, currentHead, diffBase + "..." + currentHead
 	}
+	// The checked-out branch is always reviewed through its working tree.
+	// The PR head is a publication boundary, not the end of the local diff.
+	diffBase = localReviewBase(base, pr)
 	return diffBase, "HEAD", diffBase
 }
 
@@ -584,6 +608,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	}
 	m.localAvailable, m.localTitle = cache.PR == nil, m.detailView.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = data.stats, len(data.commits), data.dirty
+	m.localHeadOID, m.publishedCommits, m.localDiverged = data.localHeadOID, data.publishedCommits, data.localDiverged
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
 	m.detailView.base, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, m.detailView.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange
 	m.detailView.events, m.detailView.files, m.detailView.commits = data.events, data.files, data.commits

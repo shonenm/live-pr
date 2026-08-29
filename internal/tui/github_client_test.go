@@ -332,7 +332,8 @@ func TestCIPollTickDispatchesPollForCurrentPR(t *testing.T) {
 	}}
 	m.screen = detailScreen
 	m.targetGeneration = 8
-	m.cache.PR = &gh.PR{Number: 21, State: "OPEN", CheckRollupState: "PENDING"}
+	m.localHeadOID = "head"
+	m.cache.PR = &gh.PR{Number: 21, State: "OPEN", HeadRefOID: "head", CheckRollupState: "PENDING"}
 	updated, cmd := m.Update(ciPollTick{generation: 8, number: 21})
 	if cmd == nil {
 		t.Fatal("a live tick must dispatch a poll")

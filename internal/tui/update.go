@@ -160,7 +160,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.handleBaseResolved(msg)
 		return next, cmd
 	case ciPollTick:
-		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && pollableCI(*m.cache.PR) {
+		if m.ciPollTargetsCurrentPR(msg.generation) && !m.refreshing && m.cache.PR.Number == msg.number && m.detailMode() == modeLive && (m.cache.PR.State == "" || strings.EqualFold(m.cache.PR.State, "OPEN")) {
 			return m, pollCI(m.client, msg.generation, msg.number)
 		}
 		return m, nil

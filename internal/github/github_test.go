@@ -163,7 +163,7 @@ func TestFindChecksLoadsStateHeadAndRollup(t *testing.T) {
 	client := Client{run: func(args ...string) ([]byte, error) {
 		// State rides along: the poll outlives a merge, and its caller needs
 		// to know that before pushing this copy back into the list.
-		if got := strings.Join(args, " "); got != "pr view 12 --json number,state,headRefOid,statusCheckRollup" {
+		if got := strings.Join(args, " "); got != "pr view 12 --json number,state,isDraft,headRefOid,statusCheckRollup" {
 			t.Fatalf("FindChecks args = %q", got)
 		}
 		return []byte(`{"number":12,"state":"MERGED","headRefOid":"abc","statusCheckRollup":[{"name":"test","status":"IN_PROGRESS"}]}`), nil

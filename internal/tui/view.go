@@ -314,8 +314,22 @@ func (m Model) footerMode() string {
 	}
 }
 
+func (m Model) dataModeLabel() string {
+	if m.screen == prListScreen {
+		return "REMOTE"
+	}
+	switch m.detailMode() {
+	case modeLive:
+		return "LIVE"
+	case modeRemote:
+		return "REMOTE"
+	default:
+		return "LOCAL"
+	}
+}
+
 func (m Model) renderFooter() string {
-	return footerSegment(m.footerMode()) + " " + m.footerContent()
+	return footerSegment(m.dataModeLabel()) + " " + footerSegment(m.footerMode()) + " " + m.footerContent()
 }
 
 func (m Model) footerContent() string {

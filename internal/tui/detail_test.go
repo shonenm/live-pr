@@ -49,7 +49,7 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.raw != "cached diff" || hitCmd != nil || string(calls) != "1" {
+	if second.raw != "cached diff" || hitCmd != nil || string(calls) != "2" {
 		t.Fatalf("detail = %#v cmd=%v calls=%q", second, hitCmd, calls)
 	}
 	m.detailView.resetCaches()
@@ -59,7 +59,7 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	}
 	_ = missCmd()
 	calls, _ = os.ReadFile(counter)
-	if string(calls) != "2" {
+	if string(calls) != "4" {
 		t.Fatalf("cache reset calls=%q", calls)
 	}
 }
@@ -251,8 +251,21 @@ func TestGitHubConflictingKeepsConflictView(t *testing.T) {
 	}
 }
 
+func TestCommitPickerGroupsPublishedAndLocalOnly(t *testing.T) {
+	m := testModel()
+	m.localHeadOID, m.publishedCommits = "local-head", 1
+	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "published"}
+	m.detailView.commits = []git.Commit{{SHA: "aaa", Subject: "published"}, {SHA: "bbb", Subject: "local"}}
+	out, _ := m.buildCommits()
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "Published on PR") || !strings.Contains(plain, "Local only") || strings.Index(plain, "published") > strings.Index(plain, "local") {
+		t.Fatalf("commit groups = %q", plain)
+	}
+}
+
 func TestCommitPickerShowsCommitSpecificCI(t *testing.T) {
 	m := testModel()
+	m.localHeadOID, m.publishedCommits = "head", 2
 	m.detailView.commits = []git.Commit{{SHA: "abc12341", Subject: "first"}, {SHA: "abc12342", Subject: "second"}}
 	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
 		{OID: "abc1234100000000000000000000000000000000", CheckRollupState: "SUCCESS"},
@@ -678,6 +691,7 @@ func TestApplyLocalFromRemotePrunesRichBodies(t *testing.T) {
 // cached by (cursor, width, content fingerprint) like the conversation tab.
 func TestBuildCommitsCachesRenderUntilInputsChange(t *testing.T) {
 	m := testModel()
+	m.localHeadOID, m.publishedCommits = "head", 2
 	m.detailView.commits = []git.Commit{{SHA: "abc12341", Subject: "first"}, {SHA: "abc12342", Subject: "second"}}
 	m.cache.PR = &gh.PR{Commits: []gh.PRCommit{
 		{OID: "abc1234100000000000000000000000000000000", CheckRollupState: "SUCCESS"},
