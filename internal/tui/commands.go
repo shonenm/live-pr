@@ -192,11 +192,12 @@ func (m Model) nextLocalPoll() tea.Cmd {
 	return nil
 }
 
+func ciPollDelay(failures int) time.Duration {
+	return 15 * time.Second * time.Duration(1<<min(max(failures, 0), 3))
+}
+
 func scheduleCIPoll(generation uint64, number, failures int) tea.Cmd {
-	delay := 15 * time.Second
-	if failures > 0 {
-		delay *= time.Duration(1 << min(failures, 3))
-	}
+	delay := ciPollDelay(failures)
 	return tea.Tick(delay, func(time.Time) tea.Msg {
 		return ciPollTick{generation: generation, number: number}
 	})
