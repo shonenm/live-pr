@@ -599,9 +599,30 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 			root, _ = RepoRoot()
 		}
 		file.Fingerprint = fileFingerprint(srcBlob, dstBlob, root, file.Path)
+		if head == "" {
+			if info, err := os.Stat(filepath.Join(root, file.Path)); err == nil && info.IsDir() {
+				file.Fingerprint += ":" + workingTreeHash(filepath.Join(root, file.Path))
+			}
+		}
 		files = append(files, file)
 	}
 	if head == "" {
+		if conflicts, err := run("diff", "--name-only", "--diff-filter=U", "-z"); err == nil && conflicts != "" {
+			byPath := make(map[string]int, len(files))
+			for i := range files {
+				byPath[files[i].Path] = i
+			}
+			for _, path := range strings.Split(conflicts, "\x00") {
+				if path == "" {
+					continue
+				}
+				if i, ok := byPath[path]; ok {
+					files[i].Status = "U"
+					continue
+				}
+				files = append(files, ChangedFile{Status: "U", Path: path, Fingerprint: "conflict:" + workingTreeHash(filepath.Join(root, path))})
+			}
+		}
 		untracked, err := run("ls-files", "--others", "--exclude-standard", "-z")
 		if err != nil {
 			return nil, err
@@ -665,10 +686,15 @@ func workingTreeHash(path string) string {
 	hashMemoMu.Lock()
 	entry, ok := hashMemo[path]
 	hashMemoMu.Unlock()
-	if ok && entry.modTime.Equal(info.ModTime()) && entry.size == info.Size() {
+	if ok && !info.IsDir() && entry.modTime.Equal(info.ModTime()) && entry.size == info.Size() {
 		return entry.sum
 	}
-	data, err := os.ReadFile(path)
+	var data []byte
+	if info.IsDir() {
+		data, err = exec.Command("git", "-C", path, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal").Output()
+	} else {
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		return ""
 	}
