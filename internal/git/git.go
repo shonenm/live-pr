@@ -73,6 +73,47 @@ func CurrentBranch() (string, error) {
 // Revision resolves rev to its full object ID.
 func Revision(rev string) (string, error) { return run("rev-parse", "--verify", rev+"^{commit}") }
 
+// RevisionRelation describes local relative to a published revision.
+type RevisionRelation uint8
+
+const (
+	RevisionUnknown RevisionRelation = iota
+	RevisionSynced
+	RevisionLocalAhead
+	RevisionRemoteAhead
+	RevisionDiverged
+)
+
+// CompareRevisions classifies local relative to remote by graph reachability.
+func CompareRevisions(local, remote string) (RevisionRelation, error) {
+	localOID, err := Revision(local)
+	if err != nil {
+		return RevisionUnknown, err
+	}
+	remoteOID, err := Revision(remote)
+	if err != nil {
+		return RevisionUnknown, err
+	}
+	if localOID == remoteOID {
+		return RevisionSynced, nil
+	}
+	remoteIsAncestor, err := IsAncestor(remoteOID, localOID)
+	if err != nil {
+		return RevisionUnknown, err
+	}
+	if remoteIsAncestor {
+		return RevisionLocalAhead, nil
+	}
+	localIsAncestor, err := IsAncestor(localOID, remoteOID)
+	if err != nil {
+		return RevisionUnknown, err
+	}
+	if localIsAncestor {
+		return RevisionRemoteAhead, nil
+	}
+	return RevisionDiverged, nil
+}
+
 // IsAncestor reports whether ancestor is reachable from descendant.
 func IsAncestor(ancestor, descendant string) (bool, error) {
 	cmd := exec.Command("git", "merge-base", "--is-ancestor", "--end-of-options", ancestor, descendant)

@@ -576,7 +576,7 @@ func TestLivePollingContinuesAfterTerminalCI(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
 	m.targetGeneration = 4
-	m.localHeadOID = "head"
+	m.localHeadOID, m.revisionRelation = "head", git.RevisionSynced
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 
 	u, cmd := m.Update(ciPollTick{generation: 4, number: 12})
@@ -621,7 +621,7 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
 	m.targetGeneration = 2
-	m.localHeadOID = "old"
+	m.localHeadOID, m.revisionRelation = "old", git.RevisionSynced
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "old", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "new", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
 	m = u.(Model)
@@ -633,7 +633,7 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 func TestCIPollUnchangedResultSkipsCacheInvalidation(t *testing.T) {
 	m := testModel()
 	m.screen, m.targetGeneration = detailScreen, 2
-	m.localHeadOID = "head"
+	m.localHeadOID, m.revisionRelation = "head", git.RevisionSynced
 	m.cache.PR = &gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head", PreviewLoaded: true,
 		Checks:           []gh.PRCheck{{Name: "test", Status: "IN_PROGRESS"}},
 		CheckRollupState: "PENDING",
