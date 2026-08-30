@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -330,6 +331,14 @@ func TestPollCIStampsGeneration(t *testing.T) {
 	msg = pollCI(client, 43, 7)().(ciPolled)
 	if msg.generation != 43 || !errors.Is(msg.err, boom) {
 		t.Fatalf("ciPolled = %+v", msg)
+	}
+}
+
+func TestCIPollDelayBackoffCapsAtTwoMinutes(t *testing.T) {
+	for failures, want := range map[int]time.Duration{0: 15 * time.Second, 1: 30 * time.Second, 2: time.Minute, 3: 2 * time.Minute, 8: 2 * time.Minute} {
+		if got := ciPollDelay(failures); got != want {
+			t.Fatalf("ciPollDelay(%d) = %s, want %s", failures, got, want)
+		}
 	}
 }
 
