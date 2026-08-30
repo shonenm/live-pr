@@ -100,6 +100,24 @@ func TestDataModesUseDistinctSemanticColors(t *testing.T) {
 	}
 }
 
+func TestFooterShowsLocalContextAndFitsWidth(t *testing.T) {
+	m := testModel()
+	m.screen, m.ready, m.w = detailScreen, true, 44
+	m.cache.PR = &gh.PR{Number: 7}
+	m.cache.FetchedAt = time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339)
+	m.detailView.commits = []git.Commit{{SHA: "one"}, {SHA: "two"}, {SHA: "three"}}
+	m.publishedCommits, m.workingTreeDirty = 1, true
+	footer := ansi.Strip(m.renderFooter())
+	for _, want := range []string{"LOCAL", "PR #7", "2 ahead", "dirty"} {
+		if !strings.Contains(footer, want) {
+			t.Fatalf("footer missing %q: %q", want, footer)
+		}
+	}
+	if lipgloss.Width(m.renderFooter()) > m.w {
+		t.Fatalf("footer width = %d > %d", lipgloss.Width(m.renderFooter()), m.w)
+	}
+}
+
 func TestFooterShowsOnlyDataMode(t *testing.T) {
 	m := testModel()
 	m.screen, m.ready = detailScreen, true

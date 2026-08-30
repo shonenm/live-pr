@@ -318,8 +318,37 @@ func (m Model) dataModeColor() string {
 	}
 }
 
+func (m Model) dataModeContext() string {
+	parts := make([]string, 0, 4)
+	if m.cache.PR != nil && m.cache.PR.Number > 0 {
+		parts = append(parts, fmt.Sprintf("PR #%d", m.cache.PR.Number))
+	}
+	if !m.remote {
+		if ahead := max(0, len(m.detailView.commits)-m.publishedCommits); ahead > 0 && m.cache.PR != nil {
+			parts = append(parts, fmt.Sprintf("%d ahead", ahead))
+		}
+		if m.workingTreeDirty {
+			parts = append(parts, "dirty")
+		}
+	}
+	if m.cache.FetchedAt != "" {
+		parts = append(parts, "synced "+relativeTS(time.Now(), m.cache.FetchedAt))
+	}
+	return strings.Join(parts, " · ")
+}
+
 func (m Model) renderFooter() string {
-	return footerSegment(m.dataModeLabel(), m.dataModeColor()) + " " + m.footerContent()
+	line := footerSegment(m.dataModeLabel(), m.dataModeColor())
+	if context := m.dataModeContext(); context != "" {
+		line += " " + stMuted.Render(context)
+	}
+	if content := m.footerContent(); content != "" {
+		line += "  " + content
+	}
+	if m.w > 0 {
+		line = ansi.Truncate(line, m.w, "…")
+	}
+	return line
 }
 
 func (m Model) footerContent() string {
