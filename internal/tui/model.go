@@ -301,6 +301,7 @@ type Model struct {
 	localHeadOID      string
 	localFingerprint  string
 	localReloading    bool
+	revisionRelation  git.RevisionRelation
 	publishedCommits  int
 	localDiverged     bool
 	workingTreeDirty  bool
@@ -506,7 +507,7 @@ func (m Model) detailMode() detailMode {
 	if m.remote {
 		return modeRemote
 	}
-	if m.cache.PR != nil && m.cache.PR.HeadRefOID != "" && m.localHeadOID == m.cache.PR.HeadRefOID && !m.workingTreeDirty {
+	if m.cache.PR != nil && m.revisionRelation == git.RevisionSynced && !m.workingTreeDirty {
 		return modeLive
 	}
 	return modeLocal
@@ -612,6 +613,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.localAvailable, m.localTitle = cache.PR == nil, m.detailView.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = data.stats, len(data.commits), data.dirty
 	m.localHeadOID, m.localFingerprint = data.localHeadOID, data.localFingerprint
+	m.revisionRelation = data.revisionRelation
 	m.publishedCommits, m.localDiverged = data.publishedCommits, data.localDiverged
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
 	m.detailView.base, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, m.detailView.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange

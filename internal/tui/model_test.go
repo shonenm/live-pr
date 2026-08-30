@@ -71,6 +71,7 @@ func TestDetailModeLocalLiveRemote(t *testing.T) {
 		t.Fatalf("PR-less detail mode = %v", got)
 	}
 	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "local"}
+	m.revisionRelation = git.RevisionSynced
 	if got := m.detailMode(); got != modeLive {
 		t.Fatalf("matching clean detail mode = %v", got)
 	}
@@ -91,6 +92,7 @@ func TestDataModesUseDistinctSemanticColors(t *testing.T) {
 		t.Fatalf("LOCAL color = %q", got)
 	}
 	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "head"}
+	m.revisionRelation = git.RevisionSynced
 	if got := m.dataModeColor(); got != cGreenF {
 		t.Fatalf("LIVE color = %q", got)
 	}
@@ -105,6 +107,7 @@ func TestFooterShowsOnlyDataMode(t *testing.T) {
 	m.screen, m.ready = detailScreen, true
 	m.localHeadOID = "head"
 	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "head"}
+	m.revisionRelation = git.RevisionSynced
 	footer := ansi.Strip(m.renderFooter())
 	if !strings.Contains(footer, "LIVE") || strings.Contains(footer, "CONV") {
 		t.Fatalf("footer data mode = %q", footer)

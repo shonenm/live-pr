@@ -200,11 +200,12 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 			msg.files, _ = git.ChangedFilesRange(diffBase, "")
 			msg.localHeadOID, _ = git.Revision("HEAD")
 			if prCopy != nil && prCopy.HeadRefOID != "" {
-				if ancestor, err := git.IsAncestor(prCopy.HeadRefOID, "HEAD"); err == nil && ancestor {
+				msg.revisionRelation, _ = git.CompareRevisions("HEAD", prCopy.HeadRefOID)
+				if msg.revisionRelation == git.RevisionSynced || msg.revisionRelation == git.RevisionLocalAhead {
 					if localOnly, err := git.CommitsRange(prCopy.HeadRefOID, "HEAD"); err == nil {
 						msg.publishedCommits = max(0, len(msg.commits)-len(localOnly))
 					}
-				} else if err == nil {
+				} else if msg.revisionRelation == git.RevisionDiverged {
 					msg.localDiverged = true
 				}
 			}
@@ -241,7 +242,8 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		// without dropping caches or restarting the review terminal.
 		m.detailView.commits, m.detailView.files = msg.commits, msg.files
 		if !m.remote {
-			m.localHeadOID, m.publishedCommits, m.localDiverged = msg.localHeadOID, msg.publishedCommits, msg.localDiverged
+			m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
+			m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
 		}
 		if m.detailView.fileCursor >= len(m.detailView.files) {
 			m.detailView.fileCursor = 0
@@ -256,7 +258,8 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	}
 	m.detailView.commits, m.detailView.files = msg.commits, msg.files
 	if !m.remote {
-		m.localHeadOID, m.publishedCommits, m.localDiverged = msg.localHeadOID, msg.publishedCommits, msg.localDiverged
+		m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
+		m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
 	}
 	m.detailView.fileCursor = 0
 	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync())
