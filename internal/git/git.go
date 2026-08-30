@@ -85,6 +85,18 @@ const (
 )
 
 // CompareRevisions classifies local relative to remote by graph reachability.
+// RevisionDistance returns commits unique to local and remote.
+func RevisionDistance(local, remote string) (ahead, behind int, err error) {
+	out, err := run("rev-list", "--left-right", "--count", local+"..."+remote)
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, err := fmt.Sscan(out, &ahead, &behind); err != nil {
+		return 0, 0, fmt.Errorf("parse revision distance %q: %w", out, err)
+	}
+	return ahead, behind, nil
+}
+
 func CompareRevisions(local, remote string) (RevisionRelation, error) {
 	localOID, err := Revision(local)
 	if err != nil {

@@ -108,7 +108,7 @@ func TestFooterShowsLocalContextAndFitsWidth(t *testing.T) {
 	m.cache.PR = &gh.PR{Number: 7}
 	m.cache.FetchedAt = time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339)
 	m.detailView.commits = []git.Commit{{SHA: "one"}, {SHA: "two"}, {SHA: "three"}}
-	m.publishedCommits, m.workingTreeDirty = 1, true
+	m.revisionRelation, m.revisionAhead, m.workingTreeDirty = git.RevisionLocalAhead, 2, true
 	footer := ansi.Strip(m.renderFooter())
 	for _, want := range []string{"LOCAL", "PR #7", "2 ahead", "dirty"} {
 		if !strings.Contains(footer, want) {
@@ -117,6 +117,21 @@ func TestFooterShowsLocalContextAndFitsWidth(t *testing.T) {
 	}
 	if lipgloss.Width(m.renderFooter()) > m.w {
 		t.Fatalf("footer width = %d > %d", lipgloss.Width(m.renderFooter()), m.w)
+	}
+}
+
+func TestFooterShowsDivergenceAndPrioritizesOperationalStatus(t *testing.T) {
+	m := testModel()
+	m.screen, m.ready, m.w = detailScreen, true, 38
+	m.cache.PR = &gh.PR{Number: 7}
+	m.revisionRelation, m.revisionAhead, m.revisionBehind = git.RevisionDiverged, 2, 3
+	if context := m.dataModeContext(); !strings.Contains(context, "2 ahead · 3 behind · diverged") {
+		t.Fatalf("context = %q", context)
+	}
+	m.githubStatus = "GitHub: update unavailable · retrying in 30s"
+	footer := ansi.Strip(m.renderFooter())
+	if !strings.Contains(footer, "update unavailable") || strings.Contains(footer, "PR #7") || lipgloss.Width(m.renderFooter()) > m.w {
+		t.Fatalf("narrow footer = %q width=%d", footer, lipgloss.Width(m.renderFooter()))
 	}
 }
 

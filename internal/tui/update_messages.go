@@ -572,7 +572,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		// Record the new publication boundary so the derived mode immediately
 		// leaves LIVE, but keep the local review range untouched until r.
 		m.cache.PR.HeadRefOID = msg.pr.HeadRefOID
-		m.revisionRelation = git.RevisionUnknown
+		m.revisionRelation, m.revisionAhead, m.revisionBehind = git.RevisionUnknown, 0, 0
 		m.githubStatus = "GitHub: PR head changed · refresh required"
 		return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync())
 	}
