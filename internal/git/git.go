@@ -396,6 +396,31 @@ func DiffStats(base, head string) (ChangeStats, error) {
 			stats.Deletions += n
 		}
 	}
+	if head == "" {
+		root, _ := RepoRoot()
+		untracked, _ := run("ls-files", "--others", "--exclude-standard", "-z")
+		for _, path := range strings.Split(untracked, "\x00") {
+			if path == "" {
+				continue
+			}
+			stats.Files++
+			full := filepath.Join(root, path)
+			if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
+				stats.Additions++
+				continue
+			}
+			data, err := os.ReadFile(full)
+			if err != nil || bytes.IndexByte(data, 0) >= 0 {
+				continue
+			}
+			if len(data) > 0 {
+				stats.Additions += bytes.Count(data, []byte{'\n'})
+				if data[len(data)-1] != '\n' {
+					stats.Additions++
+				}
+			}
+		}
+	}
 	return stats, nil
 }
 
@@ -548,9 +573,17 @@ var (
 
 // workingTreeHash hashes a working-tree file, memoized on (mtime, size).
 func workingTreeHash(path string) string {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return ""
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		if err != nil {
+			return ""
+		}
+		sum := sha256.Sum256([]byte(target))
+		return hex.EncodeToString(sum[:])
 	}
 	hashMemoMu.Lock()
 	entry, ok := hashMemo[path]
