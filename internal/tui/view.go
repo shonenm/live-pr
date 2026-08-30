@@ -251,12 +251,6 @@ func (m Model) renderHeader() string {
 	if m.detailView.reviewSHA != "" {
 		scope = "commit " + m.detailView.reviewSHA
 	}
-	// The same badge the list row carries, so a remote PR that happens to be
-	// the checked-out branch reads the same on both screens.
-	checkedOut := ""
-	if m.cache.PR != nil && m.isCurrentTargetPR(*m.cache.PR) {
-		checkedOut = "   " + stAttention.Render("⎇ checked out")
-	}
 	dirty := ""
 	if !m.remote && m.workingTreeDirty {
 		dirty = "   " + stAttention.Render("● uncommitted changes")
@@ -288,7 +282,7 @@ func (m Model) renderHeader() string {
 		}
 		closes = "   " + stMuted.Render("⊙ closes "+strings.Join(refs, ", "))
 	}
-	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.detailView.base).Render(m.detailView.base) + stMuted.Render(" ← ") + stFg.Render(m.detailView.head) + stMuted.Render("   · ") + scope + checkedOut + dirty + draft + readiness + closes
+	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.detailView.base).Render(m.detailView.base) + stMuted.Render(" ← ") + stFg.Render(m.detailView.head) + stMuted.Render("   · ") + scope + dirty + draft + readiness + closes
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
@@ -342,7 +336,7 @@ func (m Model) footerContent() string {
 		return m.busyStatus("")
 	}
 	// While work is in flight the progress line wins over a lingering
-	// notice, so a reload after "Checked out PR #N" is visibly running.
+	// notice, so a reload after a completed action is visibly running.
 	if m.notice != "" && !m.isLoading() {
 		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
 	}

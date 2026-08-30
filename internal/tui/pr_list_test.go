@@ -636,22 +636,13 @@ func TestConfiguredViewsDriveTabsSearchAndCounts(t *testing.T) {
 	}
 }
 
-func TestPRRowMarksCheckedOutBranch(t *testing.T) {
+func TestPRRowOmitsRedundantCheckedOutText(t *testing.T) {
 	m := testModel()
 	m.list.SetWidth(140)
 	m.currentBranch = "feature"
 	current := gh.PR{Number: 12, State: "OPEN", Title: "Current", BaseRefName: "main", HeadRefName: "feature"}
-	if row := ansi.Strip(strings.Join(m.renderPRRow(current, false, ""), "\n")); !strings.Contains(row, "⎇ checked out") {
-		t.Fatalf("checked-out badge missing: %q", row)
-	}
-	other := gh.PR{Number: 13, State: "OPEN", Title: "Other", BaseRefName: "main", HeadRefName: "other"}
-	if row := ansi.Strip(strings.Join(m.renderPRRow(other, false, ""), "\n")); strings.Contains(row, "⎇ checked out") {
-		t.Fatalf("badge leaked onto a non-current row: %q", row)
-	}
-	// The synthetic local row already reads "local"; no badge on top.
-	local := gh.PR{Number: 0, Title: "Local", BaseRefName: "main", HeadRefName: "feature"}
-	if row := ansi.Strip(strings.Join(m.renderPRRow(local, false, ""), "\n")); strings.Contains(row, "⎇ checked out") {
-		t.Fatalf("badge rendered on the local row: %q", row)
+	if row := ansi.Strip(strings.Join(m.renderPRRow(current, false, ""), "\n")); strings.Contains(row, "checked out") {
+		t.Fatalf("PR row repeated checkout state: %q", row)
 	}
 }
 

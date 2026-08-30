@@ -1009,9 +1009,8 @@ func (m Model) renderSegments(segments []rowSegment, background string) string {
 }
 
 // prRowSegments assembles the two content lines of a PR row once; selection
-// only changes the background and padding, never the content. current marks
-// the PR whose branch is checked out locally.
-func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta []rowSegment) {
+// only changes the background and padding, never the content.
+func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) {
 	state := strings.ToLower(pr.State)
 	if state == "" {
 		state = "open"
@@ -1045,9 +1044,6 @@ func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta 
 			rowSegment{text: " @" + pr.Author.Login, style: stMuted})
 	} else {
 		meta = append(meta, rowSegment{text: state, style: glyphStyle})
-	}
-	if current && pr.Number > 0 {
-		meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: "⎇ checked out", style: stAttention})
 	}
 	if pr.Number > 0 {
 		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
@@ -1089,7 +1085,7 @@ func (m Model) prRowSegments(pr gh.PR, prefix string, current bool) (line, meta 
 func (m Model) renderPRRow(pr gh.PR, selected bool, prefix string) []string {
 	width := max(10, m.list.Width())
 	current := m.isCurrentTargetPR(pr)
-	lineSegments, metaSegments := m.prRowSegments(pr, prefix, current)
+	lineSegments, metaSegments := m.prRowSegments(pr, prefix)
 	if !selected {
 		currentBar := " "
 		if current {
