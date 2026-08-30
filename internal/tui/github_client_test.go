@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 )
 
@@ -343,7 +344,7 @@ func TestCIPollTickDispatchesPollForCurrentPR(t *testing.T) {
 	}}
 	m.screen = detailScreen
 	m.targetGeneration = 8
-	m.localHeadOID = "head"
+	m.localHeadOID, m.revisionRelation = "head", git.RevisionSynced
 	m.cache.PR = &gh.PR{Number: 21, State: "OPEN", HeadRefOID: "head", CheckRollupState: "PENDING"}
 	updated, cmd := m.Update(ciPollTick{generation: 8, number: 21})
 	if cmd == nil {
