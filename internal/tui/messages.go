@@ -137,6 +137,7 @@ type baseResolved struct {
 	events                               []event.Event
 	eventsOK                             bool
 	commits                              []git.Commit
+	remoteCommits                        []git.Commit
 	files                                []git.ChangedFile
 	localHeadOID                         string
 	revisionRelation                     git.RevisionRelation
@@ -216,6 +217,7 @@ type localData struct {
 	reviewRange       string
 	events            []event.Event
 	commits           []git.Commit
+	remoteCommits     []git.Commit
 	files             []git.ChangedFile
 	stats             git.ChangeStats
 	localHeadOID      string

@@ -258,13 +258,25 @@ func (m *Model) detailListIndexAtLine(line int) int {
 			}
 			row++
 		}
+		if len(m.detailView.remoteCommits) > 0 {
+			if row > 0 {
+				row++
+			}
+			row++ // heading
+			for j := range m.detailView.remoteCommits {
+				if line == row {
+					return len(m.detailView.commits) + j
+				}
+				row++
+			}
+		}
 		if !m.remote && m.worktreeSummary.Total() > 0 {
 			if row > 0 {
 				row++
 			}
 			row++ // heading
 			if line == row {
-				return len(m.detailView.commits)
+				return len(m.detailView.commits) + len(m.detailView.remoteCommits)
 			}
 		}
 		return -1
