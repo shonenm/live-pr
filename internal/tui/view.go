@@ -110,7 +110,7 @@ func (m Model) baseContent() string {
 		leftTitle := "Conversation"
 		switch m.detailView.active {
 		case commitsTab:
-			leftTitle = fmt.Sprintf("Commits · %d", len(m.detailView.commits))
+			leftTitle = fmt.Sprintf("Commits · %d", len(m.detailView.commits)+len(m.detailView.remoteCommits))
 		case conflictsTab:
 			leftTitle = fmt.Sprintf("Conflicts · %d", len(m.detailView.mergeReadiness.ConflictFiles))
 		case checksTab:

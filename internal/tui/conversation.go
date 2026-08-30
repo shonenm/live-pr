@@ -125,7 +125,7 @@ func (m *Model) restoreConversationSelection(key string) {
 func (m *Model) activeLen() int {
 	switch m.detailView.active {
 	case commitsTab:
-		n := len(m.detailView.commits)
+		n := len(m.detailView.commits) + len(m.detailView.remoteCommits)
 		if !m.remote && m.worktreeSummary.Total() > 0 {
 			n++
 		}

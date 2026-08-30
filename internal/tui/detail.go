@@ -52,6 +52,7 @@ type detailModel struct {
 	reviewSHA         string
 	events            []event.Event
 	commits           []git.Commit
+	remoteCommits     []git.Commit
 	files             []git.ChangedFile
 	mergeReadiness    git.MergeReadiness
 	mergeReadinessErr error
@@ -182,6 +183,11 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	}
 	return func() tea.Msg {
 		msg := baseResolved{generation: generation, prURL: prURL}
+		if !remote && prCopy != nil && prCopy.Number > 0 && prCopy.BaseRefName != "" {
+			if _, oid, err := git.FetchPull(prCopy.Number, prCopy.BaseRefName); err == nil {
+				prCopy.HeadRefOID = oid
+			}
+		}
 		resolved := git.ResolveBase(base)
 		diffBase, newHead, reviewRange := localReviewRange(resolved, prCopy, headRev, remote)
 		msg.base, msg.diffBase, msg.headRev, msg.reviewRange = resolved, diffBase, newHead, reviewRange
@@ -199,16 +205,7 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 		if !remote {
 			msg.files, _ = git.ChangedFilesRange(diffBase, "")
 			msg.localHeadOID, _ = git.Revision("HEAD")
-			if prCopy != nil && prCopy.HeadRefOID != "" {
-				msg.revisionRelation, _ = git.CompareRevisions("HEAD", prCopy.HeadRefOID)
-				if msg.revisionRelation == git.RevisionSynced || msg.revisionRelation == git.RevisionLocalAhead {
-					if localOnly, err := git.CommitsRange(prCopy.HeadRefOID, "HEAD"); err == nil {
-						msg.publishedCommits = max(0, len(msg.commits)-len(localOnly))
-					}
-				} else if msg.revisionRelation == git.RevisionDiverged {
-					msg.localDiverged = true
-				}
-			}
+			msg.revisionRelation, msg.publishedCommits, msg.localDiverged, msg.remoteCommits = commitSections(diffBase, msg.commits, prCopy)
 		} else {
 			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
 		}
@@ -220,6 +217,36 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 			msg.readinessOK = true
 		}
 		return msg
+	}
+}
+
+func commitSections(diffBase string, local []git.Commit, pr *gh.PR) (git.RevisionRelation, int, bool, []git.Commit) {
+	if pr == nil || pr.HeadRefOID == "" {
+		return git.RevisionUnknown, 0, false, nil
+	}
+	relation, err := git.CompareRevisions("HEAD", pr.HeadRefOID)
+	if err != nil {
+		return git.RevisionUnknown, 0, false, nil
+	}
+	switch relation {
+	case git.RevisionSynced:
+		return relation, len(local), false, nil
+	case git.RevisionLocalAhead:
+		localOnly, _ := git.CommitsRange(pr.HeadRefOID, "HEAD")
+		return relation, max(0, len(local)-len(localOnly)), false, nil
+	case git.RevisionRemoteAhead:
+		remoteOnly, _ := git.CommitsRange("HEAD", pr.HeadRefOID)
+		return relation, len(local), false, remoteOnly
+	case git.RevisionDiverged:
+		common, err := git.MergeBase("HEAD", pr.HeadRefOID)
+		if err != nil {
+			return relation, 0, true, nil
+		}
+		published, _ := git.CommitsRange(diffBase, common)
+		remoteOnly, _ := git.CommitsRange(common, pr.HeadRefOID)
+		return relation, len(published), true, remoteOnly
+	default:
+		return relation, 0, false, nil
 	}
 }
 
@@ -240,7 +267,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	if msg.base == m.detailView.base && msg.diffBase == m.detailView.diffBase && m.detailView.reviewRange == msg.reviewRange && m.detailView.headRev == msg.headRev {
 		// Same range names, but the refs behind them move: refresh the scans
 		// without dropping caches or restarting the review terminal.
-		m.detailView.commits, m.detailView.files = msg.commits, msg.files
+		m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
 		if !m.remote {
 			m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
 			m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
@@ -256,7 +283,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.detailView.events = msg.events
 		m.detailView.invalidateConversation()
 	}
-	m.detailView.commits, m.detailView.files = msg.commits, msg.files
+	m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
 	if !m.remote {
 		m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
 		m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
@@ -674,6 +701,9 @@ func (m *Model) commitsFingerprint() uint64 {
 	for _, c := range m.detailView.commits {
 		fingerprintStrings(&h, c.SHA, c.Subject, c.Date)
 	}
+	for _, c := range m.detailView.remoteCommits {
+		fingerprintStrings(&h, c.SHA, c.Subject, c.Date)
+	}
 	if m.cache.PR != nil {
 		_ = h.WriteByte(1)
 		for _, c := range m.cache.PR.Commits {
@@ -685,14 +715,14 @@ func (m *Model) commitsFingerprint() uint64 {
 
 func (m *Model) buildCommits() (string, int) {
 	showWorktree := !m.remote && m.worktreeSummary.Total() > 0
-	if len(m.detailView.commits) == 0 && !showWorktree {
+	if len(m.detailView.commits)+len(m.detailView.remoteCommits) == 0 && !showWorktree {
 		return stMuted.Render("(no commits in " + m.detailView.base + "..HEAD)"), 0
 	}
 	key := tabRenderKey{cursor: m.detailView.cursors[commitsTab], width: m.list.Width(), content: m.commitsFingerprint()}
 	if m.detailView.commitsRenderValid && m.detailView.commitsRenderKey == key {
 		return m.detailView.commitsRender, m.detailView.commitsRenderLine
 	}
-	lines := make([]string, 0, len(m.detailView.commits)+4)
+	lines := make([]string, 0, len(m.detailView.commits)+len(m.detailView.remoteCommits)+6)
 	ciStates := m.commitCIStates()
 	published := m.publishedCommits
 	if m.remote {
@@ -727,6 +757,22 @@ func (m *Model) buildCommits() (string, int) {
 		}
 		lines = append(lines, line)
 	}
+	if len(m.detailView.remoteCommits) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, stAttention.Render("Remote only"))
+		for j, c := range m.detailView.remoteCommits {
+			i := len(m.detailView.commits) + j
+			icon, _, style := commitCIStatus(ciStates[c.SHA])
+			line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
+			if i == m.detailView.cursors[commitsTab] {
+				selectedLine = len(lines)
+				line = highlightSelectedBg(line, m.list.Width())
+			}
+			lines = append(lines, line)
+		}
+	}
 	if showWorktree {
 		if len(lines) > 0 {
 			lines = append(lines, "")
@@ -744,7 +790,7 @@ func (m *Model) buildCommits() (string, int) {
 			parts = append(parts, fmt.Sprintf("%d untracked", s.Untracked))
 		}
 		line := stAttention.Render("●") + " " + stFg.Render(strings.Join(parts, " · "))
-		if m.detailView.cursors[commitsTab] == len(m.detailView.commits) {
+		if m.detailView.cursors[commitsTab] == len(m.detailView.commits)+len(m.detailView.remoteCommits) {
 			selectedLine = len(lines)
 			line = highlightSelectedBg(line, m.list.Width())
 		}
@@ -757,13 +803,15 @@ func (m *Model) buildCommits() (string, int) {
 }
 
 func (m Model) commitCIStates() map[string]string {
-	states := make(map[string]string, len(m.detailView.commits))
+	states := make(map[string]string, len(m.detailView.commits)+len(m.detailView.remoteCommits))
 	if m.cache.PR == nil {
 		return states
 	}
 	lengths := map[int]bool{}
-	for _, commit := range m.detailView.commits {
-		lengths[len(commit.SHA)] = true
+	for _, commits := range [][]git.Commit{m.detailView.commits, m.detailView.remoteCommits} {
+		for _, commit := range commits {
+			lengths[len(commit.SHA)] = true
+		}
 	}
 	for _, commit := range m.cache.PR.Commits {
 		for length := range lengths {
