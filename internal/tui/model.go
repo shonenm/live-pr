@@ -298,6 +298,8 @@ type Model struct {
 	localStats        git.ChangeStats
 	localCommitCount  int
 	localHeadOID      string
+	localFingerprint  string
+	localReloading    bool
 	publishedCommits  int
 	localDiverged     bool
 	workingTreeDirty  bool
@@ -608,7 +610,8 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	}
 	m.localAvailable, m.localTitle = cache.PR == nil, m.detailView.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = data.stats, len(data.commits), data.dirty
-	m.localHeadOID, m.publishedCommits, m.localDiverged = data.localHeadOID, data.publishedCommits, data.localDiverged
+	m.localHeadOID, m.localFingerprint = data.localHeadOID, data.localFingerprint
+	m.publishedCommits, m.localDiverged = data.publishedCommits, data.localDiverged
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
 	m.detailView.base, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, m.detailView.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange
 	m.detailView.events, m.detailView.files, m.detailView.commits = data.events, data.files, data.commits
@@ -677,7 +680,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()))
 	}
 	if m.screen == detailScreen {
-		cmds = append(cmds, m.dispatchRichContent())
+		cmds = append(cmds, m.dispatchRichContent(), m.nextLocalPoll())
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
