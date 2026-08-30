@@ -154,8 +154,8 @@ func (m *Model) reloadLocalConversation() {
 	if oid, err := git.Revision("HEAD"); err == nil {
 		m.localHeadOID = oid
 	}
-	if dirty, err := git.HasUncommittedChanges(); err == nil {
-		m.workingTreeDirty = dirty
+	if summary, err := git.WorktreeStatus(); err == nil {
+		m.worktreeSummary, m.workingTreeDirty = summary, summary.Total() > 0
 	} else {
 		m.status = "local git data: " + err.Error()
 	}
@@ -667,7 +667,7 @@ func plural(n int) string {
 func (m *Model) commitsFingerprint() uint64 {
 	var h maphash.Hash
 	h.SetSeed(tabRenderSeed)
-	fingerprintStrings(&h, fmt.Sprint(m.publishedCommits), fmt.Sprint(m.localDiverged), fmt.Sprint(m.remote))
+	fingerprintStrings(&h, fmt.Sprint(m.publishedCommits), fmt.Sprint(m.localDiverged), fmt.Sprint(m.remote), fmt.Sprint(m.worktreeSummary))
 	for _, c := range m.detailView.commits {
 		fingerprintStrings(&h, c.SHA, c.Subject, c.Date)
 	}
@@ -681,7 +681,8 @@ func (m *Model) commitsFingerprint() uint64 {
 }
 
 func (m *Model) buildCommits() (string, int) {
-	if len(m.detailView.commits) == 0 {
+	showWorktree := !m.remote && m.worktreeSummary.Total() > 0
+	if len(m.detailView.commits) == 0 && !showWorktree {
 		return stMuted.Render("(no commits in " + m.detailView.base + "..HEAD)"), 0
 	}
 	key := tabRenderKey{cursor: m.detailView.cursors[commitsTab], width: m.list.Width(), content: m.commitsFingerprint()}
@@ -718,6 +719,29 @@ func (m *Model) buildCommits() (string, int) {
 		}
 		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
 		if i == m.detailView.cursors[commitsTab] {
+			selectedLine = len(lines)
+			line = highlightSelectedBg(line, m.list.Width())
+		}
+		lines = append(lines, line)
+	}
+	if showWorktree {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, stAttention.Render("Working tree"))
+		s := m.worktreeSummary
+		parts := make([]string, 0, 3)
+		if s.Staged > 0 {
+			parts = append(parts, fmt.Sprintf("%d staged", s.Staged))
+		}
+		if s.Unstaged > 0 {
+			parts = append(parts, fmt.Sprintf("%d unstaged", s.Unstaged))
+		}
+		if s.Untracked > 0 {
+			parts = append(parts, fmt.Sprintf("%d untracked", s.Untracked))
+		}
+		line := stAttention.Render("●") + " " + stFg.Render(strings.Join(parts, " · "))
+		if m.detailView.cursors[commitsTab] == len(m.detailView.commits) {
 			selectedLine = len(lines)
 			line = highlightSelectedBg(line, m.list.Width())
 		}
