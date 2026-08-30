@@ -619,7 +619,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.publishedCommits, m.localDiverged = data.publishedCommits, data.localDiverged
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
 	m.detailView.base, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, m.detailView.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange
-	m.detailView.events, m.detailView.files, m.detailView.commits = data.events, data.files, data.commits
+	m.detailView.events, m.detailView.files, m.detailView.commits, m.detailView.remoteCommits = data.events, data.files, data.commits, data.remoteCommits
 	m.timelinePath, m.cachePath, m.cache = st.Timeline(), st.GitHubCache(), cache
 	m.loadReviewedMarks(m.currentPRNumber(), st.Branch)
 	m.refreshReviewDraft()
@@ -919,9 +919,11 @@ func (m Model) selectedBrowseURL() string {
 }
 
 func (d detailModel) selectedCommitSHA() string {
-	if i := d.cursors[commitsTab]; d.active == commitsTab && i >= 0 && i < len(d.commits) {
-		return d.commits[i].SHA
-	}
+	i := d.cursors[commitsTab]
+	if d.active != commitsTab || i < 0 { return "" }
+	if i < len(d.commits) { return d.commits[i].SHA }
+	i -= len(d.commits)
+	if i < len(d.remoteCommits) { return d.remoteCommits[i].SHA }
 	return ""
 }
 
