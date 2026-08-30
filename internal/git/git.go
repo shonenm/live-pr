@@ -419,6 +419,37 @@ func CurrentLocalState() (LocalState, error) {
 	return LocalState{Branch: branch, Fingerprint: hex.EncodeToString(sum[:])}, nil
 }
 
+type WorktreeSummary struct {
+	Staged, Unstaged, Untracked int
+}
+
+func (s WorktreeSummary) Total() int { return s.Staged + s.Unstaged + s.Untracked }
+
+// WorktreeStatus summarizes index, worktree, and untracked entries.
+func WorktreeStatus() (WorktreeSummary, error) {
+	out, err := run("status", "--porcelain", "-z", "--untracked-files=normal")
+	if err != nil {
+		return WorktreeSummary{}, err
+	}
+	var summary WorktreeSummary
+	for _, record := range strings.Split(out, "\x00") {
+		if len(record) < 3 {
+			continue
+		}
+		if strings.HasPrefix(record, "?? ") {
+			summary.Untracked++
+			continue
+		}
+		if record[0] != ' ' {
+			summary.Staged++
+		}
+		if record[1] != ' ' {
+			summary.Unstaged++
+		}
+	}
+	return summary, nil
+}
+
 // HasUncommittedChanges reports whether the index, worktree, or untracked files differ from HEAD.
 func HasUncommittedChanges() (bool, error) {
 	out, err := run("status", "--porcelain", "--untracked-files=normal")

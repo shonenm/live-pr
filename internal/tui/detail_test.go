@@ -251,6 +251,19 @@ func TestGitHubConflictingKeepsConflictView(t *testing.T) {
 	}
 }
 
+func TestCommitPickerShowsSelectableWorkingTree(t *testing.T) {
+	m := testModel()
+	m.detailView.active = commitsTab
+	m.detailView.commits = []git.Commit{{SHA: "abc", Subject: "commit"}}
+	m.worktreeSummary = git.WorktreeSummary{Staged: 1, Unstaged: 2, Untracked: 3}
+	m.detailView.cursors[commitsTab] = 1
+	out, selected := m.buildCommits()
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "Working tree") || !strings.Contains(plain, "1 staged · 2 unstaged · 3 untracked") || selected == 0 || m.activeLen() != 2 || m.detailView.selectedCommitSHA() != "" {
+		t.Fatalf("working-tree row = %q selected=%d len=%d sha=%q", plain, selected, m.activeLen(), m.detailView.selectedCommitSHA())
+	}
+}
+
 func TestCommitPickerGroupsPublishedAndLocalOnly(t *testing.T) {
 	m := testModel()
 	m.localHeadOID, m.publishedCommits = "local-head", 1
