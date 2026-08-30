@@ -831,30 +831,11 @@ func TestLoadRichContentSkipsBodiesWithoutMermaid(t *testing.T) {
 	t.Fatal("no richBodiesLoaded message dispatched")
 }
 
-func TestHeaderMarksTheCheckedOutPR(t *testing.T) {
+func TestHeaderOmitsRedundantCheckedOutText(t *testing.T) {
 	m := testModel()
-	m.w = 180
-	m.screen = detailScreen
-	m.currentBranch = "feature/x"
-	pr := gh.PR{Number: 7, State: "OPEN", Title: "matching", HeadRefName: "feature/x", BaseRefName: "main"}
-	m.cache.PR = &pr
-	if header := ansi.Strip(m.renderHeader()); !strings.Contains(header, "⎇ checked out") {
-		t.Fatalf("header did not mark the checked-out PR: %q", header)
-	}
-
-	// A PR on another branch is not the checked-out one.
-	other := pr
-	other.HeadRefName = "feature/y"
-	m.cache.PR = &other
+	m.w, m.screen, m.currentBranch = 180, detailScreen, "feature/x"
+	m.cache.PR = &gh.PR{Number: 7, State: "OPEN", Title: "matching", HeadRefName: "feature/x", BaseRefName: "main"}
 	if header := ansi.Strip(m.renderHeader()); strings.Contains(header, "checked out") {
-		t.Fatalf("header marked a PR from another branch: %q", header)
-	}
-
-	// A remote PR fetched by pull ref shares the branch name only when it is
-	// really the current branch, so the remote flag alone must not suppress it.
-	m.remote = true
-	m.cache.PR = &pr
-	if header := ansi.Strip(m.renderHeader()); !strings.Contains(header, "⎇ checked out") {
-		t.Fatalf("remote view of the current branch lost the badge: %q", header)
+		t.Fatalf("header repeated checkout state: %q", header)
 	}
 }
