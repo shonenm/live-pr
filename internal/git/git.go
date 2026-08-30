@@ -399,6 +399,26 @@ func DiffStats(base, head string) (ChangeStats, error) {
 	return stats, nil
 }
 
+// LocalState identifies the checked-out branch and every local Git input that
+// can change the review (HEAD, index, worktree, and untracked paths).
+type LocalState struct {
+	Branch      string
+	Fingerprint string
+}
+
+func CurrentLocalState() (LocalState, error) {
+	branch, err := CurrentBranch()
+	if err != nil {
+		return LocalState{}, err
+	}
+	status, err := run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal")
+	if err != nil {
+		return LocalState{}, err
+	}
+	sum := sha256.Sum256([]byte(status))
+	return LocalState{Branch: branch, Fingerprint: hex.EncodeToString(sum[:])}, nil
+}
+
 // HasUncommittedChanges reports whether the index, worktree, or untracked files differ from HEAD.
 func HasUncommittedChanges() (bool, error) {
 	out, err := run("status", "--porcelain", "--untracked-files=normal")

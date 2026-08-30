@@ -532,6 +532,33 @@ func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	}
 }
 
+func TestLocalStatePollReloadsOnlyOnChange(t *testing.T) {
+	m := testModel()
+	m.screen, m.currentBranch, m.localFingerprint = detailScreen, "feature", "same"
+	m.targetGeneration = 4
+	if unchanged, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "same"}}); cmd == nil || unchanged.localReloading {
+		t.Fatalf("unchanged local state = reloading:%v cmd:%v", unchanged.localReloading, cmd)
+	}
+	changed, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "new"}})
+	if cmd == nil || !changed.localReloading || !changed.refreshing || changed.targetGeneration == 4 {
+		t.Fatalf("changed local state = reloading:%v refreshing:%v generation:%d cmd:%v", changed.localReloading, changed.refreshing, changed.targetGeneration, cmd)
+	}
+}
+
+func TestAutomaticLocalReloadPreservesNavigation(t *testing.T) {
+	m := testModel()
+	m.screen, m.targetGeneration, m.localReloading = detailScreen, 3, true
+	m.detailView.active, m.detailView.focus = commitsTab, focusReview
+	m.detailView.cursors[commitsTab], m.detailView.fileCursor = 1, 1
+	st := store.ForBranch(t.TempDir(), "feature")
+	data := localData{cache: gh.NewCache("feature"), base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main", localFingerprint: "new",
+		commits: []git.Commit{{SHA: "one"}, {SHA: "two"}}, files: []git.ChangedFile{{Path: "a"}, {Path: "b"}}}
+	reloaded, cmd := m.handleLocalLoaded(localLoaded{generation: 3, st: st, data: data})
+	if cmd == nil || reloaded.localReloading || reloaded.refreshing || reloaded.detailView.active != commitsTab || reloaded.detailView.focus != focusReview || reloaded.detailView.cursors[commitsTab] != 1 || reloaded.detailView.fileCursor != 1 {
+		t.Fatalf("local reload lost state: active=%v focus=%v cursor=%d file=%d reloading=%v refreshing=%v", reloaded.detailView.active, reloaded.detailView.focus, reloaded.detailView.cursors[commitsTab], reloaded.detailView.fileCursor, reloaded.localReloading, reloaded.refreshing)
+	}
+}
+
 func TestLivePollingContinuesAfterTerminalCI(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen

@@ -286,12 +286,20 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if dirty, err := HasUncommittedChanges(); err != nil || !dirty {
 		t.Fatalf("dirty worktree = %v, err=%v", dirty, err)
 	}
+	stateBefore, err := CurrentLocalState()
+	if err != nil || stateBefore.Branch != "feature" || stateBefore.Fingerprint == "" {
+		t.Fatalf("local state = %#v, err=%v", stateBefore, err)
+	}
 	stats, err := DiffStats("main", "HEAD")
 	if err != nil || stats.Files != 2 || stats.Additions != 1 || stats.Deletions != 1 {
 		t.Fatalf("diff stats = %#v, err=%v", stats, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("after\nextra\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	stateAfter, err := CurrentLocalState()
+	if err != nil || stateAfter.Fingerprint == stateBefore.Fingerprint {
+		t.Fatalf("local state did not change: before=%#v after=%#v err=%v", stateBefore, stateAfter, err)
 	}
 	worktree, err := DiffStats("main", "")
 	if err != nil || worktree.Files != 2 || worktree.Additions != 2 || worktree.Deletions != 1 {
