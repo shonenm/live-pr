@@ -85,6 +85,10 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 	localHeadOID, headErr := git.Revision("HEAD")
 	localState, stateErr := git.CurrentLocalState()
 	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(diffBase, commits, cache.PR)
+	revisionAhead, revisionBehind := 0, 0
+	if cache.PR != nil && cache.PR.HeadRefOID != "" {
+		revisionAhead, revisionBehind, _ = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
+	}
 	worktree, dirtyErr := git.WorktreeStatus()
 	dirty := worktree.Total() > 0
 	conclusion, _ := os.ReadFile(st.Conclusion())
@@ -103,6 +107,8 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		localHeadOID:      localHeadOID,
 		localFingerprint:  localState.Fingerprint,
 		revisionRelation:  revisionRelation,
+		revisionAhead:     revisionAhead,
+		revisionBehind:    revisionBehind,
 		publishedCommits:  publishedCommits,
 		localDiverged:     localDiverged,
 		dirty:             dirty,

@@ -324,8 +324,17 @@ func (m Model) dataModeContext() string {
 		parts = append(parts, fmt.Sprintf("PR #%d", m.cache.PR.Number))
 	}
 	if !m.remote {
-		if ahead := max(0, len(m.detailView.commits)-m.publishedCommits); ahead > 0 && m.cache.PR != nil {
-			parts = append(parts, fmt.Sprintf("%d ahead", ahead))
+		switch m.revisionRelation {
+		case git.RevisionLocalAhead:
+			parts = append(parts, fmt.Sprintf("%d ahead", m.revisionAhead))
+		case git.RevisionRemoteAhead:
+			parts = append(parts, fmt.Sprintf("%d behind", m.revisionBehind), "remote update")
+		case git.RevisionDiverged:
+			parts = append(parts, fmt.Sprintf("%d ahead", m.revisionAhead), fmt.Sprintf("%d behind", m.revisionBehind), "diverged")
+		case git.RevisionUnknown:
+			if m.cache.PR != nil && m.cache.PR.HeadRefOID != "" && m.localHeadOID != "" && m.cache.PR.HeadRefOID != m.localHeadOID {
+				parts = append(parts, "remote update")
+			}
 		}
 		if m.workingTreeDirty {
 			parts = append(parts, "dirty")
@@ -338,12 +347,20 @@ func (m Model) dataModeContext() string {
 }
 
 func (m Model) renderFooter() string {
-	line := footerSegment(m.dataModeLabel(), m.dataModeColor())
-	if context := m.dataModeContext(); context != "" {
+	mode := footerSegment(m.dataModeLabel(), m.dataModeColor())
+	context, content := m.dataModeContext(), m.footerContent()
+	line := mode
+	if context != "" {
 		line += " " + stMuted.Render(context)
 	}
-	if content := m.footerContent(); content != "" {
+	if content != "" {
 		line += "  " + content
+	}
+	operational := m.status != "" || m.notice != "" || m.githubStatus != ""
+	if m.w > 0 && lipgloss.Width(line) > m.w && content != "" && operational {
+		// Operational status (retry, remote update, errors) outranks metadata
+		// when the terminal cannot fit both.
+		line = mode + " " + content
 	}
 	if m.w > 0 {
 		line = ansi.Truncate(line, m.w, "…")

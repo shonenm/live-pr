@@ -302,6 +302,8 @@ type Model struct {
 	localFingerprint  string
 	localReloading    bool
 	revisionRelation  git.RevisionRelation
+	revisionAhead     int
+	revisionBehind    int
 	publishedCommits  int
 	localDiverged     bool
 	workingTreeDirty  bool
@@ -616,6 +618,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.worktreeSummary = data.worktree
 	m.localHeadOID, m.localFingerprint = data.localHeadOID, data.localFingerprint
 	m.revisionRelation = data.revisionRelation
+	m.revisionAhead, m.revisionBehind = data.revisionAhead, data.revisionBehind
 	m.publishedCommits, m.localDiverged = data.publishedCommits, data.localDiverged
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
 	m.detailView.base, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, m.detailView.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange

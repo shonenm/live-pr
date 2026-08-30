@@ -141,6 +141,7 @@ type baseResolved struct {
 	files                                []git.ChangedFile
 	localHeadOID                         string
 	revisionRelation                     git.RevisionRelation
+	revisionAhead, revisionBehind        int
 	publishedCommits                     int
 	localDiverged                        bool
 	readiness                            git.MergeReadiness
@@ -223,6 +224,8 @@ type localData struct {
 	localHeadOID      string
 	localFingerprint  string
 	revisionRelation  git.RevisionRelation
+	revisionAhead     int
+	revisionBehind    int
 	publishedCommits  int
 	localDiverged     bool
 	dirty             bool
