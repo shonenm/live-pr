@@ -35,6 +35,22 @@ func SetupGitHub(root, mode string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	if err := writeDemoFile(root, "remote-update.md", "# Remote only\n\nThis commit exists only on the published PR head.\n"); err != nil {
+		return "", "", err
+	}
+	if err := demoGit(root, "add", "remote-update.md"); err != nil {
+		return "", "", err
+	}
+	if err := demoGit(root, "commit", "-m", "docs: add remote-only review context"); err != nil {
+		return "", "", err
+	}
+	publishedCurrentOID, err := demoGitOutput(root, "rev-parse", "HEAD")
+	if err != nil {
+		return "", "", err
+	}
+	if err := demoGit(root, "push", "origin", current); err != nil {
+		return "", "", err
+	}
 
 	if err := demoGit(root, "switch", "main"); err != nil {
 		return "", "", err
@@ -84,9 +100,24 @@ func SetupGitHub(root, mode string) (string, string, error) {
 	if err := demoGit(root, "switch", current); err != nil {
 		return "", "", err
 	}
+	if err := demoGit(root, "reset", "--hard", currentOID); err != nil {
+		return "", "", err
+	}
+	if err := writeDemoFile(root, "local-only.md", "# Local only\n\nThis commit exists only in the checkout.\n"); err != nil {
+		return "", "", err
+	}
+	if err := demoGit(root, "add", "local-only.md"); err != nil {
+		return "", "", err
+	}
+	if err := demoGit(root, "commit", "-m", "docs: add local-only review context"); err != nil {
+		return "", "", err
+	}
+	if err := writeDemoFile(root, "working-tree.md", "# Working tree\n\nThis untracked file keeps the demo in LOCAL mode.\n"); err != nil {
+		return "", "", err
+	}
 
 	prs := []demoPR{
-		{101, current, currentOID, "Improve greeting and add coverage", "OPEN"},
+		{101, current, publishedCurrentOID, "Improve greeting and add coverage", "OPEN"},
 		{102, "demo/remote", remoteOID, "Add a remote-only change", "OPEN"},
 		{99, "demo/closed", closedOID, "Document a completed change", "CLOSED"},
 	}
