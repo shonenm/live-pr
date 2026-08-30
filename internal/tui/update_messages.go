@@ -564,9 +564,10 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	}
 	if msg.err != nil {
 		m.ciPollFailures++
-		m.githubStatus = "GitHub: CI update unavailable · retrying…"
+		m.githubStatus = fmt.Sprintf("GitHub: update unavailable · retrying in %s", ciPollDelay(m.ciPollFailures))
 		return m, scheduleCIPoll(msg.generation, m.cache.PR.Number, m.ciPollFailures)
 	}
+	m.ciPollFailures = 0
 	if msg.pr.HeadRefOID != m.cache.PR.HeadRefOID {
 		// Record the new publication boundary so the derived mode immediately
 		// leaves LIVE, but keep the local review range untouched until r.
@@ -575,7 +576,6 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		m.githubStatus = "GitHub: PR head changed · refresh required"
 		return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync())
 	}
-	m.ciPollFailures = 0
 	rollup := checkRollupState(msg.pr.Checks)
 	// A result identical to the cache skips the invalidation, row rebuild,
 	// and re-layout below: a pending PR polls every 15 seconds, and
@@ -649,6 +649,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	var diffCmd tea.Cmd
 	switch {
 	case msg.err == nil:
+		m.ciPollFailures = 0
 		msg.pr = m.applyLocalGitMetadata(msg.pr)
 		m.detailView.resetCaches()
 		m.cache.PR = &msg.pr

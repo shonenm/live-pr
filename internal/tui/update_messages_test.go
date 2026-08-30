@@ -605,6 +605,23 @@ func TestLivePollingContinuesAfterTerminalCI(t *testing.T) {
 	}
 }
 
+func TestCIPollBackoffAndSuccessfulRefreshReset(t *testing.T) {
+	m := testModel()
+	m.screen, m.targetGeneration = detailScreen, 2
+	m.localHeadOID, m.revisionRelation = "head", git.RevisionSynced
+	m.cache.PR = &gh.PR{Number: 12, HeadRefName: m.currentBranch, HeadRefOID: "head", State: "OPEN"}
+
+	u, cmd := m.Update(ciPolled{generation: 2, err: errors.New("offline")})
+	m = u.(Model)
+	if cmd == nil || m.ciPollFailures != 1 || !strings.Contains(m.githubStatus, "retrying in 30s") {
+		t.Fatalf("failed poll = failures:%d status:%q cmd:%v", m.ciPollFailures, m.githubStatus, cmd)
+	}
+	u, _ = m.Update(githubRefreshed{generation: 2, pr: *m.cache.PR})
+	if got := u.(Model).ciPollFailures; got != 0 {
+		t.Fatalf("failures after refresh = %d", got)
+	}
+}
+
 func TestCIPollDoesNotOverlapManualRefresh(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
