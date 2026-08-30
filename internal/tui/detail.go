@@ -183,6 +183,11 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	}
 	return func() tea.Msg {
 		msg := baseResolved{generation: generation, prURL: prURL}
+		if !remote && prCopy != nil && prCopy.Number > 0 && prCopy.BaseRefName != "" {
+			if _, oid, err := git.FetchPull(prCopy.Number, prCopy.BaseRefName); err == nil {
+				prCopy.HeadRefOID = oid
+			}
+		}
 		resolved := git.ResolveBase(base)
 		diffBase, newHead, reviewRange := localReviewRange(resolved, prCopy, headRev, remote)
 		msg.base, msg.diffBase, msg.headRev, msg.reviewRange = resolved, diffBase, newHead, reviewRange
@@ -200,11 +205,6 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 		if !remote {
 			msg.files, _ = git.ChangedFilesRange(diffBase, "")
 			msg.localHeadOID, _ = git.Revision("HEAD")
-			if prCopy != nil && prCopy.Number > 0 && prCopy.BaseRefName != "" {
-				if _, oid, err := git.FetchPull(prCopy.Number, prCopy.BaseRefName); err == nil {
-					prCopy.HeadRefOID = oid
-				}
-			}
 			msg.revisionRelation, msg.publishedCommits, msg.localDiverged, msg.remoteCommits = commitSections(diffBase, msg.commits, prCopy)
 		} else {
 			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
@@ -221,9 +221,13 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 }
 
 func commitSections(diffBase string, local []git.Commit, pr *gh.PR) (git.RevisionRelation, int, bool, []git.Commit) {
-	if pr == nil || pr.HeadRefOID == "" { return git.RevisionUnknown, 0, false, nil }
+	if pr == nil || pr.HeadRefOID == "" {
+		return git.RevisionUnknown, 0, false, nil
+	}
 	relation, err := git.CompareRevisions("HEAD", pr.HeadRefOID)
-	if err != nil { return git.RevisionUnknown, 0, false, nil }
+	if err != nil {
+		return git.RevisionUnknown, 0, false, nil
+	}
 	switch relation {
 	case git.RevisionSynced:
 		return relation, len(local), false, nil
@@ -235,7 +239,9 @@ func commitSections(diffBase string, local []git.Commit, pr *gh.PR) (git.Revisio
 		return relation, len(local), false, remoteOnly
 	case git.RevisionDiverged:
 		common, err := git.MergeBase("HEAD", pr.HeadRefOID)
-		if err != nil { return relation, 0, true, nil }
+		if err != nil {
+			return relation, 0, true, nil
+		}
 		published, _ := git.CommitsRange(diffBase, common)
 		remoteOnly, _ := git.CommitsRange(common, pr.HeadRefOID)
 		return relation, len(published), true, remoteOnly
@@ -692,8 +698,12 @@ func (m *Model) commitsFingerprint() uint64 {
 	var h maphash.Hash
 	h.SetSeed(tabRenderSeed)
 	fingerprintStrings(&h, fmt.Sprint(m.publishedCommits), fmt.Sprint(m.localDiverged), fmt.Sprint(m.remote), fmt.Sprint(m.worktreeSummary))
-	for _, c := range m.detailView.commits { fingerprintStrings(&h, c.SHA, c.Subject, c.Date) }
-	for _, c := range m.detailView.remoteCommits { fingerprintStrings(&h, c.SHA, c.Subject, c.Date) }
+	for _, c := range m.detailView.commits {
+		fingerprintStrings(&h, c.SHA, c.Subject, c.Date)
+	}
+	for _, c := range m.detailView.remoteCommits {
+		fingerprintStrings(&h, c.SHA, c.Subject, c.Date)
+	}
 	if m.cache.PR != nil {
 		_ = h.WriteByte(1)
 		for _, c := range m.cache.PR.Commits {
@@ -748,13 +758,18 @@ func (m *Model) buildCommits() (string, int) {
 		lines = append(lines, line)
 	}
 	if len(m.detailView.remoteCommits) > 0 {
-		if len(lines) > 0 { lines = append(lines, "") }
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
 		lines = append(lines, stAttention.Render("Remote only"))
 		for j, c := range m.detailView.remoteCommits {
 			i := len(m.detailView.commits) + j
 			icon, _, style := commitCIStatus(ciStates[c.SHA])
 			line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
-			if i == m.detailView.cursors[commitsTab] { selectedLine = len(lines); line = highlightSelectedBg(line, m.list.Width()) }
+			if i == m.detailView.cursors[commitsTab] {
+				selectedLine = len(lines)
+				line = highlightSelectedBg(line, m.list.Width())
+			}
 			lines = append(lines, line)
 		}
 	}
@@ -794,7 +809,9 @@ func (m Model) commitCIStates() map[string]string {
 	}
 	lengths := map[int]bool{}
 	for _, commits := range [][]git.Commit{m.detailView.commits, m.detailView.remoteCommits} {
-		for _, commit := range commits { lengths[len(commit.SHA)] = true }
+		for _, commit := range commits {
+			lengths[len(commit.SHA)] = true
+		}
 	}
 	for _, commit := range m.cache.PR.Commits {
 		for length := range lengths {

@@ -920,10 +920,16 @@ func (m Model) selectedBrowseURL() string {
 
 func (d detailModel) selectedCommitSHA() string {
 	i := d.cursors[commitsTab]
-	if d.active != commitsTab || i < 0 { return "" }
-	if i < len(d.commits) { return d.commits[i].SHA }
+	if d.active != commitsTab || i < 0 {
+		return ""
+	}
+	if i < len(d.commits) {
+		return d.commits[i].SHA
+	}
 	i -= len(d.commits)
-	if i < len(d.remoteCommits) { return d.remoteCommits[i].SHA }
+	if i < len(d.remoteCommits) {
+		return d.remoteCommits[i].SHA
+	}
 	return ""
 }
 

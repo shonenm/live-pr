@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -261,6 +262,59 @@ func TestCommitPickerShowsSelectableWorkingTree(t *testing.T) {
 	plain := ansi.Strip(out)
 	if !strings.Contains(plain, "Working tree") || !strings.Contains(plain, "1 staged · 2 unstaged · 3 untracked") || selected == 0 || m.activeLen() != 2 || m.detailView.selectedCommitSHA() != "" {
 		t.Fatalf("working-tree row = %q selected=%d len=%d sha=%q", plain, selected, m.activeLen(), m.detailView.selectedCommitSHA())
+	}
+}
+
+func TestCommitSectionsClassifiesDivergedHistory(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "file"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	run("switch", "-c", "feature")
+	run("commit", "--allow-empty", "-m", "published")
+	published := run("rev-parse", "HEAD")
+	run("branch", "remote", published)
+	run("commit", "--allow-empty", "-m", "local")
+	run("switch", "remote")
+	run("commit", "--allow-empty", "-m", "remote")
+	remote := run("rev-parse", "HEAD")
+	run("switch", "feature")
+	t.Chdir(dir)
+	local, err := git.CommitsRange("main", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	relation, publishedCount, diverged, remoteOnly := commitSections("main", local, &gh.PR{HeadRefOID: remote})
+	if relation != git.RevisionDiverged || publishedCount != 1 || !diverged || len(remoteOnly) != 1 || remoteOnly[0].Subject != "remote" {
+		t.Fatalf("sections = relation:%v published:%d diverged:%v remote:%#v", relation, publishedCount, diverged, remoteOnly)
+	}
+}
+
+func TestCommitPickerShowsRemoteOnlyCommits(t *testing.T) {
+	m := testModel()
+	m.detailView.active = commitsTab
+	m.detailView.commits = []git.Commit{{SHA: "local", Subject: "local"}}
+	m.detailView.remoteCommits = []git.Commit{{SHA: "remote", Subject: "remote"}}
+	m.publishedCommits, m.localDiverged = 0, true
+	m.detailView.cursors[commitsTab] = 1
+	out, selected := m.buildCommits()
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "Local history diverged") || !strings.Contains(plain, "Remote only") || selected == 0 || m.activeLen() != 2 || m.detailView.selectedCommitSHA() != "remote" {
+		t.Fatalf("remote commit rows = %q selected=%d len=%d sha=%q", plain, selected, m.activeLen(), m.detailView.selectedCommitSHA())
 	}
 }
 
