@@ -610,6 +610,21 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	return m, tea.Batch(cmd, m.nextCIPoll(), saveCacheCmd(m.cachePath, m.cache))
 }
 
+func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
+	pr.Additions, pr.Deletions, pr.ChangedFiles = m.localStats.Additions, m.localStats.Deletions, m.localStats.Files
+	pr.CommitCount = len(m.detailView.commits)
+	for i := range pr.Commits {
+		for _, local := range m.detailView.commits {
+			if strings.HasPrefix(pr.Commits[i].OID, local.SHA) || strings.HasPrefix(local.SHA, pr.Commits[i].OID) {
+				pr.Commits[i].CommittedDate = local.Date
+				pr.Commits[i].MessageHeadline = local.Subject
+				break
+			}
+		}
+	}
+	return pr
+}
+
 func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
@@ -623,6 +638,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	var diffCmd tea.Cmd
 	switch {
 	case msg.err == nil:
+		msg.pr = m.applyLocalGitMetadata(msg.pr)
 		m.detailView.resetCaches()
 		m.cache.PR = &msg.pr
 		if strings.TrimSpace(msg.pr.Title) != "" {
