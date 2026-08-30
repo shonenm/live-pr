@@ -413,6 +413,15 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	}
+	if m.currentBranch == "HEAD" {
+		m.refreshing = false
+		m.githubStatus = "Local only · detached HEAD"
+		cmds := []tea.Cmd{m.sync(), m.nextLocalPoll()}
+		if m.diffTerminal != nil {
+			cmds = append(cmds, m.diffTerminal.Init())
+		}
+		return m, tea.Batch(cmds...)
+	}
 	cmds := []tea.Cmd{fetchGitHub(m.client, m.currentBranch, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()), m.sync(), m.nextLocalPoll()}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
