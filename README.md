@@ -111,7 +111,7 @@ min_pane_width = 60
 split_ratio = 50             # list : preview width on the PR list screen (default 45)
 ```
 
-See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details.
+See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details and [docs/local-review-modes.md](docs/local-review-modes.md) for LOCAL/LIVE/REMOTE behavior and data ownership.
 
 `diff.command`, `diff.commit_command`, and `summarize_command` are run through a
 shell, and `.live-pr.toml` is read from the repository you are viewing — so a
