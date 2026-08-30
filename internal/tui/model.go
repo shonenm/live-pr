@@ -391,7 +391,7 @@ func New(version ...string) (Model, error) {
 		currentPR = currentBranchPR(navigator.PRs, branch)
 	}
 	defaultBranch := strings.TrimPrefix(defaultRef, "origin/")
-	localEligible := branch != "HEAD" && branch != defaultBranch
+	localEligible := branch != defaultBranch
 	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), hasChanges)
 	views := config.NormalizeViews(cfg.Views)
 	initialView, initialState := prView(0), openPRListState
@@ -538,7 +538,7 @@ func (m Model) canMergeCurrentPR() bool {
 }
 
 func shouldOpenLocal(branch, defaultBranch string, hasPR, hasData, hasChanges bool) bool {
-	return branch != "HEAD" && branch != defaultBranch && (hasPR || hasData || hasChanges)
+	return branch != defaultBranch && (hasPR || hasData || hasChanges)
 }
 
 func localReviewBase(base string, pr *gh.PR) string {
@@ -674,10 +674,10 @@ func (m Model) Init() tea.Cmd {
 	// loadSpinner and spinnerRunning are initialized in New(); the value
 	// receiver here would discard any mutation anyway.
 	cmds := []tea.Cmd{fetchPRList(m.client, m.prList.generation, m.prList.activePage, m.prViewSearch(m.prList.view, m.prList.state, m.prList.filterQuery), "", false), m.loadSpinner.Tick}
-	if m.screen == prListScreen && m.localAvailable && m.autoOpenCurrent {
+	if m.screen == prListScreen && m.currentBranch != "HEAD" && m.localAvailable && m.autoOpenCurrent {
 		cmds = append(cmds, fetchCurrentBranchPR(m.client, m.currentBranch))
 	}
-	if m.screen == detailScreen && !m.remote && m.cachePath != "" {
+	if m.screen == detailScreen && m.currentBranch != "HEAD" && !m.remote && m.cachePath != "" {
 		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()))
 	}
 	if m.screen == detailScreen {
@@ -1007,7 +1007,7 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.PRList:      true,
 		&m.keys.Browse:      m.selectedBrowseURL() != "",
 		&m.keys.CopyURL:     m.selectedBrowseURL() != "",
-		&m.keys.Publish:     !m.remote,
+		&m.keys.Publish:     !m.remote && m.currentBranch != "HEAD",
 		&m.keys.Merge:       m.canMergeCurrentPR() && m.prActionRunning == noPRAction,
 		&m.keys.Checkout:    m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR) && m.prActionRunning == noPRAction,
 		&m.keys.Close:       false,
