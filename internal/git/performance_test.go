@@ -66,6 +66,13 @@ func BenchmarkChangeDetection(b *testing.B) {
 					}
 				}
 			})
+			b.Run("poll-snapshot", func(b *testing.B) {
+				for range b.N {
+					if _, err := CurrentLocalState(); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
 		})
 	}
 }
