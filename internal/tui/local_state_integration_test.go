@@ -1,0 +1,110 @@
+package tui
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/shonenm/live-pr/internal/git"
+	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/store"
+)
+
+func TestLocalReviewStateLifecycle(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, "file"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	write("base\n")
+	run("add", ".")
+	run("commit", "-m", "base")
+	run("switch", "-c", "feature")
+	write("published\n")
+	run("commit", "-am", "published")
+	published := run("rev-parse", "HEAD")
+	t.Chdir(root)
+	st := store.ForBranch(root, "feature")
+	cache := gh.NewCache("feature")
+	cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", HeadRefOID: published, BaseRefName: "main", State: "OPEN"}
+	load := func() localData {
+		t.Helper()
+		data, err := loadLocalData(st, cache, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	mode := func(data localData, remote bool) detailMode {
+		m := testModel()
+		m.screen, m.remote, m.cache = detailScreen, remote, data.cache
+		m.localHeadOID, m.revisionRelation, m.workingTreeDirty = data.localHeadOID, data.revisionRelation, data.dirty
+		return m.detailMode()
+	}
+
+	data := load()
+	if data.revisionRelation != git.RevisionSynced || data.dirty || mode(data, false) != modeLive {
+		t.Fatalf("published clean = relation:%v dirty:%v mode:%v", data.revisionRelation, data.dirty, mode(data, false))
+	}
+	if mode(data, true) != modeRemote {
+		t.Fatalf("remote target mode = %v", mode(data, true))
+	}
+
+	write("staged\n")
+	run("add", "file")
+	write("unstaged\n")
+	data = load()
+	if !data.dirty || data.worktree.Staged != 1 || data.worktree.Unstaged != 1 || mode(data, false) != modeLocal {
+		t.Fatalf("dirty = %#v mode:%v", data.worktree, mode(data, false))
+	}
+
+	run("add", "file")
+	run("commit", "-m", "local")
+	local := run("rev-parse", "HEAD")
+	data = load()
+	if data.revisionRelation != git.RevisionLocalAhead || data.revisionAhead != 1 || data.dirty {
+		t.Fatalf("local ahead = relation:%v ahead:%d dirty:%v", data.revisionRelation, data.revisionAhead, data.dirty)
+	}
+
+	// Publishing moves only the PR boundary; the checkout itself is unchanged.
+	cache.PR.HeadRefOID = local
+	data = load()
+	if data.revisionRelation != git.RevisionSynced || mode(data, false) != modeLive {
+		t.Fatalf("after push = relation:%v mode:%v", data.revisionRelation, mode(data, false))
+	}
+
+	// A force-push replaces the published child of the original common commit.
+	run("switch", "-c", "remote-force", published)
+	run("commit", "--allow-empty", "-m", "remote replacement")
+	remote := run("rev-parse", "HEAD")
+	run("switch", "feature")
+	cache.PR.HeadRefOID = remote
+	data = load()
+	if data.revisionRelation != git.RevisionDiverged || data.revisionAhead != 1 || data.revisionBehind != 1 || len(data.remoteCommits) != 1 || mode(data, false) != modeLocal {
+		t.Fatalf("force push = relation:%v ahead:%d behind:%d remote:%#v mode:%v", data.revisionRelation, data.revisionAhead, data.revisionBehind, data.remoteCommits, mode(data, false))
+	}
+
+	run("reset", "--hard", remote)
+	data = load()
+	if data.revisionRelation != git.RevisionSynced || data.dirty || mode(data, false) != modeLive {
+		t.Fatalf("resynced = relation:%v dirty:%v mode:%v", data.revisionRelation, data.dirty, mode(data, false))
+	}
+}
