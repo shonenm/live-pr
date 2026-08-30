@@ -62,6 +62,10 @@ func CommonDir(dir string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(dir, path)
 	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve git common dir: %w", err)
+	}
 	return filepath.Clean(path), nil
 }
 
