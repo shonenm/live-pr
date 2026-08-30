@@ -470,6 +470,64 @@ func TestUntrackedBinaryAndSymlinkStats(t *testing.T) {
 	}
 }
 
+func TestChangedFilesRangeMarksConflicts(t *testing.T) {
+	dir := t.TempDir()
+	run := func(allowFailure bool, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil && !allowFailure {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run(false, "init", "-b", "main")
+	run(false, "config", "user.email", "test@example.com")
+	run(false, "config", "user.name", "Test")
+	write := func(text string) {
+		if err := os.WriteFile(filepath.Join(dir, "file"), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("base\n")
+	run(false, "add", ".")
+	run(false, "commit", "-m", "base")
+	run(false, "switch", "-c", "feature")
+	write("feature\n")
+	run(false, "commit", "-am", "feature")
+	run(false, "switch", "main")
+	write("main\n")
+	run(false, "commit", "-am", "main")
+	run(false, "switch", "feature")
+	run(true, "merge", "main")
+	t.Chdir(dir)
+	files, err := ChangedFilesRange("main", "")
+	if err != nil || len(files) != 1 || files[0].Status != "U" {
+		t.Fatalf("conflict files = %#v err=%v", files, err)
+	}
+}
+
+func TestWorkingTreeHashTracksNestedRepository(t *testing.T) {
+	dir := t.TempDir()
+	cmd := func(args ...string) {
+		c := exec.Command("git", args...)
+		c.Dir = dir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	cmd("init")
+	cmd("config", "user.email", "test@example.com")
+	cmd("config", "user.name", "Test")
+	cmd("commit", "--allow-empty", "-m", "base")
+	before := workingTreeHash(dir)
+	if err := os.WriteFile(filepath.Join(dir, "dirty"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after := workingTreeHash(dir)
+	if before == "" || before == after {
+		t.Fatalf("nested repository fingerprint did not change: %q", before)
+	}
+}
+
 func TestChangedFilesRangeFingerprints(t *testing.T) {
 	run := gitRepo(t)
 	run("init", "-b", "main")
