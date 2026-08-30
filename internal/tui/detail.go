@@ -206,6 +206,9 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 			msg.files, _ = git.ChangedFilesRange(diffBase, "")
 			msg.localHeadOID, _ = git.Revision("HEAD")
 			msg.revisionRelation, msg.publishedCommits, msg.localDiverged, msg.remoteCommits = commitSections(diffBase, msg.commits, prCopy)
+			if prCopy != nil && prCopy.HeadRefOID != "" {
+				msg.revisionAhead, msg.revisionBehind, _ = git.RevisionDistance("HEAD", prCopy.HeadRefOID)
+			}
 		} else {
 			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
 		}
@@ -270,6 +273,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
 		if !m.remote {
 			m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
+			m.revisionAhead, m.revisionBehind = msg.revisionAhead, msg.revisionBehind
 			m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
 		}
 		if m.detailView.fileCursor >= len(m.detailView.files) {
@@ -286,6 +290,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
 	if !m.remote {
 		m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
+		m.revisionAhead, m.revisionBehind = msg.revisionAhead, msg.revisionBehind
 		m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
 	}
 	m.detailView.fileCursor = 0
