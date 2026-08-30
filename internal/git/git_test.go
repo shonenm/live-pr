@@ -51,6 +51,9 @@ func TestCompareRevisions(t *testing.T) {
 	run("commit", "--allow-empty", "-m", "remote")
 	remote := run("rev-parse", "HEAD")
 	t.Chdir(dir)
+	if ahead, behind, err := RevisionDistance(local, remote); err != nil || ahead != 1 || behind != 1 {
+		t.Fatalf("RevisionDistance = %d,%d,%v", ahead, behind, err)
+	}
 	for _, tc := range []struct {
 		local, remote string
 		want          RevisionRelation
