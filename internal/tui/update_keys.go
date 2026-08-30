@@ -397,6 +397,10 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.targetGeneration++
 			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
 		}
+		if m.currentBranch == "HEAD" {
+			st := store.ForBranch(m.root, m.currentBranch)
+			return m, tea.Batch(m.startLocalLoad(st, m.cache, nil), m.startSpinner())
+		}
 		return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
 	case key.Matches(msg, m.keys.Status):
 		return m.openPRStatus(m.cache.PR)
