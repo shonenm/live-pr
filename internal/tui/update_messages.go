@@ -293,7 +293,7 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 		}
 		return next, cmd
 	}
-	m.status = fmt.Sprintf("Checked out PR #%d · reloading…", msg.number)
+	m.status = fmt.Sprintf("PR #%d · reloading…", msg.number)
 	m.refreshing = true
 	return m, tea.Batch(rebuildAfterCheckout(m.version, m.targetGeneration, msg), m.startSpinner())
 
@@ -340,7 +340,7 @@ func (m Model) handleCheckoutReloaded(msg checkoutReloaded) (Model, tea.Cmd) {
 	next := *msg.next
 	next.w, next.h = m.w, m.h
 	next.advanceAsyncGenerations(m)
-	next.notice = fmt.Sprintf("Checked out PR #%d", msg.number)
+	next.notice = fmt.Sprintf("PR #%d loaded", msg.number)
 	next.layout()
 	return next, tea.Batch(next.Init(), next.sync())
 }
