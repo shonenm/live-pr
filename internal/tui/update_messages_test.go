@@ -558,6 +558,17 @@ func TestLocalStatePollReloadsOnlyOnChange(t *testing.T) {
 	}
 }
 
+func TestDetachedLocalLoadSkipsGitHub(t *testing.T) {
+	m := testModel()
+	m.screen, m.currentBranch, m.targetGeneration = detailScreen, "HEAD", 3
+	st := store.ForBranch(t.TempDir(), "HEAD")
+	data := localData{cache: gh.NewCache("HEAD"), base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main"}
+	loaded, cmd := m.handleLocalLoaded(localLoaded{generation: 3, st: st, data: data})
+	if cmd == nil || loaded.refreshing || loaded.githubStatus != "Local only · detached HEAD" {
+		t.Fatalf("detached load = refreshing:%v status:%q cmd:%v", loaded.refreshing, loaded.githubStatus, cmd)
+	}
+}
+
 func TestAutomaticLocalReloadPreservesNavigation(t *testing.T) {
 	m := testModel()
 	m.screen, m.targetGeneration, m.localReloading = detailScreen, 3, true

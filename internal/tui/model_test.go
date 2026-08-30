@@ -419,7 +419,7 @@ func TestStartupRouting(t *testing.T) {
 		{name: "local commits", branch: "feature", defaultBranch: "main", hasChanges: true, detail: true},
 		{name: "main", branch: "main", defaultBranch: "main", hasPR: true},
 		{name: "empty feature", branch: "feature", defaultBranch: "main"},
-		{name: "detached", branch: "HEAD", defaultBranch: "main", hasChanges: true},
+		{name: "detached", branch: "HEAD", defaultBranch: "main", hasChanges: true, detail: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := shouldOpenLocal(tc.branch, tc.defaultBranch, tc.hasPR, tc.hasData, tc.hasChanges); got != tc.detail {
