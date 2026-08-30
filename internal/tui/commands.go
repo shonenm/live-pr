@@ -99,7 +99,8 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 			localDiverged = true
 		}
 	}
-	dirty, dirtyErr := git.HasUncommittedChanges()
+	worktree, dirtyErr := git.WorktreeStatus()
+	dirty := worktree.Total() > 0
 	conclusion, _ := os.ReadFile(st.Conclusion())
 	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(base, "HEAD")
 	return localData{
@@ -118,6 +119,7 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		publishedCommits:  publishedCommits,
 		localDiverged:     localDiverged,
 		dirty:             dirty,
+		worktree:          worktree,
 		incomplete:        commitErr != nil || fileErr != nil || dirtyErr != nil || headErr != nil || stateErr != nil,
 		conclusion:        string(conclusion),
 		mergeReadiness:    mergeReadiness,

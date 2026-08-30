@@ -326,6 +326,9 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if dirty, err := HasUncommittedChanges(); err != nil || !dirty {
 		t.Fatalf("dirty worktree = %v, err=%v", dirty, err)
 	}
+	if summary, err := WorktreeStatus(); err != nil || summary.Untracked != 1 || summary.Total() != 1 {
+		t.Fatalf("worktree summary = %#v, err=%v", summary, err)
+	}
 	stateBefore, err := CurrentLocalState()
 	if err != nil || stateBefore.Branch != "feature" || stateBefore.Fingerprint == "" {
 		t.Fatalf("local state = %#v, err=%v", stateBefore, err)
