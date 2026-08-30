@@ -433,6 +433,32 @@ func gitRepo(t *testing.T) func(args ...string) {
 	return run
 }
 
+func TestCurrentLocalSnapshotSummarizesOneStatusScan(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("tracked", []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	if err := os.WriteFile("tracked", []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "tracked")
+	if err := os.WriteFile("tracked", []byte("unstaged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("untracked", []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := CurrentLocalSnapshot()
+	if err != nil || snapshot.State.Branch != "main" || snapshot.State.Fingerprint == "" || snapshot.Worktree != (WorktreeSummary{Staged: 1, Unstaged: 1, Untracked: 1}) {
+		t.Fatalf("snapshot = %#v err=%v", snapshot, err)
+	}
+}
+
 func TestUntrackedBinaryAndSymlinkStats(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs privileges")
