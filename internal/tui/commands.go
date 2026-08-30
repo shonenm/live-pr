@@ -85,15 +85,17 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 	localHeadOID, headErr := git.Revision("HEAD")
 	localState, stateErr := git.CurrentLocalState()
 	publishedCommits, localDiverged := 0, false
+	revisionRelation := git.RevisionUnknown
 	if cache.PR != nil && cache.PR.HeadRefOID != "" {
-		if ancestor, err := git.IsAncestor(cache.PR.HeadRefOID, "HEAD"); err == nil && ancestor {
+		revisionRelation, _ = git.CompareRevisions("HEAD", cache.PR.HeadRefOID)
+		if revisionRelation == git.RevisionSynced || revisionRelation == git.RevisionLocalAhead {
 			if localOnly, err := git.CommitsRange(cache.PR.HeadRefOID, "HEAD"); err == nil {
 				publishedCommits = len(commits) - len(localOnly)
 				if publishedCommits < 0 {
 					publishedCommits = 0
 				}
 			}
-		} else if err == nil {
+		} else if revisionRelation == git.RevisionDiverged {
 			localDiverged = true
 		}
 	}
@@ -112,6 +114,7 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		stats:             stats,
 		localHeadOID:      localHeadOID,
 		localFingerprint:  localState.Fingerprint,
+		revisionRelation:  revisionRelation,
 		publishedCommits:  publishedCommits,
 		localDiverged:     localDiverged,
 		dirty:             dirty,

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/shonenm/live-pr/internal/embeddedterm"
+	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prfilter"
 	"github.com/shonenm/live-pr/internal/store"
@@ -561,6 +562,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		// Record the new publication boundary so the derived mode immediately
 		// leaves LIVE, but keep the local review range untouched until r.
 		m.cache.PR.HeadRefOID = msg.pr.HeadRefOID
+		m.revisionRelation = git.RevisionUnknown
 		m.githubStatus = "GitHub: PR head changed · refresh required"
 		return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync())
 	}

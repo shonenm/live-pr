@@ -27,6 +27,46 @@ func TestGitErrorIncludesOperationAndStderr(t *testing.T) {
 	}
 }
 
+func TestCompareRevisions(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	run("commit", "--allow-empty", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	run("switch", "-c", "local")
+	run("commit", "--allow-empty", "-m", "local")
+	local := run("rev-parse", "HEAD")
+	run("switch", "-c", "remote", base)
+	run("commit", "--allow-empty", "-m", "remote")
+	remote := run("rev-parse", "HEAD")
+	t.Chdir(dir)
+	for _, tc := range []struct {
+		local, remote string
+		want          RevisionRelation
+	}{
+		{local, local, RevisionSynced},
+		{local, base, RevisionLocalAhead},
+		{base, local, RevisionRemoteAhead},
+		{local, remote, RevisionDiverged},
+	} {
+		got, err := CompareRevisions(tc.local, tc.remote)
+		if err != nil || got != tc.want {
+			t.Fatalf("CompareRevisions(%s,%s)=%v,%v want %v", tc.local[:7], tc.remote[:7], got, err, tc.want)
+		}
+	}
+}
+
 func TestFetchPullLeavesCheckoutUntouched(t *testing.T) {
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
