@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 )
 
@@ -97,8 +98,14 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 		t.Fatalf("GitHub client preview = %#v err=%v", preview, err)
 	}
 	currentPreview, err := gh.New().FindPreview(101)
-	if err != nil || len(currentPreview.Commits) != 2 || currentPreview.Commits[0].CheckRollupState != "FAILURE" || currentPreview.Commits[0].MessageHeadline == "" || currentPreview.Commits[0].CommittedDate == "" || currentPreview.Commits[1].CheckRollupState != "SUCCESS" {
+	if err != nil || len(currentPreview.Commits) != 3 || currentPreview.Commits[0].CheckRollupState != "FAILURE" || currentPreview.Commits[0].MessageHeadline == "" || currentPreview.Commits[0].CommittedDate == "" || currentPreview.Commits[2].CheckRollupState != "SUCCESS" {
 		t.Fatalf("GitHub client mixed commit CI preview = %#v err=%v", currentPreview, err)
+	}
+	if relation, err := git.CompareRevisions("HEAD", currentPreview.HeadRefOID); err != nil || relation != git.RevisionDiverged {
+		t.Fatalf("demo revision relation = %v err=%v", relation, err)
+	}
+	if summary, err := git.WorktreeStatus(); err != nil || summary.Untracked != 1 {
+		t.Fatalf("demo working tree = %#v err=%v", summary, err)
 	}
 
 	run := func(args ...string) string {
