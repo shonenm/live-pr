@@ -224,6 +224,7 @@ type localData struct {
 	publishedCommits  int
 	localDiverged     bool
 	dirty             bool
+	worktree          git.WorktreeSummary
 	incomplete        bool
 	conclusion        string
 	mergeReadiness    git.MergeReadiness

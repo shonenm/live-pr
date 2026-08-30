@@ -305,6 +305,7 @@ type Model struct {
 	publishedCommits  int
 	localDiverged     bool
 	workingTreeDirty  bool
+	worktreeSummary   git.WorktreeSummary
 	autoOpenCurrent   bool
 	refreshing        bool
 	ciPollFailures    int
@@ -612,6 +613,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	}
 	m.localAvailable, m.localTitle = cache.PR == nil, m.detailView.title
 	m.localStats, m.localCommitCount, m.workingTreeDirty = data.stats, len(data.commits), data.dirty
+	m.worktreeSummary = data.worktree
 	m.localHeadOID, m.localFingerprint = data.localHeadOID, data.localFingerprint
 	m.revisionRelation = data.revisionRelation
 	m.publishedCommits, m.localDiverged = data.publishedCommits, data.localDiverged

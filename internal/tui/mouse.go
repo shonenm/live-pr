@@ -258,6 +258,15 @@ func (m *Model) detailListIndexAtLine(line int) int {
 			}
 			row++
 		}
+		if !m.remote && m.worktreeSummary.Total() > 0 {
+			if row > 0 {
+				row++
+			}
+			row++ // heading
+			if line == row {
+				return len(m.detailView.commits)
+			}
+		}
 		return -1
 	}
 	_, selectedLine := m.buildList()
