@@ -133,7 +133,10 @@ commit_command = "nvim -c \"CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA\""
 display = ""
 `
 	}
-	return writeDemoFile(root, ".live-pr.toml", config)
+	if err := writeDemoFile(root, ".live-pr.toml", config); err != nil {
+		return err
+	}
+	return writeDemoFile(root, ".git/info/exclude", ".live-pr.toml\n.demo-bin/\n.demo-github/\n.state/\n")
 }
 
 func restoreEnv(name, value string, existed bool) {
