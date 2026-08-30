@@ -83,13 +83,13 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		stats.Files = len(files)
 	}
 	localHeadOID, headErr := git.Revision("HEAD")
-	localState, stateErr := git.CurrentLocalState()
+	localSnapshot, snapshotErr := git.CurrentLocalSnapshot()
 	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(diffBase, commits, cache.PR)
 	revisionAhead, revisionBehind := 0, 0
 	if cache.PR != nil && cache.PR.HeadRefOID != "" {
 		revisionAhead, revisionBehind, _ = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
 	}
-	worktree, dirtyErr := git.WorktreeStatus()
+	worktree := localSnapshot.Worktree
 	dirty := worktree.Total() > 0
 	conclusion, _ := os.ReadFile(st.Conclusion())
 	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(base, "HEAD")
@@ -105,7 +105,7 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		files:             files,
 		stats:             stats,
 		localHeadOID:      localHeadOID,
-		localFingerprint:  localState.Fingerprint,
+		localFingerprint:  localSnapshot.State.Fingerprint,
 		revisionRelation:  revisionRelation,
 		revisionAhead:     revisionAhead,
 		revisionBehind:    revisionBehind,
@@ -113,7 +113,7 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		localDiverged:     localDiverged,
 		dirty:             dirty,
 		worktree:          worktree,
-		incomplete:        commitErr != nil || fileErr != nil || dirtyErr != nil || headErr != nil || stateErr != nil,
+		incomplete:        commitErr != nil || fileErr != nil || snapshotErr != nil || headErr != nil,
 		conclusion:        string(conclusion),
 		mergeReadiness:    mergeReadiness,
 		mergeReadinessErr: mergeReadinessErr,

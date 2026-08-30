@@ -484,53 +484,59 @@ type LocalState struct {
 	Fingerprint string
 }
 
-func CurrentLocalState() (LocalState, error) {
-	status, err := run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal")
-	if err != nil {
-		return LocalState{}, err
-	}
-	branch := "HEAD"
-	for _, record := range strings.Split(status, "\x00") {
-		if value, ok := strings.CutPrefix(record, "# branch.head "); ok {
-			if value != "(detached)" {
-				branch = value
-			}
-			break
-		}
-	}
-	sum := sha256.Sum256([]byte(status))
-	return LocalState{Branch: branch, Fingerprint: hex.EncodeToString(sum[:])}, nil
-}
-
 type WorktreeSummary struct {
 	Staged, Unstaged, Untracked int
 }
 
 func (s WorktreeSummary) Total() int { return s.Staged + s.Unstaged + s.Untracked }
 
+type LocalSnapshot struct {
+	State    LocalState
+	Worktree WorktreeSummary
+}
+
+// CurrentLocalSnapshot derives branch, fingerprint, and worktree counts from
+// one porcelain-v2 scan.
+func CurrentLocalSnapshot() (LocalSnapshot, error) {
+	status, err := run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal")
+	if err != nil {
+		return LocalSnapshot{}, err
+	}
+	snapshot := LocalSnapshot{State: LocalState{Branch: "HEAD"}}
+	for _, record := range strings.Split(status, "\x00") {
+		if value, ok := strings.CutPrefix(record, "# branch.head "); ok {
+			if value != "(detached)" {
+				snapshot.State.Branch = value
+			}
+			continue
+		}
+		if strings.HasPrefix(record, "? ") {
+			snapshot.Worktree.Untracked++
+			continue
+		}
+		if len(record) >= 4 && (record[0] == '1' || record[0] == '2' || record[0] == 'u') {
+			if record[2] != '.' {
+				snapshot.Worktree.Staged++
+			}
+			if record[3] != '.' {
+				snapshot.Worktree.Unstaged++
+			}
+		}
+	}
+	sum := sha256.Sum256([]byte(status))
+	snapshot.State.Fingerprint = hex.EncodeToString(sum[:])
+	return snapshot, nil
+}
+
+func CurrentLocalState() (LocalState, error) {
+	snapshot, err := CurrentLocalSnapshot()
+	return snapshot.State, err
+}
+
 // WorktreeStatus summarizes index, worktree, and untracked entries.
 func WorktreeStatus() (WorktreeSummary, error) {
-	out, err := run("status", "--porcelain", "-z", "--untracked-files=normal")
-	if err != nil {
-		return WorktreeSummary{}, err
-	}
-	var summary WorktreeSummary
-	for _, record := range strings.Split(out, "\x00") {
-		if len(record) < 3 {
-			continue
-		}
-		if strings.HasPrefix(record, "?? ") {
-			summary.Untracked++
-			continue
-		}
-		if record[0] != ' ' {
-			summary.Staged++
-		}
-		if record[1] != ' ' {
-			summary.Unstaged++
-		}
-	}
-	return summary, nil
+	snapshot, err := CurrentLocalSnapshot()
+	return snapshot.Worktree, err
 }
 
 // HasUncommittedChanges reports whether the index, worktree, or untracked files differ from HEAD.
