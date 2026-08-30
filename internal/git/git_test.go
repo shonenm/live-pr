@@ -302,7 +302,7 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 		t.Fatalf("local state did not change: before=%#v after=%#v err=%v", stateBefore, stateAfter, err)
 	}
 	worktree, err := DiffStats("main", "")
-	if err != nil || worktree.Files != 2 || worktree.Additions != 2 || worktree.Deletions != 1 {
+	if err != nil || worktree.Files != 3 || worktree.Additions != 3 || worktree.Deletions != 1 {
 		t.Fatalf("worktree stats = %#v, err=%v", worktree, err)
 	}
 	worktreeFiles, err := ChangedFilesRange("main", "")
@@ -385,6 +385,46 @@ func gitRepo(t *testing.T) func(args ...string) {
 	}
 	t.Chdir(dir)
 	return run
+}
+
+func TestUntrackedBinaryAndSymlinkStats(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "base"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	if err := os.WriteFile(filepath.Join(dir, "binary.dat"), []byte{0, 1, 2}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("base", filepath.Join(dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	stats, err := DiffStats("HEAD", "")
+	if err != nil || stats.Files != 2 || stats.Additions != 1 {
+		t.Fatalf("untracked stats = %#v err=%v", stats, err)
+	}
+	files, err := ChangedFilesRange("HEAD", "")
+	if err != nil || len(files) != 2 || files[0].Fingerprint == files[1].Fingerprint {
+		t.Fatalf("untracked files = %#v err=%v", files, err)
+	}
+	if diff, err := FileDiffRange("HEAD", "", "binary.dat", "link"); err != nil || !strings.Contains(diff, "Binary files") || !strings.Contains(diff, "new file mode 120000") {
+		t.Fatalf("binary/symlink diff = %q err=%v", diff, err)
+	}
 }
 
 func TestChangedFilesRangeFingerprints(t *testing.T) {
