@@ -407,13 +407,18 @@ type LocalState struct {
 }
 
 func CurrentLocalState() (LocalState, error) {
-	branch, err := CurrentBranch()
-	if err != nil {
-		return LocalState{}, err
-	}
 	status, err := run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal")
 	if err != nil {
 		return LocalState{}, err
+	}
+	branch := "HEAD"
+	for _, record := range strings.Split(status, "\x00") {
+		if value, ok := strings.CutPrefix(record, "# branch.head "); ok {
+			if value != "(detached)" {
+				branch = value
+			}
+			break
+		}
 	}
 	sum := sha256.Sum256([]byte(status))
 	return LocalState{Branch: branch, Fingerprint: hex.EncodeToString(sum[:])}, nil
