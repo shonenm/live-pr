@@ -52,6 +52,24 @@ func TestLoadSessionWithoutCacheStartsEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadSessionRecoversMalformedGitHubCache(t *testing.T) {
+	setupSessionRepo(t)
+	st, _, err := LoadSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.GitHubCache(), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gotStore, cache, err := LoadSession()
+	if err != nil || gotStore == nil || cache.PR != nil || cache.Head != "feature" || cache.Warning == "" {
+		t.Fatalf("recovered session = store:%v cache:%#v err=%v", gotStore, cache, err)
+	}
+}
+
 func TestLoadSessionLoadsSavedBranchCache(t *testing.T) {
 	setupSessionRepo(t)
 	st, _, err := LoadSession()
