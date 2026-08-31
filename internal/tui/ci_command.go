@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,7 +31,8 @@ func runCICommand(command, root, repository string, pr gh.PR, generation uint64)
 		)
 		out, err := cmd.Output()
 		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 				err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
 			}
 		}
