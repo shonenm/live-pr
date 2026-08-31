@@ -360,6 +360,13 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 	)
 }
 
+func remoteSnapshotError(metadataOID, fetchedOID string) error {
+	if metadataOID == "" || fetchedOID == "" || strings.EqualFold(metadataOID, fetchedOID) {
+		return nil
+	}
+	return fmt.Errorf("PR head changed during refresh (%s != %s); retry", shortSHA(metadataOID), shortSHA(fetchedOID))
+}
+
 func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
 	return func() tea.Msg {
 		var headRef, headOID string
@@ -367,7 +374,7 @@ func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRD
 		var activities []gh.Activity
 		var reviews []gh.Review
 		var reviewComments []gh.ReviewThreadComment
-		var refErr, previewErr, commentsErr, activitiesErr, reviewsErr, reviewCommentsErr, readinessErr error
+		var refErr, snapshotErr, previewErr, commentsErr, activitiesErr, reviewsErr, reviewCommentsErr, readinessErr error
 		var readiness git.MergeReadiness
 		number, base := pr.Number, pr.BaseRefName
 		var wg sync.WaitGroup
@@ -389,21 +396,26 @@ func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRD
 		}()
 		wg.Wait()
 		if refErr == nil {
-			pr.HeadRefOID = headOID
+			if previewErr == nil {
+				snapshotErr = remoteSnapshotError(pr.HeadRefOID, headOID)
+			}
+			if snapshotErr == nil {
+				pr.HeadRefOID = headOID
+			}
 		}
 		// The range scans run here so handleRemoteLoaded stays subprocess-free
 		// on the Update goroutine.
 		var resolvedBase, diffBase string
 		var commits []git.Commit
 		var files []git.ChangedFile
-		if refErr == nil {
+		if refErr == nil && snapshotErr == nil {
 			resolvedBase = git.ResolveBase(pr.BaseRefName)
 			diffBase = remoteReviewBase(pr)
 			readiness, readinessErr = git.CheckMergeReadiness(resolvedBase, headRef)
 			commits, _ = git.CommitsRange(diffBase, headRef)
 			files, _ = git.ChangedFilesRange(diffBase, headRef)
 		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, snapshotErr: snapshotErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
 	}
 }
 

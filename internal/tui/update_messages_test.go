@@ -401,6 +401,20 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	}
 }
 
+func TestRemoteSnapshotMismatchPreservesCurrentDetail(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote, m.targetGeneration, m.refreshing = detailScreen, true, 3, true
+	old := gh.PR{Number: 14, Title: "old", HeadRefOID: "old"}
+	m.cache.PR, m.detailView.headRev, m.detailView.title = &old, "old-ref", "old"
+	m.detailView.commits = []git.Commit{{SHA: "old"}}
+	next := gh.PR{Number: 14, Title: "new", HeadRefOID: "new"}
+	u, _ := m.Update(remoteLoaded{generation: 3, pr: next, headRef: "new-ref", snapshotErr: errors.New("head changed")})
+	m = u.(Model)
+	if m.refreshing || m.cache.PR.Title != "old" || m.detailView.headRev != "old-ref" || m.detailView.commits[0].SHA != "old" || !strings.Contains(m.githubStatus, "retry required") {
+		t.Fatalf("mismatch applied: pr=%#v head=%q commits=%#v status=%q", m.cache.PR, m.detailView.headRev, m.detailView.commits, m.githubStatus)
+	}
+}
+
 func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	m := testModel()
 	m.root = t.TempDir()
