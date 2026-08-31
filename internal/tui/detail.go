@@ -616,7 +616,7 @@ func (m Model) buildConflicts() (string, int) {
 func (m *Model) checksFingerprint(header string) uint64 {
 	var h maphash.Hash
 	h.SetSeed(tabRenderSeed)
-	fingerprintStrings(&h, header)
+	fingerprintStrings(&h, header, m.ciCommandOutput, m.ciCommandError, fmt.Sprint(m.ciCommandLoading))
 	for _, check := range m.cache.PR.Checks {
 		fingerprintStrings(&h, check.Name, check.Context, check.WorkflowName, check.Status, check.Conclusion, check.State, check.StartedAt, check.CompletedAt)
 	}
@@ -625,25 +625,20 @@ func (m *Model) checksFingerprint(header string) uint64 {
 
 func (m *Model) buildChecks() (string, int) {
 	header := m.baseFreshnessHeader()
-	if m.cache.PR == nil || len(m.cache.PR.Checks) == 0 {
-		lines := make([]string, 0, 3)
-		if header != "" {
-			lines = append(lines, header, "")
-		}
-		lines = append(lines, stMuted.Render("(no CI checks)"))
-		return strings.Join(lines, "\n"), 0
+	if m.cache.PR == nil {
+		return stMuted.Render("(no CI checks)"), 0
 	}
 	key := tabRenderKey{cursor: m.detailView.cursors[checksTab], width: m.list.Width(), content: m.checksFingerprint(header)}
 	if m.detailView.checksRenderValid && m.detailView.checksRenderKey == key {
 		return m.detailView.checksRender, m.detailView.checksRenderLine
 	}
-	lines := make([]string, 0, 2+len(m.cache.PR.Checks))
+	lines := make([]string, 0, 3+len(m.cache.PR.Checks))
 	if header != "" {
 		lines = append(lines, header, "")
 	}
-	checksStart := len(lines)
+	selected := len(lines)
+	lastWorkflow := ""
 	for i, check := range m.cache.PR.Checks {
-		icon, _, style := commitCIStatus(checkRollupState([]gh.PRCheck{check}))
 		name := check.Name
 		if name == "" {
 			name = check.Context
@@ -651,10 +646,17 @@ func (m *Model) buildChecks() (string, int) {
 		if name == "" {
 			name = "unnamed check"
 		}
-		workflow := ""
+		indent := ""
 		if check.WorkflowName != "" && check.WorkflowName != name {
-			workflow = stMuted.Render(" · " + check.WorkflowName)
+			if check.WorkflowName != lastWorkflow {
+				lines = append(lines, stFg.Bold(true).Render(check.WorkflowName))
+				lastWorkflow = check.WorkflowName
+			}
+			indent = "  └─ "
+		} else {
+			lastWorkflow = ""
 		}
+		icon, _, style := commitCIStatus(checkRollupState([]gh.PRCheck{check}))
 		state := check.Conclusion
 		if state == "" {
 			state = check.Status
@@ -662,7 +664,7 @@ func (m *Model) buildChecks() (string, int) {
 		if state == "" {
 			state = check.State
 		}
-		line := style.Render(icon) + " " + stFg.Render(name) + workflow
+		line := indent + style.Render(icon) + " " + stFg.Render(name)
 		if state != "" {
 			line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
 		}
@@ -670,11 +672,22 @@ func (m *Model) buildChecks() (string, int) {
 			line += stMuted.Render(" · " + dur)
 		}
 		if i == m.detailView.cursors[checksTab] {
+			selected = len(lines)
 			line = highlightSelectedBg(line, m.list.Width())
 		}
 		lines = append(lines, line)
 	}
-	out, selected := strings.Join(lines, "\n"), checksStart+m.detailView.cursors[checksTab]
+	if len(m.cache.PR.Checks) == 0 {
+		lines = append(lines, stMuted.Render("(no GitHub CI checks)"))
+	}
+	if m.ciCommandLoading {
+		lines = append(lines, "", stMuted.Render("Loading configured CI…"))
+	} else if m.ciCommandError != "" {
+		lines = append(lines, "", stRedF.Render("Configured CI: "+m.ciCommandError))
+	} else if m.ciCommandOutput != "" {
+		lines = append(lines, "", m.ciCommandOutput)
+	}
+	out := strings.Join(lines, "\n")
 	m.detailView.checksRender, m.detailView.checksRenderLine = out, selected
 	m.detailView.checksRenderKey, m.detailView.checksRenderValid = key, true
 	return out, selected

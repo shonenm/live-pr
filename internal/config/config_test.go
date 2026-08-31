@@ -53,6 +53,16 @@ func TestLoadAllowsExplicitlyDisablingDefaultBranchCommand(t *testing.T) {
 	}
 }
 
+func TestLoadCICommand(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[ci]\ncommand = 'woodpecker-cli build ls'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).CI.Command; got != "woodpecker-cli build ls" {
+		t.Fatalf("ci command = %q", got)
+	}
+}
+
 func TestLoadSummarizeCommand(t *testing.T) {
 	global := t.TempDir()
 	repo := t.TempDir()
