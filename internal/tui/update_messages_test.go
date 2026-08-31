@@ -544,6 +544,16 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 	}
 }
 
+func TestApplyLocalGitMetadataMatchesCommitsBySHA(t *testing.T) {
+	m := testModel()
+	m.localStats = git.ChangeStats{Additions: 3, Deletions: 2, Files: 1}
+	m.detailView.commits = []git.Commit{{SHA: "aaa111", Date: "2026-08-31", Subject: "local one"}, {SHA: "bbb222", Date: "2026-09-01", Subject: "local two"}}
+	pr := m.applyLocalGitMetadata(gh.PR{Commits: []gh.PRCommit{{OID: "bbb222", MessageHeadline: "remote"}, {OID: "missing", MessageHeadline: "unchanged"}}})
+	if pr.Additions != 3 || pr.Deletions != 2 || pr.ChangedFiles != 1 || pr.CommitCount != 2 || pr.Commits[0].MessageHeadline != "local two" || pr.Commits[0].CommittedDate != "2026-09-01" || pr.Commits[1].MessageHeadline != "unchanged" {
+		t.Fatalf("local metadata = %#v", pr)
+	}
+}
+
 func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	m := testModel()
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
