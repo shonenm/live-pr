@@ -33,6 +33,26 @@ func (m Model) baseBranchStyle(ref string) lipgloss.Style {
 // and cell-motion mouse mode that v1 passed as program options, plus the real
 // terminal cursor. When a text input is focused the cursor sits on its caret
 // cell so IME preedit text composes in place; otherwise it stays hidden.
+var asciiUI = strings.NewReplacer(
+	"←", "<", "→", ">", "↑", "^", "↓", "v", "↵", "E",
+	"…", ".", "·", "-", "•", "*", "●", "*", "○", "o", "◐", "~",
+	"✓", "OK", "✗", "X", "×", "x", "▸", ">", "▌", "|",
+	"─", "-", "━", "=", "│", "|", "┃", "|",
+	"╭", "+", "╮", "+", "╰", "+", "╯", "+", "┌", "+", "┐", "+", "└", "+", "┘", "+",
+	"├", "+", "┤", "+", "┬", "+", "┴", "+", "┼", "+", "┣", "+", "┫", "+",
+	"⠋", "*", "⠙", "*", "⠹", "*", "⠸", "*", "⠼", "*", "⠴", "*", "⠦", "*", "⠧", "*", "⠇", "*", "⠏", "*",
+)
+
+func (m Model) accessibleContent(content string) string {
+	if m.monochrome {
+		content = ansi.Strip(content)
+	}
+	if m.ascii {
+		content = asciiUI.Replace(content)
+	}
+	return content
+}
+
 func (m Model) View() tea.View {
 	view := tea.NewView("")
 	view.AltScreen = true
@@ -40,11 +60,11 @@ func (m Model) View() tea.View {
 	base := m.baseContent()
 	popup, hasPopup := m.popupContent()
 	if !hasPopup {
-		view.SetContent(base)
+		view.SetContent(m.accessibleContent(base))
 		view.Cursor = m.filterCursor()
 		return view
 	}
-	view.SetContent(overlayPopup(base, popup, m.w))
+	view.SetContent(m.accessibleContent(overlayPopup(base, popup, m.w)))
 	view.Cursor = m.overlayCursor(base, popup)
 	return view
 }
@@ -53,9 +73,9 @@ func (m Model) View() tea.View {
 func (m Model) viewContent() string {
 	base := m.baseContent()
 	if popup, ok := m.popupContent(); ok {
-		return overlayPopup(base, popup, m.w)
+		return m.accessibleContent(overlayPopup(base, popup, m.w))
 	}
-	return base
+	return m.accessibleContent(base)
 }
 
 // popupContent renders the open modal popup, if any.

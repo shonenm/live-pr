@@ -37,6 +37,9 @@ type Config struct {
 	// to primer-dark.
 	Theme string `toml:"theme"`
 
+	// Accessibility controls low-color and limited-glyph terminal output.
+	Accessibility AccessibilityConfig `toml:"accessibility"`
+
 	// Diff controls the optional right-pane diff display filter.
 	Diff DiffConfig `toml:"diff"`
 
@@ -109,6 +112,12 @@ func NormalizeViews(views []View) []View {
 		return DefaultViews()
 	}
 	return result
+}
+
+// AccessibilityConfig adapts rendering for limited terminals.
+type AccessibilityConfig struct {
+	Monochrome bool `toml:"monochrome"`
+	ASCII      bool `toml:"ascii"`
 }
 
 // ListConfig customizes the PR list screen.
