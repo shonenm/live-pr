@@ -418,7 +418,7 @@ func (m Model) renderReviewPane() string {
 	}
 	title := "Files"
 	if file := m.detailView.selectedFile(); file != nil {
-		title = "Files · " + file.Path
+		title = "Files · " + safeText(file.Path)
 	}
 	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(cBorder)).
 		Render(strings.TrimSuffix(strings.Repeat("│\n", m.explorer.Height()), "\n"))
@@ -450,9 +450,9 @@ func (m Model) buildFileExplorer() (string, int) {
 		if m.detailView.fileChecked(file) {
 			mark = stGreenF.Render("✓")
 		}
-		path := file.Path
+		path := safeText(file.Path)
 		if file.OldPath != "" {
-			path = file.OldPath + " → " + file.Path
+			path = safeText(file.OldPath) + " → " + safeText(file.Path)
 		}
 		conflict := ""
 		if conflicts[file.Path] || file.OldPath != "" && conflicts[file.OldPath] {
@@ -755,7 +755,7 @@ func (m *Model) buildCommits() (string, int) {
 		if i < published && m.cache.PR != nil {
 			icon, _, style = commitCIStatus(ciStates[c.SHA])
 		}
-		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
+		line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(safeText(c.Subject)) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
 		if i == m.detailView.cursors[commitsTab] {
 			selectedLine = len(lines)
 			line = highlightSelectedBg(line, m.list.Width())
@@ -770,7 +770,7 @@ func (m *Model) buildCommits() (string, int) {
 		for j, c := range m.detailView.remoteCommits {
 			i := len(m.detailView.commits) + j
 			icon, _, style := commitCIStatus(ciStates[c.SHA])
-			line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(c.Subject) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
+			line := style.Render(icon) + " " + stAccent.Render(c.SHA) + " " + stFg.Render(safeText(c.Subject)) + stMuted.Render(" · "+relativeTS(time.Now(), c.Date))
 			if i == m.detailView.cursors[commitsTab] {
 				selectedLine = len(lines)
 				line = highlightSelectedBg(line, m.list.Width())

@@ -92,6 +92,16 @@ func TestConversationCompactsOnlyAdjacentActivityRows(t *testing.T) {
 	}
 }
 
+func TestConversationRenderingRemovesTerminalControlSequences(t *testing.T) {
+	m := testModel()
+	attack := "before\x1b]52;c;Y2xpcGJvYXJk\aafter\x00"
+	pr := gh.PR{Author: gh.PRUser{Login: attack}, Body: attack}
+	out := strings.Join(m.descriptionLines(pr, false, 80), "\n")
+	if strings.Contains(out, "\x1b]52") || strings.Contains(out, "Y2xpcGJvYXJk") || strings.ContainsRune(out, '\x00') {
+		t.Fatalf("terminal controls reached output: %q", out)
+	}
+}
+
 func TestCachedPRDescriptionIsConversationOpeningCard(t *testing.T) {
 	m := testModel()
 	m.detailView.summary = "<final pull request summary>"

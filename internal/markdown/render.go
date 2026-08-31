@@ -13,6 +13,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
+	"github.com/shonenm/live-pr/internal/terminaltext"
 	"github.com/shonenm/live-pr/internal/theme"
 )
 
@@ -62,9 +63,11 @@ func rendererFor() (*glamour.TermRenderer, error) {
 // Render formats Markdown. Glamour renders image links as their source URL;
 // ordinary video URLs remain unchanged.
 func Render(text string, width int) string {
+	text = terminaltext.Sanitize(text)
 	if width < 20 {
 		width = 20
 	}
+	text = terminaltext.Sanitize(text)
 	key := cacheKey{width: width, text: text}
 	renderCache.Lock()
 	if out, ok := renderCache.items[key]; ok {
