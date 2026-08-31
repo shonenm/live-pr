@@ -20,6 +20,23 @@ import (
 	"github.com/shonenm/live-pr/internal/store"
 )
 
+func TestDetailCachesStayBoundedWithoutClearingPendingLoads(t *testing.T) {
+	var d detailModel
+	d.rawPending, d.diffPending = map[string]bool{"pending": true}, map[string]bool{"pending": true}
+	for i := range maxDetailCacheEntries {
+		d.cacheRaw(fmt.Sprintf("raw-%d", i), "raw", "error")
+		d.cacheDiff(fmt.Sprintf("diff-%d", i), "diff")
+	}
+	d.cacheRaw("raw-new", "new raw", "")
+	d.cacheDiff("diff-new", "new diff")
+	if len(d.rawCache) != 1 || d.rawCache["raw-new"] != "new raw" || len(d.rawErrs) != 0 || !d.rawPending["pending"] {
+		t.Fatalf("raw cache = values:%d errors:%d pending:%v", len(d.rawCache), len(d.rawErrs), d.rawPending)
+	}
+	if len(d.diffCache) != 1 || d.diffCache["diff-new"] != "new diff" || !d.diffPending["pending"] {
+		t.Fatalf("diff cache = values:%d pending:%v", len(d.diffCache), d.diffPending)
+	}
+}
+
 func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a POSIX fake executable")
