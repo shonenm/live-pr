@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -389,6 +390,15 @@ func TestFetchGitHubUsesLocalMetadataAndPassesCachedDetail(t *testing.T) {
 	fetchGitHub(m.client, "feature", 15, 3, m.cachedDetail())()
 	if remoteCalled || got.PR.Number != 15 || len(got.Comments) != 1 || got.Comments[0].ID != 7 {
 		t.Fatalf("local detail route = remote:%v cached:%#v", remoteCalled, got)
+	}
+}
+
+func TestRemoteSnapshotErrorRequiresMatchingHead(t *testing.T) {
+	if err := remoteSnapshotError("abc123456789", "abc123456789"); err != nil {
+		t.Fatal(err)
+	}
+	if err := remoteSnapshotError("abc123456789", "def123456789"); err == nil || !strings.Contains(err.Error(), "abc1234 != def1234") {
+		t.Fatalf("mismatch error = %v", err)
 	}
 }
 

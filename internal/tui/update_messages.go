@@ -482,6 +482,11 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.refreshing = false
+	if msg.snapshotErr != nil {
+		m.status = msg.snapshotErr.Error()
+		m.githubStatus = "GitHub: PR changed during refresh · retry required"
+		return m, m.sync()
+	}
 	selectedKey := m.selectedConversationKey()
 	now := time.Now().UTC().Format(time.RFC3339)
 	m.detailView.resetCaches()
