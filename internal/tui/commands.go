@@ -304,14 +304,19 @@ func (m *Model) dispatchRichContent() tea.Cmd {
 		return nil
 	}
 	m.detailView.lastRichContentKey = key
+	cached := m.detailView.richBodies
+	if m.detailView.richContentWidth != width {
+		cached = nil
+		m.detailView.richContentWidth = width
+	}
 	resolved := make(map[string]bool, len(m.avatarColors))
 	for login := range m.avatarColors {
 		resolved[login] = true
 	}
-	return loadRichContent(width, m.cache.PR, m.cache.Comments, m.cache.Activities, resolved)
+	return loadRichContent(width, m.cache.PR, m.cache.Comments, m.cache.Activities, resolved, cached)
 }
 
-func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity, resolved map[string]bool) tea.Cmd {
+func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity, resolved map[string]bool, cached map[string]string) tea.Cmd {
 	key := richContentKey(width, pr, comments, activities)
 	bodies := make([]string, 0, len(comments)+1)
 	avatars := map[string]string{}
@@ -333,8 +338,12 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 		func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			results := map[string]string{}
+			results := make(map[string]string, len(cached))
 			for _, body := range bodies {
+				if rendered, ok := cached[body]; ok {
+					results[body] = rendered
+					continue
+				}
 				rendered := map[string]string{}
 				for _, source := range richcontent.MermaidSources(body) {
 					if len(rendered) >= 32 {

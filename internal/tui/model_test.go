@@ -881,12 +881,26 @@ func TestDefaultBaseBranchIsAccented(t *testing.T) {
 // text: every PR description and comment accumulated in richBodies for no
 // rendering gain. richBody falls back to the raw body on a miss, so only
 // rewritten bodies belong in the map.
+func TestLoadRichContentReusesRenderedBodies(t *testing.T) {
+	body := "```mermaid\ngraph TD;A-->B;\n```"
+	cmd := loadRichContent(80, &gh.PR{Body: body}, nil, nil, map[string]bool{"": true}, map[string]string{body: "cached diagram"})
+	for _, sub := range cmd().(tea.BatchMsg) {
+		if msg, ok := sub().(richBodiesLoaded); ok {
+			if msg.bodies[body] != "cached diagram" {
+				t.Fatalf("cached body = %#v", msg.bodies)
+			}
+			return
+		}
+	}
+	t.Fatal("no richBodiesLoaded message dispatched")
+}
+
 func TestLoadRichContentSkipsBodiesWithoutMermaid(t *testing.T) {
 	pr := &gh.PR{Number: 1, Body: "plain description, no diagrams"}
 	comments := []gh.Comment{{Body: "plain comment"}}
 	// resolved covers the only avatar login (""), so the avatar half of the
 	// batch has nothing to download.
-	cmd := loadRichContent(80, pr, comments, nil, map[string]bool{"": true})
+	cmd := loadRichContent(80, pr, comments, nil, map[string]bool{"": true}, nil)
 	batch, ok := cmd().(tea.BatchMsg)
 	if !ok {
 		t.Fatalf("loadRichContent did not batch: %T", cmd())
