@@ -30,7 +30,10 @@ func TestSyncUsesCachedPRBase(t *testing.T) {
 	run("switch", "-c", "feature")
 	run("commit", "--allow-empty", "-m", "feature")
 	t.Chdir(dir)
-	st := store.ForBranch(dir, "feature")
+	st, err := store.Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Ensure(); err != nil {
 		t.Fatal(err)
 	}

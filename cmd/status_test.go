@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/shonenm/live-pr/internal/demo"
@@ -42,12 +41,10 @@ func TestLoadStatusUsesCachedPullRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.Repository != canonicalRoot || status.Branch != "demo/git" || status.Base != "main" {
-		t.Fatalf("repository status = %#v", status)
+	wantInfo, wantErr := os.Stat(root)
+	gotInfo, gotErr := os.Stat(status.Repository)
+	if wantErr != nil || gotErr != nil || !os.SameFile(wantInfo, gotInfo) || status.Branch != "demo/git" || status.Base != "main" {
+		t.Fatalf("repository status = %#v (stat errors: %v, %v)", status, wantErr, gotErr)
 	}
 	if status.Target != "github" || status.PR == nil || status.PR.Number != 42 {
 		t.Fatalf("pull request status = %#v", status)

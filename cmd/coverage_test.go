@@ -43,7 +43,11 @@ func cmdRepo(t *testing.T) *store.Store {
 	if err := os.Chdir(repo); err != nil {
 		t.Fatal(err)
 	}
-	return store.ForBranch(repo, "main")
+	st, err := store.Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 // flagCmd builds a throwaway command carrying the given string flags, so a

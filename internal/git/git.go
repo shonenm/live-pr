@@ -38,29 +38,9 @@ func run(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func canonicalPath(path string) (string, error) {
-	path, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(resolved), nil
-}
-
-// RepoRoot returns the canonical absolute path to the current repository's top level.
+// RepoRoot returns the absolute path to the current repository's top level.
 func RepoRoot() (string, error) {
-	root, err := run("rev-parse", "--show-toplevel")
-	if err != nil {
-		return "", err
-	}
-	root, err = canonicalPath(root)
-	if err != nil {
-		return "", fmt.Errorf("resolve repository root: %w", err)
-	}
-	return root, nil
+	return run("rev-parse", "--show-toplevel")
 }
 
 // CommonDir returns the absolute path of the repository's common .git
@@ -82,9 +62,25 @@ func CommonDir(dir string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(dir, path)
 	}
-	path, err = canonicalPath(path)
+	path, err = filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve git common dir: %w", err)
+	}
+	path = filepath.Clean(path)
+	// Git may return a real path (/private/var/...) for a linked worktree
+	// even when the caller used its filesystem alias (/var/...). Express the
+	// common dir in the caller's namespace so repository state keeps its
+	// historical main-checkout identity.
+	dirAbs, absErr := filepath.Abs(dir)
+	dirReal, dirErr := filepath.EvalSymlinks(dirAbs)
+	pathReal, pathErr := filepath.EvalSymlinks(path)
+	if absErr == nil && dirErr == nil && pathErr == nil {
+		if rel, relErr := filepath.Rel(dirReal, pathReal); relErr == nil {
+			candidate := filepath.Clean(filepath.Join(dirAbs, rel))
+			if resolved, resolveErr := filepath.EvalSymlinks(candidate); resolveErr == nil && resolved == pathReal {
+				return candidate, nil
+			}
+		}
 	}
 	return path, nil
 }
