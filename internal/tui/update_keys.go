@@ -466,7 +466,12 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Checks):
 		m.detailView.active, m.status = checksTab, ""
 		m.layout()
-		return m, m.sync()
+		if m.ciCommand == "" || m.cache.PR == nil {
+			return m, m.sync()
+		}
+		m.ciCommandLoading, m.ciCommandOutput, m.ciCommandError = true, "", ""
+		m.detailView.checksRenderValid = false
+		return m, tea.Batch(m.sync(), runCICommand(m.ciCommand, m.root, m.repository, *m.cache.PR, m.targetGeneration))
 	case key.Matches(msg, m.keys.Back):
 		if m.detailView.active == conversationTab {
 			return m, nil
