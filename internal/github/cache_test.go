@@ -3,6 +3,7 @@ package github
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -73,6 +74,9 @@ func TestLoadLegacyVersionOneCacheWithoutOpeningMetadata(t *testing.T) {
 }
 
 func TestSaveCacheUsesOwnerOnlyDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix owner permission bits")
+	}
 	dir := filepath.Join(t.TempDir(), "cache")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -123,6 +127,9 @@ func TestSaveCacheReplacesExistingFile(t *testing.T) {
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("cache file mode = %o, want 600", perm)
