@@ -29,6 +29,7 @@ import (
 
 // startLocalLoad gathers local detail in a Cmd and applies it on localLoaded.
 func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR) tea.Cmd {
+	m.cancelPollTimers()
 	cache = cache.Clone()
 	m.targetGeneration++
 	generation := m.targetGeneration
@@ -168,8 +169,27 @@ func fetchGitHub(client githubClient, head string, number int, generation uint64
 
 const localPollInterval = 2 * time.Second
 
-func scheduleLocalPoll(generation uint64) tea.Cmd {
-	return tea.Tick(localPollInterval, func(time.Time) tea.Msg { return localPollTick{generation: generation} })
+type pollTimers struct {
+	local context.CancelFunc
+	ci    context.CancelFunc
+}
+
+func schedulePoll(delay time.Duration, msg tea.Msg) (tea.Cmd, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	return func() tea.Msg {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return msg
+		case <-ctx.Done():
+			return nil
+		}
+	}, cancel
+}
+
+func scheduleLocalPoll(generation uint64) (tea.Cmd, context.CancelFunc) {
+	return schedulePoll(localPollInterval, localPollTick{generation: generation})
 }
 
 func pollLocalState(generation uint64) tea.Cmd {
@@ -179,9 +199,18 @@ func pollLocalState(generation uint64) tea.Cmd {
 	}
 }
 
-func (m Model) nextLocalPoll() tea.Cmd {
+func (m *Model) nextLocalPoll() tea.Cmd {
+	if m.pollTimers == nil {
+		m.pollTimers = &pollTimers{}
+	}
+	if m.pollTimers.local != nil {
+		m.pollTimers.local()
+	}
+	m.pollTimers.local = nil
 	if m.screen == detailScreen && !m.remote {
-		return scheduleLocalPoll(m.targetGeneration)
+		cmd, cancel := scheduleLocalPoll(m.targetGeneration)
+		m.pollTimers.local = cancel
+		return cmd
 	}
 	return nil
 }
@@ -190,16 +219,22 @@ func ciPollDelay(failures int) time.Duration {
 	return 15 * time.Second * time.Duration(1<<min(max(failures, 0), 3))
 }
 
-func scheduleCIPoll(generation uint64, number, failures int) tea.Cmd {
-	delay := ciPollDelay(failures)
-	return tea.Tick(delay, func(time.Time) tea.Msg {
-		return ciPollTick{generation: generation, number: number}
-	})
+func scheduleCIPoll(generation uint64, number, failures int) (tea.Cmd, context.CancelFunc) {
+	return schedulePoll(ciPollDelay(failures), ciPollTick{generation: generation, number: number})
 }
 
-func (m Model) nextCIPoll() tea.Cmd {
+func (m *Model) nextCIPoll() tea.Cmd {
+	if m.pollTimers == nil {
+		m.pollTimers = &pollTimers{}
+	}
+	if m.pollTimers.ci != nil {
+		m.pollTimers.ci()
+	}
+	m.pollTimers.ci = nil
 	if m.screen == detailScreen && m.cache.PR != nil && m.detailMode() == modeLive && (m.cache.PR.State == "" || strings.EqualFold(m.cache.PR.State, "OPEN")) {
-		return scheduleCIPoll(m.targetGeneration, m.cache.PR.Number, m.ciPollFailures)
+		cmd, cancel := scheduleCIPoll(m.targetGeneration, m.cache.PR.Number, m.ciPollFailures)
+		m.pollTimers.ci = cancel
+		return cmd
 	}
 	return nil
 }

@@ -238,6 +238,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		selected := m.currentPRNumber()
 		m.prList.view = m.listViewForReturn(selected)
 		m.detailOriginSet = false
+		m.cancelPollTimers()
 		m.targetGeneration++
 		if m.diffTerminal != nil {
 			m.diffTerminal.Close()
