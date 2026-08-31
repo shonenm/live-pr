@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
 var prStatusOptions = []string{"open", "closed", "draft"}
@@ -165,22 +166,31 @@ func (m Model) handlePRStatusDone(msg prStatusDone) (Model, tea.Cmd) {
 // which GitHub often answers with the old state right after a merge. Pages
 // are marked stale so the next load reconciles with the server.
 func (m Model) applyPRStateChange(pr gh.PR) (Model, tea.Cmd) {
+	selected := m.prList.selectedPRNumber()
 	if m.cache.PR != nil && m.cache.PR.Number == pr.Number {
 		*m.cache.PR = pr
 	}
 	m.navigator.PRs = upsertPR(m.navigator.PRs, pr)
 	for key, page := range m.prList.pages {
 		parts := strings.SplitN(key, ":", 3)
-		state := m.prList.state
+		view, state, filter := m.prList.view, m.prList.state, ""
+		if len(parts) > 0 {
+			if value, err := strconv.Atoi(parts[0]); err == nil {
+				view = prView(value)
+			}
+		}
 		if len(parts) > 1 {
 			if value, err := strconv.Atoi(parts[1]); err == nil {
 				state = prListState(value)
 			}
 		}
+		if len(parts) > 2 {
+			filter = parts[2]
+		}
 		prs := page.prs[:0]
 		for _, existing := range page.prs {
 			if existing.Number == pr.Number {
-				if matchesListState(pr, state) {
+				if matchesListState(pr, state) && m.matchesView(pr, view) && prfilter.Matches(pr, filter, m.viewerLogin) {
 					prs = append(prs, pr)
 				}
 				continue
@@ -196,7 +206,7 @@ func (m Model) applyPRStateChange(pr gh.PR) (Model, tea.Cmd) {
 		m.prList.pages[key] = page
 	}
 	if m.screen == prListScreen {
-		return m, m.applyPRViewState(0)
+		return m, m.applyPRViewState(selected)
 	}
 	return m, m.sync()
 }
