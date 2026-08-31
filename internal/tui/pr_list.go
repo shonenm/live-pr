@@ -634,9 +634,10 @@ func (m Model) buildPRPreview() string {
 	}
 	statusParts = append(statusParts, prCheckSummary(*pr))
 	statusLine := "  " + strings.Join(statusParts, "   ")
+	title, base, head := safeText(pr.Title), safeText(pr.BaseRefName), safeText(pr.HeadRefName)
 	lines := []string{
-		stMuted.Render(identifier) + "  " + stBold.Render(pr.Title),
-		stMuted.Render("⎇ ") + m.baseBranchStyle(pr.BaseRefName).Render(pr.BaseRefName) + stMuted.Render(" ← "+pr.HeadRefName),
+		stMuted.Render(identifier) + "  " + stBold.Render(title),
+		stMuted.Render("⎇ ") + m.baseBranchStyle(base).Render(base) + stMuted.Render(" ← "+head),
 		"",
 		stBold.Render("Status"),
 		statusLine,
@@ -677,11 +678,13 @@ func (m Model) buildPRPreview() string {
 		if strings.TrimSpace(body) == "" {
 			body = "(no description provided)"
 		}
-		header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
+		login := safeText(pr.Author.Login)
+		header := m.userIcon(login) + stMuted.Render(" @"+login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
 		lines = append(lines, cardLines(header, previewMarkdown(body, width-8, 10), false, width, cCloudBorder)...)
 		if len(pr.Conversation) > 0 {
 			comment := pr.Conversation[0]
-			header = m.userIcon(comment.Author.Login) + stMuted.Render(" @"+comment.Author.Login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
+			login = safeText(comment.Author.Login)
+			header = m.userIcon(login) + stMuted.Render(" @"+login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
 			lines = append(lines, "")
 			lines = append(lines, cardLines(header, previewMarkdown(comment.Body, width-8, 5), false, width, cCloudBorder)...)
 		}
@@ -1011,6 +1014,8 @@ func (m Model) renderSegments(segments []rowSegment, background string) string {
 // prRowSegments assembles the two content lines of a PR row once; selection
 // only changes the background and padding, never the content.
 func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) {
+	pr.Title, pr.Author.Login = safeText(pr.Title), safeText(pr.Author.Login)
+	pr.BaseRefName, pr.HeadRefName = safeText(pr.BaseRefName), safeText(pr.HeadRefName)
 	state := strings.ToLower(pr.State)
 	if state == "" {
 		state = "open"
@@ -1032,7 +1037,7 @@ func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) 
 		{text: " " + prefix, style: stMuted},
 		{text: identifier, style: glyphStyle},
 		{text: " ", style: stMuted},
-		{text: pr.Title, style: stBold},
+		{text: safeText(pr.Title), style: stBold},
 	}
 	// The state word would repeat what the colored glyph above already says,
 	// so the author leads the meta line instead; the synthetic local row has
@@ -1156,13 +1161,14 @@ func prStateBadgeColor(state string) string {
 }
 
 func labelPill(label gh.PRLabel) string {
+	label.Name = safeText(label.Name)
 	background, foreground := cBorder, cFg
 	color := strings.TrimPrefix(label.Color, "#")
 	if rgb, err := strconv.ParseUint(color, 16, 24); err == nil && len(color) == 6 {
 		background = "#" + color
 		foreground = theme.ContrastingLabelForeground(rgb)
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color(background)).Foreground(lipgloss.Color(foreground)).Padding(0, 1).Render(label.Name)
+	return lipgloss.NewStyle().Background(lipgloss.Color(background)).Foreground(lipgloss.Color(foreground)).Padding(0, 1).Render(safeText(label.Name))
 }
 
 // stepView cycles the selected tab, tolerating an index left out of range by
