@@ -383,7 +383,7 @@ func (m Model) footerContent() string {
 		return renderStatus(m.status)
 	}
 	if m.pendingPRAction != noPRAction {
-		return m.help.View(m.keys)
+		return m.keyHelp()
 	}
 	if m.prActionRunning != noPRAction {
 		return m.busyStatus("")
@@ -391,7 +391,7 @@ func (m Model) footerContent() string {
 	// While work is in flight the progress line wins over a lingering
 	// notice, so a reload after a completed action is visibly running.
 	if m.notice != "" && !m.isLoading() {
-		return stGreenF.Render(safeText(m.notice)) + "  " + m.help.View(m.keys)
+		return stGreenF.Render(safeText(m.notice)) + "  " + m.keyHelp()
 	}
 	if m.detailView.focus == focusReview {
 		hint := stMuted.Render("Review focused · Tab conversation · Shift+Tab full width · q quit")
@@ -402,11 +402,11 @@ func (m Model) footerContent() string {
 	}
 	if m.githubStatus != "" {
 		if m.isLoading() {
-			return m.busyStatus(m.githubStatus) + "  " + m.help.View(m.keys)
+			return m.busyStatus(m.githubStatus) + "  " + m.keyHelp()
 		}
-		return stMuted.Render(safeText(m.githubStatus)) + "  " + m.help.View(m.keys)
+		return stMuted.Render(safeText(m.githubStatus)) + "  " + m.keyHelp()
 	}
-	return m.help.View(m.keys)
+	return m.keyHelp()
 }
 
 func (m Model) compactFooterContent() string {
