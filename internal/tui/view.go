@@ -359,9 +359,15 @@ func (m Model) renderFooter() string {
 	}
 	operational := m.status != "" || m.notice != "" || m.githubStatus != ""
 	if m.w > 0 && lipgloss.Width(line) > m.w && content != "" && operational {
-		// Operational status (retry, remote update, errors) outranks metadata
-		// when the terminal cannot fit both.
+		// First fallback: operational status outranks metadata.
 		line = mode + " " + content
+	}
+	compactEligible := operational || m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction || m.detailView.focus == focusReview
+	if m.w > 0 && lipgloss.Width(line) > m.w && compactEligible {
+		// Second fallback: keep the status but drop verbose key discovery.
+		if compact := m.compactFooterContent(); compact != "" {
+			line = mode + " " + compact
+		}
 	}
 	if m.w > 0 {
 		line = ansi.Truncate(line, m.w, "…")
@@ -401,6 +407,34 @@ func (m Model) footerContent() string {
 		return stMuted.Render(safeText(m.githubStatus)) + "  " + m.help.View(m.keys)
 	}
 	return m.help.View(m.keys)
+}
+
+func (m Model) compactFooterContent() string {
+	if m.status != "" {
+		if m.isLoading() {
+			return m.busyStatus(m.status)
+		}
+		return renderStatus(m.status)
+	}
+	if m.prActionRunning != noPRAction {
+		return m.busyStatus("")
+	}
+	if m.notice != "" && !m.isLoading() {
+		return stGreenF.Render(safeText(m.notice))
+	}
+	if m.githubStatus != "" {
+		if m.isLoading() {
+			return m.busyStatus(m.githubStatus)
+		}
+		return stMuted.Render(safeText(m.githubStatus))
+	}
+	if m.detailView.focus == focusReview {
+		return stMuted.Render("Review focused · Tab conversation")
+	}
+	if m.pendingPRAction != noPRAction {
+		return stMuted.Render("Enter confirm · Esc cancel")
+	}
+	return stMuted.Render("? help · q quit")
 }
 
 func renderStatus(status string) string {
