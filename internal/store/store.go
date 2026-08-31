@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/shonenm/live-pr/internal/atomicfile"
 	"github.com/shonenm/live-pr/internal/git"
 )
 
@@ -282,15 +283,4 @@ func SaveReviewedMarks(path string, marks map[string]string) error {
 	return replaceFile(name, path)
 }
 
-// replaceFile renames tmp over path, with the Windows remove-and-retry that
-// WriteConclusion also needs.
-func replaceFile(tmp, path string) error {
-	err := os.Rename(tmp, path)
-	if err != nil && runtime.GOOS == "windows" {
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return err
-		}
-		return os.Rename(tmp, path)
-	}
-	return err
-}
+func replaceFile(tmp, path string) error { return atomicfile.Replace(tmp, path) }
