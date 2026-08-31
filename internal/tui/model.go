@@ -385,7 +385,13 @@ func New(version ...string) (Model, error) {
 	}
 	defaultRef := git.DefaultBase()
 	base := git.ResolveBase(cache.Base(defaultRef))
-	hasChanges, _ := git.HasChanges(base, "HEAD")
+	hasChanges, changesErr := git.HasChanges(base, "HEAD")
+	dirty, _ := git.HasUncommittedChanges()
+	worktree, _ := git.WorktreeStatus()
+	hasChanges = hasChanges || dirty || worktree.Total() > 0
+	if changesErr != nil && status == "" {
+		status = "base comparison unavailable: " + changesErr.Error()
+	}
 	currentPR := cache.PR
 	if currentPR != nil && !isCurrentPR(*currentPR, branch) && !cache.ExplicitCheckout {
 		currentPR = nil

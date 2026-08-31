@@ -762,6 +762,19 @@ func TestContentConflictsMergeFileFallback(t *testing.T) {
 	}
 }
 
+func TestDefaultBaseFindsSoleCustomAncestor(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "develop")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	run("commit", "--allow-empty", "-m", "base")
+	run("switch", "-c", "feature")
+	run("commit", "--allow-empty", "-m", "feature")
+	if got := DefaultBase(); got != "develop" {
+		t.Fatalf("custom default base = %q", got)
+	}
+}
+
 func TestDefaultBaseFallbackOrder(t *testing.T) {
 	run := gitRepo(t)
 	run("init", "-b", "trunk")
