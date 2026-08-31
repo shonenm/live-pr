@@ -117,14 +117,9 @@ type cacheSaved struct {
 	err error
 }
 
-// saveCacheCmd persists the branch GitHub cache off the Update goroutine. The
-// PR is copied here because handlers mutate it in place (CI polls); slices are
-// only ever replaced wholesale, so sharing them is safe.
+// saveCacheCmd persists an isolated branch-cache snapshot off the Update goroutine.
 func saveCacheCmd(path string, cache gh.Cache) tea.Cmd {
-	if cache.PR != nil {
-		pr := *cache.PR
-		cache.PR = &pr
-	}
+	cache = cache.Clone()
 	return func() tea.Msg {
 		return cacheSaved{err: gh.SaveCache(path, cache)}
 	}

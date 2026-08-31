@@ -17,6 +17,19 @@ func TestCacheBase(t *testing.T) {
 	}
 }
 
+func TestCacheCloneDoesNotShareMutableState(t *testing.T) {
+	original := NewCache("feature")
+	original.PR = &PR{Title: "old", Commits: []PRCommit{{OID: "old"}}, Checks: []PRCheck{{Name: "old"}}, Labels: []PRLabel{{Name: "old"}}}
+	original.Comments = []Comment{{Body: "old"}}
+	original.Reviews = []Review{{Body: "old"}}
+	clone := original.Clone()
+	original.PR.Title, original.PR.Commits[0].OID, original.PR.Checks[0].Name, original.PR.Labels[0].Name = "new", "new", "new", "new"
+	original.Comments[0].Body, original.Reviews[0].Body = "new", "new"
+	if clone.PR.Title != "old" || clone.PR.Commits[0].OID != "old" || clone.PR.Checks[0].Name != "old" || clone.PR.Labels[0].Name != "old" || clone.Comments[0].Body != "old" || clone.Reviews[0].Body != "old" {
+		t.Fatalf("clone changed with original: %#v", clone)
+	}
+}
+
 func TestCacheRoundTripAndHeadIsolation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "github.json")
 	c := NewCache("feature/x")
