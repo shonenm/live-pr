@@ -7,6 +7,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	buildPRPreview     = publish.BuildPreview
+	publishPullRequest = publish.Run
+)
+
 var prCmd = &cobra.Command{
 	Use:   "pr",
 	Short: "Preview or publish the timeline as a GitHub pull request",
@@ -16,7 +21,7 @@ var prCmd = &cobra.Command{
 
 func runPreview(cmd *cobra.Command) error {
 	base, _ := cmd.Flags().GetString("base")
-	preview, err := publish.BuildPreview(base)
+	preview, err := buildPRPreview(base)
 	if err != nil {
 		return err
 	}
@@ -28,7 +33,7 @@ func runPublish(cmd *cobra.Command) error {
 	base, _ := cmd.Flags().GetString("base")
 	draft, _ := cmd.Flags().GetBool("draft")
 	force, _ := cmd.Flags().GetBool("force-managed-body")
-	result, err := publish.Run(publish.Options{Base: base, Draft: draft, ForceManagedBody: force})
+	result, err := publishPullRequest(publish.Options{Base: base, Draft: draft, ForceManagedBody: force})
 	if err != nil {
 		return err
 	}
