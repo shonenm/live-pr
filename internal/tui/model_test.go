@@ -135,6 +135,25 @@ func TestFooterShowsDivergenceAndPrioritizesOperationalStatus(t *testing.T) {
 	}
 }
 
+func TestFooterUsesTwoStageNarrowFallback(t *testing.T) {
+	m := testModel()
+	m.screen, m.ready = detailScreen, true
+	m.cache.PR = &gh.PR{Number: 7}
+	m.githubStatus = "GitHub: cached"
+	mode := footerSegment(m.dataModeLabel(), m.dataModeColor())
+	content, compact := m.footerContent(), m.compactFooterContent()
+	m.w = lipgloss.Width(mode + " " + content)
+	medium := ansi.Strip(m.renderFooter())
+	if !strings.Contains(medium, "GitHub: cached") || strings.Contains(medium, "PR #7") || medium == ansi.Strip(mode+" "+compact) {
+		t.Fatalf("medium footer skipped first fallback: %q", medium)
+	}
+	m.w = lipgloss.Width(mode + " " + compact)
+	narrow := ansi.Strip(m.renderFooter())
+	if !strings.Contains(narrow, "GitHub: cached") || strings.Contains(narrow, "quit") || lipgloss.Width(m.renderFooter()) > m.w {
+		t.Fatalf("narrow footer = %q width=%d", narrow, lipgloss.Width(m.renderFooter()))
+	}
+}
+
 func TestCachedDetailIsAnAsyncSafeSnapshot(t *testing.T) {
 	m := testModel()
 	m.cache.PR = &gh.PR{Title: "old", Checks: []gh.PRCheck{{Name: "old"}}}
