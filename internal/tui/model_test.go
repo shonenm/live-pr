@@ -434,6 +434,32 @@ func TestCurrentPRIdentityRejectsSameNamedFork(t *testing.T) {
 	}
 }
 
+func TestStartupRoutesDirtyCustomDefaultRepositoryToLocalDetail(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "develop")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	run("commit", "--allow-empty", "-m", "base")
+	run("switch", "-c", "feature")
+	run("commit", "--allow-empty", "-m", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "dirty"), []byte("change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	m, err := New("test")
+	if err != nil || m.defaultBranch != "develop" || m.screen != detailScreen {
+		t.Fatalf("startup = default:%q screen:%v err=%v", m.defaultBranch, m.screen, err)
+	}
+}
+
 func TestStartupRouting(t *testing.T) {
 	for _, tc := range []struct {
 		name                               string
