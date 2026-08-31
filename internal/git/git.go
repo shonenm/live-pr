@@ -177,6 +177,29 @@ func DefaultBase() string {
 			return b
 		}
 	}
+	// A custom-default clone may lack origin/HEAD. Use the sole local branch
+	// proven to be an ancestor of the checkout; ambiguity still falls back.
+	current, _ := CurrentBranch()
+	if refs, err := run("for-each-ref", "--format=%(refname:short)", "refs/heads"); err == nil {
+		candidate := ""
+		for _, ref := range strings.Split(refs, "\n") {
+			if ref == "" || ref == current {
+				continue
+			}
+			ancestor, err := IsAncestor(ref, "HEAD")
+			if err != nil || !ancestor {
+				continue
+			}
+			if candidate != "" {
+				candidate = ""
+				break
+			}
+			candidate = ref
+		}
+		if candidate != "" {
+			return candidate
+		}
+	}
 	return "main"
 }
 
