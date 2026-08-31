@@ -51,6 +51,7 @@ type remoteLoaded struct {
 	reviewComments    []gh.ReviewThreadComment
 	readiness         git.MergeReadiness
 	refErr            error
+	snapshotErr       error
 	previewErr        error
 	commentsErr       error
 	activitiesErr     error
