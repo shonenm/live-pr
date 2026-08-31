@@ -435,7 +435,19 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.err != nil {
+		pollError := "local poll: " + msg.err.Error()
+		if m.status == "" || m.status == m.localPollError {
+			m.status = pollError
+		}
+		m.localPollError = pollError
 		return m, m.nextLocalPoll()
+	}
+	if m.localPollError != "" {
+		if m.status == m.localPollError {
+			m.status = ""
+		}
+		m.localPollError = ""
+		m.notice = "Local polling recovered"
 	}
 	if msg.state.Branch != m.currentBranch {
 		m.refreshing = true

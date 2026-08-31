@@ -301,6 +301,7 @@ type Model struct {
 	localHeadOID      string
 	localFingerprint  string
 	localReloading    bool
+	localPollError    string
 	revisionRelation  git.RevisionRelation
 	revisionAhead     int
 	revisionBehind    int
