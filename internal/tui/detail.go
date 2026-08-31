@@ -83,6 +83,7 @@ type detailModel struct {
 	conversationRows        [][2]int // per-item [start, end) line ranges of the cached render
 	convItemCache           map[string][]string
 	richBodies              map[string]string
+	richContentWidth        int
 	lastRichContentKey      [sha256.Size]byte
 	commitsRenderKey        tabRenderKey
 	commitsRender           string
@@ -138,6 +139,7 @@ func (d *detailModel) resetCaches() {
 // content is ever opened again.
 func (d *detailModel) pruneRichContent() {
 	d.richBodies = map[string]string{}
+	d.richContentWidth = 0
 	d.lastRichContentKey = [sha256.Size]byte{}
 }
 
