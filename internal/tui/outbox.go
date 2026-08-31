@@ -50,7 +50,7 @@ func (m Model) queueOfflineComment(msg remoteCommentDone) (Model, tea.Cmd, bool)
 	m.detailView.invalidateConversation()
 	m.status = ""
 	m.notice = "Offline · comment queued; sends on refresh (r)"
-	m.githubStatus = offlineStatus(msg.err, queuedCount(len(entries)))
+	m.githubStatus = offlineStatus(msg.err, queuedCount(len(entries)), m.cache.FetchedAt)
 	return m, m.sync(), true
 }
 
@@ -116,7 +116,7 @@ func (m Model) handleOutboxFlushed(msg outboxFlushed) (Model, tea.Cmd) {
 	m.refreshOutbox()
 	m.detailView.invalidateConversation()
 	if len(msg.posted) == 0 {
-		m.githubStatus = offlineStatus(msg.err, queuedCount(len(m.outbox)))
+		m.githubStatus = offlineStatus(msg.err, queuedCount(len(m.outbox)), m.cache.FetchedAt)
 		return m, m.sync()
 	}
 	m.notice = fmt.Sprintf("Sent %d queued comment(s)", len(msg.posted))
