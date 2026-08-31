@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+
+	"github.com/shonenm/live-pr/internal/atomicfile"
 )
 
 // ViewsPath reports the config file that owns the view list: the per-repo
@@ -113,16 +114,7 @@ func isTableHeader(trimmed string) bool {
 
 // replaceFile renames over the target, retrying on Windows where rename onto
 // an existing file fails.
-func replaceFile(tmp, path string) error {
-	err := os.Rename(tmp, path)
-	if err != nil && runtime.GOOS == "windows" {
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return err
-		}
-		return os.Rename(tmp, path)
-	}
-	return err
-}
+func replaceFile(tmp, path string) error { return atomicfile.Replace(tmp, path) }
 
 func hasViewsSection(data string) bool {
 	for _, line := range strings.Split(data, "\n") {

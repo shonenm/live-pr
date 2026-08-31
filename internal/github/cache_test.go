@@ -72,6 +72,31 @@ func TestLoadLegacyVersionOneCacheWithoutOpeningMetadata(t *testing.T) {
 	}
 }
 
+func TestSaveCacheUsesOwnerOnlyDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cache")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "github.json")
+	if err := SaveCache(path, NewCache("feature")); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("cache dir mode = %v", info.Mode().Perm())
+	}
+	file, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("cache file mode = %v", file.Mode().Perm())
+	}
+}
+
 func TestSaveCacheReplacesExistingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "github.json")
 	first := NewCache("feature")
