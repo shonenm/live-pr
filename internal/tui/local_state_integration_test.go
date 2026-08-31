@@ -109,6 +109,56 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	}
 }
 
+func TestCheckoutRebuildsPRModelAndPersistsExplicitCache(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "file")
+	run("commit", "-m", "base")
+	run("switch", "-c", "feature")
+	if err := os.WriteFile(file, []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "feature")
+	head := run("rev-parse", "HEAD")
+	run("switch", "main")
+	t.Chdir(root)
+	old, err := New("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.w, old.h, old.targetGeneration, old.prList.generation = 100, 30, 3, 4
+	// runPRAction has completed the checkout before reconstruction begins.
+	run("switch", "feature")
+	pr := gh.PR{Number: 42, State: "OPEN", BaseRefName: "main", HeadRefName: "feature", HeadRefOID: head}
+	msg := rebuildAfterCheckout("test", old.targetGeneration, prActionDone{number: 42, pr: pr})().(checkoutReloaded)
+	if msg.err != nil || msg.next == nil {
+		t.Fatalf("checkout rebuild = next:%v err:%v", msg.next, msg.err)
+	}
+	next, cmd := old.handleCheckoutReloaded(msg)
+	defer next.close()
+	cached, cacheErr := gh.LoadCache(store.ForBranch(root, "feature").GitHubCache(), "feature")
+	if cmd == nil || cacheErr != nil || cached.PR == nil || cached.PR.Number != 42 || !cached.ExplicitCheckout || next.currentBranch != "feature" || next.screen != detailScreen || next.cache.PR == nil || next.cache.PR.Number != 42 || !next.cache.ExplicitCheckout || next.w != 100 || next.h != 30 || next.targetGeneration != 4 || next.prList.generation != 5 || next.notice != "PR #42 loaded" {
+		t.Fatalf("checkout model = branch:%q screen:%v cache:%#v disk:%#v cacheErr:%v size:%dx%d generations:%d/%d notice:%q cmd:%v", next.currentBranch, next.screen, next.cache, cached, cacheErr, next.w, next.h, next.targetGeneration, next.prList.generation, next.notice, cmd)
+	}
+}
+
 func TestExternalBranchSwitchRebuildsLocalModel(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
