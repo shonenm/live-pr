@@ -110,6 +110,10 @@ min_pane_width = 60
 [list]
 split_ratio = 50             # list : preview width on the PR list screen (default 45)
 
+[ci]
+command = ""                 # append command stdout to the hierarchical CI checks view
+# Available: LIVE_PR_REPO, LIVE_PR_PR_NUMBER, LIVE_PR_PR_URL, LIVE_PR_HEAD_SHA
+
 [accessibility]
 monochrome = false           # remove ANSI color/style output
 ascii = false                # replace UI arrows, status glyphs, spinners, and borders with ASCII
@@ -117,7 +121,7 @@ ascii = false                # replace UI arrows, status glyphs, spinners, and b
 
 See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details and [docs/local-review-modes.md](docs/local-review-modes.md) for LOCAL/LIVE/REMOTE behavior and data ownership.
 
-`diff.command`, `diff.commit_command`, and `summarize_command` are run through a
+`diff.command`, `diff.commit_command`, `ci.command`, and `summarize_command` are run through a
 shell, and `.live-pr.toml` is read from the repository you are viewing — so a
 repository you clone can run a command of its author's choosing when you start
 live-pr in it, the same exposure as Vim's `exrc`. Review the per-repo

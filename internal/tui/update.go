@@ -26,7 +26,7 @@ func asyncCompletion(msg tea.Msg) bool {
 	case prListRefreshed, currentBranchPRLoaded, prPreviewLoaded, remoteLoaded,
 		githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
-		prStatusDone, prActionDone, ciPolled, ciPollTick, diffRendered,
+		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
 		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, rawDetailLoaded, baseResolved,
 		browserDone, tea.WindowSizeMsg, bspinner.TickMsg:
@@ -108,6 +108,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prPreviewLoaded:
 		next, cmd := m.handlePRPreviewLoaded(msg)
 		return next, cmd
+	case ciCommandDone:
+		if msg.generation == m.targetGeneration {
+			m.ciCommandLoading = false
+			m.ciCommandOutput, m.ciCommandError = msg.output, ""
+			if msg.err != nil {
+				m.ciCommandError = msg.err.Error()
+			}
+			m.detailView.checksRenderValid = false
+			m.layout()
+		}
+		return m, m.sync()
 	case diffRendered:
 		next, cmd := m.handleDiffRendered(msg)
 		return next, cmd
