@@ -38,11 +38,17 @@ func appendUniquePRs(existing, added []gh.PR) []gh.PR {
 // offlineStatus renders a fetch failure for the status line: setup problems
 // (gh missing, auth expired, broken custom query) name themselves instead of
 // hiding behind "Offline".
-func offlineStatus(err error, detail string) string {
+func offlineStatus(err error, detail string, fetchedAt ...string) string {
+	prefix := "Offline"
 	if hint := gh.StatusHint(err); hint != "" {
-		return "GitHub: " + hint + " · " + detail
+		prefix = "GitHub: " + hint
 	}
-	return "Offline · " + detail
+	parts := []string{prefix, detail}
+	if len(fetchedAt) > 0 && fetchedAt[0] != "" {
+		parts = append(parts, "cached "+relativeTS(time.Now(), fetchedAt[0]))
+	}
+	parts = append(parts, "r retry")
+	return strings.Join(parts, " · ")
 }
 
 func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
@@ -61,7 +67,7 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	m.prList.refreshing = false
 	if msg.err != nil {
 		m.prList.pages[msg.key] = page
-		m.githubStatus = offlineStatus(msg.err, "showing cached PR list")
+		m.githubStatus = offlineStatus(msg.err, "showing cached PR list", m.navigator.FetchedAt)
 		return m, m.sync()
 	}
 	selectedNumber := m.prList.selectedPRNumber()
@@ -149,7 +155,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 			m.applyPRFilters(m.prList.selectedPRNumber())
 			return m, m.sync()
 		}
-		m.githubStatus = offlineStatus(msg.err, "current branch PR unavailable")
+		m.githubStatus = offlineStatus(msg.err, "current branch PR unavailable", m.navigator.FetchedAt)
 		return m, nil
 	}
 	if !isCurrentPR(msg.pr, m.currentBranch) {
@@ -730,7 +736,11 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		m.githubStatus = "Local only · no GitHub PR"
 		m.applyPRFilters(0)
 	default:
-		m.githubStatus = offlineStatus(msg.err, "showing cached GitHub data")
+		detail := "showing cached GitHub data"
+		if !m.remote {
+			detail += " · local review available"
+		}
+		m.githubStatus = offlineStatus(msg.err, detail, m.cache.FetchedAt)
 	}
 	m.refreshReviewDraft()
 	m.refreshOutbox()

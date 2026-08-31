@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -271,14 +272,30 @@ func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 
 func TestPRListRefreshFailureNamesSetupProblems(t *testing.T) {
 	m := testModel()
+	m.navigator.FetchedAt = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
 	authErr := errors.New("gh pr list: exit status 4: To get started with GitHub CLI, please run:  gh auth login")
 	u, _ := m.Update(prListRefreshed{err: authErr})
 	m = u.(Model)
 	if strings.Contains(m.githubStatus, "Offline") || !strings.Contains(m.githubStatus, "gh auth login") {
 		t.Fatalf("auth failure reported as offline: %q", m.githubStatus)
 	}
-	if !strings.Contains(m.githubStatus, "showing cached PR list") {
-		t.Fatalf("cached-list note lost: %q", m.githubStatus)
+	for _, want := range []string{"showing cached PR list", "cached 2h ago", "r retry"} {
+		if !strings.Contains(m.githubStatus, want) {
+			t.Fatalf("offline status missing %q: %q", want, m.githubStatus)
+		}
+	}
+}
+
+func TestLocalGitHubFailureKeepsReviewAndShowsRecoveryHint(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote = detailScreen, false
+	m.cache.FetchedAt = time.Now().Add(-30 * time.Minute).UTC().Format(time.RFC3339)
+	u, _ := m.Update(githubRefreshed{generation: m.targetGeneration, err: errors.New("network unavailable")})
+	status := u.(Model).githubStatus
+	for _, want := range []string{"Offline", "local review available", "cached 30m ago", "r retry"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("recovery status missing %q: %q", want, status)
+		}
 	}
 }
 
