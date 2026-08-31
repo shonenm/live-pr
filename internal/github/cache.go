@@ -28,6 +28,27 @@ type Cache struct {
 // NewCache returns an initialized empty cache.
 func NewCache(head string) Cache { return Cache{Version: CacheVersion, Head: head} }
 
+// Clone returns an async-safe snapshot whose pointers and slices do not share
+// mutable backing storage with the live model.
+func (c Cache) Clone() Cache {
+	if c.PR != nil {
+		pr := *c.PR
+		pr.Conversation = append([]PRConversationComment(nil), pr.Conversation...)
+		pr.Commits = append([]PRCommit(nil), pr.Commits...)
+		pr.Checks = append([]PRCheck(nil), pr.Checks...)
+		pr.Assignees = append([]PRUser(nil), pr.Assignees...)
+		pr.Labels = append([]PRLabel(nil), pr.Labels...)
+		pr.ReviewRequests = append([]PRUser(nil), pr.ReviewRequests...)
+		pr.ClosingIssues = append([]IssueRef(nil), pr.ClosingIssues...)
+		c.PR = &pr
+	}
+	c.Comments = append([]Comment(nil), c.Comments...)
+	c.Activities = append([]Activity(nil), c.Activities...)
+	c.Reviews = append([]Review(nil), c.Reviews...)
+	c.ReviewComments = append([]ReviewThreadComment(nil), c.ReviewComments...)
+	return c
+}
+
 // Base returns the bound PR base when known, otherwise fallback.
 func (c Cache) Base(fallback string) string {
 	if c.PR != nil && c.PR.BaseRefName != "" {

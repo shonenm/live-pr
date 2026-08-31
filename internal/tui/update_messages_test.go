@@ -689,9 +689,8 @@ func TestCIPollReplacesCommitsWholesaleForAsyncSave(t *testing.T) {
 	m.screen, m.targetGeneration = detailScreen, 2
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head", PreviewLoaded: true,
 		Commits: []gh.PRCommit{{OID: "head", CheckRollupState: "PENDING"}}}
-	// saveCacheCmd copies the PR struct but shares slice backing arrays with
-	// the async marshal, so the poll must swap in a fresh Commits slice
-	// instead of writing elements in place.
+	// Handlers also avoid in-place writes, so any reader holding the prior
+	// snapshot remains stable while CI results land.
 	shared := m.cache.PR.Commits
 	u, _ := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "head",
 		Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
@@ -701,6 +700,24 @@ func TestCIPollReplacesCommitsWholesaleForAsyncSave(t *testing.T) {
 	}
 	if m.cache.PR.Commits[0].CheckRollupState != "SUCCESS" {
 		t.Fatalf("cloned commits missed the rollup: %#v", m.cache.PR.Commits)
+	}
+}
+
+func TestAsyncCacheSaveUsesDispatchSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "github.json")
+	cache := gh.NewCache("feature")
+	cache.PR = &gh.PR{Number: 1, Commits: []gh.PRCommit{{OID: "old"}}}
+	cache.Comments = []gh.Comment{{Body: "old"}}
+	cmd := saveCacheCmd(path, cache)
+	cache.PR.Number, cache.PR.Commits[0].OID, cache.Comments[0].Body = 2, "new", "new"
+	if msg := cmd(); msg != nil {
+		if saved, ok := msg.(cacheSaved); !ok || saved.err != nil {
+			t.Fatalf("save = %#v", msg)
+		}
+	}
+	got, err := gh.LoadCache(path, "feature")
+	if err != nil || got.PR == nil || got.PR.Number != 1 || got.PR.Commits[0].OID != "old" || got.Comments[0].Body != "old" {
+		t.Fatalf("saved snapshot = %#v err=%v", got, err)
 	}
 }
 

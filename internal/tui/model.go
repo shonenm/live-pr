@@ -527,9 +527,10 @@ func (m Model) currentPRNumber() int {
 // refresh comments incrementally. LoadPRDetail only trusts the snapshot when
 // its PR number matches the one being fetched.
 func (m Model) cachedDetail() gh.PRDetail {
-	detail := gh.PRDetail{Comments: m.cache.Comments}
-	if m.cache.PR != nil {
-		detail.PR = *m.cache.PR
+	cache := m.cache.Clone()
+	detail := gh.PRDetail{Comments: cache.Comments, Activities: cache.Activities, Reviews: cache.Reviews, ReviewComments: cache.ReviewComments}
+	if cache.PR != nil {
+		detail.PR = *cache.PR
 	}
 	return detail
 }
