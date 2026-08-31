@@ -192,7 +192,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.key != richContentKey(m.list.Width()-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
 			return m, nil
 		}
-		m.detailView.richBodies = msg.bodies
+		for body, rendered := range msg.bodies {
+			m.detailView.cacheRichBody(body, rendered)
+		}
 		m.detailView.invalidateConversation()
 		m.layout()
 		return m, m.sync()

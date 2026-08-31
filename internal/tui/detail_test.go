@@ -555,6 +555,9 @@ func TestSyncDetailKeepsScrollOnRenderedDiffCacheHits(t *testing.T) {
 }
 
 func TestCommitSelectionStartsEmbeddedCommitCommandAndFocusesReview(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("embedded terminal is unavailable on Windows")
+	}
 	m := testModel()
 	m.root = t.TempDir()
 	m.diffCommitCommand = "cat"

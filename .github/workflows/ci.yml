@@ -83,3 +83,6 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
       - run: go test ./internal/embeddedterm
+      - name: Test core workflows on macOS and Windows
+        if: runner.os != 'Linux'
+        run: go test ./internal/git ./internal/github ./internal/store

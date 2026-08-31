@@ -66,7 +66,23 @@ func CommonDir(dir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve git common dir: %w", err)
 	}
-	return filepath.Clean(path), nil
+	path = filepath.Clean(path)
+	// Git may return a real path (/private/var/...) for a linked worktree
+	// even when the caller used its filesystem alias (/var/...). Express the
+	// common dir in the caller's namespace so repository state keeps its
+	// historical main-checkout identity.
+	dirAbs, absErr := filepath.Abs(dir)
+	dirReal, dirErr := filepath.EvalSymlinks(dirAbs)
+	pathReal, pathErr := filepath.EvalSymlinks(path)
+	if absErr == nil && dirErr == nil && pathErr == nil {
+		if rel, relErr := filepath.Rel(dirReal, pathReal); relErr == nil {
+			candidate := filepath.Clean(filepath.Join(dirAbs, rel))
+			if resolved, resolveErr := filepath.EvalSymlinks(candidate); resolveErr == nil && resolved == pathReal {
+				return candidate, nil
+			}
+		}
+	}
+	return path, nil
 }
 
 // CurrentBranch returns the checked-out branch name (e.g. "main", "feature/x").

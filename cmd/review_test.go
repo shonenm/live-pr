@@ -38,7 +38,10 @@ func TestReviewDraftCLIHelpersUseCurrentPRRevision(t *testing.T) {
 	if err := os.Chdir(repo); err != nil {
 		t.Fatal(err)
 	}
-	st := store.ForBranch(repo, "main")
+	st, err := store.Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cache := gh.NewCache("main")
 	cache.PR = &gh.PR{Number: 12, HeadRefOID: "abc123"}
 	if err := gh.SaveCache(st.GitHubCache(), cache); err != nil {
