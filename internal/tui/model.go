@@ -372,6 +372,10 @@ type Model struct {
 	autoOpenCurrent   bool
 	refreshing        bool
 	ciPollFailures    int
+	ciCommand         string
+	ciCommandOutput   string
+	ciCommandError    string
+	ciCommandLoading  bool
 	publishing        bool
 	overlay           overlay // open modal popup; nil when none
 	localEditor       textarea.Model
@@ -528,6 +532,7 @@ func New(version ...string) (Model, error) {
 		diffSplitRatio:    cfg.Diff.SplitRatio,
 		diffMinPaneWidth:  cfg.Diff.MinPaneWidth,
 		listSplitRatio:    cfg.List.SplitRatio,
+		ciCommand:         cfg.CI.Command,
 		avatarColors:      map[string]string{},
 		help:              newHelp(),
 		keys:              keys,

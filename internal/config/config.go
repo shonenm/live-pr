@@ -46,6 +46,9 @@ type Config struct {
 	// List controls the PR list screen.
 	List ListConfig `toml:"list"`
 
+	// CI controls optional extra content in the CI checks view.
+	CI CIConfig `toml:"ci"`
+
 	// Views are the PR list tabs, in display order. A config that sets any
 	// view replaces the built-in set entirely, so tabs can be removed,
 	// renamed, reordered, or added.
@@ -125,6 +128,13 @@ type ListConfig struct {
 	// SplitRatio is the list pane's share in percent on the PR list screen.
 	// It is independent of diff.split_ratio, which shapes the detail screen.
 	SplitRatio int `toml:"split_ratio"`
+}
+
+// CIConfig customizes the CI checks view.
+type CIConfig struct {
+	// Command runs when the checks view is opened. Its stdout is appended to
+	// the GitHub checks, allowing self-hosted CI details to be rendered.
+	Command string `toml:"command"`
 }
 
 // DiffConfig customizes how raw Git diff is rendered in the right pane.

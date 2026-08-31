@@ -240,7 +240,7 @@ func TestConflictAndCheckViewsUseLeftPane(t *testing.T) {
 	updated, _ = m.Update(keyPress("i"))
 	m = updated.(Model)
 	plain = ansi.Strip(m.viewContent())
-	for _, want := range []string{"Checks · 3", "out of date · 3 commits behind base", "✓ unit · CI · success", "◐ lint · in progress", "✗ deploy · failure"} {
+	for _, want := range []string{"Checks · 3", "out of date · 3 commits behind base", "└─ ✓ unit · success", "◐ lint · in progress", "✗ deploy · failure"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("check view missing %q: %q", want, plain)
 		}
@@ -801,6 +801,29 @@ func TestBuildCommitsCachesRenderUntilInputsChange(t *testing.T) {
 	m.detailView.cursors[commitsTab] = 1
 	if out, _ := m.buildCommits(); out == "sentinel" {
 		t.Fatal("cursor move did not recompute the rows")
+	}
+}
+
+func TestBuildChecksGroupsChecksUnderWorkflow(t *testing.T) {
+	m := testModel()
+	m.cache.PR = &gh.PR{Checks: []gh.PRCheck{
+		{Name: "lint", WorkflowName: "CI", Conclusion: "SUCCESS"},
+		{Name: "test", WorkflowName: "CI", Conclusion: "FAILURE"},
+	}}
+	out, _ := m.buildChecks()
+	plain := ansi.Strip(out)
+	if strings.Count(plain, "CI") != 1 || !strings.Contains(plain, "  └─ ✓ lint") || !strings.Contains(plain, "  └─ ✗ test") {
+		t.Fatalf("checks are not hierarchical: %q", plain)
+	}
+}
+
+func TestBuildChecksIncludesConfiguredCommandOutput(t *testing.T) {
+	m := testModel()
+	m.cache.PR = &gh.PR{}
+	m.ciCommandOutput = "Woodpecker\n  └─ ✓ build"
+	out, _ := m.buildChecks()
+	if !strings.Contains(ansi.Strip(out), m.ciCommandOutput) {
+		t.Fatalf("configured CI output missing: %q", ansi.Strip(out))
 	}
 }
 
