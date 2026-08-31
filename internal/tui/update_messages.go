@@ -247,9 +247,9 @@ func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
 	}
 	delete(m.detailView.diffPending, msg.key)
 	if msg.err != nil {
-		m.detailView.diffCache[msg.key] = msg.raw
+		m.detailView.cacheDiff(msg.key, msg.raw)
 	} else {
-		m.detailView.diffCache[msg.key] = msg.output
+		m.detailView.cacheDiff(msg.key, msg.output)
 	}
 	if m.detailView.diffKey == msg.key {
 		if msg.err != nil {

@@ -43,6 +43,9 @@ const (
 // remote (read by the list's current-PR marker via isCurrentTargetPR),
 // targetGeneration (bumped by list-side navigation and checkout), the diff
 // config, and the diff terminal (torn down by Model-level target switches).
+const maxDetailCacheEntries = 128
+const maxRichBodyCacheEntries = 128
+
 type detailModel struct {
 	title             string
 	summary           string
@@ -141,6 +144,16 @@ func (d *detailModel) pruneRichContent() {
 	d.richBodies = map[string]string{}
 	d.richContentWidth = 0
 	d.lastRichContentKey = [sha256.Size]byte{}
+}
+
+func (d *detailModel) cacheRichBody(body, rendered string) {
+	if d.richBodies == nil {
+		d.richBodies = map[string]string{}
+	}
+	if _, exists := d.richBodies[body]; !exists && len(d.richBodies) >= maxRichBodyCacheEntries {
+		clear(d.richBodies)
+	}
+	d.richBodies[body] = rendered
 }
 
 func (m *Model) reloadLocalConversation() {
@@ -884,6 +897,34 @@ func (m *Model) cachedRawDetail(key string, load func() (string, error)) (raw, l
 	}
 }
 
+func (d *detailModel) cacheRaw(key, raw, loadErr string) {
+	if d.rawCache == nil {
+		d.rawCache = map[string]string{}
+	}
+	if d.rawErrs == nil {
+		d.rawErrs = map[string]string{}
+	}
+	if _, exists := d.rawCache[key]; !exists && len(d.rawCache) >= maxDetailCacheEntries {
+		clear(d.rawCache)
+		clear(d.rawErrs)
+	}
+	d.rawCache[key] = raw
+	delete(d.rawErrs, key)
+	if loadErr != "" {
+		d.rawErrs[key] = loadErr
+	}
+}
+
+func (d *detailModel) cacheDiff(key, diff string) {
+	if d.diffCache == nil {
+		d.diffCache = map[string]string{}
+	}
+	if _, exists := d.diffCache[key]; !exists && len(d.diffCache) >= maxDetailCacheEntries {
+		clear(d.diffCache)
+	}
+	d.diffCache[key] = diff
+}
+
 func (m Model) handleRawDetailLoaded(msg rawDetailLoaded) (Model, tea.Cmd) {
 	// rawPending is the ticket: resetCaches clears it, so results
 	// computed against a discarded review range are dropped and the next
@@ -892,13 +933,7 @@ func (m Model) handleRawDetailLoaded(msg rawDetailLoaded) (Model, tea.Cmd) {
 		return m, nil
 	}
 	delete(m.detailView.rawPending, msg.key)
-	m.detailView.rawCache[msg.key] = msg.raw
-	if msg.err != "" {
-		if m.detailView.rawErrs == nil {
-			m.detailView.rawErrs = map[string]string{}
-		}
-		m.detailView.rawErrs[msg.key] = msg.err
-	}
+	m.detailView.cacheRaw(msg.key, msg.raw, msg.err)
 	return m, m.sync()
 }
 
