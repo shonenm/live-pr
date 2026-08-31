@@ -74,7 +74,7 @@ func LoadCache(path, head string) (Cache, error) {
 	}
 	var c Cache
 	if err := json.Unmarshal(data, &c); err != nil {
-		return Cache{}, fmt.Errorf("%w: decode %s: %v", ErrInvalidCache, path, err)
+		return Cache{}, fmt.Errorf("%w: decode %s: %w", ErrInvalidCache, path, err)
 	}
 	if c.Version != CacheVersion {
 		// The cache is re-fetchable derived data; an unsupported version
