@@ -302,6 +302,7 @@ type Model struct {
 	localFingerprint  string
 	localReloading    bool
 	localPollError    string
+	pollTimers        *pollTimers
 	revisionRelation  git.RevisionRelation
 	revisionAhead     int
 	revisionBehind    int
@@ -418,6 +419,7 @@ func New(version ...string) (Model, error) {
 
 	m := Model{
 		client:          gh.New(),
+		pollTimers:      &pollTimers{},
 		checkoutHead:    git.CheckoutPullHead,
 		screen:          prListScreen,
 		version:         first(version),
@@ -696,7 +698,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()))
 	}
 	if m.screen == detailScreen {
-		cmds = append(cmds, m.dispatchRichContent(), m.nextLocalPoll())
+		cmds = append(cmds, m.dispatchRichContent(), m.nextLocalPoll(), m.nextCIPoll())
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
@@ -722,13 +724,35 @@ func (m *Model) startSpinner() tea.Cmd {
 	return m.loadSpinner.Tick
 }
 
+func (m *Model) cancelPollTimers() {
+	if m.pollTimers == nil {
+		return
+	}
+	if m.pollTimers.local != nil {
+		m.pollTimers.local()
+	}
+	if m.pollTimers.ci != nil {
+		m.pollTimers.ci()
+	}
+	m.pollTimers.local, m.pollTimers.ci = nil, nil
+}
+
 func (m *Model) close() {
+	m.cancelPollTimers()
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
 	}
 }
 
 func (m *Model) advanceAsyncGenerations(previous Model) {
+	if previous.pollTimers != nil {
+		if previous.pollTimers.local != nil {
+			previous.pollTimers.local()
+		}
+		if previous.pollTimers.ci != nil {
+			previous.pollTimers.ci()
+		}
+	}
 	m.targetGeneration = previous.targetGeneration + 1
 	m.prList.generation = previous.prList.generation + 1
 	m.detailView.resetCaches()
@@ -745,6 +769,7 @@ func (d *detailModel) invalidateConversation() {
 }
 
 func (m *Model) openRemote(pr gh.PR) tea.Cmd {
+	m.cancelPollTimers()
 	m.targetGeneration++
 	m.detailView.resetCaches()
 	if !m.remote || m.cache.PR == nil || m.cache.PR.Number != pr.Number {
