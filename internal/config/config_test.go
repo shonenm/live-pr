@@ -118,6 +118,17 @@ func TestLoadReadsTheme(t *testing.T) {
 	}
 }
 
+func TestLoadAccessibilityMode(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[accessibility]\nmonochrome = true\nascii = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(t, repo)
+	if !cfg.Accessibility.Monochrome || !cfg.Accessibility.ASCII {
+		t.Fatalf("accessibility = %#v", cfg.Accessibility)
+	}
+}
+
 func TestLoadMissingFilesUsesDefaults(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	got, err := Load(t.TempDir())

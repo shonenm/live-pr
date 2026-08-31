@@ -109,6 +109,10 @@ min_pane_width = 60
 
 [list]
 split_ratio = 50             # list : preview width on the PR list screen (default 45)
+
+[accessibility]
+monochrome = false           # remove ANSI color/style output
+ascii = false                # replace UI arrows, status glyphs, spinners, and borders with ASCII
 ```
 
 See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details and [docs/local-review-modes.md](docs/local-review-modes.md) for LOCAL/LIVE/REMOTE behavior and data ownership.
