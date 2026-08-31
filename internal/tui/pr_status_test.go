@@ -39,6 +39,40 @@ func TestListStatusCloseUpdatesCachedBranchPR(t *testing.T) {
 	}
 }
 
+func TestPRStatusChangePreservesSelectionOrNearestRow(t *testing.T) {
+	setup := func(filter string) Model {
+		m := testModel()
+		m.screen, m.prList.view, m.prList.state, m.prList.filterQuery = prListScreen, allPRsView, openPRListState, filter
+		m.navigator = gh.NewNavigatorCache()
+		m.prList.activePage = prPageKey(allPRsView, openPRListState, filter)
+		prs := []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}, {Number: 3, State: "OPEN"}}
+		m.navigator.PRs = prs
+		m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: prs, total: 3, loaded: true, fresh: true}}
+		m.applyPRFilters(2)
+		return m
+	}
+
+	m := setup("")
+	updated := gh.PR{Number: 2, State: "OPEN", IsDraft: true}
+	m, _ = m.applyPRStateChange(updated)
+	if got := m.prList.selectedPRNumber(); got != 2 {
+		t.Fatalf("surviving selection = #%d", got)
+	}
+
+	m = setup("draft:false")
+	m, _ = m.applyPRStateChange(updated)
+	if got := m.prList.selectedPRNumber(); got != 3 {
+		t.Fatalf("filtered selection fallback = #%d, want nearest #3", got)
+	}
+
+	m = setup("")
+	updated.State, updated.IsDraft = "CLOSED", false
+	m, _ = m.applyPRStateChange(updated)
+	if got := m.prList.selectedPRNumber(); got != 3 {
+		t.Fatalf("closed selection fallback = #%d, want nearest #3", got)
+	}
+}
+
 func TestPRStatusPopupOpensFromListAndDetail(t *testing.T) {
 	for _, screen := range []screen{prListScreen, detailScreen} {
 		m := testModel()
