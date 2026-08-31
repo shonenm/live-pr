@@ -29,6 +29,7 @@ import (
 
 // startLocalLoad gathers local detail in a Cmd and applies it on localLoaded.
 func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR) tea.Cmd {
+	cache = cache.Clone()
 	m.targetGeneration++
 	generation := m.targetGeneration
 	m.refreshing = true
