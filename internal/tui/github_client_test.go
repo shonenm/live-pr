@@ -345,6 +345,22 @@ func TestCIPollDelayBackoffCapsAtTwoMinutes(t *testing.T) {
 
 // scheduleCIPoll itself wraps tea.Tick, whose command blocks for the full
 // delay; the tick payload is exercised through the ciPollTick route instead.
+func TestPollingTimersCancelOnRescheduleAndClose(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote, m.pollTimers = detailScreen, false, &pollTimers{}
+	first := m.nextLocalPoll()
+	second := m.nextLocalPoll()
+	if msg := first(); msg != nil {
+		t.Fatalf("superseded timer returned %#v", msg)
+	}
+	m.close()
+	if msg := second(); msg != nil {
+		t.Fatalf("closed timer returned %#v", msg)
+	}
+	// Cancellation remains safe when copied Models share the timer registry.
+	m.close()
+}
+
 func TestCIPollTickDispatchesPollForCurrentPR(t *testing.T) {
 	var gotNumber int
 	m := testModel()

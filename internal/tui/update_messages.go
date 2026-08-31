@@ -582,7 +582,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	if msg.err != nil {
 		m.ciPollFailures++
 		m.githubStatus = fmt.Sprintf("GitHub: update unavailable · retrying in %s", ciPollDelay(m.ciPollFailures))
-		return m, scheduleCIPoll(msg.generation, m.cache.PR.Number, m.ciPollFailures)
+		return m, m.nextCIPoll()
 	}
 	m.ciPollFailures = 0
 	if msg.pr.HeadRefOID != m.cache.PR.HeadRefOID {
