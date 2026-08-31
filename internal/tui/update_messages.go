@@ -641,13 +641,24 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
 	pr.Additions, pr.Deletions, pr.ChangedFiles = m.localStats.Additions, m.localStats.Deletions, m.localStats.Files
 	pr.CommitCount = len(m.detailView.commits)
+	localBySHA := make(map[string]git.Commit, len(m.detailView.commits))
+	for _, commit := range m.detailView.commits {
+		key := commit.SHA
+		if len(key) > 7 {
+			key = key[:7]
+		}
+		if _, exists := localBySHA[key]; !exists {
+			localBySHA[key] = commit
+		}
+	}
 	for i := range pr.Commits {
-		for _, local := range m.detailView.commits {
-			if strings.HasPrefix(pr.Commits[i].OID, local.SHA) || strings.HasPrefix(local.SHA, pr.Commits[i].OID) {
-				pr.Commits[i].CommittedDate = local.Date
-				pr.Commits[i].MessageHeadline = local.Subject
-				break
-			}
+		key := pr.Commits[i].OID
+		if len(key) > 7 {
+			key = key[:7]
+		}
+		if local, ok := localBySHA[key]; ok {
+			pr.Commits[i].CommittedDate = local.Date
+			pr.Commits[i].MessageHeadline = local.Subject
 		}
 	}
 	return pr
