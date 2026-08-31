@@ -38,9 +38,29 @@ func run(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// RepoRoot returns the absolute path to the current repository's top level.
+func canonicalPath(path string) (string, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
+}
+
+// RepoRoot returns the canonical absolute path to the current repository's top level.
 func RepoRoot() (string, error) {
-	return run("rev-parse", "--show-toplevel")
+	root, err := run("rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	root, err = canonicalPath(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	return root, nil
 }
 
 // CommonDir returns the absolute path of the repository's common .git
@@ -62,11 +82,11 @@ func CommonDir(dir string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(dir, path)
 	}
-	path, err = filepath.Abs(path)
+	path, err = canonicalPath(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve git common dir: %w", err)
 	}
-	return filepath.Clean(path), nil
+	return path, nil
 }
 
 // CurrentBranch returns the checked-out branch name (e.g. "main", "feature/x").

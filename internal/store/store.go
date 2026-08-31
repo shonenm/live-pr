@@ -174,6 +174,10 @@ func sharedRepoPath(root string) string {
 	if err != nil {
 		clean = root
 	}
+	if resolved, resolveErr := filepath.EvalSymlinks(clean); resolveErr == nil {
+		clean = resolved
+	}
+	clean = filepath.Clean(clean)
 	if cached, ok := sharedRoots.Load(clean); ok {
 		return cached.(string)
 	}
