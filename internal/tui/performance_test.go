@@ -69,6 +69,26 @@ func BenchmarkViewCounts(b *testing.B) {
 	}
 }
 
+func BenchmarkApplyLocalGitMetadata(b *testing.B) {
+	for _, size := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("commits=%d", size), func(b *testing.B) {
+			m := testModel()
+			m.detailView.commits = make([]git.Commit, size)
+			pr := gh.PR{Commits: make([]gh.PRCommit, size)}
+			for i := range size {
+				sha := fmt.Sprintf("%040x", i)
+				m.detailView.commits[i] = git.Commit{SHA: sha, Subject: "local"}
+				pr.Commits[i] = gh.PRCommit{OID: sha}
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				_ = m.applyLocalGitMetadata(pr)
+			}
+		})
+	}
+}
+
 func BenchmarkCommitRows(b *testing.B) {
 	for _, size := range []int{10, 100, 1000} {
 		b.Run(fmt.Sprintf("rows=%d", size), func(b *testing.B) {
