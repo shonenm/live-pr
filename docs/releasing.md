@@ -16,7 +16,7 @@ Releases are built by GoReleaser from version tags.
 
 ## Release
 
-From a clean, up-to-date `main` checkout:
+Complete the [local-first E2E checklist](local-first-e2e.md) when the release changes review state, polling, or Git integration. Then, from a clean, up-to-date `main` checkout:
 
 ```sh
 ./scripts/release v0.1.0
