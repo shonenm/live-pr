@@ -102,6 +102,41 @@ func TestDataModesUseDistinctSemanticColors(t *testing.T) {
 	}
 }
 
+func TestContextualKeysMatchCurrentInteraction(t *testing.T) {
+	descriptions := func(k keyMap) string {
+		var items []string
+		for _, binding := range k.ShortHelp() {
+			if binding.Enabled() {
+				items = append(items, binding.Help().Desc)
+			}
+		}
+		return strings.Join(items, ",")
+	}
+	m := testModel()
+	m.screen = prListScreen
+	list := descriptions(m.contextualKeys())
+	if !strings.Contains(list, "filter") || strings.Contains(list, "merge PR") || strings.Contains(list, "PR status") {
+		t.Fatalf("empty PR list keys = %q", list)
+	}
+	m.prList.open = []gh.PR{{Number: 7, State: "OPEN", URL: "https://example/pr/7", HeadRefOID: "abc", HeadRefName: "other"}}
+	selected := descriptions(m.contextualKeys())
+	for _, want := range []string{"merge PR", "checkout PR", "PR status", "copy URL"} {
+		if !strings.Contains(selected, want) {
+			t.Fatalf("selected PR keys missing %q: %q", want, selected)
+		}
+	}
+	m.screen, m.cache.PR = detailScreen, nil
+	detail := descriptions(m.contextualKeys())
+	if !strings.Contains(detail, "publish PR") || !strings.Contains(detail, "PR list") || strings.Contains(detail, "comment") || strings.Contains(detail, "open on GitHub") {
+		t.Fatalf("local detail keys = %q", detail)
+	}
+	m.overlay = localDeleteOverlay{target: "x"}
+	overlay := descriptions(m.contextualKeys())
+	if !strings.Contains(overlay, "confirm") || !strings.Contains(overlay, "cancel") || strings.Contains(overlay, "refresh") {
+		t.Fatalf("overlay keys = %q", overlay)
+	}
+}
+
 func TestFooterShowsLocalContextAndFitsWidth(t *testing.T) {
 	m := testModel()
 	m.screen, m.ready, m.w = detailScreen, true, 44

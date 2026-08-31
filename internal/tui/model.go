@@ -84,6 +84,65 @@ func (k keyMap) ShortHelp() []key.Binding {
 
 func (k keyMap) FullHelp() [][]key.Binding { return k.helpGroups() }
 
+func (m Model) contextualKeys() keyMap {
+	base := keyMap{Help: m.keys.Help, Quit: m.keys.Quit}
+	if m.overlay != nil || m.pendingPRAction != noPRAction {
+		base.Select = key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "confirm"))
+		base.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
+		return base
+	}
+	if m.screen == prListScreen {
+		if m.prList.filterEditing {
+			base.Select = key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "apply filter"))
+			base.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel filter"))
+			return base
+		}
+		base.Up, base.Down, base.PreviewUp, base.PreviewDown = m.keys.Up, m.keys.Down, m.keys.PreviewUp, m.keys.PreviewDown
+		base.Top, base.Bottom, base.PrevView, base.NextView = m.keys.Top, m.keys.Bottom, m.keys.PrevView, m.keys.NextView
+		base.Filter, base.Refresh, base.ManageViews = m.keys.Filter, m.keys.Refresh, m.keys.ManageViews
+		if pr := m.prList.selectedPR(); pr != nil {
+			base.Select, base.Status = m.keys.Select, m.keys.Status
+			if pr.URL != "" {
+				base.CopyURL = m.keys.CopyURL
+			}
+			if pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
+				base.Checkout = m.keys.Checkout
+			}
+			if m.prList.state == openPRListState && pr.Number > 0 {
+				base.Close = m.keys.Close
+				if pr.HeadRefOID != "" {
+					base.Merge = m.keys.Merge
+				}
+			}
+			if _, ok := m.prList.stackForPR(pr.Number); ok {
+				base.ToggleStack = m.keys.ToggleStack
+			}
+		}
+		return base
+	}
+	base.Up, base.Down, base.PreviewUp, base.PreviewDown = m.keys.Up, m.keys.Down, m.keys.PreviewUp, m.keys.PreviewDown
+	base.Top, base.Bottom, base.Focus, base.PRList = m.keys.Top, m.keys.Bottom, m.keys.Focus, m.keys.PRList
+	base.Commits, base.Conflicts, base.Checks, base.Refresh = m.keys.Commits, m.keys.Conflicts, m.keys.Checks, m.keys.Refresh
+	if !m.remote {
+		base.Publish = m.keys.Publish
+	}
+	if m.cache.PR != nil {
+		base.Status, base.Review = m.keys.Status, m.keys.Review
+		if m.cache.PR.URL != "" {
+			base.Browse, base.CopyURL = m.keys.Browse, m.keys.CopyURL
+		}
+		if m.detailView.focus == focusConversation {
+			base.AddComment = m.keys.AddComment
+		}
+		if m.detailView.selectedFile() != nil {
+			base.InlineReview = m.keys.InlineReview
+		}
+	}
+	return base
+}
+
+func (m Model) keyHelp() string { return m.help.View(m.contextualKeys()) }
+
 var keys = keyMap{
 	Up:           key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
 	Down:         key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
