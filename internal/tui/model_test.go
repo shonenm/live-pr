@@ -135,6 +135,17 @@ func TestFooterShowsDivergenceAndPrioritizesOperationalStatus(t *testing.T) {
 	}
 }
 
+func TestCachedDetailIsAnAsyncSafeSnapshot(t *testing.T) {
+	m := testModel()
+	m.cache.PR = &gh.PR{Title: "old", Checks: []gh.PRCheck{{Name: "old"}}}
+	m.cache.Comments = []gh.Comment{{Body: "old"}}
+	detail := m.cachedDetail()
+	m.cache.PR.Title, m.cache.PR.Checks[0].Name, m.cache.Comments[0].Body = "new", "new", "new"
+	if detail.PR.Title != "old" || detail.PR.Checks[0].Name != "old" || detail.Comments[0].Body != "old" {
+		t.Fatalf("snapshot changed: %#v", detail)
+	}
+}
+
 func TestFooterShowsOnlyDataMode(t *testing.T) {
 	m := testModel()
 	m.screen, m.ready = detailScreen, true
