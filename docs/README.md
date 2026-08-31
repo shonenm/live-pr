@@ -8,6 +8,7 @@ User and contributor documentation:
 - [Local review modes](local-review-modes.md) — LOCAL/LIVE/REMOTE transitions, polling, and data ownership
 - [Local-first review release notes](local-first-release-notes.md) — user-facing highlights and changed behavior
 - [Local-first visual demo](demo/README.md) — reproducible diverged-history walkthrough and recording tape
+- [Local-first E2E checklist](local-first-e2e.md) — automated and manual cross-platform release regression
 - [Releasing](releasing.md) — how maintainers cut a release
 - [Prior art](prior-art.md) — how live-pr relates to neighboring tools
 
