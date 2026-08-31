@@ -87,8 +87,10 @@ func TestWriteConclusionTrimsAndReplaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
-		t.Fatalf("state dir mode = %o, want 700", perm)
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o700 {
+			t.Fatalf("state dir mode = %o, want 700", perm)
+		}
 	}
 	// Overwriting replaces rather than appends.
 	if err := st.WriteConclusion("second"); err != nil {

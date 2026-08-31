@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/shonenm/live-pr/internal/demo"
@@ -199,6 +200,9 @@ func TestHookStopNeverBlocksOutsideRepo(t *testing.T) {
 func quote(s string) string { return `"` + s + `"` }
 
 func TestLoadStatusRefreshUpdatesCache(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("demo GitHub shim and gh CLI refresh path are POSIX-oriented")
+	}
 	root := t.TempDir()
 	if err := demo.CreateRepo(root, "git"); err != nil {
 		t.Fatal(err)
