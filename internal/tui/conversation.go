@@ -288,7 +288,7 @@ func (m Model) eventLines(e event.Event, selected bool, width int) []string {
 	// WrapText wraps the title with kinsoku-aware breaking; a long Japanese
 	// title left to the card box's hard wrap would break mid-clause and put
 	// closing punctuation at line starts.
-	body := md.WrapText(stBold.Render(e.Title), width-8)
+	body := md.WrapText(stBold.Render(safeText(e.Title)), width-8)
 	if strings.TrimSpace(e.Body) != "" {
 		body += "\n" + md.Render(e.Body, width-8)
 	}
@@ -305,19 +305,22 @@ func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
 	if strings.TrimSpace(pr.Body) != "" {
 		body = m.renderRichMarkdown(pr.Body, width-8)
 	}
-	header := m.userIcon(pr.Author.Login) + stMuted.Render(" @"+pr.Author.Login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
+	login := safeText(pr.Author.Login)
+	header := m.userIcon(login) + stMuted.Render(" @"+login+" · description · "+relativeTS(time.Now(), pr.CreatedAt))
 	return cardLines(header, body, selected, width, cDescriptionBorder)
 }
 
 func (m Model) commentLines(comment gh.Comment, selected bool, width int) []string {
-	header := m.userIcon(comment.User.Login) + stMuted.Render(" @"+comment.User.Login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
+	login := safeText(comment.User.Login)
+	header := m.userIcon(login) + stMuted.Render(" @"+login+" · comment · "+relativeTS(time.Now(), comment.CreatedAt))
 	return cardLines(header, m.renderRichMarkdown(comment.Body, width-8), selected, width, cCloudBorder)
 }
 
 // reviewLines renders a submitted review verdict with GitHub's semantic color.
 func (m Model) reviewLines(review gh.Review, selected bool, width int) []string {
 	verdict, style := reviewVerdict(review.State)
-	header := m.userIcon(review.User.Login) + stMuted.Render(" @"+review.User.Login+" · ") + style.Render(verdict) + stMuted.Render(" · "+relativeTS(time.Now(), review.SubmittedAt))
+	login := safeText(review.User.Login)
+	header := m.userIcon(login) + stMuted.Render(" @"+login+" · ") + style.Render(verdict) + stMuted.Render(" · "+relativeTS(time.Now(), review.SubmittedAt))
 	body := strings.TrimSpace(review.Body)
 	if body == "" {
 		return []string{selectionBar(selected) + header}
@@ -339,11 +342,12 @@ func reviewBorder(state string) string {
 }
 
 func (m Model) reviewCommentLines(rc gh.ReviewThreadComment, selected bool, width int) []string {
-	loc := rc.Path
+	loc := safeText(rc.Path)
 	if rc.Line > 0 {
-		loc = fmt.Sprintf("%s:%d", rc.Path, rc.Line)
+		loc = fmt.Sprintf("%s:%d", loc, rc.Line)
 	}
-	header := m.userIcon(rc.User.Login) + stMuted.Render(" @"+rc.User.Login+" · review comment · ") + stAccent.Render(loc) + stMuted.Render(" · "+relativeTS(time.Now(), rc.CreatedAt))
+	login := safeText(rc.User.Login)
+	header := m.userIcon(login) + stMuted.Render(" @"+login+" · review comment · ") + stAccent.Render(loc) + stMuted.Render(" · "+relativeTS(time.Now(), rc.CreatedAt))
 	return cardLines(header, m.renderRichMarkdown(rc.Body, width-8), selected, width, cBorder)
 }
 
@@ -394,7 +398,7 @@ func annotateLinkTypes(rendered string) string {
 // renderRichMarkdown renders one conversation body: mermaid replacement from
 // the rich-content cache, glamour, then link-type annotation.
 func (m Model) renderRichMarkdown(body string, width int) string {
-	return annotateLinkTypes(md.Render(m.richBody(body), width))
+	return annotateLinkTypes(md.Render(safeText(m.richBody(body)), width))
 }
 
 func (m Model) userIcon(login string) string { return m.userIconOn(login, "") }
@@ -412,7 +416,8 @@ func (m Model) userIconOn(login, background string) string {
 }
 
 func (m Model) userLabel(user gh.PRUser) string {
-	return m.userIcon(user.Login) + stFg.Render(" @"+user.Login)
+	login := safeText(user.Login)
+	return m.userIcon(login) + stFg.Render(" @"+login)
 }
 
 func cardLines(header, body string, selected bool, width int, border string) []string {
@@ -435,8 +440,9 @@ func cardLines(header, body string, selected bool, width int, border string) []s
 
 func (m Model) activityLines(activity gh.Activity, selected bool) []string {
 	glyph, style := activityGlyph(activity.Event)
-	summary := style.Render(glyph + " " + activitySummary(activity))
-	line := m.userIcon(activity.Actor.Login) + stMuted.Render(" @"+activity.Actor.Login+" ") + summary + stMuted.Render(" · "+relativeTS(time.Now(), activity.CreatedAt))
+	summary := style.Render(glyph + " " + safeText(activitySummary(activity)))
+	login := safeText(activity.Actor.Login)
+	line := m.userIcon(login) + stMuted.Render(" @"+login+" ") + summary + stMuted.Render(" · "+relativeTS(time.Now(), activity.CreatedAt))
 	return []string{selectionBar(selected) + line}
 }
 
@@ -459,7 +465,7 @@ func (m Model) commitCIActivityLines(commit gh.PRCommit, selected bool) []string
 	icon, label, style := commitCIStatus(commit.CheckRollupState)
 	line := style.Render(icon+" "+label) + stMuted.Render(" · "+shortSHA(commit.OID))
 	if commit.MessageHeadline != "" {
-		line += stFg.Render(" " + commit.MessageHeadline)
+		line += stFg.Render(" " + safeText(commit.MessageHeadline))
 	}
 	if commit.CommittedDate != "" {
 		line += stMuted.Render(" · " + relativeTS(time.Now(), commit.CommittedDate))

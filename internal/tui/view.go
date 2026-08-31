@@ -241,11 +241,11 @@ func (m Model) renderHeader() string {
 	badge := lipgloss.NewStyle().
 		Background(lipgloss.Color(badgeColor)).Foreground(lipgloss.Color(emphasisInk(badgeColor))).
 		Padding(0, 1).Render(badgeText)
-	title := m.detailView.title
+	title := safeText(m.detailView.title)
 	if m.cache.PR != nil {
-		title = m.cache.PR.Title
+		title = safeText(m.cache.PR.Title)
 	}
-	l1 := badge + "  " + stBold.Render(title)
+	l1 := badge + "  " + stBold.Render(safeText(title))
 	stats := m.detailStats()
 	scope := fmt.Sprintf("%d files", stats.Files) + " " + stGreenF.Render(fmt.Sprintf("+%d", stats.Additions)) + " " + stRedF.Render(fmt.Sprintf("-%d", stats.Deletions))
 	if m.detailView.reviewSHA != "" {
@@ -282,7 +282,8 @@ func (m Model) renderHeader() string {
 		}
 		closes = "   " + stMuted.Render("⊙ closes "+strings.Join(refs, ", "))
 	}
-	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(m.detailView.base).Render(m.detailView.base) + stMuted.Render(" ← ") + stFg.Render(m.detailView.head) + stMuted.Render("   · ") + scope + dirty + draft + readiness + closes
+	base, head := safeText(m.detailView.base), safeText(m.detailView.head)
+	l2 := stMuted.Render("⎇ ") + m.baseBranchStyle(base).Render(base) + stMuted.Render(" ← ") + stFg.Render(head) + stMuted.Render("   · ") + scope + dirty + draft + readiness + closes
 	lines := []string{l1, l2}
 	if m.cache.PR != nil {
 		lines = append(lines, m.renderPRMeta(*m.cache.PR))
@@ -384,12 +385,12 @@ func (m Model) footerContent() string {
 	// While work is in flight the progress line wins over a lingering
 	// notice, so a reload after a completed action is visibly running.
 	if m.notice != "" && !m.isLoading() {
-		return stGreenF.Render(m.notice) + "  " + m.help.View(m.keys)
+		return stGreenF.Render(safeText(m.notice)) + "  " + m.help.View(m.keys)
 	}
 	if m.detailView.focus == focusReview {
 		hint := stMuted.Render("Review focused · Tab conversation · Shift+Tab full width · q quit")
 		if m.githubStatus != "" {
-			return stMuted.Render(m.githubStatus) + "  " + hint
+			return stMuted.Render(safeText(m.githubStatus)) + "  " + hint
 		}
 		return hint
 	}
@@ -397,12 +398,13 @@ func (m Model) footerContent() string {
 		if m.isLoading() {
 			return m.busyStatus(m.githubStatus) + "  " + m.help.View(m.keys)
 		}
-		return stMuted.Render(m.githubStatus) + "  " + m.help.View(m.keys)
+		return stMuted.Render(safeText(m.githubStatus)) + "  " + m.help.View(m.keys)
 	}
 	return m.help.View(m.keys)
 }
 
 func renderStatus(status string) string {
+	status = safeText(status)
 	for _, prefix := range []string{"loading ", "publishing ", "wait ", "select ", "local git data"} {
 		if strings.HasPrefix(status, prefix) {
 			return stAttention.Render(status)
