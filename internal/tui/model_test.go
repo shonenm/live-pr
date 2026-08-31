@@ -137,6 +137,19 @@ func TestContextualKeysMatchCurrentInteraction(t *testing.T) {
 	}
 }
 
+func TestAccessibilityRenderingStripsColorAndReplacesUIGlyphs(t *testing.T) {
+	m := testModel()
+	input := stAccent.Render("LOCAL") + " ← feature · ✓ ◐ ╭─╮ 日本語"
+	if got := m.accessibleContent(input); got != input {
+		t.Fatalf("default rendering changed: %q", got)
+	}
+	m.monochrome, m.ascii = true, true
+	got := m.accessibleContent(input)
+	if strings.Contains(got, "\x1b[") || strings.ContainsAny(got, "←·✓◐╭─╮") || !strings.Contains(got, "LOCAL < feature - OK ~ +-+ 日本語") {
+		t.Fatalf("accessible rendering = %q", got)
+	}
+}
+
 func TestFooterShowsLocalContextAndFitsWidth(t *testing.T) {
 	m := testModel()
 	m.screen, m.ready, m.w = detailScreen, true, 44

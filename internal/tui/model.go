@@ -399,14 +399,16 @@ type Model struct {
 	listSplitRatio    int
 	diffTerminal      *embeddedterm.Terminal
 
-	list     viewport.Model
-	explorer viewport.Model
-	detail   viewport.Model
-	help     help.Model
-	keys     keyMap
-	w, h     int
-	ready    bool
-	version  string
+	list       viewport.Model
+	explorer   viewport.Model
+	detail     viewport.Model
+	help       help.Model
+	keys       keyMap
+	w, h       int
+	ready      bool
+	version    string
+	monochrome bool
+	ascii      bool
 }
 
 // New builds a navigator-aware model without creating branch state unless the
@@ -483,6 +485,8 @@ func New(version ...string) (Model, error) {
 		screen:          prListScreen,
 		version:         first(version),
 		root:            root,
+		monochrome:      cfg.Accessibility.Monochrome,
+		ascii:           cfg.Accessibility.ASCII,
 		repository:      navigator.Repository,
 		currentBranch:   branch,
 		defaultBranch:   defaultBranch,
