@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/shonenm/live-pr/internal/git"
+	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/timeline"
 	"github.com/spf13/cobra"
@@ -20,17 +21,20 @@ var syncCmd = &cobra.Command{
 }
 
 func runSync(out io.Writer, requestedBase string) error {
-	st, err := store.Discover()
+	base := requestedBase
+	var st *store.Store
+	var err error
+	if base == "" {
+		var cache gh.Cache
+		st, cache, err = store.LoadSession()
+		if err == nil {
+			base = cache.Base(git.DefaultBase())
+		}
+	} else {
+		st, err = store.Discover()
+	}
 	if err != nil {
 		return err
-	}
-	base := requestedBase
-	if base == "" {
-		cache, cacheErr := st.LoadGitHubCache()
-		if cacheErr != nil {
-			return cacheErr
-		}
-		base = cache.Base(git.DefaultBase())
 	}
 	resolved := git.ResolveBase(base)
 	n, err := timeline.SyncCommits(st.Timeline(), resolved)

@@ -33,6 +33,7 @@ type statusOutput struct {
 	HasConclusion  bool      `json:"hasConclusion"`
 	StateDirectory string    `json:"stateDirectory"`
 	CacheFetchedAt string    `json:"cacheFetchedAt,omitempty"`
+	Warning        string    `json:"warning,omitempty"`
 	PR             *statusPR `json:"pr,omitempty"`
 }
 
@@ -67,7 +68,7 @@ func loadStatus(refresh bool) (statusOutput, error) {
 	out := statusOutput{
 		Repository: st.Root, Branch: st.Branch, Base: cache.Base(git.DefaultBase()),
 		Target: "local", Events: len(events), HasConclusion: conclusionErr == nil,
-		StateDirectory: st.Dir, CacheFetchedAt: cache.FetchedAt,
+		StateDirectory: st.Dir, CacheFetchedAt: cache.FetchedAt, Warning: cache.Warning,
 	}
 	if cache.PR != nil {
 		pr := cache.PR
@@ -97,6 +98,9 @@ var statusCmd = &cobra.Command{
 		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", status.Repository, status.Branch)
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "target: %s\nbase: %s\nevents: %d\n", status.Target, status.Base, status.Events)
+		if status.Warning != "" {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", status.Warning)
+		}
 		if status.PR != nil {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "pr: #%d %s (%s)\n%s\n", status.PR.Number, status.PR.Title, status.PR.State, status.PR.URL)
 		}
