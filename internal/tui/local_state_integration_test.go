@@ -108,3 +108,51 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 		t.Fatalf("resynced = relation:%v dirty:%v mode:%v", data.revisionRelation, data.dirty, mode(data, false))
 	}
 }
+
+func TestExternalBranchSwitchRebuildsLocalModel(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "file")
+	run("commit", "-m", "base")
+	run("switch", "-c", "feature-a")
+	if err := os.WriteFile(file, []byte("feature a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "feature a")
+	t.Chdir(root)
+	old, err := New("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.w, old.h, old.targetGeneration, old.prList.generation = 120, 40, 7, 5
+	run("switch", "main")
+	run("switch", "-c", "feature-b")
+	if err := os.WriteFile(file, []byte("feature b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "feature b")
+	msg := rebuildForLocalBranchChange("test", old.targetGeneration)().(localBranchReloaded)
+	if msg.err != nil || msg.next == nil {
+		t.Fatalf("branch rebuild = next:%v err:%v", msg.next, msg.err)
+	}
+	next, cmd := old.handleLocalBranchReloaded(msg)
+	defer next.close()
+	if cmd == nil || next.currentBranch != "feature-b" || next.screen != detailScreen || next.w != 120 || next.h != 40 || next.targetGeneration != 8 || next.prList.generation != 6 || next.notice != "Checked-out branch changed" {
+		t.Fatalf("reloaded model = branch:%q screen:%v size:%dx%d generations:%d/%d notice:%q cmd:%v", next.currentBranch, next.screen, next.w, next.h, next.targetGeneration, next.prList.generation, next.notice, cmd)
+	}
+}
