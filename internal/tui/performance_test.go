@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/shonenm/live-pr/internal/event"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -64,6 +66,25 @@ func BenchmarkViewCounts(b *testing.B) {
 				for view := prView(0); int(view) < len(m.views); view++ {
 					_ = m.viewCount(view)
 				}
+			}
+		})
+	}
+}
+
+func BenchmarkCachedRichContent(b *testing.B) {
+	for _, size := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("bodies=%d", size), func(b *testing.B) {
+			comments := make([]gh.Comment, size)
+			cached := make(map[string]string, size)
+			for i := range size {
+				body := fmt.Sprintf("```mermaid\\ngraph TD;A-->B%d;\\n```", i)
+				comments[i].Body, cached[body] = body, "rendered"
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				batch := loadRichContent(80, nil, comments, nil, map[string]bool{"": true}, cached)().(tea.BatchMsg)
+				_ = batch[0]()
 			}
 		})
 	}
