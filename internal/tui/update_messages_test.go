@@ -559,6 +559,24 @@ func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	}
 }
 
+func TestLocalStatePollReportsFailureAndRecovery(t *testing.T) {
+	m := testModel()
+	m.screen, m.currentBranch, m.localFingerprint, m.targetGeneration = detailScreen, "feature", "same", 4
+	failed, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, err: errors.New("git unavailable")})
+	if cmd == nil || failed.localPollError == "" || !strings.Contains(failed.status, "git unavailable") {
+		t.Fatalf("poll failure = %#v cmd=%v", failed, cmd)
+	}
+	failed.status = "publish: denied"
+	repeated, _ := failed.handleLocalStatePolled(localStatePolled{generation: 4, err: errors.New("git unavailable")})
+	if repeated.status != "publish: denied" {
+		t.Fatalf("poll replaced operational error: %q", repeated.status)
+	}
+	recovered, _ := repeated.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "same"}})
+	if recovered.localPollError != "" || recovered.status != "publish: denied" || recovered.notice != "Local polling recovered" {
+		t.Fatalf("poll recovery = error:%q status:%q notice:%q", recovered.localPollError, recovered.status, recovered.notice)
+	}
+}
+
 func TestLocalStatePollReloadsOnlyOnChange(t *testing.T) {
 	m := testModel()
 	m.screen, m.currentBranch, m.localFingerprint = detailScreen, "feature", "same"
