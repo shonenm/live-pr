@@ -12,6 +12,8 @@ import (
 
 const CacheVersion = 1
 
+var ErrInvalidCache = errors.New("invalid GitHub cache")
+
 // Cache is branch-local mutable GitHub state. Remote resources intentionally
 // stay separate from the append-only local timeline.
 type Cache struct {
@@ -25,6 +27,7 @@ type Cache struct {
 	ReviewComments               []ReviewThreadComment `json:"review_comments,omitempty"`
 	FetchedAt                    string                `json:"fetched_at,omitempty"`
 	LastPublishedManagedBodyHash string                `json:"last_published_managed_body_hash,omitempty"`
+	Warning                      string                `json:"-"`
 }
 
 // NewCache returns an initialized empty cache.
@@ -71,7 +74,7 @@ func LoadCache(path, head string) (Cache, error) {
 	}
 	var c Cache
 	if err := json.Unmarshal(data, &c); err != nil {
-		return Cache{}, fmt.Errorf("decode GitHub cache: %w", err)
+		return Cache{}, fmt.Errorf("%w: decode %s: %v", ErrInvalidCache, path, err)
 	}
 	if c.Version != CacheVersion {
 		// The cache is re-fetchable derived data; an unsupported version

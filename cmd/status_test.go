@@ -47,4 +47,11 @@ func TestLoadStatusUsesCachedPullRequest(t *testing.T) {
 	if status.Target != "github" || status.PR == nil || status.PR.Number != 42 {
 		t.Fatalf("pull request status = %#v", status)
 	}
+	if err := os.WriteFile(st.GitHubCache(), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	status, err = loadStatus(false)
+	if err != nil || status.Target != "local" || status.Warning == "" {
+		t.Fatalf("malformed cache status = %#v err=%v", status, err)
+	}
 }
