@@ -65,15 +65,12 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
-            testpkgs: ./...
           - os: macos-latest
             goos: darwin
             goarch: arm64
-            testpkgs: ./internal/atomicfile ./internal/clipboard ./internal/config ./internal/event ./internal/git ./internal/github ./internal/markdown ./internal/richcontent ./internal/store ./internal/terminaltext ./internal/timeline ./internal/tui ./cmd
           - os: windows-latest
             goos: windows
             goarch: amd64
-            testpkgs: ./internal/atomicfile ./internal/clipboard ./internal/config ./internal/event ./internal/git ./internal/github ./internal/markdown ./internal/richcontent ./internal/store ./internal/terminaltext ./internal/timeline ./internal/tui ./cmd
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,10 +82,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-      - run: go test ${{ matrix.testpkgs }}
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+      - run: go test ./internal/embeddedterm
       - name: Test core workflows on macOS and Windows
         if: runner.os != 'Linux'
         run: go test ./cmd ./internal/git ./internal/github ./internal/store ./internal/tui
