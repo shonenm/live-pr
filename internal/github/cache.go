@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/shonenm/live-pr/internal/atomicfile"
 )
 
 const CacheVersion = 1
@@ -90,7 +92,11 @@ func SaveCache(path string, c Cache) error {
 }
 
 func saveJSON(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(value, "", "  ")
@@ -111,5 +117,5 @@ func saveJSON(path string, value any) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(name, path)
+	return atomicfile.Replace(name, path)
 }
