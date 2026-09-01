@@ -466,12 +466,24 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Checks):
 		m.detailView.active, m.status = checksTab, ""
 		m.layout()
-		if m.ciCommand == "" || m.cache.PR == nil {
+		if m.cache.PR == nil || (m.ciProvider == "" && m.ciCommand == "") {
 			return m, m.sync()
 		}
 		m.ciCommandLoading, m.ciCommandOutput, m.ciCommandError = true, "", ""
 		m.detailView.checksRenderValid = false
-		return m, tea.Batch(m.sync(), runCICommand(m.ciCommand, m.root, m.repository, *m.cache.PR, m.targetGeneration))
+		var ciCmd tea.Cmd
+		switch m.ciProvider {
+		case "woodpecker":
+			ciCmd = runWoodpeckerCI(m.root, m.repository, m.ciServer, m.ciCLICommand, m.ciTokenCommand, *m.cache.PR, m.targetGeneration)
+		case "":
+			ciCmd = runCICommand(m.ciCommand, m.root, m.repository, *m.cache.PR, m.targetGeneration)
+		default:
+			provider, generation := m.ciProvider, m.targetGeneration
+			ciCmd = func() tea.Msg {
+				return ciCommandDone{generation: generation, err: fmt.Errorf("unknown CI provider %q", provider)}
+			}
+		}
+		return m, tea.Batch(m.sync(), ciCmd)
 	case key.Matches(msg, m.keys.Back):
 		if m.detailView.active == conversationTab {
 			return m, nil
