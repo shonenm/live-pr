@@ -23,7 +23,7 @@ Knowing where the trust boundaries sit helps when judging whether something is
 a vulnerability.
 
 **live-pr runs commands you configure.** `diff.command`, `diff.commit_command`,
-and `summarize_command` are executed through a shell. This is the point of
+`ci.command`, and `summarize_command` are executed through a shell. This is the point of
 those settings — they launch your reviewer and your summarizer — but it means
 configuration is code.
 
@@ -40,6 +40,13 @@ commands where a shell is not expected, are.
 credentials directly — authentication belongs to `gh` — and it runs both tools
 with argument arrays rather than a shell, so repository data such as branch and
 file names is not interpreted as commands.
+
+The optional Woodpecker provider similarly reuses `woodpecker-cli` authentication.
+On headless hosts, `ci.server`, `ci.cli_command`, and `ci.token_command` may be
+set in the global configuration only; repository configuration cannot override
+them. The token
+command is executed without a shell, and its one-line output is passed only to
+the child CLI as `WOODPECKER_TOKEN`, without logging or persistence.
 
 **live-pr writes to your XDG state directory.** Timelines, review drafts,
 outbox entries, and cached GitHub data (including private repository content)
