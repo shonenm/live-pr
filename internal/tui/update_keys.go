@@ -172,12 +172,13 @@ func (m Model) openSelectedPR() (Model, tea.Cmd) {
 // state applies. Both screens share this state machine.
 func (m Model) handlePRActionConfirmKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.pendingPRAction == mergePR {
+		methodCount := len(m.mergeMethodOptions())
 		switch msg.String() {
 		case "up", "k":
-			m.mergeMethodCursor = (m.mergeMethodCursor + len(mergeMethodOptions) - 1) % len(mergeMethodOptions)
+			m.mergeMethodCursor = (m.mergeMethodCursor + methodCount - 1) % methodCount
 			return m, nil, true
 		case "down", "j":
-			m.mergeMethodCursor = (m.mergeMethodCursor + 1) % len(mergeMethodOptions)
+			m.mergeMethodCursor = (m.mergeMethodCursor + 1) % methodCount
 			return m, nil, true
 		case "m":
 			return m.submitMerge(gh.MergeCommit)

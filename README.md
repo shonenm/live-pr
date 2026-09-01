@@ -110,6 +110,9 @@ min_pane_width = 60
 [list]
 split_ratio = 50             # list : preview width on the PR list screen (default 45)
 
+[merge]
+methods = ["squash", "merge", "rebase"] # display order; first is selected by default
+
 [ci]
 command = ""                 # append command stdout to the hierarchical CI checks view
 # provider = "woodpecker"     # use woodpecker-cli and its existing context/keyring
@@ -119,6 +122,8 @@ command = ""                 # append command stdout to the hierarchical CI chec
 monochrome = false           # remove ANSI color/style output
 ascii = false                # replace UI arrows, status glyphs, spinners, and borders with ASCII
 ```
+
+`merge.methods` must contain `merge`, `squash`, and `rebase` exactly once.
 
 See [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details and [docs/local-review-modes.md](docs/local-review-modes.md) for LOCAL/LIVE/REMOTE behavior and data ownership.
 

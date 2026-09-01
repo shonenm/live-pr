@@ -183,6 +183,19 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 	}
 }
 
+func TestMergePopupUsesConfiguredMethodOrder(t *testing.T) {
+	m := testModel()
+	m.mergeMethods = configuredMergeMethods([]string{"squash", "merge", "rebase"})
+	m.pendingPRAction, m.prActionNumber = mergePR, 14
+	m.prActionPR = gh.PR{Number: 14, HeadRefOID: "abc123"}
+
+	popup := ansi.Strip(m.renderActionPopup())
+	squash, merge, rebase := strings.Index(popup, "Squash"), strings.Index(popup, "Merge commit"), strings.Index(popup, "Rebase")
+	if m.selectedMergeMethod() != gh.MergeSquash || squash < 0 || merge < squash || rebase < merge || !strings.Contains(popup, "Squash and merge?") {
+		t.Fatalf("configured merge picker = cursor:%d method:%q popup:%q", m.mergeMethodCursor, m.selectedMergeMethod(), popup)
+	}
+}
+
 func TestPRListActionsAreDisabledForLocalEntry(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
