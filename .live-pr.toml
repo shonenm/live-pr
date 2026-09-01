@@ -1,0 +1,2 @@
+[merge]
+methods = ["squash", "merge", "rebase"]
