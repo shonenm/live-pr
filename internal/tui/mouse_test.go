@@ -388,10 +388,15 @@ func TestMergePopupMouse(t *testing.T) {
 	if row < 0 {
 		t.Fatalf("no Squash row in popup: %q", popup)
 	}
+	u, _ = m.Update(click(left+5, top+row))
+	m = u.(Model)
+	if m.mergeMethodCursor != 1 || m.prActionRunning != noPRAction {
+		t.Fatalf("option click: cursor=%d running=%v", m.mergeMethodCursor, m.prActionRunning)
+	}
 	u, cmd := m.Update(click(left+5, top+row))
 	m = u.(Model)
-	if m.mergeMethodCursor != 0 || m.prActionRunning != mergePR || cmd == nil {
-		t.Fatalf("selected squash click did not confirm: cursor=%d running=%v", m.mergeMethodCursor, m.prActionRunning)
+	if m.prActionRunning != mergePR || cmd == nil {
+		t.Fatalf("second click did not confirm the merge: running=%v", m.prActionRunning)
 	}
 	if batch, ok := cmd().(tea.BatchMsg); ok {
 		for _, inner := range batch {

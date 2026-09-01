@@ -12,7 +12,7 @@ import (
 	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
-var defaultMergeMethodOptions = []gh.MergeMethod{gh.MergeSquash, gh.MergeCommit, gh.MergeRebase}
+var defaultMergeMethodOptions = []gh.MergeMethod{gh.MergeCommit, gh.MergeSquash, gh.MergeRebase}
 
 func configuredMergeMethods(methods []string) []gh.MergeMethod {
 	result := make([]gh.MergeMethod, len(methods))

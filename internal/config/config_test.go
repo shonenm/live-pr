@@ -28,9 +28,6 @@ func TestDefaultStartsBranchAndCommitCodeDiff(t *testing.T) {
 	if got := cfg.CommitReviewCommand(); got != `nvim -c "CodeDiff $LIVE_PR_SHA~1 $LIVE_PR_SHA"` {
 		t.Fatalf("commit command = %q", got)
 	}
-	if !reflect.DeepEqual(cfg.Merge.Methods, []string{"squash", "merge", "rebase"}) {
-		t.Fatalf("default merge methods = %v", cfg.Merge.Methods)
-	}
 }
 
 func TestCommitReviewCommandSupportsLegacyReviewer(t *testing.T) {

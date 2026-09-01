@@ -189,7 +189,7 @@ func Default() Config {
 			MinPaneWidth: 24,
 		},
 		List:  ListConfig{SplitRatio: 45},
-		Merge: MergeConfig{Methods: []string{"squash", "merge", "rebase"}},
+		Merge: MergeConfig{Methods: []string{"merge", "squash", "rebase"}},
 		Views: DefaultViews(),
 	}
 }
