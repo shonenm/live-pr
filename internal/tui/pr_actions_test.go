@@ -91,7 +91,7 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 
 	u, cmd := m.Update(keyPress("m"))
 	m = u.(Model)
-	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "merge commit") || !strings.Contains(ansi.Strip(m.viewContent()), "Merge PR #14") {
+	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Squash and merge?") || !strings.Contains(ansi.Strip(m.viewContent()), "Merge PR #14") {
 		t.Fatalf("merge confirmation not shown: pending=%v popup=%q", m.pendingPRAction, ansi.Strip(m.renderActionPopup()))
 	}
 	u, _ = m.Update(keyPress("n"))
@@ -138,13 +138,11 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 		}
 	}
 
-	// j moves the cursor to Squash and the prompt follows the selection.
+	// Squash is selected by default.
 	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
-	u, _ = m.Update(keyPress("j"))
-	m = u.(Model)
 	popup := ansi.Strip(m.renderActionPopup())
-	if m.mergeMethodCursor != 1 || !strings.Contains(popup, "Squash and merge?") || !strings.Contains(popup, "Rebase") {
+	if m.mergeMethodCursor != 0 || !strings.Contains(popup, "Squash and merge?") || !strings.Contains(popup, "Rebase") {
 		t.Fatalf("squash selection not shown: cursor=%d popup=%q", m.mergeMethodCursor, popup)
 	}
 	u, cmd := m.Update(keyPress("enter"))
@@ -157,12 +155,12 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 		t.Fatalf("Merge(%d, %q, %q); want squash for PR #14 at abc123", gotNumber, gotOID, gotMethod)
 	}
 
-	// Reopening resets the cursor to the merge commit; r submits a rebase.
+	// Reopening resets the cursor to squash; r still submits a rebase directly.
 	m.prActionRunning = noPRAction
 	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
-	if m.mergeMethodCursor != 0 || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge with a merge commit?") {
-		t.Fatalf("reopened popup did not reset to the merge commit: cursor=%d", m.mergeMethodCursor)
+	if m.mergeMethodCursor != 0 || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Squash and merge?") {
+		t.Fatalf("reopened popup did not reset to squash: cursor=%d", m.mergeMethodCursor)
 	}
 	u, cmd = m.Update(keyPress("r"))
 	m = u.(Model)
@@ -185,13 +183,13 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 
 func TestMergePopupUsesConfiguredMethodOrder(t *testing.T) {
 	m := testModel()
-	m.mergeMethods = configuredMergeMethods([]string{"squash", "merge", "rebase"})
+	m.mergeMethods = configuredMergeMethods([]string{"rebase", "squash", "merge"})
 	m.pendingPRAction, m.prActionNumber = mergePR, 14
 	m.prActionPR = gh.PR{Number: 14, HeadRefOID: "abc123"}
 
 	popup := ansi.Strip(m.renderActionPopup())
 	squash, merge, rebase := strings.Index(popup, "Squash"), strings.Index(popup, "Merge commit"), strings.Index(popup, "Rebase")
-	if m.selectedMergeMethod() != gh.MergeSquash || squash < 0 || merge < squash || rebase < merge || !strings.Contains(popup, "Squash and merge?") {
+	if m.selectedMergeMethod() != gh.MergeRebase || rebase < 0 || squash < rebase || merge < squash || !strings.Contains(popup, "Rebase and merge?") {
 		t.Fatalf("configured merge picker = cursor:%d method:%q popup:%q", m.mergeMethodCursor, m.selectedMergeMethod(), popup)
 	}
 }
