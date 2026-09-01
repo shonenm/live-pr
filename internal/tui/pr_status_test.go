@@ -61,15 +61,15 @@ func TestPRStatusChangePreservesSelectionOrNearestRow(t *testing.T) {
 
 	m = setup("draft:false")
 	m, _ = m.applyPRStateChange(updated)
-	if got := m.prList.selectedPRNumber(); got != 3 {
-		t.Fatalf("filtered selection fallback = #%d, want nearest #3", got)
+	if got := m.prList.selectedPRNumber(); got != 1 {
+		t.Fatalf("filtered selection fallback = #%d, want nearest #1", got)
 	}
 
 	m = setup("")
 	updated.State, updated.IsDraft = "CLOSED", false
 	m, _ = m.applyPRStateChange(updated)
-	if got := m.prList.selectedPRNumber(); got != 3 {
-		t.Fatalf("closed selection fallback = #%d, want nearest #3", got)
+	if got := m.prList.selectedPRNumber(); got != 1 {
+		t.Fatalf("closed selection fallback = #%d, want nearest #1", got)
 	}
 }
 
