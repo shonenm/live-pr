@@ -223,7 +223,7 @@ func TestPRListFilterEditingAndViewKeys(t *testing.T) {
 	m.applyPRFilters(0)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	m.prList.cursor = 1
+	m.prList.restorePRSelection(2)
 	u, _ = m.Update(keyPress("/"))
 	m = u.(Model)
 	u, _ = m.Update(keyPress("label:bug"))

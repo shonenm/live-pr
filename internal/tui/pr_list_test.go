@@ -206,11 +206,11 @@ func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 		{Number: 4, Author: gh.PRUser{Login: "other"}},
 	}
 	want := map[prView][]int{
-		allPRsView:          {1, 2, 3, 4},
+		allPRsView:          {4, 3, 2, 1},
 		reviewRequestedView: {3},
 		assignedView:        {2},
 		authoredView:        {1},
-		needsMeView:         {2, 3},
+		needsMeView:         {3, 2},
 	}
 	for view, numbers := range want {
 		m.prList.view = view
@@ -222,6 +222,16 @@ func TestPRSavedViewsUseViewerMetadata(t *testing.T) {
 		if !reflect.DeepEqual(got, numbers) {
 			t.Fatalf("view %s = %v, want %v", m.viewName(view), got, numbers)
 		}
+	}
+}
+
+func TestPRListDefaultsToNewestFirst(t *testing.T) {
+	m := testModel()
+	m.navigator.PRs = []gh.PR{{Number: 1}, {Number: 3}, {Number: 2}}
+	m.prList.view = allPRsView
+	m.applyPRFilters(0)
+	if got := []int{m.prList.open[0].Number, m.prList.open[1].Number, m.prList.open[2].Number}; !reflect.DeepEqual(got, []int{3, 2, 1}) {
+		t.Fatalf("PR order = %v, want newest first", got)
 	}
 }
 
@@ -263,7 +273,7 @@ func TestOrGroupViewFiltersAndCountsLocally(t *testing.T) {
 	for _, pr := range m.prList.open {
 		listed = append(listed, pr.Number)
 	}
-	if !reflect.DeepEqual(listed, []int{1, 2, 3}) {
+	if !reflect.DeepEqual(listed, []int{3, 2, 1}) {
 		t.Fatalf("listed = %v, want the three that involve me", listed)
 	}
 	// The server total counts the superset, so the tab counts loaded rows.

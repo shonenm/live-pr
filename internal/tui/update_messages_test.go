@@ -233,7 +233,7 @@ func TestLazyPreviewKeepsCurrentPRSelection(t *testing.T) {
 	m.screen, m.prList.generation = prListScreen, 1
 	m.navigator.PRs = []gh.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}}
 	m.applyPRFilters(0)
-	m.prList.cursor = 1
+	m.prList.restorePRSelection(2)
 	u, _ := m.Update(prPreviewLoaded{generation: 1, number: 1, pr: gh.PR{Number: 1, State: "OPEN", PreviewLoaded: true}})
 	m = u.(Model)
 	if m.prList.selectedPRNumber() != 2 {
@@ -405,7 +405,7 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	if m.autoOpenCurrent {
 		t.Fatal("explicit PR-list navigation must disable startup auto-open")
 	}
-	m.prList.cursor = 1
+	m.prList.restorePRSelection(2)
 	u, _ = m.Update(keyPress("enter"))
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
