@@ -133,8 +133,17 @@ type ListConfig struct {
 // CIConfig customizes the CI checks view.
 type CIConfig struct {
 	// Command runs when the checks view is opened. Its stdout is appended to
-	// the GitHub checks, allowing self-hosted CI details to be rendered.
+	// the GitHub checks, allowing custom CI details to be rendered.
 	Command string `toml:"command"`
+
+	// Provider enables a built-in CI integration. Currently: "woodpecker".
+	Provider string `toml:"provider"`
+
+	// Server, CLICommand, and TokenCommand are authentication settings loaded
+	// only from global config. Repository config cannot redirect credentials.
+	Server       string   `toml:"server"`
+	CLICommand   []string `toml:"cli_command"`
+	TokenCommand []string `toml:"token_command"`
 }
 
 // DiffConfig customizes how raw Git diff is rendered in the right pane.
@@ -215,26 +224,27 @@ func (c Config) SummaryInterval() time.Duration {
 // config — later files override fields they set. Missing files are ignored.
 func Load(repoRoot string) (Config, error) {
 	cfg := Default()
-	paths := []string{filepath.Join(globalConfigDir(), "live-pr", "config.toml")}
+	globalPath := filepath.Join(globalConfigDir(), "live-pr", "config.toml")
+	if err := overlay(globalPath, &cfg); err != nil {
+		return Config{}, err
+	}
+	globalServer := cfg.CI.Server
+	globalCLICommand := append([]string(nil), cfg.CI.CLICommand...)
+	globalTokenCommand := append([]string(nil), cfg.CI.TokenCommand...)
+
 	repoConfig := filepath.Join(repoRoot, ".live-pr.toml")
 	if _, err := os.Stat(repoConfig); os.IsNotExist(err) {
 		// Read the old location only as a migration path. It is no longer
 		// created, so a normal run leaves no .live-pr/ directory behind.
 		repoConfig = filepath.Join(repoRoot, ".live-pr", "config.toml")
 	}
-	paths = append(paths, repoConfig)
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return Config{}, fmt.Errorf("read config %s: %w", p, err)
-		}
-		if err := toml.Unmarshal(data, &cfg); err != nil {
-			return Config{}, fmt.Errorf("parse config %s: %w", p, err)
-		}
+	if err := overlay(repoConfig, &cfg); err != nil {
+		return Config{}, err
 	}
+	// Authentication belongs to the user, never to a cloned repository.
+	cfg.CI.Server = globalServer
+	cfg.CI.CLICommand = globalCLICommand
+	cfg.CI.TokenCommand = globalTokenCommand
 	// Migrate the old built-in command while preserving explicit custom commands.
 	if cfg.Diff.Command == `nvim -c "CodeDiff $LIVE_PR_RANGE"` {
 		cfg.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`
@@ -250,6 +260,20 @@ func Load(repoRoot string) (Config, error) {
 	}
 	cfg.Views = NormalizeViews(cfg.Views)
 	return cfg, nil
+}
+
+func overlay(path string, cfg *Config) error {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read config %s: %w", path, err)
+	}
+	if err := toml.Unmarshal(data, cfg); err != nil {
+		return fmt.Errorf("parse config %s: %w", path, err)
+	}
+	return nil
 }
 
 // globalConfigDir honors XDG_CONFIG_HOME, falling back to ~/.config.
