@@ -393,6 +393,7 @@ type Model struct {
 	pendingPRAction   prAction
 	prActionRunning   prAction
 	prActionNumber    int
+	mergeMethods      []gh.MergeMethod
 	mergeMethodCursor int
 	pendingG          bool
 	prActionPR        gh.PR
@@ -536,6 +537,7 @@ func New(version ...string) (Model, error) {
 		diffSplitRatio:    cfg.Diff.SplitRatio,
 		diffMinPaneWidth:  cfg.Diff.MinPaneWidth,
 		listSplitRatio:    cfg.List.SplitRatio,
+		mergeMethods:      configuredMergeMethods(cfg.Merge.Methods),
 		ciCommand:         cfg.CI.Command,
 		ciProvider:        cfg.CI.Provider,
 		ciServer:          cfg.CI.Server,

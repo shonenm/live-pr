@@ -12,9 +12,22 @@ import (
 	"github.com/shonenm/live-pr/internal/prfilter"
 )
 
-// mergeMethodOptions lists the picker choices; the merge commit stays first
-// so the default selection keeps the historical behaviour.
-var mergeMethodOptions = []gh.MergeMethod{gh.MergeCommit, gh.MergeSquash, gh.MergeRebase}
+var defaultMergeMethodOptions = []gh.MergeMethod{gh.MergeCommit, gh.MergeSquash, gh.MergeRebase}
+
+func configuredMergeMethods(methods []string) []gh.MergeMethod {
+	result := make([]gh.MergeMethod, len(methods))
+	for i, method := range methods {
+		result[i] = gh.MergeMethod(method)
+	}
+	return result
+}
+
+func (m Model) mergeMethodOptions() []gh.MergeMethod {
+	if len(m.mergeMethods) > 0 {
+		return m.mergeMethods
+	}
+	return defaultMergeMethodOptions
+}
 
 func mergeMethodLabel(method gh.MergeMethod) string {
 	switch method {
@@ -39,12 +52,13 @@ func mergeMethodPrompt(method gh.MergeMethod) string {
 }
 
 // selectedMergeMethod maps the popup cursor to a method, defaulting to the
-// merge commit when the cursor is out of range.
+// first configured method when the cursor is out of range.
 func (m Model) selectedMergeMethod() gh.MergeMethod {
-	if m.mergeMethodCursor < 0 || m.mergeMethodCursor >= len(mergeMethodOptions) {
-		return gh.MergeCommit
+	methods := m.mergeMethodOptions()
+	if m.mergeMethodCursor < 0 || m.mergeMethodCursor >= len(methods) {
+		return methods[0]
 	}
-	return mergeMethodOptions[m.mergeMethodCursor]
+	return methods[m.mergeMethodCursor]
 }
 
 // runPRAction executes one confirmed PR action. checkoutHead checks out a
@@ -134,7 +148,7 @@ func (m Model) renderActionPopup() string {
 	switch action {
 	case mergePR:
 		message = mergeMethodPrompt(m.selectedMergeMethod())
-		for i, method := range mergeMethodOptions {
+		for i, method := range m.mergeMethodOptions() {
 			prefix, style := "  ", stFg
 			if i == m.mergeMethodCursor {
 				prefix, style = "▸ ", stAccent.Bold(true)

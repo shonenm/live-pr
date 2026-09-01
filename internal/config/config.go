@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +46,9 @@ type Config struct {
 
 	// List controls the PR list screen.
 	List ListConfig `toml:"list"`
+
+	// Merge controls the merge confirmation picker.
+	Merge MergeConfig `toml:"merge"`
 
 	// CI controls optional extra content in the CI checks view.
 	CI CIConfig `toml:"ci"`
@@ -130,6 +134,13 @@ type ListConfig struct {
 	SplitRatio int `toml:"split_ratio"`
 }
 
+// MergeConfig customizes the merge confirmation picker.
+type MergeConfig struct {
+	// Methods lists merge, squash, and rebase in display order. The first
+	// method is selected by default.
+	Methods []string `toml:"methods"`
+}
+
 // CIConfig customizes the CI checks view.
 type CIConfig struct {
 	// Command runs when the checks view is opened. Its stdout is appended to
@@ -178,6 +189,7 @@ func Default() Config {
 			MinPaneWidth: 24,
 		},
 		List:  ListConfig{SplitRatio: 45},
+		Merge: MergeConfig{Methods: []string{"merge", "squash", "rebase"}},
 		Views: DefaultViews(),
 	}
 }
@@ -258,8 +270,25 @@ func Load(repoRoot string) (Config, error) {
 	if cfg.List.SplitRatio <= 0 || cfg.List.SplitRatio >= 100 {
 		cfg.List.SplitRatio = Default().List.SplitRatio
 	}
+	if err := validateMergeMethods(cfg.Merge.Methods); err != nil {
+		return Config{}, err
+	}
 	cfg.Views = NormalizeViews(cfg.Views)
 	return cfg, nil
+}
+
+func validateMergeMethods(methods []string) error {
+	if len(methods) != 3 {
+		return errors.New("merge.methods must contain merge, squash, and rebase exactly once")
+	}
+	seen := make(map[string]bool, len(methods))
+	for _, method := range methods {
+		if method != "merge" && method != "squash" && method != "rebase" || seen[method] {
+			return errors.New("merge.methods must contain merge, squash, and rebase exactly once")
+		}
+		seen[method] = true
+	}
+	return nil
 }
 
 func overlay(path string, cfg *Config) error {
