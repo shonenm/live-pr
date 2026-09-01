@@ -303,7 +303,7 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 		// Legacy/cache fallback before the first page arrives.
 		source = append([]gh.PR(nil), m.navigator.PRs...)
 	}
-	slices.SortFunc(source, func(a, b gh.PR) int { return a.Number - b.Number })
+	slices.SortFunc(source, func(a, b gh.PR) int { return b.Number - a.Number })
 	sourceNumbers := make(map[int]bool, len(source))
 	for _, pr := range source {
 		sourceNumbers[pr.Number] = true
@@ -329,7 +329,7 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 			m.prList.filtered = append(m.prList.filtered, pr)
 		}
 	}
-	slices.SortFunc(m.prList.filtered, func(a, b gh.PR) int { return a.Number - b.Number })
+	slices.SortFunc(m.prList.filtered, func(a, b gh.PR) int { return b.Number - a.Number })
 	if m.prList.state == closedPRListState {
 		m.prList.stacks = prfilter.SingleStacks(m.prList.filtered)
 	} else {
