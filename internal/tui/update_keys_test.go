@@ -493,7 +493,7 @@ func TestOverloadedKeysDisambiguateByScreen(t *testing.T) {
 	}
 }
 
-func TestCopyURLKeyOnListAndDetail(t *testing.T) {
+func TestURLKeysOnListAndDetail(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen
 	m.prList.open = []gh.PR{{Number: 7, URL: "https://example/pr/7", Title: "seven"}}
@@ -508,6 +508,9 @@ func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 	if m.selectedBrowseURL() != "https://example/pr/7" {
 		t.Fatalf("selected URL = %q", m.selectedBrowseURL())
 	}
+	if _, cmd := m.Update(keyPress("o")); cmd == nil {
+		t.Fatal("o produced no browser command on the PR list")
+	}
 	// The result reports through browserDone, which the footer already words.
 	done, _ := m.Update(browserDone{copied: true})
 	if got := done.(Model).notice; got != "URL copied to clipboard" {
@@ -519,8 +522,8 @@ func TestCopyURLKeyOnListAndDetail(t *testing.T) {
 	local.screen = prListScreen
 	local.prList.open = []gh.PR{{Number: 0, Title: "local"}}
 	local.prList.stacks = prfilter.BuildStacks(local.prList.open)
-	if local.copySelectedURL() != nil {
-		t.Fatal("local PR offered a URL to copy")
+	if local.copySelectedURL() != nil || local.browseSelectedURL() != nil {
+		t.Fatal("local PR offered a URL action")
 	}
 
 	// Detail screen: y copies the focused conversation item's URL.
