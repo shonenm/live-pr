@@ -93,6 +93,8 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case key.Matches(msg, m.keys.Browse):
+		return m, m.browseSelectedURL()
 	case key.Matches(msg, m.keys.CopyURL):
 		return m, m.copySelectedURL()
 	case key.Matches(msg, m.keys.Checkout):
@@ -431,19 +433,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.CopyURL):
 		return m, m.copySelectedURL()
 	case key.Matches(msg, m.keys.Browse):
-		url := m.selectedBrowseURL()
-		if url == "" {
-			return m, nil
-		}
-		return m, func() tea.Msg {
-			if err := browserCommand(url).Run(); err == nil {
-				return browserDone{}
-			}
-			if clipErr := copyToClipboard(url); clipErr == nil {
-				return browserDone{copied: true}
-			}
-			return browserDone{err: errors.New("cannot open browser or copy URL")}
-		}
+		return m, m.browseSelectedURL()
 	case msg.String() == "C" && key.Matches(msg, m.keys.Checkout):
 		// Detail keeps c for the commits tab, so checkout answers to C only.
 		if pr := m.cache.PR; pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
@@ -543,6 +533,22 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.detail, cmd = m.detail.Update(msg)
 	return m, cmd
+}
+
+func (m Model) browseSelectedURL() tea.Cmd {
+	url := m.selectedBrowseURL()
+	if url == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := browserCommand(url).Run(); err == nil {
+			return browserDone{}
+		}
+		if clipErr := copyToClipboard(url); clipErr == nil {
+			return browserDone{copied: true}
+		}
+		return browserDone{err: errors.New("cannot open browser or copy URL")}
+	}
 }
 
 // copySelectedURL copies the selected pull request or comment URL. The
