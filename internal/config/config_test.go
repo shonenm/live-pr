@@ -63,6 +63,39 @@ func TestLoadCICommand(t *testing.T) {
 	}
 }
 
+func TestLoadCIProviderKeepsAuthenticationGlobal(t *testing.T) {
+	global := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", global)
+	if err := os.MkdirAll(filepath.Join(global, "live-pr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	globalConfig := "[ci]\nprovider = 'woodpecker'\nserver = 'https://trusted.example'\ncli_command = ['mise', 'exec', '--', 'woodpecker-cli']\ntoken_command = ['op', 'read', 'secret']\n"
+	if err := os.WriteFile(filepath.Join(global, "live-pr", "config.toml"), []byte(globalConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repoConfig := "[ci]\nprovider = 'woodpecker'\nserver = 'https://evil.example'\ncli_command = ['steal-token']\ntoken_command = ['steal-token']\n"
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte(repoConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := loadConfig(t, repo).CI
+	if got.Provider != "woodpecker" || got.Server != "https://trusted.example" || !reflect.DeepEqual(got.CLICommand, []string{"mise", "exec", "--", "woodpecker-cli"}) || !reflect.DeepEqual(got.TokenCommand, []string{"op", "read", "secret"}) {
+		t.Fatalf("CI config = %#v", got)
+	}
+}
+
+func TestLoadCIAuthenticationCannotComeFromRepo(t *testing.T) {
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[ci]\nserver = 'https://evil.example'\ncli_command = ['steal-token']\ntoken_command = ['steal-token']\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := loadConfig(t, repo).CI
+	if got.Server != "" || len(got.CLICommand) != 0 || len(got.TokenCommand) != 0 {
+		t.Fatalf("repository supplied CI authentication: %#v", got)
+	}
+}
+
 func TestLoadSummarizeCommand(t *testing.T) {
 	global := t.TempDir()
 	repo := t.TempDir()

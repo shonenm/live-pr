@@ -373,6 +373,10 @@ type Model struct {
 	refreshing        bool
 	ciPollFailures    int
 	ciCommand         string
+	ciProvider        string
+	ciServer          string
+	ciCLICommand      []string
+	ciTokenCommand    []string
 	ciCommandOutput   string
 	ciCommandError    string
 	ciCommandLoading  bool
@@ -533,6 +537,10 @@ func New(version ...string) (Model, error) {
 		diffMinPaneWidth:  cfg.Diff.MinPaneWidth,
 		listSplitRatio:    cfg.List.SplitRatio,
 		ciCommand:         cfg.CI.Command,
+		ciProvider:        cfg.CI.Provider,
+		ciServer:          cfg.CI.Server,
+		ciCLICommand:      append([]string(nil), cfg.CI.CLICommand...),
+		ciTokenCommand:    append([]string(nil), cfg.CI.TokenCommand...),
 		avatarColors:      map[string]string{},
 		help:              newHelp(),
 		keys:              keys,

@@ -112,7 +112,8 @@ split_ratio = 50             # list : preview width on the PR list screen (defau
 
 [ci]
 command = ""                 # append command stdout to the hierarchical CI checks view
-# Available: LIVE_PR_REPO, LIVE_PR_PR_NUMBER, LIVE_PR_PR_URL, LIVE_PR_HEAD_SHA
+# provider = "woodpecker"     # use woodpecker-cli and its existing context/keyring
+# Available to command: LIVE_PR_REPO, LIVE_PR_PR_NUMBER, LIVE_PR_PR_URL, LIVE_PR_HEAD_SHA
 
 [accessibility]
 monochrome = false           # remove ANSI color/style output
@@ -127,6 +128,21 @@ repository you clone can run a command of its author's choosing when you start
 live-pr in it, the same exposure as Vim's `exrc`. Review the per-repo
 configuration of repositories you do not trust; [SECURITY.md](SECURITY.md)
 covers the trust boundaries in full.
+
+The Woodpecker provider normally reuses the active `woodpecker-cli` context.
+Headless hosts can configure authentication only in the global config (repository
+configuration cannot override these fields):
+
+```toml
+[ci]
+server = "https://ci.example.com"
+# Optional when the CLI is managed by mise and is not directly on PATH:
+cli_command = ["mise", "exec", "--", "woodpecker-cli"]
+token_command = ["op", "read", "op://Personal/Woodpecker/credential"]
+```
+
+The token command is executed directly without a shell. Its single-line stdout
+is passed only to the child CLI as `WOODPECKER_TOKEN` and is not persisted.
 
 ## Agent Skill
 
