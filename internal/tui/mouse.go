@@ -344,7 +344,7 @@ func (m Model) handleActionPopupMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	_, top, _, _ := m.popupRect(popup)
-	for i, method := range mergeMethodOptions {
+	for i, method := range m.mergeMethodOptions() {
 		if popupOptionRow(popup, mergeMethodLabel(method)) != mouse.Y-top {
 			continue
 		}

@@ -53,6 +53,46 @@ func TestLoadAllowsExplicitlyDisablingDefaultBranchCommand(t *testing.T) {
 	}
 }
 
+func TestLoadMergeMethodOrderWithRepoOverride(t *testing.T) {
+	global := t.TempDir()
+	repo := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", global)
+	if err := os.MkdirAll(filepath.Join(global, "live-pr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(global, "live-pr", "config.toml"), []byte("[merge]\nmethods = ['squash', 'merge', 'rebase']\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).Merge.Methods; !reflect.DeepEqual(got, []string{"squash", "merge", "rebase"}) {
+		t.Fatalf("global merge methods = %v", got)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[merge]\nmethods = ['rebase', 'squash', 'merge']\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t, repo).Merge.Methods; !reflect.DeepEqual(got, []string{"rebase", "squash", "merge"}) {
+		t.Fatalf("repo merge methods = %v", got)
+	}
+}
+
+func TestLoadRejectsInvalidMergeMethodOrder(t *testing.T) {
+	for name, methods := range map[string]string{
+		"missing":   "['squash', 'merge']",
+		"duplicate": "['squash', 'merge', 'merge']",
+		"unknown":   "['squash', 'merge', 'fast-forward']",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[merge]\nmethods = "+methods+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(repo); err == nil || !strings.Contains(err.Error(), "merge.methods") {
+				t.Fatalf("invalid merge methods error = %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadCICommand(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte("[ci]\ncommand = 'woodpecker-cli build ls'\n"), 0o644); err != nil {
