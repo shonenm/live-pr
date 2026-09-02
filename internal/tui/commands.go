@@ -442,6 +442,20 @@ func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, _ gh.PRDeta
 	return tea.Batch(metadata, fetchConversation(client, pr.Number, generation), pollCI(client, generation, pr.Number), refs)
 }
 
+func fetchLocalCommits(number int, generation uint64, diffBase string) tea.Cmd {
+	return func() tea.Msg {
+		commits, err := git.Commits(diffBase)
+		return remoteCommitsLoaded{generation: generation, number: number, commits: commits, err: err}
+	}
+}
+
+func fetchLocalFiles(number int, generation uint64, diffBase string) tea.Cmd {
+	return func() tea.Msg {
+		files, err := git.ChangedFilesRange(diffBase, "")
+		return remoteFilesLoaded{generation: generation, number: number, files: files, err: err}
+	}
+}
+
 func fetchRemoteCommits(number int, generation uint64, diffBase, headRef string) tea.Cmd {
 	return func() tea.Msg {
 		commits, err := git.CommitsRange(diffBase, headRef)

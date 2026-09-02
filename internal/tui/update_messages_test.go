@@ -463,6 +463,25 @@ func TestRemoteSectionsApplyIndependentlyAfterRefs(t *testing.T) {
 	}
 }
 
+func TestLocalSectionsApplyIndependently(t *testing.T) {
+	m := testModel()
+	m.remote, m.refreshing, m.targetGeneration, m.remoteSectionsPending = false, true, 6, 3
+	m.cache.PR = &gh.PR{Number: 4}
+
+	u, _ := m.Update(remoteFilesLoaded{generation: 6, number: 4, files: []git.ChangedFile{{Path: "local.go"}}})
+	m = u.(Model)
+	if !m.refreshing || m.remoteSectionsPending != 2 || len(m.detailView.files) != 1 || m.detailView.files[0].Path != "local.go" {
+		t.Fatalf("local files phase = refreshing:%v pending:%d files:%#v", m.refreshing, m.remoteSectionsPending, m.detailView.files)
+	}
+	u, _ = m.Update(remoteCommitsLoaded{generation: 6, number: 4, commits: []git.Commit{{SHA: "local"}}})
+	m = u.(Model)
+	u, _ = m.Update(remoteConflictsLoaded{generation: 6, number: 4, readiness: git.MergeReadiness{Behind: 1}})
+	m = u.(Model)
+	if m.refreshing || m.remoteSectionsPending != 0 || len(m.detailView.commits) != 1 || m.detailView.mergeReadiness.Behind != 1 {
+		t.Fatalf("local sections complete = refreshing:%v pending:%d commits:%#v readiness:%#v", m.refreshing, m.remoteSectionsPending, m.detailView.commits, m.detailView.mergeReadiness)
+	}
+}
+
 func TestRemoteSnapshotMismatchPreservesCurrentDetail(t *testing.T) {
 	m := testModel()
 	m.screen, m.remote, m.targetGeneration, m.refreshing = detailScreen, true, 3, true
@@ -587,7 +606,7 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 		t.Fatal("r must not start a second in-flight refresh")
 	}
 
-	u, _ = m.Update(githubRefreshed{pr: gh.PR{Number: 9, State: "OPEN", Body: "remotely edited"}})
+	u, _ = m.Update(githubRefreshed{generation: m.targetGeneration, pr: gh.PR{Number: 9, State: "OPEN", Body: "remotely edited"}})
 	m = u.(Model)
 	if m.refreshing || m.cache.PR == nil || m.cache.PR.Number != 9 {
 		t.Fatalf("refresh result not cached: %#v", m.cache)
@@ -599,7 +618,7 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 		t.Fatal("cached PR metadata should be visible in the header")
 	}
 
-	u, _ = m.Update(githubRefreshed{err: gh.ErrPRNotFound})
+	u, _ = m.Update(githubRefreshed{generation: m.targetGeneration, err: gh.ErrPRNotFound})
 	m = u.(Model)
 	if m.cache.LastPublishedManagedBodyHash != "published-hash" {
 		t.Fatal("a pull-only refresh must preserve the publish baseline when no open PR is found")
