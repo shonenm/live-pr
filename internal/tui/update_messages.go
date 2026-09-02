@@ -670,6 +670,22 @@ func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
 	return pr
 }
 
+func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model, tea.Cmd) {
+	if msg.generation != m.targetGeneration || msg.err != nil || !m.isCurrentTargetPR(msg.pr) {
+		return m, nil
+	}
+	msg.pr = m.applyLocalGitMetadata(msg.pr)
+	m.cache.PR = &msg.pr
+	if strings.TrimSpace(msg.pr.Title) != "" {
+		m.detailView.title = msg.pr.Title
+	}
+	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
+	m.applyPRFilters(msg.pr.Number)
+	m.githubStatus = "GitHub: PR updated · conversation loading…"
+	m.layout()
+	return m, tea.Batch(saveNavigatorCacheCmd(m.navigatorPath, m.navigator), saveCacheCmd(m.cachePath, m.cache), m.sync())
+}
+
 func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
