@@ -305,6 +305,7 @@ type githubClient interface {
 	FindForHead(head string) (gh.PR, error)
 	FindPreview(number int) (gh.PR, error)
 	FindChecks(number int) (gh.PR, error)
+	LoadConversation(number int) gh.ConversationDetail
 	LoadPRDetail(number int, prev gh.PRDetail) gh.PRDetail
 	LoadLocalPRDetail(number int, prev gh.PRDetail) gh.PRDetail
 	Merge(number int, headOID string, method gh.MergeMethod) error
