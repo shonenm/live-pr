@@ -504,8 +504,8 @@ func (m Model) handleLocalBranchReloaded(msg localBranchReloaded) (Model, tea.Cm
 	return next, tea.Batch(next.Init(), next.sync())
 }
 
-func (m Model) remoteSectionTargets(generation uint64, number int) bool {
-	return m.remote && generation == m.targetGeneration && m.cache.PR != nil && m.cache.PR.Number == number
+func (m Model) detailSectionTargets(generation uint64, number int) bool {
+	return generation == m.targetGeneration && m.cache.PR != nil && m.cache.PR.Number == number
 }
 
 func (m *Model) finishRemoteSection() {
@@ -516,7 +516,7 @@ func (m *Model) finishRemoteSection() {
 }
 
 func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
-	if !m.remoteSectionTargets(msg.generation, msg.number) {
+	if !m.remote || !m.detailSectionTargets(msg.generation, msg.number) {
 		return m, nil
 	}
 	if msg.err != nil {
@@ -547,7 +547,7 @@ func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
 }
 
 func (m Model) handleRemoteCommitsLoaded(msg remoteCommitsLoaded) (Model, tea.Cmd) {
-	if !m.remoteSectionTargets(msg.generation, msg.number) {
+	if !m.detailSectionTargets(msg.generation, msg.number) {
 		return m, nil
 	}
 	m.finishRemoteSection()
@@ -560,7 +560,7 @@ func (m Model) handleRemoteCommitsLoaded(msg remoteCommitsLoaded) (Model, tea.Cm
 }
 
 func (m Model) handleRemoteConflictsLoaded(msg remoteConflictsLoaded) (Model, tea.Cmd) {
-	if !m.remoteSectionTargets(msg.generation, msg.number) {
+	if !m.detailSectionTargets(msg.generation, msg.number) {
 		return m, nil
 	}
 	m.finishRemoteSection()
@@ -574,7 +574,7 @@ func (m Model) handleRemoteConflictsLoaded(msg remoteConflictsLoaded) (Model, te
 }
 
 func (m Model) handleRemoteFilesLoaded(msg remoteFilesLoaded) (Model, tea.Cmd) {
-	if !m.remoteSectionTargets(msg.generation, msg.number) {
+	if !m.detailSectionTargets(msg.generation, msg.number) {
 		return m, nil
 	}
 	m.finishRemoteSection()
@@ -806,7 +806,7 @@ func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed
 	if msg.generation != m.targetGeneration {
 		return m, nil
 	}
-	if !m.remote {
+	if m.remoteSectionsPending == 0 {
 		m.refreshing = false
 	}
 	if msg.err != nil {
