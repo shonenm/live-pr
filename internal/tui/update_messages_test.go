@@ -299,6 +299,21 @@ func TestLocalGitHubFailureKeepsReviewAndShowsRecoveryHint(t *testing.T) {
 	}
 }
 
+func TestStalePRListGenerationKeepsCurrentRequestLoading(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.prList.generation = 2
+	m.prList.refreshing = true
+	m.prList.activePage = "active"
+	m.prList.pages = map[string]prPageState{"active": {loading: true, loaded: true, hasNext: true, endCursor: "C1"}}
+
+	u, cmd := m.Update(prListRefreshed{generation: 1, key: "active", appendPage: true})
+	m = u.(Model)
+	if cmd != nil || !m.prList.refreshing || !m.prList.pages["active"].loading {
+		t.Fatalf("stale generation canceled current request: refreshing=%v page=%#v cmd=%v", m.prList.refreshing, m.prList.pages["active"], cmd)
+	}
+}
+
 func TestStalePRListRefreshCannotRestoreMergedPR(t *testing.T) {
 	m := testModel()
 	m.screen = prListScreen

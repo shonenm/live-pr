@@ -52,7 +52,16 @@ func offlineStatus(err error, detail string, fetchedAt ...string) string {
 }
 
 func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
-	if msg.generation != m.prList.generation || msg.key != m.prList.activePage {
+	if msg.generation != m.prList.generation {
+		if msg.key != m.prList.activePage {
+			if page, ok := m.prList.pages[msg.key]; ok {
+				page.loading = false
+				m.prList.pages[msg.key] = page
+			}
+		}
+		return m, nil
+	}
+	if msg.key != m.prList.activePage {
 		if page, ok := m.prList.pages[msg.key]; ok {
 			page.loading = false
 			m.prList.pages[msg.key] = page
