@@ -571,6 +571,28 @@ func TestApplyLocalGitMetadataMatchesCommitsBySHA(t *testing.T) {
 	}
 }
 
+func TestGitHubMetadataRefreshRendersBeforeConversation(t *testing.T) {
+	m := testModel()
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	m.navigatorPath = filepath.Join(t.TempDir(), "navigator.json")
+	m.targetGeneration, m.refreshing = 4, true
+	m.cache.Comments = []gh.Comment{{ID: 1, Body: "cached"}}
+
+	u, cmd := m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 1, HeadRefName: m.currentBranch, Title: "fresh"}})
+	m = u.(Model)
+	if cmd == nil || !m.refreshing || m.cache.PR == nil || m.cache.PR.Title != "fresh" || len(m.cache.Comments) != 1 {
+		t.Fatalf("metadata phase = refreshing:%v cache:%#v cmd:%v", m.refreshing, m.cache, cmd)
+	}
+	if !strings.Contains(m.githubStatus, "conversation loading") {
+		t.Fatalf("metadata status = %q", m.githubStatus)
+	}
+
+	u, _ = m.Update(githubMetadataRefreshed{generation: 3, pr: gh.PR{Number: 1, HeadRefName: m.currentBranch, Title: "stale"}})
+	if got := u.(Model).cache.PR.Title; got != "fresh" {
+		t.Fatalf("stale metadata replaced current PR: %q", got)
+	}
+}
+
 func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	m := testModel()
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")

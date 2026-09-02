@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 )
@@ -403,7 +405,10 @@ func TestFetchGitHubUsesLocalMetadataAndPassesCachedDetail(t *testing.T) {
 	pr := gh.PR{Number: 15}
 	m.cache.PR = &pr
 	m.cache.Comments = []gh.Comment{{ID: 7, UpdatedAt: "2026-08-01T10:00:00Z"}}
-	fetchGitHub(m.client, "feature", 15, 3, m.cachedDetail())()
+	batch := fetchGitHub(m.client, "feature", 15, 3, m.cachedDetail())().(tea.BatchMsg)
+	for _, cmd := range batch {
+		cmd()
+	}
 	if remoteCalled || got.PR.Number != 15 || len(got.Comments) != 1 || got.Comments[0].ID != 7 {
 		t.Fatalf("local detail route = remote:%v cached:%#v", remoteCalled, got)
 	}
