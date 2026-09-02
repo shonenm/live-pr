@@ -701,6 +701,32 @@ func (c Client) IssueActivities(number int) ([]Activity, error) {
 	return paginatedList[Activity](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/events?per_page=100", number), "gh api issue events")
 }
 
+// ConversationDetail is the independently refreshable conversation/review slice.
+type ConversationDetail struct {
+	Comments          []Comment
+	Activities        []Activity
+	Reviews           []Review
+	ReviewComments    []ReviewThreadComment
+	CommentsErr       error
+	ActivitiesErr     error
+	ReviewsErr        error
+	ReviewCommentsErr error
+}
+
+// LoadConversation loads comments, activity, and reviews concurrently without
+// waiting for PR metadata or repository data.
+func (c Client) LoadConversation(number int) ConversationDetail {
+	var detail ConversationDetail
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() { defer wg.Done(); detail.Comments, detail.CommentsErr = c.IssueComments(number) }()
+	go func() { defer wg.Done(); detail.Activities, detail.ActivitiesErr = c.IssueActivities(number) }()
+	go func() { defer wg.Done(); detail.Reviews, detail.ReviewsErr = c.Reviews(number) }()
+	go func() { defer wg.Done(); detail.ReviewComments, detail.ReviewCommentsErr = c.ReviewComments(number) }()
+	wg.Wait()
+	return detail
+}
+
 // LoadPRDetail loads preview metadata, comments, and activity concurrently.
 // prev is the caller's cached snapshot of the same PR: when it carries
 // comments, only those created or updated since the newest cached updated_at

@@ -22,6 +22,7 @@ type fakeGH struct {
 	findForHead        func(head string) (gh.PR, error)
 	findPreview        func(number int) (gh.PR, error)
 	findChecks         func(number int) (gh.PR, error)
+	loadConversation   func(number int) gh.ConversationDetail
 	loadPRDetail       func(number int, prev gh.PRDetail) gh.PRDetail
 	loadLocalPRDetail  func(number int, prev gh.PRDetail) gh.PRDetail
 	merge              func(number int, headOID string, method gh.MergeMethod) error
@@ -61,6 +62,13 @@ func (f *fakeGH) FindChecks(number int) (gh.PR, error) {
 		return f.findChecks(number)
 	}
 	return gh.PR{}, nil
+}
+
+func (f *fakeGH) LoadConversation(number int) gh.ConversationDetail {
+	if f.loadConversation != nil {
+		return f.loadConversation(number)
+	}
+	return gh.ConversationDetail{}
 }
 
 func (f *fakeGH) LoadPRDetail(number int, prev gh.PRDetail) gh.PRDetail {
@@ -387,30 +395,20 @@ func TestCIPollTickDispatchesPollForCurrentPR(t *testing.T) {
 	}
 }
 
-func TestFetchGitHubUsesLocalMetadataAndPassesCachedDetail(t *testing.T) {
-	var got gh.PRDetail
-	remoteCalled := false
+func TestFetchGitHubSeparatesMetadataAndConversation(t *testing.T) {
+	conversationNumber := 0
 	client := &fakeGH{
-		loadLocalPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
-			got = prev
-			return gh.PRDetail{}
-		},
-		loadPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
-			remoteCalled = true
-			return gh.PRDetail{}
+		findPreview: func(number int) (gh.PR, error) { return gh.PR{Number: number}, nil },
+		loadConversation: func(number int) gh.ConversationDetail {
+			conversationNumber = number
+			return gh.ConversationDetail{Comments: []gh.Comment{{ID: 7}}}
 		},
 	}
-	m := testModel()
-	m.client = client
-	pr := gh.PR{Number: 15}
-	m.cache.PR = &pr
-	m.cache.Comments = []gh.Comment{{ID: 7, UpdatedAt: "2026-08-01T10:00:00Z"}}
-	batch := fetchGitHub(m.client, "feature", 15, 3, m.cachedDetail())().(tea.BatchMsg)
-	for _, cmd := range batch {
-		cmd()
-	}
-	if remoteCalled || got.PR.Number != 15 || len(got.Comments) != 1 || got.Comments[0].ID != 7 {
-		t.Fatalf("local detail route = remote:%v cached:%#v", remoteCalled, got)
+	batch := fetchGitHub(client, "feature", 15, 3, gh.PRDetail{})().(tea.BatchMsg)
+	metadata := batch[0]().(githubMetadataRefreshed)
+	conversation := batch[1]().(githubConversationRefreshed)
+	if metadata.pr.Number != 15 || conversationNumber != 15 || conversation.number != 15 || len(conversation.comments) != 1 {
+		t.Fatalf("refresh phases = metadata:%#v conversation:%#v requested:%d", metadata, conversation, conversationNumber)
 	}
 }
 
@@ -440,7 +438,7 @@ func TestFetchRemotePRPropagatesClientError(t *testing.T) {
 		return gh.PRDetail{PreviewErr: boom}
 	}}
 	pr := gh.PR{Number: 15, BaseRefName: "main", HeadRefOID: "head"}
-	msg := fetchRemotePR(client, pr, 9, gh.PRDetail{})().(remoteLoaded)
+	msg := fetchRemotePRDetail(client, pr, 9, gh.PRDetail{})().(remoteLoaded)
 	if gotNumber != 15 {
 		t.Fatalf("LoadPRDetail(%d); want 15", gotNumber)
 	}

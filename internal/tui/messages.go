@@ -91,6 +91,20 @@ type githubMetadataRefreshed struct {
 	err        error
 }
 
+type githubConversationRefreshed struct {
+	generation        uint64
+	number            int
+	comments          []gh.Comment
+	activities        []gh.Activity
+	reviews           []gh.Review
+	reviewComments    []gh.ReviewThreadComment
+	err               error
+	commentsErr       error
+	activitiesErr     error
+	reviewsErr        error
+	reviewCommentsErr error
+}
+
 type githubRefreshed struct {
 	generation        uint64
 	pr                gh.PR
