@@ -593,6 +593,23 @@ func TestGitHubMetadataRefreshRendersBeforeConversation(t *testing.T) {
 	}
 }
 
+func TestRemoteGitHubMetadataRefreshMatchesExplicitPR(t *testing.T) {
+	m := testModel()
+	m.remote, m.refreshing, m.targetGeneration = true, true, 4
+	m.cache.PR = &gh.PR{Number: 7, Title: "cached"}
+
+	u, _ := m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 7, Title: "fresh", Additions: 12}})
+	m = u.(Model)
+	if !m.refreshing || m.cache.PR.Title != "fresh" || m.cache.PR.Additions != 12 {
+		t.Fatalf("remote metadata phase = refreshing:%v pr:%#v", m.refreshing, m.cache.PR)
+	}
+
+	u, _ = m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 8, Title: "wrong target"}})
+	if got := u.(Model).cache.PR.Title; got != "fresh" {
+		t.Fatalf("other PR metadata replaced target: %q", got)
+	}
+}
+
 func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	m := testModel()
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
