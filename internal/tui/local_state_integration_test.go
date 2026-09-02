@@ -98,7 +98,7 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	run("switch", "feature")
 	cache.PR.HeadRefOID = remote
 	data = load()
-	if data.revisionRelation != git.RevisionDiverged || data.revisionAhead != 1 || data.revisionBehind != 1 || len(data.remoteCommits) != 1 || mode(data, false) != modeLocal {
+	if data.revisionRelation != git.RevisionDiverged || data.revisionAhead != 1 || data.revisionBehind != 1 || len(data.remoteCommits) != 1 || mode(data, false) != modeLive {
 		t.Fatalf("force push = relation:%v ahead:%d behind:%d remote:%#v mode:%v", data.revisionRelation, data.revisionAhead, data.revisionBehind, data.remoteCommits, mode(data, false))
 	}
 

@@ -75,6 +75,10 @@ func TestDetailModeLocalLiveRemote(t *testing.T) {
 	if got := m.detailMode(); got != modeLive {
 		t.Fatalf("matching clean detail mode = %v", got)
 	}
+	m.revisionRelation = git.RevisionDiverged
+	if got := m.detailMode(); got != modeLive {
+		t.Fatalf("rebased clean detail mode = %v", got)
+	}
 	m.workingTreeDirty = true
 	if got := m.detailMode(); got != modeLocal {
 		t.Fatalf("dirty detail mode = %v", got)
