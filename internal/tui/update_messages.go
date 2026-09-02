@@ -495,6 +495,92 @@ func (m Model) handleLocalBranchReloaded(msg localBranchReloaded) (Model, tea.Cm
 	return next, tea.Batch(next.Init(), next.sync())
 }
 
+func (m Model) remoteSectionTargets(generation uint64, number int) bool {
+	return m.remote && generation == m.targetGeneration && m.cache.PR != nil && m.cache.PR.Number == number
+}
+
+func (m *Model) finishRemoteSection() {
+	if m.remoteSectionsPending > 0 {
+		m.remoteSectionsPending--
+	}
+	m.refreshing = m.remoteSectionsPending > 0
+}
+
+func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
+	if !m.remoteSectionTargets(msg.generation, msg.number) {
+		return m, nil
+	}
+	if msg.err != nil {
+		m.refreshing = false
+		m.status = msg.err.Error()
+		m.githubStatus = "GitHub: review ref unavailable"
+		return m, m.sync()
+	}
+	if m.remoteRefreshGeneration != msg.generation {
+		m.remoteRefreshGeneration = msg.generation
+		m.remoteRefreshMetadataOID, m.remoteRefreshReferenceOID = "", ""
+	}
+	m.remoteRefreshReferenceOID = msg.headOID
+	if err := remoteSnapshotError(m.remoteRefreshMetadataOID, m.remoteRefreshReferenceOID); err != nil {
+		m.targetGeneration++
+		m.refreshing = false
+		m.status = err.Error()
+		m.githubStatus = "GitHub: PR changed during refresh · retry required"
+		return m, m.sync()
+	}
+	m.detailView.headRev = msg.headRef
+	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
+	m.detailView.reviewRange = msg.diffBase + "..." + msg.headRef
+	m.remoteSectionsPending = 3
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.prURL, "", m.detailView.reviewedMarksPath))
+	m.layout()
+	return m, tea.Batch(fetchRemoteCommits(msg.number, msg.generation, msg.diffBase, msg.headRef), fetchRemoteConflicts(msg.number, msg.generation, msg.base, msg.headRef), fetchRemoteFiles(msg.number, msg.generation, msg.diffBase, msg.headRef), m.sync())
+}
+
+func (m Model) handleRemoteCommitsLoaded(msg remoteCommitsLoaded) (Model, tea.Cmd) {
+	if !m.remoteSectionTargets(msg.generation, msg.number) {
+		return m, nil
+	}
+	m.finishRemoteSection()
+	if msg.err == nil {
+		m.detailView.commits, m.detailView.remoteCommits = msg.commits, nil
+		m.detailView.commitsRenderValid = false
+	}
+	m.layout()
+	return m, m.sync()
+}
+
+func (m Model) handleRemoteConflictsLoaded(msg remoteConflictsLoaded) (Model, tea.Cmd) {
+	if !m.remoteSectionTargets(msg.generation, msg.number) {
+		return m, nil
+	}
+	m.finishRemoteSection()
+	if msg.err == nil {
+		m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, nil, *m.cache.PR)
+	} else {
+		m.detailView.mergeReadinessErr = msg.err
+	}
+	m.layout()
+	return m, m.sync()
+}
+
+func (m Model) handleRemoteFilesLoaded(msg remoteFilesLoaded) (Model, tea.Cmd) {
+	if !m.remoteSectionTargets(msg.generation, msg.number) {
+		return m, nil
+	}
+	m.finishRemoteSection()
+	if msg.err == nil {
+		m.detailView.files = msg.files
+		m.detailView.fileCursor = min(m.detailView.fileCursor, max(0, len(msg.files)-1))
+	}
+	m.layout()
+	cmds := []tea.Cmd{m.sync()}
+	if !m.refreshing && m.diffTerminal != nil {
+		cmds = append(cmds, m.diffTerminal.Init())
+	}
+	return m, tea.Batch(cmds...)
+}
+
 func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
@@ -678,6 +764,18 @@ func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model
 		if m.cache.PR == nil || m.cache.PR.Number != msg.pr.Number {
 			return m, nil
 		}
+		if m.remoteRefreshGeneration != msg.generation {
+			m.remoteRefreshGeneration = msg.generation
+			m.remoteRefreshMetadataOID, m.remoteRefreshReferenceOID = "", ""
+		}
+		m.remoteRefreshMetadataOID = msg.pr.HeadRefOID
+		if err := remoteSnapshotError(m.remoteRefreshMetadataOID, m.remoteRefreshReferenceOID); err != nil {
+			m.targetGeneration++
+			m.refreshing = false
+			m.status = err.Error()
+			m.githubStatus = "GitHub: PR changed during refresh · retry required"
+			return m, m.sync()
+		}
 	} else {
 		if !m.isCurrentTargetPR(msg.pr) {
 			return m, nil
@@ -699,7 +797,9 @@ func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed
 	if msg.generation != m.targetGeneration {
 		return m, nil
 	}
-	m.refreshing = false
+	if !m.remote {
+		m.refreshing = false
+	}
 	if msg.err != nil {
 		m.githubStatus = offlineStatus(msg.err, "showing cached conversation", m.cache.FetchedAt)
 		return m, m.sync()
