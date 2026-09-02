@@ -593,6 +593,36 @@ func TestGitHubMetadataRefreshRendersBeforeConversation(t *testing.T) {
 	}
 }
 
+func TestRemoteGitHubMetadataRefreshMatchesExplicitPR(t *testing.T) {
+	m := testModel()
+	m.remote, m.refreshing, m.targetGeneration = true, true, 4
+	m.cache.PR = &gh.PR{Number: 7, Title: "cached"}
+
+	u, _ := m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 7, Title: "fresh", Additions: 12}})
+	m = u.(Model)
+	if !m.refreshing || m.cache.PR.Title != "fresh" || m.cache.PR.Additions != 12 {
+		t.Fatalf("remote metadata phase = refreshing:%v pr:%#v", m.refreshing, m.cache.PR)
+	}
+
+	u, _ = m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 8, Title: "wrong target"}})
+	if got := u.(Model).cache.PR.Title; got != "fresh" {
+		t.Fatalf("other PR metadata replaced target: %q", got)
+	}
+}
+
+func TestConversationRefreshAppliesWithoutReplacingMetadata(t *testing.T) {
+	m := testModel()
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
+	m.targetGeneration, m.refreshing = 4, true
+	m.cache.PR = &gh.PR{Number: 7, Title: "metadata"}
+
+	u, cmd := m.Update(githubConversationRefreshed{generation: 4, number: 7, comments: []gh.Comment{{ID: 2}}, activities: []gh.Activity{{ID: 3}}})
+	m = u.(Model)
+	if cmd == nil || m.refreshing || m.cache.PR.Title != "metadata" || len(m.cache.Comments) != 1 || m.cache.Comments[0].ID != 2 || len(m.cache.Activities) != 1 {
+		t.Fatalf("conversation phase = refreshing:%v cache:%#v cmd:%v", m.refreshing, m.cache, cmd)
+	}
+}
+
 func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	m := testModel()
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")

@@ -671,10 +671,19 @@ func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
 }
 
 func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration || msg.err != nil || !m.isCurrentTargetPR(msg.pr) {
+	if msg.generation != m.targetGeneration || msg.err != nil {
 		return m, nil
 	}
-	msg.pr = m.applyLocalGitMetadata(msg.pr)
+	if m.remote {
+		if m.cache.PR == nil || m.cache.PR.Number != msg.pr.Number {
+			return m, nil
+		}
+	} else {
+		if !m.isCurrentTargetPR(msg.pr) {
+			return m, nil
+		}
+		msg.pr = m.applyLocalGitMetadata(msg.pr)
+	}
 	m.cache.PR = &msg.pr
 	if strings.TrimSpace(msg.pr.Title) != "" {
 		m.detailView.title = msg.pr.Title
@@ -684,6 +693,53 @@ func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model
 	m.githubStatus = "GitHub: PR updated · conversation loading…"
 	m.layout()
 	return m, tea.Batch(saveNavigatorCacheCmd(m.navigatorPath, m.navigator), saveCacheCmd(m.cachePath, m.cache), m.sync())
+}
+
+func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed) (Model, tea.Cmd) {
+	if msg.generation != m.targetGeneration {
+		return m, nil
+	}
+	m.refreshing = false
+	if msg.err != nil {
+		m.githubStatus = offlineStatus(msg.err, "showing cached conversation", m.cache.FetchedAt)
+		return m, m.sync()
+	}
+	if m.cache.PR == nil || m.cache.PR.Number != msg.number {
+		return m, nil
+	}
+	selectedKey := m.selectedConversationKey()
+	stale := []string{}
+	if msg.commentsErr == nil {
+		m.cache.Comments = msg.comments
+	} else {
+		stale = append(stale, "comments")
+	}
+	if msg.activitiesErr == nil {
+		m.cache.Activities = msg.activities
+	} else {
+		stale = append(stale, "activity")
+	}
+	if msg.reviewsErr == nil {
+		m.cache.Reviews = msg.reviews
+	}
+	if msg.reviewCommentsErr == nil {
+		m.cache.ReviewComments = msg.reviewComments
+	}
+	if msg.reviewsErr != nil || msg.reviewCommentsErr != nil {
+		stale = append(stale, "reviews")
+	}
+	m.cache.FetchedAt = time.Now().UTC().Format(time.RFC3339)
+	m.githubStatus = "GitHub: conversation updated"
+	if len(stale) > 0 {
+		m.githubStatus += " · " + strings.Join(stale, "/") + " stale"
+	}
+	m.refreshReviewDraft()
+	m.refreshOutbox()
+	m.reloadLocalConversation()
+	m.detailView.invalidateConversation()
+	m.layout()
+	m.restoreConversationSelection(selectedKey)
+	return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent(), m.startOutboxFlush())
 }
 
 func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
