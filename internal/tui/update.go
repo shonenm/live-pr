@@ -24,7 +24,7 @@ func reservedReviewKey(msg tea.Msg) bool {
 func asyncCompletion(msg tea.Msg) bool {
 	switch msg.(type) {
 	case prListRefreshed, currentBranchPRLoaded, prPreviewLoaded, remoteLoaded,
-		githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
+		githubMetadataRefreshed, githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
 		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
@@ -191,6 +191,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ciPolled:
 		next, cmd := m.handleCIPolled(msg)
+		return next, cmd
+	case githubMetadataRefreshed:
+		next, cmd := m.handleGitHubMetadataRefreshed(msg)
 		return next, cmd
 	case githubRefreshed:
 		next, cmd := m.handleGitHubRefreshed(msg)

@@ -85,6 +85,12 @@ type ciPolled struct {
 	err        error
 }
 
+type githubMetadataRefreshed struct {
+	generation uint64
+	pr         gh.PR
+	err        error
+}
+
 type githubRefreshed struct {
 	generation        uint64
 	pr                gh.PR
