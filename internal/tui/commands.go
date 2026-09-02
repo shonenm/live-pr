@@ -424,6 +424,14 @@ func remoteSnapshotError(metadataOID, fetchedOID string) error {
 }
 
 func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
+	metadata := func() tea.Msg {
+		fresh, err := client.FindPreview(pr.Number)
+		return githubMetadataRefreshed{generation: generation, pr: fresh, err: err}
+	}
+	return tea.Batch(metadata, fetchRemotePRDetail(client, pr, generation, prev))
+}
+
+func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
 	return func() tea.Msg {
 		var headRef, headOID string
 		var comments []gh.Comment

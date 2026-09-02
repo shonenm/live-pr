@@ -671,10 +671,19 @@ func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
 }
 
 func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration || msg.err != nil || !m.isCurrentTargetPR(msg.pr) {
+	if msg.generation != m.targetGeneration || msg.err != nil {
 		return m, nil
 	}
-	msg.pr = m.applyLocalGitMetadata(msg.pr)
+	if m.remote {
+		if m.cache.PR == nil || m.cache.PR.Number != msg.pr.Number {
+			return m, nil
+		}
+	} else {
+		if !m.isCurrentTargetPR(msg.pr) {
+			return m, nil
+		}
+		msg.pr = m.applyLocalGitMetadata(msg.pr)
+	}
 	m.cache.PR = &msg.pr
 	if strings.TrimSpace(msg.pr.Title) != "" {
 		m.detailView.title = msg.pr.Title
