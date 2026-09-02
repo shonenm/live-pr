@@ -153,7 +153,7 @@ func fetchPRPreview(client githubClient, number int, generation uint64) tea.Cmd 
 	}
 }
 
-func fetchGitHub(client githubClient, head string, number int, generation uint64, prev gh.PRDetail) tea.Cmd {
+func fetchGitHub(client githubClient, head string, number int, generation uint64, _ gh.PRDetail) tea.Cmd {
 	metadata := func() tea.Msg {
 		var pr gh.PR
 		var err error
@@ -164,19 +164,19 @@ func fetchGitHub(client githubClient, head string, number int, generation uint64
 		}
 		return githubMetadataRefreshed{generation: generation, pr: pr, err: err}
 	}
-	detail := func() tea.Msg {
-		detailNumber := number
-		if detailNumber == 0 {
+	conversation := func() tea.Msg {
+		conversationNumber := number
+		if conversationNumber == 0 {
 			pr, err := client.FindForHead(head)
 			if err != nil {
-				return githubRefreshed{generation: generation, err: err}
+				return githubConversationRefreshed{generation: generation, err: err}
 			}
-			detailNumber = pr.Number
+			conversationNumber = pr.Number
 		}
-		loaded := client.LoadLocalPRDetail(detailNumber, prev)
-		return githubRefreshed{generation: generation, pr: loaded.PR, comments: loaded.Comments, activities: loaded.Activities, reviews: loaded.Reviews, reviewComments: loaded.ReviewComments, err: loaded.PreviewErr, commentsErr: loaded.CommentsErr, activitiesErr: loaded.ActivitiesErr, reviewsErr: loaded.ReviewsErr, reviewCommentsErr: loaded.ReviewCommentsErr}
+		loaded := client.LoadConversation(conversationNumber)
+		return githubConversationRefreshed{generation: generation, number: conversationNumber, comments: loaded.Comments, activities: loaded.Activities, reviews: loaded.Reviews, reviewComments: loaded.ReviewComments, commentsErr: loaded.CommentsErr, activitiesErr: loaded.ActivitiesErr, reviewsErr: loaded.ReviewsErr, reviewCommentsErr: loaded.ReviewCommentsErr}
 	}
-	return tea.Batch(metadata, detail)
+	return tea.Batch(metadata, conversation)
 }
 
 const localPollInterval = 2 * time.Second
