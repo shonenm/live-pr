@@ -423,12 +423,44 @@ func remoteSnapshotError(metadataOID, fetchedOID string) error {
 	return fmt.Errorf("PR head changed during refresh (%s != %s); retry", shortSHA(metadataOID), shortSHA(fetchedOID))
 }
 
-func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
+func fetchConversation(client githubClient, number int, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		loaded := client.LoadConversation(number)
+		return githubConversationRefreshed{generation: generation, number: number, comments: loaded.Comments, activities: loaded.Activities, reviews: loaded.Reviews, reviewComments: loaded.ReviewComments, commentsErr: loaded.CommentsErr, activitiesErr: loaded.ActivitiesErr, reviewsErr: loaded.ReviewsErr, reviewCommentsErr: loaded.ReviewCommentsErr}
+	}
+}
+
+func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, _ gh.PRDetail) tea.Cmd {
 	metadata := func() tea.Msg {
 		fresh, err := client.FindPreview(pr.Number)
 		return githubMetadataRefreshed{generation: generation, pr: fresh, err: err}
 	}
-	return tea.Batch(metadata, fetchRemotePRDetail(client, pr, generation, prev))
+	refs := func() tea.Msg {
+		headRef, headOID, err := git.FetchPull(pr.Number, pr.BaseRefName)
+		return remoteRefsLoaded{generation: generation, number: pr.Number, prURL: pr.URL, headRef: headRef, headOID: headOID, base: git.ResolveBase(pr.BaseRefName), diffBase: remoteReviewBase(pr), err: err}
+	}
+	return tea.Batch(metadata, fetchConversation(client, pr.Number, generation), pollCI(client, generation, pr.Number), refs)
+}
+
+func fetchRemoteCommits(number int, generation uint64, diffBase, headRef string) tea.Cmd {
+	return func() tea.Msg {
+		commits, err := git.CommitsRange(diffBase, headRef)
+		return remoteCommitsLoaded{generation: generation, number: number, commits: commits, err: err}
+	}
+}
+
+func fetchRemoteConflicts(number int, generation uint64, base, headRef string) tea.Cmd {
+	return func() tea.Msg {
+		readiness, err := git.CheckMergeReadiness(base, headRef)
+		return remoteConflictsLoaded{generation: generation, number: number, readiness: readiness, err: err}
+	}
+}
+
+func fetchRemoteFiles(number int, generation uint64, diffBase, headRef string) tea.Cmd {
+	return func() tea.Msg {
+		files, err := git.ChangedFilesRange(diffBase, headRef)
+		return remoteFilesLoaded{generation: generation, number: number, files: files, err: err}
+	}
 }
 
 func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {

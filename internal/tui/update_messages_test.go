@@ -418,6 +418,36 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	}
 }
 
+func TestRemoteSectionsApplyIndependentlyAfterRefs(t *testing.T) {
+	m := testModel()
+	m.remote, m.refreshing, m.targetGeneration = true, true, 5
+	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head"}
+	m.remoteRefreshGeneration, m.remoteRefreshMetadataOID = 5, "head"
+	initialFiles := len(m.detailView.files)
+
+	u, cmd := m.Update(remoteRefsLoaded{generation: 5, number: 12, headRef: "refs/live-pr/12", headOID: "head", base: "main", diffBase: "base"})
+	m = u.(Model)
+	if cmd == nil || m.remoteSectionsPending != 3 || m.detailView.reviewRange != "base...refs/live-pr/12" {
+		t.Fatalf("refs phase = pending:%d range:%q cmd:%v", m.remoteSectionsPending, m.detailView.reviewRange, cmd)
+	}
+
+	u, _ = m.Update(remoteCommitsLoaded{generation: 5, number: 12, commits: []git.Commit{{SHA: "abc"}}})
+	m = u.(Model)
+	if !m.refreshing || m.remoteSectionsPending != 2 || len(m.detailView.commits) != 1 || len(m.detailView.files) != initialFiles {
+		t.Fatalf("commits phase = pending:%d commits:%#v files:%#v", m.remoteSectionsPending, m.detailView.commits, m.detailView.files)
+	}
+	u, _ = m.Update(remoteConflictsLoaded{generation: 5, number: 12, readiness: git.MergeReadiness{Behind: 2}})
+	m = u.(Model)
+	if !m.refreshing || m.remoteSectionsPending != 1 || m.detailView.mergeReadiness.Behind != 2 {
+		t.Fatalf("conflicts phase = pending:%d readiness:%#v", m.remoteSectionsPending, m.detailView.mergeReadiness)
+	}
+	u, _ = m.Update(remoteFilesLoaded{generation: 5, number: 12, files: []git.ChangedFile{{Path: "a.go"}}})
+	m = u.(Model)
+	if m.refreshing || m.remoteSectionsPending != 0 || len(m.detailView.files) != 1 {
+		t.Fatalf("files phase = refreshing:%v pending:%d files:%#v", m.refreshing, m.remoteSectionsPending, m.detailView.files)
+	}
+}
+
 func TestRemoteSnapshotMismatchPreservesCurrentDetail(t *testing.T) {
 	m := testModel()
 	m.screen, m.remote, m.targetGeneration, m.refreshing = detailScreen, true, 3, true

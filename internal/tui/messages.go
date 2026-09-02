@@ -37,6 +37,38 @@ type prPreviewLoaded struct {
 	err        error
 }
 
+type remoteRefsLoaded struct {
+	generation uint64
+	number     int
+	prURL      string
+	headRef    string
+	headOID    string
+	base       string
+	diffBase   string
+	err        error
+}
+
+type remoteCommitsLoaded struct {
+	generation uint64
+	number     int
+	commits    []git.Commit
+	err        error
+}
+
+type remoteConflictsLoaded struct {
+	generation uint64
+	number     int
+	readiness  git.MergeReadiness
+	err        error
+}
+
+type remoteFilesLoaded struct {
+	generation uint64
+	number     int
+	files      []git.ChangedFile
+	err        error
+}
+
 type remoteLoaded struct {
 	generation        uint64
 	pr                gh.PR
