@@ -66,6 +66,7 @@ type remoteFilesLoaded struct {
 	generation uint64
 	number     int
 	files      []git.ChangedFile
+	stats      git.ChangeStats
 	err        error
 }
 
@@ -77,6 +78,7 @@ type remoteLoaded struct {
 	diffBase          string
 	commits           []git.Commit
 	files             []git.ChangedFile
+	stats             git.ChangeStats
 	comments          []gh.Comment
 	activities        []gh.Activity
 	reviews           []gh.Review
@@ -187,6 +189,7 @@ type baseResolved struct {
 	commits                              []git.Commit
 	remoteCommits                        []git.Commit
 	files                                []git.ChangedFile
+	stats                                git.ChangeStats
 	localHeadOID                         string
 	revisionRelation                     git.RevisionRelation
 	revisionAhead, revisionBehind        int

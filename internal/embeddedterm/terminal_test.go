@@ -80,9 +80,12 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestPIDFileLivesInPrivateDirectory(t *testing.T) {
-	terminal := New("true", t.TempDir(), nil)
+	terminal := New("sleep 30", t.TempDir(), nil)
 	if terminal == nil || terminal.err != nil {
 		t.Fatalf("New failed: %v", terminal.Err())
+	}
+	if cmd := terminal.Init(); cmd == nil {
+		t.Fatal("terminal did not start")
 	}
 	dir := filepath.Dir(terminal.pidFile)
 	if filepath.Clean(dir) == filepath.Clean(os.TempDir()) {
@@ -225,6 +228,49 @@ func TestReplacementRejectsOldTerminalMessages(t *testing.T) {
 	late := portalis.PtyExitMsg{SessionID: old.sessionID}
 	if replacement.Handles(late) {
 		t.Fatal("replacement accepted old terminal exit")
+	}
+}
+
+func TestStartingSameReviewerClosesPreviousProcess(t *testing.T) {
+	cwd := t.TempDir()
+	firstEnv := Environment("old-base...head", "old-base", "head", "head", "", "", "")
+	first := New("sleep 30", cwd, firstEnv)
+	defer first.Close()
+	if cmd := first.Init(); cmd == nil {
+		t.Fatal("first reviewer did not start")
+	}
+	defer func() { _ = os.Remove(first.lockFile) }()
+
+	var firstPID int
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(first.pidFile)
+		lockData, lockErr := os.ReadFile(first.lockFile)
+		if err == nil && lockErr == nil && strings.TrimSpace(string(lockData)) == first.pidFile {
+			firstPID, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+			if firstPID > 1 && processAlive(firstPID) {
+				break
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if firstPID <= 1 {
+		t.Fatal("first reviewer lock and pid file were not written")
+	}
+
+	secondEnv := Environment("new-base...head", "new-base", "head", "head", "", "", "")
+	second := New("sleep 30", cwd, secondEnv)
+	defer second.Close()
+	if cmd := second.Init(); cmd == nil {
+		t.Fatal("second reviewer did not start")
+	}
+
+	deadline = time.Now().Add(3 * time.Second)
+	for processRunning(firstPID) && time.Now().Before(deadline) {
+		time.Sleep(25 * time.Millisecond)
+	}
+	if processRunning(firstPID) {
+		t.Fatalf("first reviewer watchdog %d survived replacement", firstPID)
 	}
 }
 

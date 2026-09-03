@@ -357,6 +357,7 @@ type Model struct {
 	localAvailable            bool
 	localTitle                string
 	localStats                git.ChangeStats
+	remoteStats               git.ChangeStats
 	localCommitCount          int
 	localHeadOID              string
 	localFingerprint          string
@@ -710,7 +711,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 		m.detailView.title = cache.PR.Title
 	}
 	m.localAvailable, m.localTitle = cache.PR == nil, m.detailView.title
-	m.localStats, m.localCommitCount, m.workingTreeDirty = data.stats, len(data.commits), data.dirty
+	m.localStats, m.remoteStats, m.localCommitCount, m.workingTreeDirty = data.stats, git.ChangeStats{}, len(data.commits), data.dirty
 	m.worktreeSummary = data.worktree
 	m.localHeadOID, m.localFingerprint = data.localHeadOID, data.localFingerprint
 	m.revisionRelation = data.revisionRelation
@@ -867,6 +868,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 		m.diffTerminal.Close()
 	}
 	m.screen, m.remote = detailScreen, true
+	m.remoteStats = git.ChangeStats{}
 	m.detailView.title = pr.Title
 	m.detailView.base = git.ResolveBase(pr.BaseRefName)
 	m.detailView.diffBase = remoteReviewBase(pr)

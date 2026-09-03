@@ -473,7 +473,11 @@ func fetchRemoteConflicts(number int, generation uint64, base, headRef string) t
 func fetchRemoteFiles(number int, generation uint64, diffBase, headRef string) tea.Cmd {
 	return func() tea.Msg {
 		files, err := git.ChangedFilesRange(diffBase, headRef)
-		return remoteFilesLoaded{generation: generation, number: number, files: files, err: err}
+		stats, statsErr := git.DiffStats(diffBase, headRef)
+		if err == nil {
+			err = statsErr
+		}
+		return remoteFilesLoaded{generation: generation, number: number, files: files, stats: stats, err: err}
 	}
 }
 
@@ -518,14 +522,16 @@ func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev 
 		var resolvedBase, diffBase string
 		var commits []git.Commit
 		var files []git.ChangedFile
+		var stats git.ChangeStats
 		if refErr == nil && snapshotErr == nil {
 			resolvedBase = git.ResolveBase(pr.BaseRefName)
 			diffBase = remoteReviewBase(pr)
 			readiness, readinessErr = git.CheckMergeReadiness(resolvedBase, headRef)
 			commits, _ = git.CommitsRange(diffBase, headRef)
 			files, _ = git.ChangedFilesRange(diffBase, headRef)
+			stats, _ = git.DiffStats(diffBase, headRef)
 		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, snapshotErr: snapshotErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
+		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, stats: stats, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, snapshotErr: snapshotErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
 	}
 }
 

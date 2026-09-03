@@ -18,15 +18,20 @@ import (
 
 // Terminal embeds one interactive process and its VT screen.
 type Terminal struct {
-	sessionID string
-	pidDir    string
-	pidFile   string
-	emulator  *portalis.Emulator
-	started   bool
-	exited    bool
-	closed    bool
-	err       error
-	osc52     osc52Scanner
+	sessionID  string
+	pidDir     string
+	pidFile    string
+	lockFile   string
+	command    string
+	cwd        string
+	startEnv   []string
+	executable string
+	emulator   *portalis.Emulator
+	started    bool
+	exited     bool
+	closed     bool
+	err        error
+	osc52      osc52Scanner
 }
 
 // New prepares command for execution in cwd. Environment values are appended
@@ -42,31 +47,22 @@ func New(command, cwd string, env []string) *Terminal {
 	if err != nil {
 		return &Terminal{sessionID: sessionID, err: fmt.Errorf("CodeDiff watchdog: %w", err), exited: true}
 	}
-	// A private 0700 directory keeps the pid file out of reach on shared /tmp:
-	// nobody else can pre-create or symlink the path Close later kills from.
-	pidDir, err := os.MkdirTemp("", "live-pr-review-")
-	if err != nil {
-		return &Terminal{sessionID: sessionID, err: fmt.Errorf("CodeDiff watchdog: %w", err), exited: true}
-	}
-	pidFile := filepath.Join(pidDir, fmt.Sprintf("live-pr-review-%d-%s.pid", os.Getpid(), sessionID))
 	emulator := portalis.NewEmulator(sessionID, "CodeDiff", executable, nil)
 	emulator.SetInitialCWD(cwd)
-	env = append(env,
-		watchdogModeEnv+"=1",
-		watchdogParentEnv+"="+strconv.Itoa(os.Getpid()),
-		watchdogCommandEnv+"="+command,
-		watchdogPIDFileEnv+"="+pidFile,
-	)
-	emulator.SetStartEnv(env)
 	emulator.SetScrollbackLimit(2_000)
-	return &Terminal{sessionID: sessionID, pidDir: pidDir, pidFile: pidFile, emulator: emulator}
+	return &Terminal{sessionID: sessionID, command: command, cwd: cwd, startEnv: env, executable: executable, emulator: emulator}
 }
 
 // Init starts the child before returning its first output listener. Synchronous
 // spawn prevents a late-starting reviewer from escaping shutdown ownership.
 func (t *Terminal) Init() tea.Cmd {
-	if t == nil || t.closed {
+	if t == nil || t.closed || t.started {
 		return nil
+	}
+	if err := t.prepareWatchdog(); err != nil {
+		t.exited = true
+		t.err = fmt.Errorf("CodeDiff watchdog: %w", err)
+		return func() tea.Msg { return StateMsg{SessionID: t.sessionID} }
 	}
 	if err := t.emulator.StartSync(nil); err != nil {
 		t.exited = true
@@ -79,6 +75,29 @@ func (t *Terminal) Init() tea.Cmd {
 	// global blink broadcaster.
 	t.emulator.Update(portalis.CursorBlinkMsg{})
 	return wrapCmd(t.emulator.Listen())
+}
+
+func (t *Terminal) prepareWatchdog() error {
+	// A private 0700 directory keeps the pid file out of reach on shared /tmp:
+	// nobody else can pre-create or symlink the path Close later kills from.
+	pidDir, err := os.MkdirTemp("", "live-pr-review-")
+	if err != nil {
+		return err
+	}
+	t.pidDir = pidDir
+	t.pidFile = filepath.Join(pidDir, fmt.Sprintf("live-pr-review-%d-%s.pid", os.Getpid(), t.sessionID))
+	t.lockFile = reviewerLockPath(t.cwd, t.command, t.startEnv)
+	closeExistingReviewer(t.lockFile)
+	env := append([]string{}, t.startEnv...)
+	env = append(env,
+		watchdogModeEnv+"=1",
+		watchdogParentEnv+"="+strconv.Itoa(os.Getpid()),
+		watchdogCommandEnv+"="+t.command,
+		watchdogPIDFileEnv+"="+t.pidFile,
+		watchdogLockFileEnv+"="+t.lockFile,
+	)
+	t.emulator.SetStartEnv(env)
+	return nil
 }
 
 // Handles reports whether msg belongs to the embedded PTY lifecycle.
@@ -201,8 +220,9 @@ func (t *Terminal) Close() {
 	t.exited = true
 	if data, err := os.ReadFile(t.pidFile); err == nil {
 		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			killTree(pid)
+			killTreeAndWait(pid)
 		}
+		removeReviewerLock(t.lockFile, t.pidFile)
 		_ = os.Remove(t.pidFile)
 	}
 	if t.pidDir != "" {
