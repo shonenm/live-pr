@@ -702,6 +702,16 @@ func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	}
 }
 
+func TestRemoteDetailIgnoresLocalBranchPoll(t *testing.T) {
+	m := testModel()
+	m.screen, m.remote, m.currentBranch, m.targetGeneration = detailScreen, true, "main", 4
+	m.cache.PR = &gh.PR{Number: 9, HeadRefName: "feature"}
+	next, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "new"}})
+	if cmd != nil || next.remote != true || next.refreshing || next.currentBranch != "main" {
+		t.Fatalf("remote poll reacted to local git: remote:%v refreshing:%v branch:%q cmd:%v", next.remote, next.refreshing, next.currentBranch, cmd)
+	}
+}
+
 func TestLocalStatePollReportsFailureAndRecovery(t *testing.T) {
 	m := testModel()
 	m.screen, m.currentBranch, m.localFingerprint, m.targetGeneration = detailScreen, "feature", "same", 4
@@ -828,7 +838,7 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "old", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "new", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
 	m = u.(Model)
-	if cmd == nil || !strings.Contains(m.githubStatus, "head changed") || prfilter.CIHealth(*m.cache.PR) != "pending" || m.detailMode() != modeLocal {
+	if cmd == nil || !strings.Contains(m.githubStatus, "head changed") || prfilter.CIHealth(*m.cache.PR) != "pending" || m.detailMode() != modeLive {
 		t.Fatalf("changed head = health:%s status:%q cmd:%v", prfilter.CIHealth(*m.cache.PR), m.githubStatus, cmd)
 	}
 }

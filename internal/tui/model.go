@@ -602,7 +602,10 @@ func (m Model) detailMode() detailMode {
 	if m.remote {
 		return modeRemote
 	}
-	if m.cache.PR != nil && m.revisionRelation == git.RevisionSynced && !m.workingTreeDirty {
+	// A GitHub PR stays LIVE across rebase/merge; only an unpublished
+	// worktree or a branch with no PR is LOCAL. Remote-opened PRs never
+	// reach here until an explicit checkout.
+	if m.cache.PR != nil && !m.workingTreeDirty {
 		return modeLive
 	}
 	return modeLocal
