@@ -243,10 +243,16 @@ func (m Model) detailStats() git.ChangeStats {
 		}
 		return stats
 	}
+	if m.remoteStats.Files > 0 || m.remoteStats.Additions > 0 || m.remoteStats.Deletions > 0 {
+		return m.remoteStats
+	}
 	if m.cache.PR != nil {
 		return git.ChangeStats{Files: m.cache.PR.ChangedFiles, Additions: m.cache.PR.Additions, Deletions: m.cache.PR.Deletions}
 	}
-	return git.ChangeStats{Files: len(m.detailView.files)}
+	if len(m.detailView.files) > 0 {
+		return git.ChangeStats{Files: len(m.detailView.files)}
+	}
+	return git.ChangeStats{}
 }
 
 func (m Model) renderHeader() string {

@@ -226,6 +226,7 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 			}
 		} else {
 			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
+			msg.stats, _ = git.DiffStats(diffBase, newHead)
 		}
 		if !remote {
 			// Conflict files and the behind count go stale even when the
@@ -286,6 +287,9 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		// Same range names, but the refs behind them move: refresh the scans
 		// without dropping caches or restarting the review terminal.
 		m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
+		if m.remote {
+			m.remoteStats = msg.stats
+		}
 		if !m.remote {
 			m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
 			m.revisionAhead, m.revisionBehind = msg.revisionAhead, msg.revisionBehind
@@ -303,6 +307,9 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.detailView.invalidateConversation()
 	}
 	m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
+	if m.remote {
+		m.remoteStats = msg.stats
+	}
 	if !m.remote {
 		m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
 		m.revisionAhead, m.revisionBehind = msg.revisionAhead, msg.revisionBehind

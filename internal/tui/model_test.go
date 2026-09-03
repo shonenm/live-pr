@@ -320,6 +320,13 @@ func TestHeaderShowsPRStatusSizeAndLocalChanges(t *testing.T) {
 			t.Fatalf("remote PR header missing %q: %q", want, remote)
 		}
 	}
+	m.remoteStats = git.ChangeStats{Files: 2, Additions: 9, Deletions: 1}
+	remote = ansi.Strip(m.renderHeader())
+	for _, want := range []string{"2 files", "+9", "-1"} {
+		if !strings.Contains(remote, want) {
+			t.Fatalf("remote PR header did not prefer scanned stats %q: %q", want, remote)
+		}
+	}
 	m.remote = false
 	m.w = 25
 	if width := lipgloss.Width(m.renderPRMeta(*m.cache.PR)); width > m.w {

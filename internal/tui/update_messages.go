@@ -580,6 +580,7 @@ func (m Model) handleRemoteFilesLoaded(msg remoteFilesLoaded) (Model, tea.Cmd) {
 	m.finishRemoteSection()
 	if msg.err == nil {
 		m.detailView.files = msg.files
+		m.remoteStats = msg.stats
 		m.detailView.fileCursor = min(m.detailView.fileCursor, max(0, len(msg.files)-1))
 	}
 	m.layout()
@@ -641,6 +642,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
 	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
 	m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, nil, msg.files
+	m.remoteStats = msg.stats
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, msg.readinessErr, msg.pr)
 	m.detailView.fileCursor = 0
 	m.status = ""
