@@ -580,7 +580,11 @@ func (m Model) handleRemoteFilesLoaded(msg remoteFilesLoaded) (Model, tea.Cmd) {
 	m.finishRemoteSection()
 	if msg.err == nil {
 		m.detailView.files = msg.files
-		m.remoteStats = msg.stats
+		if m.remote {
+			m.remoteStats = msg.stats
+		} else {
+			m.localStats = msg.stats
+		}
 		m.detailView.fileCursor = min(m.detailView.fileCursor, max(0, len(msg.files)-1))
 	}
 	m.layout()
