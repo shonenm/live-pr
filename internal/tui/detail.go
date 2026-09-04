@@ -218,7 +218,13 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 		}
 		msg.commits, _ = git.CommitsRange(diffBase, newHead)
 		if !remote {
-			msg.files, _ = git.ChangedFilesRange(diffBase, "")
+			msg.commits, _ = git.Commits(diffBase)
+			fileHead := ""
+			if publishedReviewHead(prCopy) != "" {
+				fileHead = newHead
+			}
+			msg.files, _ = git.ChangedFilesRange(diffBase, fileHead)
+			msg.stats, _ = git.DiffStats(diffBase, fileHead)
 			msg.localHeadOID, _ = git.Revision("HEAD")
 			msg.revisionRelation, msg.publishedCommits, msg.localDiverged, msg.remoteCommits = commitSections(diffBase, msg.commits, prCopy)
 			if prCopy != nil && prCopy.HeadRefOID != "" {
@@ -289,6 +295,8 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
 		if m.remote {
 			m.remoteStats = msg.stats
+		} else {
+			m.localStats = msg.stats
 		}
 		if !m.remote {
 			m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
@@ -309,6 +317,8 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
 	if m.remote {
 		m.remoteStats = msg.stats
+	} else {
+		m.localStats = msg.stats
 	}
 	if !m.remote {
 		m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
@@ -961,6 +971,10 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 	if m.detailView.reviewSHA != "" {
 		return m.loadCommitDetail(m.detailView.reviewSHA)
 	}
+	head := m.detailView.headRev
+	if !m.remote && publishedReviewHead(m.cache.PR) == "" {
+		head = ""
+	}
 	if m.fileExplorerMode() {
 		if file := m.detailView.selectedFile(); file != nil {
 			paths := []string{file.Path}
@@ -968,10 +982,6 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 				paths = append(paths, file.OldPath)
 			}
 			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.detailView.diffBase, m.detailView.headRev, file.Status, file.OldPath, file.Path)
-			head := m.detailView.headRev
-			if !m.remote {
-				head = ""
-			}
 			d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) {
 				return git.FileDiffRange(m.detailView.diffBase, head, paths...)
 			})
@@ -988,10 +998,6 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 		return detailContent{raw: stMuted.Render("(no changes in selected file)")}, nil
 	}
 	key := "range:" + m.detailView.diffBase + "..." + m.detailView.headRev
-	head := m.detailView.headRev
-	if !m.remote {
-		head = ""
-	}
 	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.FileDiffRange(m.detailView.diffBase, head) })
 	if loadErr != "" {
 		return detailContent{raw: stMuted.Render("(diff unavailable: " + loadErr + ")")}, nil

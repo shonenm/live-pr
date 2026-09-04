@@ -43,13 +43,15 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	}
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "calls")
-	script := fmt.Sprintf("#!/bin/sh\ncount=0\n[ -f %q ] && read count < %q\ncount=$((count + 1))\nprintf '%%s' \"$count\" > %q\nprintf 'cached diff\\n'\n", counter, counter, counter)
+	argsFile := filepath.Join(dir, "args")
+	script := fmt.Sprintf("#!/bin/sh\ncount=0\n[ -f %q ] && read count < %q\ncount=$((count + 1))\nprintf '%%s' \"$count\" > %q\nprintf '%%s' \"$*\" > %q\nprintf 'cached diff\\n'\n", counter, counter, counter, argsFile)
 	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
 	m := testModel()
-	m.screen, m.detailView.base, m.detailView.headRev = detailScreen, "main", "HEAD"
+	m.screen, m.detailView.base, m.detailView.diffBase, m.detailView.headRev = detailScreen, "main", "main", "pushedhead"
+	m.cache.PR = &gh.PR{Number: 1, HeadRefOID: "pushedhead"}
 	m.diffCommand, m.diffTerminal = "", nil
 
 	// A cache miss dispatches the git work as a Cmd instead of blocking.
@@ -67,8 +69,12 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.raw != "cached diff" || hitCmd != nil || string(calls) != "2" {
-		t.Fatalf("detail = %#v cmd=%v calls=%q", second, hitCmd, calls)
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.raw != "cached diff" || hitCmd != nil || string(calls) != "1" || !strings.Contains(string(args), "main...pushedhead") {
+		t.Fatalf("detail = %#v cmd=%v calls=%q args=%q", second, hitCmd, calls, args)
 	}
 	m.detailView.resetCaches()
 	_, missCmd := m.loadDetail()
@@ -77,7 +83,7 @@ func TestLoadDetailCachesRawGitOutput(t *testing.T) {
 	}
 	_ = missCmd()
 	calls, _ = os.ReadFile(counter)
-	if string(calls) != "4" {
+	if string(calls) != "2" {
 		t.Fatalf("cache reset calls=%q", calls)
 	}
 }
