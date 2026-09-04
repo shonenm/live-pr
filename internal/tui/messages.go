@@ -172,6 +172,9 @@ type cacheSaved struct {
 
 // saveCacheCmd persists an isolated branch-cache snapshot off the Update goroutine.
 func saveCacheCmd(path string, cache gh.Cache) tea.Cmd {
+	if path == "" {
+		return nil
+	}
 	cache = cache.Clone()
 	return func() tea.Msg {
 		return cacheSaved{err: gh.SaveCache(path, cache)}
