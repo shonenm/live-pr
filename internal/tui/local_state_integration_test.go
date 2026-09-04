@@ -64,6 +64,10 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	if data.revisionRelation != git.RevisionSynced || data.dirty || mode(data, false) != modeLive {
 		t.Fatalf("published clean = relation:%v dirty:%v mode:%v", data.revisionRelation, data.dirty, mode(data, false))
 	}
+	if data.headRev != published || len(data.files) != 1 {
+		t.Fatalf("published files = head:%q files:%#v", data.headRev, data.files)
+	}
+	publishedFingerprint := data.files[0].Fingerprint
 	if mode(data, true) != modeRemote {
 		t.Fatalf("remote target mode = %v", mode(data, true))
 	}
@@ -75,6 +79,9 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	if !data.dirty || data.worktree.Staged != 1 || data.worktree.Unstaged != 1 || mode(data, false) != modeLocal {
 		t.Fatalf("dirty = %#v mode:%v", data.worktree, mode(data, false))
 	}
+	if len(data.files) != 1 || data.files[0].Fingerprint != publishedFingerprint {
+		t.Fatalf("working tree leaked into published files: %#v", data.files)
+	}
 
 	run("add", "file")
 	run("commit", "-m", "local")
@@ -82,6 +89,9 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	data = load()
 	if data.revisionRelation != git.RevisionLocalAhead || data.revisionAhead != 1 || data.dirty {
 		t.Fatalf("local ahead = relation:%v ahead:%d dirty:%v", data.revisionRelation, data.revisionAhead, data.dirty)
+	}
+	if len(data.files) != 1 || data.files[0].Fingerprint != publishedFingerprint {
+		t.Fatalf("unpushed commit leaked into published files: %#v", data.files)
 	}
 
 	// Publishing moves only the PR boundary; the checkout itself is unchanged.

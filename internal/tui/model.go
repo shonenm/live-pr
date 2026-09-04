@@ -672,16 +672,14 @@ func publishedReviewHead(pr *gh.PR) string {
 }
 
 func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (diffBase, headRev, reviewRange string) {
+	diffBase = localReviewBase(base, pr)
+	if head := publishedReviewHead(pr); head != "" {
+		base = remoteReviewBase(*pr)
+		return base, head, base + "..." + head
+	}
 	if remote {
-		diffBase = localReviewBase(base, pr)
-		if head := publishedReviewHead(pr); head != "" {
-			return remoteReviewBase(*pr), head, remoteReviewBase(*pr) + "..." + head
-		}
 		return diffBase, currentHead, diffBase + "..." + currentHead
 	}
-	// The checked-out branch is always reviewed through its working tree.
-	// The PR head is a publication boundary, not the end of the local diff.
-	diffBase = localReviewBase(base, pr)
 	return diffBase, "HEAD", diffBase
 }
 

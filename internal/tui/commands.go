@@ -79,8 +79,12 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	commits, commitErr := git.Commits(diffBase)
-	files, fileErr := git.ChangedFilesRange(diffBase, "")
-	stats, _ := git.DiffStats(diffBase, "")
+	fileHead := ""
+	if publishedReviewHead(cache.PR) != "" {
+		fileHead = headRev
+	}
+	files, fileErr := git.ChangedFilesRange(diffBase, fileHead)
+	stats, _ := git.DiffStats(diffBase, fileHead)
 	if len(files) > stats.Files {
 		stats.Files = len(files)
 	}
@@ -449,10 +453,14 @@ func fetchLocalCommits(number int, generation uint64, diffBase string) tea.Cmd {
 	}
 }
 
-func fetchLocalFiles(number int, generation uint64, diffBase string) tea.Cmd {
+func fetchLocalFiles(number int, generation uint64, diffBase, headRef string) tea.Cmd {
 	return func() tea.Msg {
-		files, err := git.ChangedFilesRange(diffBase, "")
-		return remoteFilesLoaded{generation: generation, number: number, files: files, err: err}
+		files, err := git.ChangedFilesRange(diffBase, headRef)
+		stats, statsErr := git.DiffStats(diffBase, headRef)
+		if err == nil {
+			err = statsErr
+		}
+		return remoteFilesLoaded{generation: generation, number: number, files: files, stats: stats, err: err}
 	}
 }
 

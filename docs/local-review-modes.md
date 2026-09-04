@@ -8,8 +8,8 @@ repository state the review represents.
 
 | Mode | Meaning | Diff source |
 | --- | --- | --- |
-| `LOCAL` | The checked-out branch has no PR, has commits not on the PR, or has index/worktree changes. | Local `HEAD`, index, worktree, and untracked files |
-| `LIVE` | The checked-out branch has a PR, local `HEAD` equals the published PR head, and the worktree is clean. | Local Git, with GitHub metadata layered on top |
+| `LOCAL` | The checked-out branch has no PR, has commits not on the PR, or has index/worktree changes. | Published PR head when one exists; otherwise local `HEAD`, index, worktree, and untracked files |
+| `LIVE` | The checked-out branch has a PR, local `HEAD` equals the published PR head, and the worktree is clean. | Published PR head, with GitHub metadata layered on top |
 | `REMOTE` | A PR that is not the checked-out branch is open from the PR list. | The fetched `refs/live-pr/pulls/<number>/head` ref |
 
 A PR can move from `LIVE` to `LOCAL` without closing the detail screen. A local
@@ -47,10 +47,12 @@ sections from the Git graph's common ancestor.
 For the checked-out branch, local Git is authoritative for:
 
 - commits, subjects, and commit dates;
-- changed paths, renames, and per-file diffs;
-- additions, deletions, and file counts;
 - merge base, ahead/behind information, and conflict simulation;
 - staged, unstaged, and untracked content.
+
+When the branch has a PR, its fetched publication boundary is authoritative for
+changed paths, per-file diffs, and diff statistics. A PR-less branch uses its
+local working tree for those views.
 
 GitHub remains authoritative for:
 
@@ -84,8 +86,8 @@ The commit picker separates commits already published on the PR from commits
 that exist only in the checkout or only on the remote PR. Local-only and
 remote-only commits remain individually reviewable with `git show`. A
 `Working tree` row summarizes staged, unstaged, and untracked entries and opens
-the complete local diff. File review includes binary files, symlinks, renames,
-deletions, conflicts, and submodule changes.
+the complete local diff. The Files view stays on the pushed PR head and includes
+binary files, symlinks, renames, deletions, conflicts, and submodule changes.
 
 ## Typical workflow
 

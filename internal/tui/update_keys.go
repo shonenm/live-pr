@@ -415,7 +415,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			fetchGitHub(m.client, m.detailView.head, number, m.targetGeneration, m.cachedDetail()),
 			fetchLocalCommits(number, m.targetGeneration, m.detailView.diffBase),
 			fetchRemoteConflicts(number, m.targetGeneration, m.detailView.base, "HEAD"),
-			fetchLocalFiles(number, m.targetGeneration, m.detailView.diffBase),
+			fetchLocalFiles(number, m.targetGeneration, m.detailView.diffBase, m.detailView.headRev),
 			pollCI(m.client, m.targetGeneration, number),
 			m.startOutboxFlush(), m.startSpinner(),
 		)
