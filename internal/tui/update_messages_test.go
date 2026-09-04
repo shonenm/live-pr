@@ -834,6 +834,7 @@ func TestCIPollStopsWhenHeadChanges(t *testing.T) {
 	m := testModel()
 	m.screen = detailScreen
 	m.targetGeneration = 2
+	m.cachePath = filepath.Join(t.TempDir(), "github.json")
 	m.localHeadOID, m.revisionRelation = "old", git.RevisionSynced
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "old", PreviewLoaded: true, Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 	u, cmd := m.Update(ciPolled{generation: 2, pr: gh.PR{Number: 12, HeadRefOID: "new", Checks: []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}}})
@@ -903,6 +904,12 @@ func TestAsyncCacheSaveUsesDispatchSnapshot(t *testing.T) {
 	got, err := gh.LoadCache(path, "feature")
 	if err != nil || got.PR == nil || got.PR.Number != 1 || got.PR.Commits[0].OID != "old" || got.Comments[0].Body != "old" {
 		t.Fatalf("saved snapshot = %#v err=%v", got, err)
+	}
+}
+
+func TestAsyncCacheSaveSkipsRemoteWithoutPath(t *testing.T) {
+	if cmd := saveCacheCmd("", gh.NewCache("feature")); cmd != nil {
+		t.Fatal("remote cache without a path scheduled a save")
 	}
 }
 
