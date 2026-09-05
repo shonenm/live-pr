@@ -3,12 +3,14 @@ package tui
 import (
 	"errors"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prfilter"
@@ -460,6 +462,112 @@ func TestRemoteSectionsApplyIndependentlyAfterRefs(t *testing.T) {
 	m = u.(Model)
 	if m.refreshing || m.remoteSectionsPending != 0 || len(m.detailView.files) != 1 {
 		t.Fatalf("files phase = refreshing:%v pending:%d files:%#v", m.refreshing, m.remoteSectionsPending, m.detailView.files)
+	}
+}
+
+func TestRemoteSectionsStartPreparedTerminalAfterEveryCompletionOrder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("embedded PTY is not supported on Windows")
+	}
+	permutations := [][]string{
+		{"commits", "conflicts", "files"},
+		{"commits", "files", "conflicts"},
+		{"conflicts", "commits", "files"},
+		{"conflicts", "files", "commits"},
+		{"files", "commits", "conflicts"},
+		{"files", "conflicts", "commits"},
+	}
+	for _, order := range permutations {
+		t.Run(strings.Join(order, "-"), func(t *testing.T) {
+			m := testModel()
+			m.root, m.diffCommand = t.TempDir(), "cat"
+			m.remote, m.refreshing, m.targetGeneration = true, true, 5
+			m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head"}
+			m.remoteRefreshGeneration, m.remoteRefreshMetadataOID = 5, "head"
+
+			u, _ := m.Update(remoteRefsLoaded{generation: 5, number: 12, headRef: "refs/live-pr/12", headOID: "head", base: "main", diffBase: "base"})
+			m = u.(Model)
+			defer m.close()
+			if m.diffTerminal == nil || !strings.Contains(m.diffTerminal.View(80, 5), "Starting CodeDiff") {
+				t.Fatalf("prepared terminal = %v view %q", m.diffTerminal != nil, m.diffTerminal.View(80, 5))
+			}
+
+			for i, section := range order {
+				switch section {
+				case "commits":
+					u, _ = m.Update(remoteCommitsLoaded{generation: 5, number: 12, commits: []git.Commit{{SHA: "abc"}}})
+				case "conflicts":
+					u, _ = m.Update(remoteConflictsLoaded{generation: 5, number: 12, readiness: git.MergeReadiness{Behind: 2}})
+				case "files":
+					u, _ = m.Update(remoteFilesLoaded{generation: 5, number: 12, files: []git.ChangedFile{{Path: "a.go"}}})
+				}
+				m = u.(Model)
+				starting := strings.Contains(m.diffTerminal.View(80, 5), "Starting CodeDiff")
+				if i < len(order)-1 && !starting {
+					t.Fatalf("terminal started after %d sections in order %v", i+1, order)
+				}
+				if i == len(order)-1 && starting {
+					t.Fatalf("terminal did not start after final section in order %v", order)
+				}
+			}
+			if cmd := m.diffTerminal.Init(); cmd != nil {
+				t.Fatal("terminal startup was not idempotently completed")
+			}
+		})
+	}
+}
+
+func TestRemoteSectionCompletionRejectsStaleAndWrongPRResults(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("embedded PTY is not supported on Windows")
+	}
+	m := testModel()
+	m.root, m.diffCommand = t.TempDir(), "cat"
+	m.remote, m.refreshing, m.targetGeneration, m.remoteSectionsPending = true, true, 5, 3
+	m.cache.PR = &gh.PR{Number: 12}
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, nil)
+	defer m.close()
+
+	for _, msg := range []tea.Msg{
+		remoteCommitsLoaded{generation: 4, number: 12},
+		remoteConflictsLoaded{generation: 5, number: 13},
+		remoteFilesLoaded{generation: 4, number: 13},
+	} {
+		u, cmd := m.Update(msg)
+		m = u.(Model)
+		if cmd != nil || m.remoteSectionsPending != 3 || !strings.Contains(m.diffTerminal.View(80, 5), "Starting CodeDiff") {
+			t.Fatalf("irrelevant result changed lifecycle: pending=%d cmd=%v view=%q", m.remoteSectionsPending, cmd, m.diffTerminal.View(80, 5))
+		}
+	}
+}
+
+func TestRemoteSectionErrorsCompleteAndPreserveCachedData(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("embedded PTY is not supported on Windows")
+	}
+	m := testModel()
+	m.root, m.diffCommand = t.TempDir(), "cat"
+	m.remote, m.refreshing, m.targetGeneration, m.remoteSectionsPending = true, true, 5, 3
+	m.cache.PR = &gh.PR{Number: 12}
+	m.detailView.commits = []git.Commit{{SHA: "cached"}}
+	m.detailView.files = []git.ChangedFile{{Path: "cached.go"}}
+	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 7}
+	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, nil)
+	defer m.close()
+
+	for _, msg := range []tea.Msg{
+		remoteFilesLoaded{generation: 5, number: 12, err: errors.New("files failed")},
+		remoteCommitsLoaded{generation: 5, number: 12, err: errors.New("commits failed")},
+		remoteConflictsLoaded{generation: 5, number: 12, err: errors.New("conflicts failed")},
+	} {
+		u, _ := m.Update(msg)
+		m = u.(Model)
+	}
+	if m.refreshing || m.remoteSectionsPending != 0 || strings.Contains(m.diffTerminal.View(80, 5), "Starting CodeDiff") {
+		t.Fatalf("error lifecycle incomplete: refreshing=%v pending=%d view=%q", m.refreshing, m.remoteSectionsPending, m.diffTerminal.View(80, 5))
+	}
+	if m.detailView.commits[0].SHA != "cached" || m.detailView.files[0].Path != "cached.go" || m.detailView.mergeReadiness.Behind != 7 || m.detailView.mergeReadinessErr == nil {
+		t.Fatalf("errors replaced cached data: commits=%#v files=%#v readiness=%#v err=%v", m.detailView.commits, m.detailView.files, m.detailView.mergeReadiness, m.detailView.mergeReadinessErr)
 	}
 }
 
