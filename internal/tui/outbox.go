@@ -38,14 +38,22 @@ func (m *Model) refreshOutbox() {
 // instead of dropping the text. Auth and validation failures (StatusHint
 // names them) keep the plain error path: queueing cannot fix those.
 func (m Model) queueOfflineComment(msg remoteCommentDone) (Model, tea.Cmd, bool) {
-	if msg.body == "" || msg.deleted || m.outboxPath == "" || m.cache.PR == nil || m.cache.PR.Number != msg.number || gh.StatusHint(msg.err) != "" {
+	if msg.body == "" || msg.deleted || msg.number <= 0 || gh.StatusHint(msg.err) != "" {
 		return m, nil, false
 	}
-	entries, err := store.AppendOutbox(m.outboxPath, store.OutboxEntry{PR: msg.number, Body: msg.body, CommentID: msg.editID})
+	path := store.CommentOutbox(m.root, msg.number)
+	entries, err := store.AppendOutbox(path, store.OutboxEntry{PR: msg.number, Body: msg.body, CommentID: msg.editID})
+	currentTarget := msg.generation == m.targetGeneration && m.cache.PR != nil && m.cache.PR.Number == msg.number
 	if err != nil {
-		m.status = "comment: " + msg.err.Error() + " · queue failed: " + err.Error()
+		if currentTarget {
+			m.status = "comment: " + msg.err.Error() + " · queue failed: " + err.Error()
+		}
 		return m, nil, true
 	}
+	if !currentTarget {
+		return m, nil, true
+	}
+	m.outboxPath = path
 	m.outbox = entries
 	m.detailView.invalidateConversation()
 	m.status = ""

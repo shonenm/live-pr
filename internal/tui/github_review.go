@@ -81,13 +81,17 @@ func postRemoteComment(client githubClient, number int, body string, editID int6
 
 func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 	m.remoteCommentBusy = false
+	if msg.err != nil {
+		// Persist recoverable failures before checking display freshness: the
+		// request belongs to its source PR even if navigation advanced the UI.
+		if next, cmd, queued := m.queueOfflineComment(msg); queued {
+			return next, cmd
+		}
+	}
 	if msg.generation != m.targetGeneration {
 		return m, nil
 	}
 	if msg.err != nil {
-		if next, cmd, queued := m.queueOfflineComment(msg); queued {
-			return next, cmd
-		}
 		m.status = "comment: " + msg.err.Error()
 		return m, nil
 	}
