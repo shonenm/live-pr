@@ -207,6 +207,18 @@ func TestHandleOutboxFlushedRemovesPostedEntriesAndRefetches(t *testing.T) {
 	}
 }
 
+func TestHandleOutboxFlushedPreservesConcurrentAppend(t *testing.T) {
+	m := outboxTestModel(t, 7)
+	sent := queueTestComment(t, &m, "sent")
+	if _, err := store.AppendOutbox(m.outboxPath, store.OutboxEntry{ID: "concurrent", PR: 7, Body: "added by another process"}); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := m.handleOutboxFlushed(outboxFlushed{generation: m.targetGeneration, number: 7, posted: []string{sent.ID}})
+	if len(next.outbox) != 1 || next.outbox[0].ID != "concurrent" {
+		t.Fatalf("concurrent append was lost after acknowledgement: %+v", next.outbox)
+	}
+}
+
 func TestHandleOutboxFlushedKeepsQueueWhileStillOffline(t *testing.T) {
 	m := outboxTestModel(t, 7)
 	queueTestComment(t, &m, "still waiting")
@@ -231,6 +243,18 @@ func TestRefreshDispatchesOutboxFlush(t *testing.T) {
 	model := next.(Model)
 	if !model.outboxFlushing || cmd == nil {
 		t.Fatalf("refresh must dispatch an outbox flush: flushing=%v cmd=%v", model.outboxFlushing, cmd)
+	}
+}
+
+func TestDiscardQueuedCommentPreservesConcurrentAppend(t *testing.T) {
+	m := outboxTestModel(t, 7)
+	discarded := queueTestComment(t, &m, "discard")
+	if _, err := store.AppendOutbox(m.outboxPath, store.OutboxEntry{ID: "concurrent", PR: 7, Body: "added by another process"}); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := (outboxDiscardOverlay{id: discarded.ID}).handleKey(m, keyPress("y"))
+	if len(next.outbox) != 1 || next.outbox[0].ID != "concurrent" {
+		t.Fatalf("concurrent append was lost after discard: %+v", next.outbox)
 	}
 }
 

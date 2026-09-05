@@ -109,13 +109,8 @@ func (m Model) handleOutboxFlushed(msg outboxFlushed) (Model, tea.Cmd) {
 	// them queued would double-post on the next flush.
 	if len(msg.posted) > 0 {
 		path := store.CommentOutbox(m.root, msg.number)
-		if entries, err := store.LoadOutbox(path); err != nil {
+		if _, err := store.RemoveOutbox(path, msg.posted...); err != nil {
 			m.status = "outbox: " + err.Error()
-		} else {
-			entries = slices.DeleteFunc(entries, func(e store.OutboxEntry) bool { return slices.Contains(msg.posted, e.ID) })
-			if err := store.SaveOutbox(path, entries); err != nil {
-				m.status = "outbox: " + err.Error()
-			}
 		}
 	}
 	if msg.generation != m.targetGeneration || m.cache.PR == nil || m.cache.PR.Number != msg.number {
@@ -169,8 +164,8 @@ func (o outboxDiscardOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, te
 	switch msg.String() {
 	case "y":
 		m.overlay = nil
-		entries := slices.DeleteFunc(slices.Clone(m.outbox), func(e store.OutboxEntry) bool { return e.ID == o.id })
-		if err := store.SaveOutbox(m.outboxPath, entries); err != nil {
+		entries, err := store.RemoveOutbox(m.outboxPath, o.id)
+		if err != nil {
 			m.status = "outbox: " + err.Error()
 			return m, nil
 		}
