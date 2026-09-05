@@ -59,6 +59,55 @@ func TestHandleRemoteCommentDoneQueuesNetworkFailure(t *testing.T) {
 	}
 }
 
+func TestHandleRemoteCommentDonePersistsStaleFailureForSourcePR(t *testing.T) {
+	t.Run("refresh generation", func(t *testing.T) {
+		m := outboxTestModel(t, 7)
+		generation := m.targetGeneration
+		m.targetGeneration++
+		next, cmd := m.Update(remoteCommentDone{
+			generation: generation,
+			number:     7,
+			body:       "preserve after refresh",
+			editID:     31,
+			err:        errors.New("dial tcp: connection refused"),
+		})
+		model := next.(Model)
+		entries, err := store.LoadOutbox(store.CommentOutbox(m.root, 7))
+		if err != nil || len(entries) != 1 || entries[0].Body != "preserve after refresh" || entries[0].CommentID != 31 {
+			t.Fatalf("source outbox = %+v, %v", entries, err)
+		}
+		if cmd != nil || len(model.outbox) != 0 || model.notice != "" {
+			t.Fatalf("stale completion updated display: outbox=%+v notice=%q cmd=%v", model.outbox, model.notice, cmd)
+		}
+	})
+
+	t.Run("PR switch", func(t *testing.T) {
+		m := outboxTestModel(t, 7)
+		generation := m.targetGeneration
+		sourcePath := store.CommentOutbox(m.root, 7)
+		other := gh.PR{Number: 8, HeadRefName: "feature/y", HeadRefOID: "bbb", State: "OPEN"}
+		_ = m.openRemote(other)
+		next, cmd := m.Update(remoteCommentDone{
+			generation: generation,
+			number:     7,
+			body:       "belongs to seven",
+			err:        errors.New("dial tcp: connection refused"),
+		})
+		model := next.(Model)
+		source, err := store.LoadOutbox(sourcePath)
+		if err != nil || len(source) != 1 || source[0].PR != 7 || source[0].Body != "belongs to seven" {
+			t.Fatalf("source outbox = %+v, %v", source, err)
+		}
+		otherEntries, err := store.LoadOutbox(store.CommentOutbox(m.root, 8))
+		if err != nil || len(otherEntries) != 0 {
+			t.Fatalf("current PR outbox was contaminated: %+v, %v", otherEntries, err)
+		}
+		if cmd != nil || model.cache.PR == nil || model.cache.PR.Number != 8 || len(model.outbox) != 0 {
+			t.Fatalf("stale completion changed current PR: pr=%+v outbox=%+v cmd=%v", model.cache.PR, model.outbox, cmd)
+		}
+	})
+}
+
 func TestHandleRemoteCommentDoneDoesNotQueueAuthError(t *testing.T) {
 	m := outboxTestModel(t, 7)
 	next, _ := m.Update(remoteCommentDone{
