@@ -459,6 +459,100 @@ func TestCurrentLocalSnapshotSummarizesOneStatusScan(t *testing.T) {
 	}
 }
 
+func TestCurrentLocalSnapshotTracksRepeatedDirtyContent(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("tracked", []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+
+	if err := os.WriteFile("tracked", []byte("first edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first, err := CurrentLocalSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := CurrentLocalSnapshot()
+	if err != nil || unchanged.State.Fingerprint != first.State.Fingerprint {
+		t.Fatalf("unchanged dirty state changed fingerprint: first=%q next=%q err=%v", first.State.Fingerprint, unchanged.State.Fingerprint, err)
+	}
+	if err := os.WriteFile("tracked", []byte("second edit with different size\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := CurrentLocalSnapshot()
+	if err != nil || second.State.Fingerprint == first.State.Fingerprint {
+		t.Fatalf("repeated tracked edit was missed: first=%q second=%q err=%v", first.State.Fingerprint, second.State.Fingerprint, err)
+	}
+
+	run("reset", "--hard", "HEAD")
+	if err := os.MkdirAll(filepath.Join("untracked", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("untracked", "nested", "file")
+	if err := os.WriteFile(path, []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	untrackedFirst, err := CurrentLocalSnapshot()
+	if err != nil || untrackedFirst.Worktree.Untracked != 1 {
+		t.Fatalf("untracked directory snapshot = %#v err=%v", untrackedFirst, err)
+	}
+	if err := os.WriteFile(path, []byte("second with different size\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	untrackedSecond, err := CurrentLocalSnapshot()
+	if err != nil || untrackedSecond.State.Fingerprint == untrackedFirst.State.Fingerprint {
+		t.Fatalf("repeated untracked edit was missed: first=%q second=%q err=%v", untrackedFirst.State.Fingerprint, untrackedSecond.State.Fingerprint, err)
+	}
+}
+
+func TestCurrentLocalSnapshotFingerprintIncludesBranchHeadAndIndex(t *testing.T) {
+	run := gitRepo(t)
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile("tracked", []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "base")
+	main, err := CurrentLocalSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run("switch", "-c", "feature")
+	branch, err := CurrentLocalSnapshot()
+	if err != nil || branch.State.Branch != "feature" || branch.State.Fingerprint == main.State.Fingerprint {
+		t.Fatalf("branch snapshot = %#v err=%v", branch, err)
+	}
+	if err := os.WriteFile("tracked", []byte("staged one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "tracked")
+	indexOne, err := CurrentLocalSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("tracked", []byte("staged two with different size\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "tracked")
+	indexTwo, err := CurrentLocalSnapshot()
+	if err != nil || indexTwo.State.Fingerprint == indexOne.State.Fingerprint {
+		t.Fatalf("index update was missed: first=%q second=%q err=%v", indexOne.State.Fingerprint, indexTwo.State.Fingerprint, err)
+	}
+	run("commit", "-m", "head update")
+	head, err := CurrentLocalSnapshot()
+	if err != nil || head.State.Fingerprint == indexTwo.State.Fingerprint {
+		t.Fatalf("HEAD update was missed: index=%q head=%q err=%v", indexTwo.State.Fingerprint, head.State.Fingerprint, err)
+	}
+}
+
 func TestUntrackedBinaryAndSymlinkStats(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs privileges")
