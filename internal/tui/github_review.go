@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -197,8 +199,16 @@ func (m Model) openReviewSubmit() (Model, tea.Cmd) {
 	return m, nil
 }
 
-func submitReview(client githubClient, draft gh.ReviewDraft, event gh.ReviewEvent) tea.Cmd {
-	return func() tea.Msg { return reviewSubmitted{event: event, err: client.SubmitReview(draft, event)} }
+func submitReview(client githubClient, draft gh.ReviewDraft, event gh.ReviewEvent, draftPath string, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		return reviewSubmitted{
+			generation: generation,
+			draftPath:  draftPath,
+			draft:      draft,
+			event:      event,
+			err:        client.SubmitReview(draft, event),
+		}
+	}
 }
 
 func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
@@ -215,11 +225,17 @@ func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea
 				m.status = "request changes requires a general review body"
 				return m, nil
 			}
+			// Persist the exact submitted draft so completion can remove it only
+			// when no comments or body changes were added while the request ran.
+			if err := gh.SaveReviewDraft(m.reviewDraftPath, m.reviewDraft); err != nil {
+				m.status = "review: save draft: " + err.Error()
+				return m, nil
+			}
 			m.localEditor.Blur()
 			m.overlay = nil
 			m.reviewSubmitting = true
 			m.status = ""
-			return m, tea.Batch(submitReview(m.client, m.reviewDraft, o.event), m.startSpinner())
+			return m, tea.Batch(submitReview(m.client, m.reviewDraft, o.event, m.reviewDraftPath, m.targetGeneration), m.startSpinner())
 		default:
 			var cmd tea.Cmd
 			m.localEditor, cmd = m.localEditor.Update(msg)
@@ -263,20 +279,46 @@ func (o reviewSubmitOverlay) handleMsg(m Model, msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) handleReviewSubmitted(msg reviewSubmitted) (Model, tea.Cmd) {
 	m.reviewSubmitting = false
+	currentTarget := m.cache.PR != nil && m.cache.PR.Number == msg.draft.PR && msg.generation == m.targetGeneration
 	if msg.err != nil {
-		m.status = "review: " + msg.err.Error()
+		if currentTarget {
+			m.status = "review: " + msg.err.Error()
+		}
 		return m, nil
 	}
-	if err := os.Remove(m.reviewDraftPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		m.status = "review submitted; clear draft: " + err.Error()
+
+	persistedData, err := os.ReadFile(msg.draftPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		if currentTarget {
+			m.status = "review submitted; read draft: " + err.Error()
+		}
 		return m, nil
 	}
-	m.reviewDraft = gh.ReviewDraft{}
+	if err == nil {
+		var persisted gh.ReviewDraft
+		if err := json.Unmarshal(persistedData, &persisted); err != nil {
+			if currentTarget {
+				m.status = "review submitted; decode draft: " + err.Error()
+			}
+			return m, nil
+		}
+		if reflect.DeepEqual(persisted, msg.draft) {
+			if err := os.Remove(msg.draftPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				if currentTarget {
+					m.status = "review submitted; clear draft: " + err.Error()
+				}
+				return m, nil
+			}
+			if currentTarget {
+				m.reviewDraft = gh.ReviewDraft{}
+			}
+		}
+	}
+	if !currentTarget {
+		return m, nil
+	}
 	m.notice = "Submitted " + string(msg.event) + " review"
 	m.githubStatus = "GitHub: review submitted"
-	if m.cache.PR == nil {
-		return m, m.sync()
-	}
 	// Refetch so the submitted review shows up without a manual refresh, via
 	// the same split as handleRemoteCommentDone: a remote PR must go through
 	// fetchRemotePR — fetchGitHub resolves by branch, fails

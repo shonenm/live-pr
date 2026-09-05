@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -96,7 +98,12 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 	if cmd == nil || !m.reviewSubmitting {
 		t.Fatalf("changes request not scheduled: submitting=%v cmd=%v", m.reviewSubmitting, cmd)
 	}
-	u, _ = m.Update(reviewSubmitted{event: gh.ReviewRequestChangesEvent})
+	u, _ = m.Update(reviewSubmitted{
+		generation: m.targetGeneration,
+		draftPath:  path,
+		draft:      m.reviewDraft,
+		event:      gh.ReviewRequestChangesEvent,
+	})
 	m = u.(Model)
 	if m.reviewSubmitting || !strings.Contains(m.notice, "REQUEST_CHANGES") {
 		t.Fatalf("submit result = submitting:%v notice:%q", m.reviewSubmitting, m.notice)
@@ -104,6 +111,90 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("submitted draft remains: %v", err)
 	}
+}
+
+func TestReviewSubmissionCompletionOwnsSubmittedDraft(t *testing.T) {
+	newSubmission := func(t *testing.T, client githubClient) (Model, gh.PR, gh.ReviewDraft, string, reviewSubmitted) {
+		t.Helper()
+		t.Setenv("XDG_STATE_HOME", t.TempDir())
+		m := testModel()
+		m.root = t.TempDir()
+		pr := gh.PR{Number: 11, HeadRefOID: "aaa", HeadRefName: "a"}
+		m.cache.PR = &pr
+		draft := gh.NewReviewDraft(pr.Number, pr.HeadRefOID)
+		draft.Body = "submitted review"
+		path := store.PullRequestReviewDraft(m.root, pr.Number)
+		if err := gh.SaveReviewDraft(path, draft); err != nil {
+			t.Fatal(err)
+		}
+		m.reviewDraft, m.reviewDraftPath, m.reviewSubmitting = draft, path, true
+		msg := submitReview(client, draft, gh.ReviewApproveEvent, path, m.targetGeneration)().(reviewSubmitted)
+		return m, pr, draft, path, msg
+	}
+
+	t.Run("target draft is cleared", func(t *testing.T) {
+		m, _, _, path, msg := newSubmission(t, &fakeGH{})
+		next, _ := m.handleReviewSubmitted(msg)
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("submitted draft remains: %v", err)
+		}
+		if next.reviewDraft.PR != 0 {
+			t.Fatalf("displayed draft was not cleared: %+v", next.reviewDraft)
+		}
+	})
+
+	t.Run("switching PR clears only source draft", func(t *testing.T) {
+		m, _, _, sourcePath, msg := newSubmission(t, &fakeGH{})
+		other := gh.PR{Number: 22, HeadRefOID: "bbb", HeadRefName: "b"}
+		otherDraft := gh.NewReviewDraft(other.Number, other.HeadRefOID)
+		otherDraft.Body = "unpublished other review"
+		otherPath := store.PullRequestReviewDraft(m.root, other.Number)
+		if err := gh.SaveReviewDraft(otherPath, otherDraft); err != nil {
+			t.Fatal(err)
+		}
+		_ = m.openRemote(other)
+		next, cmd := m.handleReviewSubmitted(msg)
+		if _, err := os.Stat(sourcePath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("submitted source draft remains: %v", err)
+		}
+		if got, err := gh.LoadReviewDraft(otherPath, other.Number, other.HeadRefOID); err != nil || !reflect.DeepEqual(got, otherDraft) {
+			t.Fatalf("other PR draft changed: %+v, %v", got, err)
+		}
+		if cmd != nil || next.reviewDraft.PR != other.Number {
+			t.Fatalf("stale completion changed current display: draft=%+v cmd=%v", next.reviewDraft, cmd)
+		}
+	})
+
+	t.Run("additions while submitting are preserved", func(t *testing.T) {
+		m, _, draft, path, msg := newSubmission(t, &fakeGH{})
+		updated := draft
+		updated.Comments = append(updated.Comments, gh.ReviewComment{Path: "new.go", Line: 4, Side: "RIGHT", Body: "added while posting"})
+		if err := gh.SaveReviewDraft(path, updated); err != nil {
+			t.Fatal(err)
+		}
+		m.reviewDraft = updated
+		next, _ := m.handleReviewSubmitted(msg)
+		got, err := gh.LoadReviewDraft(path, updated.PR, updated.Commit)
+		if err != nil || !reflect.DeepEqual(got, updated) {
+			t.Fatalf("in-flight additions were lost: %+v, %v", got, err)
+		}
+		if !reflect.DeepEqual(next.reviewDraft, updated) {
+			t.Fatalf("displayed additions were cleared: %+v", next.reviewDraft)
+		}
+	})
+
+	t.Run("failure keeps draft", func(t *testing.T) {
+		failure := errors.New("review rejected")
+		m, _, draft, path, msg := newSubmission(t, &fakeGH{submitReview: func(gh.ReviewDraft, gh.ReviewEvent) error { return failure }})
+		next, _ := m.handleReviewSubmitted(msg)
+		got, err := gh.LoadReviewDraft(path, draft.PR, draft.Commit)
+		if err != nil || !reflect.DeepEqual(got, draft) {
+			t.Fatalf("failed submission changed draft: %+v, %v", got, err)
+		}
+		if !strings.Contains(next.status, failure.Error()) {
+			t.Fatalf("failure status = %q", next.status)
+		}
+	})
 }
 
 func TestEditRemoteCommentOwnershipGate(t *testing.T) {
@@ -244,7 +335,12 @@ func TestReviewSubmittedRefetchesConversation(t *testing.T) {
 		m.cache = gh.NewCache("feature")
 		m.cache.PR = &gh.PR{Number: 14, HeadRefName: "feature", URL: "u"}
 		generation := m.targetGeneration
-		u, cmd := m.Update(reviewSubmitted{event: gh.ReviewApproveEvent})
+		path := filepath.Join(t.TempDir(), "draft.json")
+		draft := gh.NewReviewDraft(14, "remote-head")
+		if err := gh.SaveReviewDraft(path, draft); err != nil {
+			t.Fatal(err)
+		}
+		u, cmd := m.Update(reviewSubmitted{generation: generation, draftPath: path, draft: draft, event: gh.ReviewApproveEvent})
 		m = u.(Model)
 		if m.targetGeneration != generation+1 {
 			t.Fatalf("generation = %d, want %d", m.targetGeneration, generation+1)
@@ -270,7 +366,12 @@ func TestReviewSubmittedRefetchesConversation(t *testing.T) {
 		m.cache = gh.NewCache("feature/x")
 		m.cache.PR = &gh.PR{Number: 14, HeadRefName: "feature/x"}
 		generation := m.targetGeneration
-		u, cmd := m.Update(reviewSubmitted{event: gh.ReviewCommentEvent})
+		path := filepath.Join(t.TempDir(), "draft.json")
+		draft := gh.NewReviewDraft(14, "local-head")
+		if err := gh.SaveReviewDraft(path, draft); err != nil {
+			t.Fatal(err)
+		}
+		u, cmd := m.Update(reviewSubmitted{generation: generation, draftPath: path, draft: draft, event: gh.ReviewCommentEvent})
 		m = u.(Model)
 		if m.targetGeneration != generation+1 {
 			t.Fatalf("generation = %d, want %d", m.targetGeneration, generation+1)
