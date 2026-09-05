@@ -224,8 +224,11 @@ type checkoutReloaded struct {
 }
 
 type reviewSubmitted struct {
-	event gh.ReviewEvent
-	err   error
+	generation uint64
+	draftPath  string
+	draft      gh.ReviewDraft
+	event      gh.ReviewEvent
+	err        error
 }
 
 type prStatusDone struct {
