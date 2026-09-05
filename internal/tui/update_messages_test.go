@@ -531,7 +531,7 @@ func TestConflictDisplayPreservesGitFilesAndUnavailableState(t *testing.T) {
 		pr:         gh.PR{Number: 7, HeadRefOID: "head", Mergeable: "UNKNOWN"},
 	})
 	view, _ = m.buildConflicts()
-	if m.detailView.mergeReadinessErr != unavailable || !strings.Contains(view, "conflict status unavailable") || strings.Contains(view, "no conflicting files") {
+	if !errors.Is(m.detailView.mergeReadinessErr, unavailable) || !strings.Contains(view, "conflict status unavailable") || strings.Contains(view, "no conflicting files") {
 		t.Fatalf("unavailable readiness became clean: err=%v view=%q", m.detailView.mergeReadinessErr, view)
 	}
 }
