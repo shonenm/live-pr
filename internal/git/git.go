@@ -539,13 +539,17 @@ type LocalSnapshot struct {
 }
 
 // CurrentLocalSnapshot derives branch, fingerprint, and worktree counts from
-// one porcelain-v2 scan.
+// one porcelain-v2 scan. The fingerprint additionally hashes only unstaged
+// tracked files and untracked files, so repeated dirty edits trigger polling
+// without reading clean tracked content.
 func CurrentLocalSnapshot() (LocalSnapshot, error) {
 	status, err := run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal")
 	if err != nil {
 		return LocalSnapshot{}, err
 	}
 	snapshot := LocalSnapshot{State: LocalState{Branch: "HEAD"}}
+	var dirtyPaths []string
+	hasUntracked := false
 	for _, record := range strings.Split(status, "\x00") {
 		if value, ok := strings.CutPrefix(record, "# branch.head "); ok {
 			if value != "(detached)" {
@@ -555,6 +559,7 @@ func CurrentLocalSnapshot() (LocalSnapshot, error) {
 		}
 		if strings.HasPrefix(record, "? ") {
 			snapshot.Worktree.Untracked++
+			hasUntracked = true
 			continue
 		}
 		if len(record) >= 4 && (record[0] == '1' || record[0] == '2' || record[0] == 'u') {
@@ -563,12 +568,59 @@ func CurrentLocalSnapshot() (LocalSnapshot, error) {
 			}
 			if record[3] != '.' {
 				snapshot.Worktree.Unstaged++
+				if path := porcelainV2Path(record); path != "" {
+					dirtyPaths = append(dirtyPaths, path)
+				}
 			}
 		}
 	}
-	sum := sha256.Sum256([]byte(status))
-	snapshot.State.Fingerprint = hex.EncodeToString(sum[:])
+
+	if hasUntracked {
+		untracked, err := run("ls-files", "--others", "--exclude-standard", "--full-name", "-z")
+		if err != nil {
+			return LocalSnapshot{}, err
+		}
+		for _, path := range strings.Split(untracked, "\x00") {
+			if path != "" {
+				dirtyPaths = append(dirtyPaths, path)
+			}
+		}
+	}
+	fingerprint := sha256.New()
+	_, _ = fingerprint.Write([]byte(status))
+	if len(dirtyPaths) > 0 {
+		root, err := RepoRoot()
+		if err != nil {
+			return LocalSnapshot{}, err
+		}
+		for _, path := range dirtyPaths {
+			_, _ = fingerprint.Write([]byte{'\x00'})
+			_, _ = fingerprint.Write([]byte(path))
+			_, _ = fingerprint.Write([]byte{'\x00'})
+			_, _ = fingerprint.Write([]byte(workingTreeHash(filepath.Join(root, path))))
+		}
+	}
+	snapshot.State.Fingerprint = hex.EncodeToString(fingerprint.Sum(nil))
 	return snapshot, nil
+}
+
+func porcelainV2Path(record string) string {
+	fields := 0
+	switch record[0] {
+	case '1':
+		fields = 9
+	case '2':
+		fields = 10
+	case 'u':
+		fields = 11
+	default:
+		return ""
+	}
+	parts := strings.SplitN(record, " ", fields)
+	if len(parts) != fields {
+		return ""
+	}
+	return parts[fields-1]
 }
 
 func CurrentLocalState() (LocalState, error) {
