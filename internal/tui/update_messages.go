@@ -508,11 +508,16 @@ func (m Model) detailSectionTargets(generation uint64, number int) bool {
 	return generation == m.targetGeneration && m.cache.PR != nil && m.cache.PR.Number == number
 }
 
-func (m *Model) finishRemoteSection() {
+func (m *Model) finishRemoteSection() tea.Cmd {
 	if m.remoteSectionsPending > 0 {
 		m.remoteSectionsPending--
 	}
 	m.refreshing = m.remoteSectionsPending > 0
+	cmds := []tea.Cmd{m.sync()}
+	if !m.refreshing && m.diffTerminal != nil {
+		cmds = append(cmds, m.diffTerminal.Init())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
@@ -550,34 +555,31 @@ func (m Model) handleRemoteCommitsLoaded(msg remoteCommitsLoaded) (Model, tea.Cm
 	if !m.detailSectionTargets(msg.generation, msg.number) {
 		return m, nil
 	}
-	m.finishRemoteSection()
 	if msg.err == nil {
 		m.detailView.commits, m.detailView.remoteCommits = msg.commits, nil
 		m.detailView.commitsRenderValid = false
 	}
 	m.layout()
-	return m, m.sync()
+	return m, m.finishRemoteSection()
 }
 
 func (m Model) handleRemoteConflictsLoaded(msg remoteConflictsLoaded) (Model, tea.Cmd) {
 	if !m.detailSectionTargets(msg.generation, msg.number) {
 		return m, nil
 	}
-	m.finishRemoteSection()
 	if msg.err == nil {
 		m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, nil, *m.cache.PR)
 	} else {
 		m.detailView.mergeReadinessErr = msg.err
 	}
 	m.layout()
-	return m, m.sync()
+	return m, m.finishRemoteSection()
 }
 
 func (m Model) handleRemoteFilesLoaded(msg remoteFilesLoaded) (Model, tea.Cmd) {
 	if !m.detailSectionTargets(msg.generation, msg.number) {
 		return m, nil
 	}
-	m.finishRemoteSection()
 	if msg.err == nil {
 		m.detailView.files = msg.files
 		if m.remote {
@@ -588,11 +590,7 @@ func (m Model) handleRemoteFilesLoaded(msg remoteFilesLoaded) (Model, tea.Cmd) {
 		m.detailView.fileCursor = min(m.detailView.fileCursor, max(0, len(msg.files)-1))
 	}
 	m.layout()
-	cmds := []tea.Cmd{m.sync()}
-	if !m.refreshing && m.diffTerminal != nil {
-		cmds = append(cmds, m.diffTerminal.Init())
-	}
-	return m, tea.Batch(cmds...)
+	return m, m.finishRemoteSection()
 }
 
 func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
