@@ -805,6 +805,9 @@ func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model
 	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
 	m.applyPRFilters(msg.pr.Number)
 	m.githubStatus = "GitHub: PR updated · conversation loading…"
+	// conversationItems caches the previous *PR; replacing the pointer without
+	// invalidating keeps the list-preview description until a later reload.
+	m.detailView.invalidateConversation()
 	m.layout()
 	return m, tea.Batch(saveNavigatorCacheCmd(m.navigatorPath, m.navigator), saveCacheCmd(m.cachePath, m.cache), m.sync())
 }
