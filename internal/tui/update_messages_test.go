@@ -465,6 +465,77 @@ func TestRemoteSectionsApplyIndependentlyAfterRefs(t *testing.T) {
 	}
 }
 
+func TestConflictDisplayUsesLatestMetadataRegardlessOfCompletionOrder(t *testing.T) {
+	for _, transition := range []struct {
+		old, fresh   string
+		wantConflict bool
+	}{
+		{old: "CONFLICTING", fresh: "MERGEABLE", wantConflict: false},
+		{old: "MERGEABLE", fresh: "CONFLICTING", wantConflict: true},
+	} {
+		for _, metadataFirst := range []bool{false, true} {
+			order := "conflicts-first"
+			if metadataFirst {
+				order = "metadata-first"
+			}
+			t.Run(transition.old+"-to-"+transition.fresh+"/"+order, func(t *testing.T) {
+				m := testModel()
+				m.remote, m.refreshing, m.targetGeneration, m.remoteSectionsPending = true, true, 7, 1
+				m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "head", Mergeable: transition.old, State: "OPEN"}
+				m.remoteRefreshGeneration, m.remoteRefreshMetadataOID, m.remoteRefreshReferenceOID = 7, "head", "head"
+				metadata := githubMetadataRefreshed{generation: 7, pr: gh.PR{Number: 12, HeadRefOID: "head", Mergeable: transition.fresh, State: "OPEN"}}
+				conflicts := remoteConflictsLoaded{generation: 7, number: 12}
+
+				if metadataFirst {
+					m, _ = m.handleGitHubMetadataRefreshed(metadata)
+					m, _ = m.handleRemoteConflictsLoaded(conflicts)
+				} else {
+					m, _ = m.handleRemoteConflictsLoaded(conflicts)
+					m, _ = m.handleGitHubMetadataRefreshed(metadata)
+				}
+
+				view, _ := m.buildConflicts()
+				gotConflict := strings.Contains(view, "GitHub reports conflicts")
+				if gotConflict != transition.wantConflict || (!transition.wantConflict && !strings.Contains(view, "no conflicting files")) {
+					t.Fatalf("latest metadata=%s, git=%#v, view=%q", m.cache.PR.Mergeable, m.detailView.gitMergeReadiness, view)
+				}
+			})
+		}
+	}
+}
+
+func TestConflictDisplayPreservesGitFilesAndUnavailableState(t *testing.T) {
+	m := testModel()
+	m.remote, m.targetGeneration = true, 4
+	m.cache.PR = &gh.PR{Number: 7, HeadRefOID: "head", Mergeable: "CONFLICTING"}
+	m.remoteRefreshGeneration, m.remoteRefreshMetadataOID, m.remoteRefreshReferenceOID = 4, "head", "head"
+
+	m, _ = m.handleRemoteConflictsLoaded(remoteConflictsLoaded{
+		generation: 4,
+		number:     7,
+		readiness:  git.MergeReadiness{Behind: 2, ConflictFiles: []string{"real-conflict.go"}},
+	})
+	m, _ = m.handleGitHubMetadataRefreshed(githubMetadataRefreshed{
+		generation: 4,
+		pr:         gh.PR{Number: 7, HeadRefOID: "head", Mergeable: "MERGEABLE"},
+	})
+	view, _ := m.buildConflicts()
+	if !strings.Contains(view, "real-conflict.go") || strings.Contains(view, "GitHub reports conflicts") {
+		t.Fatalf("Git conflict files were replaced: source=%#v view=%q", m.detailView.gitMergeReadiness, view)
+	}
+
+	unavailable := errors.New("merge readiness unavailable")
+	m.setGitMergeReadiness(git.MergeReadiness{}, unavailable)
+	m, _ = m.handleGitHubMetadataRefreshed(githubMetadataRefreshed{
+		generation: 4,
+		pr:         gh.PR{Number: 7, HeadRefOID: "head", Mergeable: "UNKNOWN"},
+	})
+	view, _ = m.buildConflicts()
+	if !errors.Is(m.detailView.mergeReadinessErr, unavailable) || !strings.Contains(view, "conflict status unavailable") || strings.Contains(view, "no conflicting files") {
+		t.Fatalf("unavailable readiness became clean: err=%v view=%q", m.detailView.mergeReadinessErr, view)
+	}
+}
+
 func TestRemoteSectionsStartPreparedTerminalAfterEveryCompletionOrder(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("embedded PTY is not supported on Windows")
@@ -769,16 +840,24 @@ func TestRemoteGitHubMetadataRefreshMatchesExplicitPR(t *testing.T) {
 	m := testModel()
 	m.remote, m.refreshing, m.targetGeneration = true, true, 4
 	m.cache.PR = &gh.PR{Number: 7, Title: "cached"}
+	m.setGitMergeReadiness(git.MergeReadiness{}, nil)
 
-	u, _ := m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 7, Title: "fresh", Additions: 12}})
+	u, _ := m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 7, Title: "fresh", Additions: 12, Mergeable: "CONFLICTING"}})
 	m = u.(Model)
 	if !m.refreshing || m.cache.PR.Title != "fresh" || m.cache.PR.Additions != 12 {
 		t.Fatalf("remote metadata phase = refreshing:%v pr:%#v", m.refreshing, m.cache.PR)
 	}
 
-	u, _ = m.Update(githubMetadataRefreshed{generation: 4, pr: gh.PR{Number: 8, Title: "wrong target"}})
-	if got := u.(Model).cache.PR.Title; got != "fresh" {
-		t.Fatalf("other PR metadata replaced target: %q", got)
+	for _, msg := range []githubMetadataRefreshed{
+		{generation: 4, pr: gh.PR{Number: 8, Title: "wrong target", Mergeable: "MERGEABLE"}},
+		{generation: 3, pr: gh.PR{Number: 7, Title: "stale", Mergeable: "MERGEABLE"}},
+	} {
+		u, _ = m.Update(msg)
+		m = u.(Model)
+	}
+	view, _ := m.buildConflicts()
+	if m.cache.PR.Title != "fresh" || !strings.Contains(view, "GitHub reports conflicts") {
+		t.Fatalf("irrelevant metadata changed target: pr=%#v view=%q", m.cache.PR, view)
 	}
 }
 

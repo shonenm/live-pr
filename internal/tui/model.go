@@ -715,6 +715,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.revisionRelation = data.revisionRelation
 	m.revisionAhead, m.revisionBehind = data.revisionAhead, data.revisionBehind
 	m.publishedCommits, m.localDiverged = data.publishedCommits, data.localDiverged
+	m.detailView.gitMergeReadiness, m.detailView.gitMergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = data.mergeReadiness, data.mergeReadinessErr
 	m.detailView.base, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, m.detailView.reviewRange = data.base, data.diffBase, st.Branch, data.headRev, data.reviewRange
 	m.detailView.events, m.detailView.files, m.detailView.commits, m.detailView.remoteCommits = data.events, data.files, data.commits, data.remoteCommits
@@ -874,6 +875,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.detailView.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
 	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
 	m.detailView.events, m.detailView.commits, m.detailView.files = nil, nil, nil
+	m.detailView.gitMergeReadiness, m.detailView.gitMergeReadinessErr = git.MergeReadiness{}, nil
 	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = git.MergeReadiness{}, nil
 	m.timelinePath, m.cachePath = "", ""
 	m.cache = gh.NewCache(pr.HeadRefName)
