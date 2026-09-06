@@ -281,6 +281,15 @@ func (m *Model) detailListIndexAtLine(line int) int {
 		}
 		return -1
 	}
+	if m.detailView.active == checksTab {
+		_, _ = m.buildChecks()
+		for i, r := range m.detailView.checksRows {
+			if line >= r[0] && line < r[1] {
+				return i
+			}
+		}
+		return -1
+	}
 	_, selectedLine := m.buildList()
 	index := line - (selectedLine - m.detailView.cursors[m.detailView.active])
 	if index < 0 || index >= m.activeLen() {
