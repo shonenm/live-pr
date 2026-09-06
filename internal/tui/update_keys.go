@@ -473,7 +473,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if m.cache.PR == nil || (m.ciProvider == "" && m.ciCommand == "") {
 			return m, m.sync()
 		}
-		m.ciCommandLoading, m.ciCommandOutput, m.ciCommandError = true, "", ""
+		m.ciCommandLoading, m.ciCommandOutput, m.ciCommandSteps, m.ciCommandError = true, "", nil, ""
 		m.detailView.checksRenderValid = false
 		var ciCmd tea.Cmd
 		switch m.ciProvider {

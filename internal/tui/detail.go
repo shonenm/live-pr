@@ -98,6 +98,7 @@ type detailModel struct {
 	checksRender            string
 	checksRenderLine        int
 	checksRenderValid       bool
+	checksRows              [][2]int // per-check [start, end) line ranges of the cached render
 }
 
 // tabRenderKey caches the commits and checks tab renders the way convRenderKey
@@ -645,6 +646,9 @@ func (m *Model) checksFingerprint(header string) uint64 {
 	var h maphash.Hash
 	h.SetSeed(tabRenderSeed)
 	fingerprintStrings(&h, header, m.ciCommandOutput, m.ciCommandError, fmt.Sprint(m.ciCommandLoading))
+	for _, step := range m.ciCommandSteps {
+		fingerprintStrings(&h, step.workflow, step.name, step.state, step.duration)
+	}
 	for _, check := range m.cache.PR.Checks {
 		fingerprintStrings(&h, check.Name, check.Context, check.WorkflowName, check.Status, check.Conclusion, check.State, check.StartedAt, check.CompletedAt)
 	}
@@ -660,11 +664,17 @@ func (m *Model) buildChecks() (string, int) {
 	if m.detailView.checksRenderValid && m.detailView.checksRenderKey == key {
 		return m.detailView.checksRender, m.detailView.checksRenderLine
 	}
-	lines := make([]string, 0, 3+len(m.cache.PR.Checks))
+	stepsByWorkflow := make(map[string][]woodpeckerStep)
+	for _, step := range m.ciCommandSteps {
+		stepsByWorkflow[step.workflow] = append(stepsByWorkflow[step.workflow], step)
+	}
+	used := make(map[string]bool)
+	lines := make([]string, 0, 3+len(m.cache.PR.Checks)+len(m.ciCommandSteps))
 	if header != "" {
 		lines = append(lines, header, "")
 	}
 	selected := len(lines)
+	checkRows := make([][2]int, 0, len(m.cache.PR.Checks))
 	lastWorkflow := ""
 	for i, check := range m.cache.PR.Checks {
 		name := check.Name
@@ -692,33 +702,59 @@ func (m *Model) buildChecks() (string, int) {
 		if state == "" {
 			state = check.State
 		}
-		line := indent + style.Render(icon) + " " + stFg.Render(name)
-		if state != "" {
-			line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
-		}
-		if dur := checkDuration(check); dur != "" {
-			line += stMuted.Render(" · " + dur)
-		}
+		line := iconLine(indent, style, icon, name, state, checkDuration(check))
 		if i == m.detailView.cursors[checksTab] {
 			selected = len(lines)
 			line = highlightSelectedBg(line, m.list.Width())
 		}
+		start := len(lines)
 		lines = append(lines, line)
+		if wf := woodpeckerWorkflowKey(name); len(stepsByWorkflow[wf]) > 0 {
+			used[wf] = true
+			stepIndent := indent + "  └─ "
+			for _, step := range stepsByWorkflow[wf] {
+				lines = append(lines, woodpeckerStepLine(stepIndent, step))
+			}
+		}
+		checkRows = append(checkRows, [2]int{start, len(lines)})
 	}
-	if len(m.cache.PR.Checks) == 0 {
+	lastWF := ""
+	for _, step := range m.ciCommandSteps {
+		if used[step.workflow] {
+			continue
+		}
+		if step.workflow != lastWF {
+			lines = append(lines, stFg.Bold(true).Render(step.workflow))
+			lastWF = step.workflow
+		}
+		lines = append(lines, woodpeckerStepLine("  └─ ", step))
+	}
+	if len(m.cache.PR.Checks) == 0 && len(m.ciCommandSteps) == 0 {
 		lines = append(lines, stMuted.Render("(no GitHub CI checks)"))
 	}
 	if m.ciCommandLoading {
 		lines = append(lines, "", stMuted.Render("Loading configured CI…"))
 	} else if m.ciCommandError != "" {
 		lines = append(lines, "", stRedF.Render("Configured CI: "+m.ciCommandError))
-	} else if m.ciCommandOutput != "" {
+	} else if len(m.ciCommandSteps) == 0 && m.ciCommandOutput != "" {
 		lines = append(lines, "", m.ciCommandOutput)
 	}
 	out := strings.Join(lines, "\n")
 	m.detailView.checksRender, m.detailView.checksRenderLine = out, selected
 	m.detailView.checksRenderKey, m.detailView.checksRenderValid = key, true
+	m.detailView.checksRows = checkRows
 	return out, selected
+}
+
+func iconLine(indent string, style lipgloss.Style, icon, name, state, duration string) string {
+	line := indent + style.Render(icon) + " " + stFg.Render(name)
+	if state != "" {
+		line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
+	}
+	if duration != "" {
+		line += stMuted.Render(" · " + duration)
+	}
+	return line
 }
 
 func checkDuration(check gh.PRCheck) string {

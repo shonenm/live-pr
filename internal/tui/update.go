@@ -112,7 +112,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ciCommandDone:
 		if msg.generation == m.targetGeneration {
 			m.ciCommandLoading = false
-			m.ciCommandOutput, m.ciCommandError = msg.output, ""
+			m.ciCommandOutput, m.ciCommandSteps, m.ciCommandError = msg.output, msg.steps, ""
 			if msg.err != nil {
 				m.ciCommandError = msg.err.Error()
 			}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestLoadWoodpeckerCIUsesPipelineForHeadSHA(t *testing.T) {
@@ -31,12 +33,16 @@ fi
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	got, err := loadWoodpeckerCI(ctx, t.TempDir(), os.Environ(), nil, "acme/widget", "head-sha")
+	got, steps, err := loadWoodpeckerCI(ctx, t.TempDir(), os.Environ(), nil, "acme/widget", "head-sha")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(got, "Woodpecker #42 · running") || !strings.Contains(got, "◐ test · running") {
-		t.Fatalf("Woodpecker output = %q", got)
+	plain := ansi.Strip(got)
+	if !strings.Contains(plain, "Woodpecker #42 · running") || !strings.Contains(plain, "◐ test · running") {
+		t.Fatalf("Woodpecker output = %q", plain)
+	}
+	if len(steps) != 1 || steps[0].workflow != "build" || steps[0].name != "test" {
+		t.Fatalf("steps = %#v", steps)
 	}
 }
 
@@ -50,7 +56,7 @@ func TestFindWoodpeckerPipelineByHeadSHA(t *testing.T) {
 
 func TestFormatWoodpeckerCI(t *testing.T) {
 	steps := "build\tlint\tsuccess\t100\t105\nbuild\ttest\tfailure\t100\t110\ndeploy\tship\trunning\t110\t0\n"
-	got := formatWoodpeckerCI("42", "failure", steps)
+	got := ansi.Strip(formatWoodpeckerCI("42", "failure", steps))
 	for _, want := range []string{
 		"Woodpecker #42 · failure",
 		"build\n  └─ ✓ lint · success · 5s",

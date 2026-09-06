@@ -380,6 +380,7 @@ type Model struct {
 	ciCLICommand              []string
 	ciTokenCommand            []string
 	ciCommandOutput           string
+	ciCommandSteps            []woodpeckerStep
 	ciCommandError            string
 	ciCommandLoading          bool
 	publishing                bool
