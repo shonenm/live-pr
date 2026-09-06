@@ -833,6 +833,39 @@ func TestBuildChecksIncludesConfiguredCommandOutput(t *testing.T) {
 	}
 }
 
+func TestBuildChecksNestsWoodpeckerSteps(t *testing.T) {
+	m := testModel()
+	m.cache.PR = &gh.PR{Checks: []gh.PRCheck{
+		{Name: "ci/woodpecker/ci", Conclusion: "FAILURE"},
+		{Name: "ci/woodpecker/gate", Conclusion: "SUCCESS"},
+	}}
+	m.ciCommandOutput = "Woodpecker #42 · failure"
+	m.ciCommandSteps = []woodpeckerStep{
+		{workflow: "ci", name: "git", state: "success", duration: "42s"},
+		{workflow: "ci", name: "siblings", state: "failure", duration: "22s"},
+		{workflow: "gate", name: "merge-conflict", state: "success", duration: "6s"},
+	}
+	out, _ := m.buildChecks()
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("nested steps are unstyled: %q", out)
+	}
+	plain := ansi.Strip(out)
+	for _, want := range []string{
+		"✗ ci/woodpecker/ci · failure",
+		"  └─ ✓ git · success · 42s",
+		"  └─ ✗ siblings · failure · 22s",
+		"✓ ci/woodpecker/gate · success",
+		"  └─ ✓ merge-conflict · success · 6s",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("nested tree missing %q: %q", want, plain)
+		}
+	}
+	if strings.Contains(plain, "Woodpecker #42") {
+		t.Fatalf("woodpecker dump still rendered separately: %q", plain)
+	}
+}
+
 func TestBuildChecksCachesRenderUntilInputsChange(t *testing.T) {
 	m := testModel()
 	m.cache.PR = &gh.PR{Checks: []gh.PRCheck{{Name: "build", Conclusion: "SUCCESS"}, {Name: "lint", Status: "IN_PROGRESS"}}}

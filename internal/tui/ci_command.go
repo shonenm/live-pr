@@ -19,7 +19,12 @@ import (
 type ciCommandDone struct {
 	generation uint64
 	output     string
+	steps      []woodpeckerStep
 	err        error
+}
+
+type woodpeckerStep struct {
+	workflow, name, state, duration string
 }
 
 func runCICommand(command, root, repository string, pr gh.PR, generation uint64) tea.Cmd {
@@ -64,8 +69,8 @@ func runWoodpeckerCI(root, repository, server string, cliCommand, tokenCommand [
 		if repository == "" {
 			return ciCommandDone{generation: generation, err: errors.New("Woodpecker repository is unavailable")}
 		}
-		output, err := loadWoodpeckerCI(ctx, root, env, cliCommand, repository, pr.HeadRefOID)
-		return ciCommandDone{generation: generation, output: output, err: err}
+		output, steps, err := loadWoodpeckerCI(ctx, root, env, cliCommand, repository, pr.HeadRefOID)
+		return ciCommandDone{generation: generation, output: output, steps: steps, err: err}
 	}
 }
 
@@ -86,24 +91,24 @@ func readCIToken(ctx context.Context, root string, command []string) (string, er
 	return token, nil
 }
 
-func loadWoodpeckerCI(ctx context.Context, root string, env, cliCommand []string, repository, headSHA string) (string, error) {
+func loadWoodpeckerCI(ctx context.Context, root string, env, cliCommand []string, repository, headSHA string) (string, []woodpeckerStep, error) {
 	listTemplate := "go-format={{.Number}}\t{{.Commit}}\t{{.Status}}"
 	out, err := runWoodpeckerCLI(ctx, root, env, cliCommand, "pipeline", "ls", repository, "--limit", "100", "--output", listTemplate)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	number, pipelineState := findWoodpeckerPipeline(string(out), headSHA)
 	if number == "" {
-		return "Woodpecker\n  (no pipeline for this commit)", nil
+		return "Woodpecker\n  (no pipeline for this commit)", nil, nil
 	}
 
 	stepTemplate := "{{.workflow.Name}}\t{{.step.Name}}\t{{.step.State}}\t{{.step.Started}}\t{{.step.Stopped}}"
 	out, err = runWoodpeckerCLI(ctx, root, env, cliCommand, "pipeline", "ps", repository, number, "--format", stepTemplate)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return formatWoodpeckerCI(number, pipelineState, string(out)), nil
+	return formatWoodpeckerCI(number, pipelineState, string(out)), parseWoodpeckerSteps(string(out)), nil
 }
 
 func runWoodpeckerCLI(ctx context.Context, root string, env, command []string, args ...string) ([]byte, error) {
@@ -132,38 +137,59 @@ func findWoodpeckerPipeline(output, headSHA string) (string, string) {
 	return "", ""
 }
 
-func formatWoodpeckerCI(number, pipelineState, steps string) string {
-	lines := []string{fmt.Sprintf("Woodpecker #%s · %s", number, pipelineState)}
-	lastWorkflow := ""
+func parseWoodpeckerSteps(steps string) []woodpeckerStep {
+	var out []woodpeckerStep
 	for _, row := range strings.Split(strings.TrimSpace(steps), "\n") {
 		fields := strings.Split(row, "\t")
 		if len(fields) != 5 {
 			continue
 		}
-		if fields[0] != lastWorkflow {
-			lines = append(lines, fields[0])
-			lastWorkflow = fields[0]
-		}
-		line := "  └─ " + woodpeckerStateIcon(fields[2]) + " " + fields[1] + " · " + fields[2]
+		step := woodpeckerStep{workflow: fields[0], name: fields[1], state: fields[2]}
 		if duration := woodpeckerDuration(fields[3], fields[4]); duration != "" {
-			line += " · " + duration
+			step.duration = duration
 		}
-		lines = append(lines, line)
+		out = append(out, step)
+	}
+	return out
+}
+
+func formatWoodpeckerCI(number, pipelineState, steps string) string {
+	icon, _, style := commitCIStatus(woodpeckerStatus(pipelineState))
+	lines := []string{iconLine("", style, icon, "Woodpecker #"+number, pipelineState, "")}
+	lastWorkflow := ""
+	for _, step := range parseWoodpeckerSteps(steps) {
+		if step.workflow != lastWorkflow {
+			lines = append(lines, stFg.Bold(true).Render(step.workflow))
+			lastWorkflow = step.workflow
+		}
+		lines = append(lines, woodpeckerStepLine("  └─ ", step))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func woodpeckerStateIcon(state string) string {
+func woodpeckerStepLine(indent string, step woodpeckerStep) string {
+	icon, _, style := commitCIStatus(woodpeckerStatus(step.state))
+	return iconLine(indent, style, icon, step.name, step.state, step.duration)
+}
+
+func woodpeckerStatus(state string) string {
 	switch strings.ToLower(state) {
 	case "success":
-		return "✓"
-	case "pending", "running", "blocked", "created":
-		return "◐"
+		return "SUCCESS"
 	case "failure", "error", "killed", "declined":
-		return "✗"
+		return "FAILURE"
+	case "pending", "running", "blocked", "created":
+		return "PENDING"
 	default:
-		return "•"
+		return ""
 	}
+}
+
+func woodpeckerWorkflowKey(name string) string {
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
 
 func woodpeckerDuration(started, stopped string) string {
