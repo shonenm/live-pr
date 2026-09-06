@@ -542,9 +542,16 @@ func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
 		m.githubStatus = "GitHub: PR changed during refresh · retry required"
 		return m, m.sync()
 	}
-	m.detailView.headRev = msg.headRef
+	// CodeDiff's default command diffs LIVE_PR_RANGE. After checkout that is
+	// baseOID...headOID; keep the remote path on the same SHAs instead of the
+	// namespaced pull ref, which codediff.nvim does not display.
+	head := msg.headOID
+	if head == "" {
+		head = msg.headRef
+	}
+	m.detailView.headRev = head
 	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
-	m.detailView.reviewRange = msg.diffBase + "..." + msg.headRef
+	m.detailView.reviewRange = msg.diffBase + "..." + head
 	m.remoteSectionsPending = 3
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.prURL, "", m.detailView.reviewedMarksPath))
 	m.layout()
