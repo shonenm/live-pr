@@ -568,8 +568,9 @@ func (m Model) handleRemoteConflictsLoaded(msg remoteConflictsLoaded) (Model, te
 		return m, nil
 	}
 	if msg.err == nil {
-		m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, nil, *m.cache.PR)
+		m.setGitMergeReadiness(msg.readiness, nil)
 	} else {
+		m.detailView.gitMergeReadinessErr = msg.err
 		m.detailView.mergeReadinessErr = msg.err
 	}
 	m.layout()
@@ -607,6 +608,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	m.detailView.resetCaches()
 	m.cache.PR = &msg.pr
+	m.refreshMergeReadiness()
 	m.refreshReviewDraft()
 	m.refreshOutbox()
 	if strings.TrimSpace(msg.pr.Title) != "" {
@@ -645,7 +647,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
 	m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, nil, msg.files
 	m.remoteStats = msg.stats
-	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(msg.readiness, msg.readinessErr, msg.pr)
+	m.setGitMergeReadiness(msg.readiness, msg.readinessErr)
 	m.detailView.fileCursor = 0
 	m.status = ""
 	stale := []string{}
@@ -796,6 +798,7 @@ func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model
 		msg.pr = m.applyLocalGitMetadata(msg.pr)
 	}
 	m.cache.PR = &msg.pr
+	m.refreshMergeReadiness()
 	if strings.TrimSpace(msg.pr.Title) != "" {
 		m.detailView.title = msg.pr.Title
 	}
@@ -885,7 +888,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 		}
 		m.applyPRFilters(msg.pr.Number)
 		diffCmd = tea.Batch(m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
-		m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = applyGitHubConflictFallback(m.detailView.mergeReadiness, m.detailView.mergeReadinessErr, msg.pr)
+		m.refreshMergeReadiness()
 		stale := []string{}
 		if msg.commentsErr == nil {
 			m.cache.Comments = msg.comments
@@ -913,6 +916,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	case errors.Is(msg.err, gh.ErrPRNotFound):
 		m.localAvailable = m.currentBranch != "HEAD" && m.currentBranch != m.defaultBranch
 		m.cache.PR = nil
+		m.refreshMergeReadiness()
 		m.cache.Comments = nil
 		m.cache.Activities = nil
 		m.cache.Reviews = nil

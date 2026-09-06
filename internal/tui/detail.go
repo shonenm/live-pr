@@ -47,18 +47,20 @@ const maxDetailCacheEntries = 128
 const maxRichBodyCacheEntries = 128
 
 type detailModel struct {
-	title             string
-	summary           string
-	base, head        string
-	diffBase, headRev string
-	reviewRange       string
-	reviewSHA         string
-	events            []event.Event
-	commits           []git.Commit
-	remoteCommits     []git.Commit
-	files             []git.ChangedFile
-	mergeReadiness    git.MergeReadiness
-	mergeReadinessErr error
+	title                string
+	summary              string
+	base, head           string
+	diffBase, headRev    string
+	reviewRange          string
+	reviewSHA            string
+	events               []event.Event
+	commits              []git.Commit
+	remoteCommits        []git.Commit
+	files                []git.ChangedFile
+	gitMergeReadiness    git.MergeReadiness
+	gitMergeReadinessErr error
+	mergeReadiness       git.MergeReadiness
+	mergeReadinessErr    error
 
 	active     tab
 	cursors    [tabCount]int
@@ -283,11 +285,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.readinessOK {
-		readiness, readinessErr := msg.readiness, msg.readinessErr
-		if m.cache.PR != nil {
-			readiness, readinessErr = applyGitHubConflictFallback(readiness, readinessErr, *m.cache.PR)
-		}
-		m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = readiness, readinessErr
+		m.setGitMergeReadiness(msg.readiness, msg.readinessErr)
 	}
 	if msg.base == m.detailView.base && msg.diffBase == m.detailView.diffBase && m.detailView.reviewRange == msg.reviewRange && m.detailView.headRev == msg.headRev {
 		// Same range names, but the refs behind them move: refresh the scans
@@ -566,6 +564,19 @@ func (m *Model) toggleFileCheck() tea.Cmd {
 		}
 	}
 	return m.sync()
+}
+
+func (m *Model) setGitMergeReadiness(readiness git.MergeReadiness, err error) {
+	m.detailView.gitMergeReadiness, m.detailView.gitMergeReadinessErr = readiness, err
+	m.refreshMergeReadiness()
+}
+
+func (m *Model) refreshMergeReadiness() {
+	readiness, err := m.detailView.gitMergeReadiness, m.detailView.gitMergeReadinessErr
+	if m.cache.PR != nil {
+		readiness, err = applyGitHubConflictFallback(readiness, err, *m.cache.PR)
+	}
+	m.detailView.mergeReadiness, m.detailView.mergeReadinessErr = readiness, err
 }
 
 func applyGitHubConflictFallback(readiness git.MergeReadiness, err error, pr gh.PR) (git.MergeReadiness, error) {
