@@ -435,6 +435,33 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	}
 }
 
+func TestRemoteRefsPointCodeDiffAtFetchedHeadOID(t *testing.T) {
+	m := testModel()
+	m.remote, m.refreshing, m.targetGeneration = true, true, 5
+	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "abc123"}
+	m.remoteRefreshGeneration, m.remoteRefreshMetadataOID = 5, "abc123"
+
+	u, _ := m.Update(remoteRefsLoaded{
+		generation: 5, number: 12,
+		headRef: "refs/live-pr/pulls/12/head", headOID: "abc123",
+		base: "main", diffBase: "baseoid",
+	})
+	m = u.(Model)
+	if m.detailView.headRev != "abc123" || m.detailView.reviewRange != "baseoid...abc123" {
+		t.Fatalf("codediff range = head:%q range:%q", m.detailView.headRev, m.detailView.reviewRange)
+	}
+
+	u, _ = m.Update(remoteRefsLoaded{
+		generation: 5, number: 12,
+		headRef: "refs/live-pr/pulls/12/head",
+		base: "main", diffBase: "baseoid",
+	})
+	m = u.(Model)
+	if m.detailView.headRev != "refs/live-pr/pulls/12/head" || m.detailView.reviewRange != "baseoid...refs/live-pr/pulls/12/head" {
+		t.Fatalf("empty oid fallback = head:%q range:%q", m.detailView.headRev, m.detailView.reviewRange)
+	}
+}
+
 func TestRemoteSectionsApplyIndependentlyAfterRefs(t *testing.T) {
 	m := testModel()
 	m.remote, m.refreshing, m.targetGeneration = true, true, 5
@@ -444,8 +471,8 @@ func TestRemoteSectionsApplyIndependentlyAfterRefs(t *testing.T) {
 
 	u, cmd := m.Update(remoteRefsLoaded{generation: 5, number: 12, headRef: "refs/live-pr/12", headOID: "head", base: "main", diffBase: "base"})
 	m = u.(Model)
-	if cmd == nil || m.remoteSectionsPending != 3 || m.detailView.reviewRange != "base...refs/live-pr/12" {
-		t.Fatalf("refs phase = pending:%d range:%q cmd:%v", m.remoteSectionsPending, m.detailView.reviewRange, cmd)
+	if cmd == nil || m.remoteSectionsPending != 3 || m.detailView.headRev != "head" || m.detailView.reviewRange != "base...head" {
+		t.Fatalf("refs phase = pending:%d head:%q range:%q cmd:%v", m.remoteSectionsPending, m.detailView.headRev, m.detailView.reviewRange, cmd)
 	}
 
 	u, _ = m.Update(remoteCommitsLoaded{generation: 5, number: 12, commits: []git.Commit{{SHA: "abc"}}})
