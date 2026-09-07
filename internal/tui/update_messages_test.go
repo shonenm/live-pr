@@ -863,6 +863,25 @@ func TestGitHubMetadataRefreshRendersBeforeConversation(t *testing.T) {
 	}
 }
 
+func TestGitHubMetadataRefreshRebuildsConversationDescription(t *testing.T) {
+	m := testModel()
+	m.remote, m.targetGeneration = true, 4
+	m.cache.PR = &gh.PR{Number: 7, URL: "https://example.test/7", Title: "old", Body: "old body"}
+	if items := m.conversationItems(); len(items) == 0 || items[0].pr == nil || items[0].pr.Body != "old body" {
+		t.Fatalf("seed conversation = %#v", items)
+	}
+
+	u, _ := m.Update(githubMetadataRefreshed{
+		generation: 4,
+		pr:         gh.PR{Number: 7, URL: "https://example.test/7", Title: "fresh", Body: "fresh body"},
+	})
+	m = u.(Model)
+	items := m.conversationItems()
+	if len(items) == 0 || items[0].pr == nil || items[0].pr.Body != "fresh body" {
+		t.Fatalf("metadata left stale conversation description: %#v", items)
+	}
+}
+
 func TestRemoteGitHubMetadataRefreshMatchesExplicitPR(t *testing.T) {
 	m := testModel()
 	m.remote, m.refreshing, m.targetGeneration = true, true, 4
