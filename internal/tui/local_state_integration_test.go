@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
@@ -214,5 +216,93 @@ func TestExternalBranchSwitchRebuildsLocalModel(t *testing.T) {
 	defer next.close()
 	if cmd == nil || next.currentBranch != "feature-b" || next.screen != detailScreen || next.w != 120 || next.h != 40 || next.targetGeneration != 8 || next.prList.generation != 6 || next.notice != "Checked-out branch changed" {
 		t.Fatalf("reloaded model = branch:%q screen:%v size:%dx%d generations:%d/%d notice:%q cmd:%v", next.currentBranch, next.screen, next.w, next.h, next.targetGeneration, next.prList.generation, next.notice, cmd)
+	}
+}
+
+// Refresh must resolve the new PR head before scanning files; reopening the
+// detail used to be the only path that replaced the cached review range.
+func TestRefreshReloadsFilesFromLatestPRHead(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	root := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	run("commit", "--allow-empty", "-m", "base")
+	base := run("rev-parse", "HEAD")
+	run("switch", "-c", "feature")
+	run("commit", "--allow-empty", "-m", "old head")
+	oldHead := run("rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(root, "new.go"), []byte("package fresh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "new.go")
+	run("commit", "-m", "new file")
+	newHead := run("rev-parse", "HEAD")
+	run("remote", "add", "origin", root)
+	run("update-ref", "refs/pull/1/head", newHead)
+	t.Chdir(root)
+
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"fresh metadata", nil},
+		{"offline metadata", errors.New("offline")},
+		{"local only", gh.ErrPRNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModel()
+			m.root, m.currentBranch, m.detailView.head = root, "feature", "feature"
+			m.screen = detailScreen
+			m.timelinePath = store.ForBranch(root, "feature").Timeline()
+			m.cachePath = filepath.Join(t.TempDir(), "github.json")
+			m.navigatorPath = filepath.Join(t.TempDir(), "navigator.json")
+			m.cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", BaseRefName: "main", BaseRefOID: base, HeadRefOID: oldHead}
+			fresh := *m.cache.PR
+			fresh.HeadRefOID = newHead
+			if errors.Is(tc.err, gh.ErrPRNotFound) {
+				m.cache.PR = nil
+			}
+			m.detailView.diffBase, m.detailView.headRev, m.detailView.reviewRange = base, oldHead, base+"..."+oldHead
+			m.detailView.files = nil
+			m, _ = m.handleDetailKey(keyPress("r"))
+			m, cmd := m.handleGitHubMetadataRefreshed(githubMetadataRefreshed{generation: m.targetGeneration, pr: fresh, err: tc.err})
+			if cmd == nil {
+				t.Fatal("metadata did not dispatch a review reload")
+			}
+			msg := cmd()
+			if batch, ok := msg.(tea.BatchMsg); ok {
+				for _, child := range batch {
+					if resolved, ok := child().(baseResolved); ok {
+						msg = resolved
+						break
+					}
+				}
+			}
+			resolved, ok := msg.(baseResolved)
+			if !ok {
+				t.Fatalf("review reload not dispatched: %T", msg)
+			}
+			m, _ = m.handleBaseResolved(resolved)
+			if len(m.detailView.files) != 1 || m.detailView.files[0].Path != "new.go" {
+				t.Fatalf("refresh kept stale files: %#v", m.detailView.files)
+			}
+			if m.cache.PR != nil && m.detailView.headRev != newHead {
+				t.Fatalf("review head = %q, want %q", m.detailView.headRev, newHead)
+			}
+			if m.screen != detailScreen || m.refreshing || m.remoteSectionsPending != 0 {
+				t.Fatalf("refresh incomplete: screen=%v refreshing=%v pending=%d", m.screen, m.refreshing, m.remoteSectionsPending)
+			}
+		})
 	}
 }
