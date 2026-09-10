@@ -454,7 +454,7 @@ func TestRemoteRefsPointCodeDiffAtFetchedHeadOID(t *testing.T) {
 	u, _ = m.Update(remoteRefsLoaded{
 		generation: 5, number: 12,
 		headRef: "refs/live-pr/pulls/12/head",
-		base: "main", diffBase: "baseoid",
+		base:    "main", diffBase: "baseoid",
 	})
 	m = u.(Model)
 	if m.detailView.headRev != "refs/live-pr/pulls/12/head" || m.detailView.reviewRange != "baseoid...refs/live-pr/pulls/12/head" {

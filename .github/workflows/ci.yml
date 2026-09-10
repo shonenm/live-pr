@@ -56,7 +56,8 @@ jobs:
           cache: true
       # Fails only on vulnerabilities govulncheck proves this binary calls;
       # unreachable ones in imported packages are reported without failing.
-      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      # Keep the scanner compatible with the Go version in go.mod.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
   build:
     strategy:
