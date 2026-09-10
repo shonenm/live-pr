@@ -406,16 +406,14 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m, tea.Batch(m.startLocalLoad(st, m.cache, nil), m.startSpinner())
 		}
 		m.targetGeneration++
+		// Resolve the range after metadata arrives, not against the cached PR head.
+		m.remoteSectionsPending = 1
 		number := m.currentPRNumber()
 		if number == 0 {
 			return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, number, m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
 		}
-		m.remoteSectionsPending = 3
 		return m, tea.Batch(
 			fetchGitHub(m.client, m.detailView.head, number, m.targetGeneration, m.cachedDetail()),
-			fetchLocalCommits(number, m.targetGeneration, m.detailView.diffBase),
-			fetchRemoteConflicts(number, m.targetGeneration, m.detailView.base, "HEAD"),
-			fetchLocalFiles(number, m.targetGeneration, m.detailView.diffBase, m.detailView.headRev),
 			pollCI(m.client, m.targetGeneration, number),
 			m.startOutboxFlush(), m.startSpinner(),
 		)

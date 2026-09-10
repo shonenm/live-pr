@@ -779,7 +779,14 @@ func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
 }
 
 func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration || msg.err != nil {
+	if msg.generation != m.targetGeneration {
+		return m, nil
+	}
+	if msg.err != nil {
+		if !m.remote {
+			// Local changes must still reload when GitHub is unavailable.
+			return m, m.resolveBase(m.detailView.base, m.cache.PR, m.prURL())
+		}
 		return m, nil
 	}
 	if m.remote {
@@ -816,7 +823,11 @@ func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model
 	// invalidating keeps the list-preview description until a later reload.
 	m.detailView.invalidateConversation()
 	m.layout()
-	return m, tea.Batch(saveNavigatorCacheCmd(m.navigatorPath, m.navigator), saveCacheCmd(m.cachePath, m.cache), m.sync())
+	var diffCmd tea.Cmd
+	if !m.remote {
+		diffCmd = m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL)
+	}
+	return m, tea.Batch(diffCmd, saveNavigatorCacheCmd(m.navigatorPath, m.navigator), saveCacheCmd(m.cachePath, m.cache), m.sync())
 }
 
 func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed) (Model, tea.Cmd) {
