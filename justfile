@@ -30,7 +30,8 @@ lint:
 
 # Scan for known vulnerabilities in reachable code.
 vuln:
-    go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    # Match CI's scanner version, compatible with the Go version in go.mod.
+    go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
 # Verify downloaded modules.
 mod-verify:

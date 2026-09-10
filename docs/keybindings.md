@@ -44,7 +44,7 @@ Press `?` inside the TUI to toggle the full help.
 | `m` | merge (pick merge commit / squash / rebase in the popup) |
 | `C` | checkout the PR branch (`c` stays on the commits view) |
 | `b` | back to the PR list |
-| `r` | refresh |
+| `r` | refresh PR data, file list, and diff viewer |
 | `q`, `Ctrl+C` | quit |
 
 While the embedded reviewer (e.g. Neovim CodeDiff) is focused, all keys

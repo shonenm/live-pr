@@ -190,7 +190,7 @@ func (m *Model) reloadLocalConversation() {
 
 // resolveBase recomputes the review range off the Update goroutine: the merge
 // base, timeline sync, and range scans all spawn git. handleBaseResolved
-// applies the result only when the range actually changed.
+// reloads the review even when only the refs or working tree changed.
 func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	generation := m.targetGeneration
 	headRev, remote, timelinePath := m.detailView.headRev, m.remote, m.timelinePath
@@ -282,31 +282,17 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
 	}
+	if !m.remote {
+		m.remoteSectionsPending = 0
+		m.refreshing = false
+	}
 	if msg.diffBase == "" {
 		return m, nil
 	}
 	if msg.readinessOK {
 		m.setGitMergeReadiness(msg.readiness, msg.readinessErr)
 	}
-	if msg.base == m.detailView.base && msg.diffBase == m.detailView.diffBase && m.detailView.reviewRange == msg.reviewRange && m.detailView.headRev == msg.headRev {
-		// Same range names, but the refs behind them move: refresh the scans
-		// without dropping caches or restarting the review terminal.
-		m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, msg.remoteCommits, msg.files
-		if m.remote {
-			m.remoteStats = msg.stats
-		} else {
-			m.localStats = msg.stats
-		}
-		if !m.remote {
-			m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
-			m.revisionAhead, m.revisionBehind = msg.revisionAhead, msg.revisionBehind
-			m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
-		}
-		if m.detailView.fileCursor >= len(m.detailView.files) {
-			m.detailView.fileCursor = 0
-		}
-		return m, m.sync()
-	}
+	rangeChanged := msg.base != m.detailView.base || msg.diffBase != m.detailView.diffBase || msg.reviewRange != m.detailView.reviewRange || msg.headRev != m.detailView.headRev
 	m.detailView.base, m.detailView.diffBase, m.detailView.headRev, m.detailView.reviewRange = msg.base, msg.diffBase, msg.headRev, msg.reviewRange
 	m.detailView.resetCaches()
 	if msg.eventsOK {
@@ -324,7 +310,9 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.revisionAhead, m.revisionBehind = msg.revisionAhead, msg.revisionBehind
 		m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
 	}
-	m.detailView.fileCursor = 0
+	if rangeChanged || m.detailView.fileCursor >= len(m.detailView.files) {
+		m.detailView.fileCursor = 0
+	}
 	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync())
 }
 

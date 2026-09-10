@@ -688,7 +688,7 @@ func TestBaseResolvedAppliesOnlyCurrentGeneration(t *testing.T) {
 		t.Fatalf("stale baseResolved applied: %q", u.(Model).detailView.diffBase)
 	}
 
-	// Unchanged range: no-op.
+	// Unchanged range: keep the selection.
 	u, _ = m.Update(baseResolved{generation: 3, base: "main", diffBase: "old-base", headRev: "HEAD", reviewRange: "old-base"})
 	if u.(Model).detailView.fileCursor != 0 && u.(Model).detailView.diffBase != "old-base" {
 		t.Fatal("unchanged range should be a no-op")
@@ -711,6 +711,12 @@ func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 	m.detailView.base, m.detailView.diffBase, m.detailView.headRev, m.detailView.reviewRange = "main", "origin/main", "HEAD", "origin/main"
 	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 0}
 	m.detailView.commits = []git.Commit{{SHA: "old"}}
+	m.detailView.rawCache = map[string]string{"cached": "old diff"}
+	m.detailView.diffCache = map[string]string{"cached": "old rendered diff"}
+	m.refreshing, m.remoteSectionsPending = true, 1
+	oldTerminal := embeddedterm.New("cat", t.TempDir(), nil)
+	m.diffTerminal = oldTerminal
+	t.Cleanup(oldTerminal.Close)
 
 	// The range string is unchanged, but the base ref moved underneath it:
 	// behind count, conflicts, and the scans must still refresh.
@@ -728,8 +734,14 @@ func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 	if len(m.detailView.commits) != 2 || len(m.detailView.files) != 1 {
 		t.Fatalf("stale scans kept: commits=%d files=%d", len(m.detailView.commits), len(m.detailView.files))
 	}
-	if m.diffTerminal != nil {
-		t.Fatal("unchanged range must not restart the review terminal")
+	if len(m.detailView.rawCache) != 0 || len(m.detailView.diffCache) != 0 {
+		t.Fatal("refresh kept stale diff caches")
+	}
+	if m.diffTerminal == oldTerminal || oldTerminal.Available() {
+		t.Fatal("refresh did not replace and close the old review terminal")
+	}
+	if m.refreshing || m.remoteSectionsPending != 0 {
+		t.Fatal("review refresh did not finish")
 	}
 }
 
