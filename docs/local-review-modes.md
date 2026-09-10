@@ -17,6 +17,10 @@ commit or file edit makes the checkout local. A changed remote head also leaves
 `LIVE` and asks for an explicit refresh rather than replacing a review while it
 is being read.
 
+Browsing remote PRs preserves the checkout's PR identity, including explicitly
+checked-out forks. Returning with `b` and reopening the checkout uses local
+review mode; a different PR sharing the same branch name remains remote.
+
 ## State transitions
 
 ```mermaid
