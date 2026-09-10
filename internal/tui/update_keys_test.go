@@ -14,6 +14,7 @@ import (
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prfilter"
+	"github.com/shonenm/live-pr/internal/store"
 )
 
 func TestReservedReviewKeysStayWithLivePR(t *testing.T) {
@@ -45,6 +46,47 @@ func TestStaticDiffFocusAndQReturnToConversation(t *testing.T) {
 	_, cmd := m.Update(keyPress("q"))
 	if cmd == nil {
 		t.Fatal("q from explorer should quit")
+	}
+}
+
+func TestReopenCheckoutAfterBrowsingRemotePRs(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	for _, fork := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fork=%v", fork), func(t *testing.T) {
+			m := testModel()
+			m.root, m.currentBranch, m.screen = t.TempDir(), "feature", detailScreen
+			local := gh.PR{Number: 10, State: "OPEN", HeadRefName: "feature", BaseRefName: "main", IsCrossRepository: fork}
+			if fork {
+				local.HeadRefName = "fork-head"
+			}
+			m.cache.PR, m.cache.ExplicitCheckout = &local, fork
+			checkout := m.cache
+
+			for _, remote := range []gh.PR{
+				{Number: 20, HeadRefName: "other", BaseRefName: "main"},
+				{Number: 30, HeadRefName: "feature", BaseRefName: "main"},
+			} {
+				_ = m.openRemote(remote)
+				if !m.isCurrentTargetPR(local) || m.isCurrentTargetPR(remote) {
+					t.Fatalf("remote #%d replaced the checkout identity", remote.Number)
+				}
+				m, _ = m.handleDetailKey(keyPress("b"))
+			}
+
+			m.prList.open, m.prList.cursor = []gh.PR{local}, 0
+			m, cmd := m.handlePRListKey(keyPress("enter"))
+			if cmd == nil || m.screen != prListScreen {
+				t.Fatal("checkout was opened as remote instead of scheduling a local load")
+			}
+			m, _ = m.handleLocalLoaded(localLoaded{
+				generation: m.targetGeneration,
+				st:         store.ForBranch(m.root, m.currentBranch),
+				data:       localData{cache: checkout, base: "main", diffBase: "main", headRev: "HEAD", dirty: true},
+			})
+			if m.remote || m.detailMode() != modeLocal {
+				t.Fatalf("reopened checkout mode = %v, remote=%v", m.detailMode(), m.remote)
+			}
+		})
 	}
 }
 

@@ -345,6 +345,7 @@ type Model struct {
 	timelinePath              string
 	cachePath                 string
 	cache                     gh.Cache
+	checkoutCache             gh.Cache // preserves the local target while browsing remote PRs
 	navigator                 gh.NavigatorCache
 	navigatorPRIndex          map[int]int
 	navigatorPath             string
@@ -583,18 +584,21 @@ func currentBranchPR(prs []gh.PR, branch string) *gh.PR {
 	return nil
 }
 
-// isCurrentTargetPR reports whether the PR matches what's already loaded in the
-// detail screen — either by branch (non-remote, current branch) or by explicit
-// checkout number. Matching by branch alone is insufficient when multiple PRs
-// share the same head, so we also require the PR number to match if one is known.
+// isCurrentTargetPR matches the checkout, not the PR being browsed. Matching
+// by branch alone is insufficient when multiple PRs share the same head, so
+// we also require the checkout's PR number to match if one is known.
 func (m Model) isCurrentTargetPR(pr gh.PR) bool {
-	if !m.remote && m.cache.ExplicitCheckout && m.cache.PR != nil && m.cache.PR.Number == pr.Number {
+	cache := m.cache
+	if m.remote {
+		cache = m.checkoutCache
+	}
+	if cache.ExplicitCheckout && cache.PR != nil && cache.PR.Number == pr.Number {
 		return true
 	}
 	if !isCurrentPR(pr, m.currentBranch) {
 		return false
 	}
-	if m.cache.PR != nil && pr.Number > 0 && m.cache.PR.Number != pr.Number {
+	if cache.PR != nil && pr.Number > 0 && cache.PR.Number != pr.Number {
 		return false
 	}
 	return true
@@ -856,6 +860,9 @@ func (d *detailModel) invalidateConversation() {
 }
 
 func (m *Model) openRemote(pr gh.PR) tea.Cmd {
+	if !m.remote {
+		m.checkoutCache = m.cache
+	}
 	m.cancelPollTimers()
 	m.targetGeneration++
 	m.detailView.resetCaches()
