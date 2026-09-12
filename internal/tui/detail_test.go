@@ -705,6 +705,55 @@ func TestBaseResolvedAppliesOnlyCurrentGeneration(t *testing.T) {
 	}
 }
 
+func TestRefreshRestartsLocalPollingAndReturnsToLive(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	m := testModel()
+	m.root, m.currentBranch, m.screen = t.TempDir(), "feature", detailScreen
+	m.cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", BaseRefName: "main"}
+	m.workingTreeDirty, m.localFingerprint = true, "dirty"
+	oldGeneration := m.targetGeneration
+	cancelled := false
+	m.pollTimers = &pollTimers{local: func() { cancelled = true }}
+	t.Cleanup(func() { m.cancelPollTimers() })
+
+	m, _ = m.handleDetailKey(keyPress("r"))
+	if m.targetGeneration == oldGeneration {
+		t.Fatal("refresh did not advance the request generation")
+	}
+	if _, cmd := m.Update(localPollTick{generation: oldGeneration}); cmd != nil {
+		t.Fatal("old polling generation should be discarded")
+	}
+	m, cmd := m.handleBaseResolved(baseResolved{
+		generation: m.targetGeneration, base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main",
+	})
+	if cmd == nil || !cancelled || m.pollTimers.local == nil {
+		t.Fatal("refresh did not replace the orphaned local poll timer")
+	}
+	if m.detailMode() != modeLocal {
+		t.Fatal("a dirty worktree must remain LOCAL")
+	}
+	if _, cmd := m.Update(localPollTick{generation: m.targetGeneration}); cmd == nil {
+		t.Fatal("the new polling generation did not dispatch a Git scan")
+	}
+
+	// Cleaning the worktree after r must still trigger a reload, without
+	// another r or a trip through the PR list.
+	m, cmd = m.handleLocalStatePolled(localStatePolled{
+		generation: m.targetGeneration, state: git.LocalState{Branch: "feature", Fingerprint: "clean"},
+	})
+	if cmd == nil || !m.localReloading {
+		t.Fatal("clean worktree did not trigger a local reload")
+	}
+	m, _ = m.handleLocalLoaded(localLoaded{
+		generation: m.targetGeneration,
+		st:         store.ForBranch(m.root, m.currentBranch),
+		data:       localData{cache: m.cache, base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main", localFingerprint: "clean"},
+	})
+	if m.detailMode() != modeLive {
+		t.Fatalf("clean checkout remained in mode %v", m.detailMode())
+	}
+}
+
 func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 	m := testModel()
 	m.targetGeneration = 3
