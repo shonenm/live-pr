@@ -919,8 +919,7 @@ func (m *Model) handleVimNavigation(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	if key.Matches(msg, m.keys.Bottom) {
 		return true, m.moveCursorTo(m.navigationLength() - 1)
 	}
-	// PreviewUp/PreviewDown never reach here: every caller scrolls the
-	// preview viewport on those keys before delegating.
+	// PreviewUp/PreviewDown are handled by the screen-specific key handler.
 	return false, nil
 }
 
