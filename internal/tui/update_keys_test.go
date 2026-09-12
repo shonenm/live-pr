@@ -140,20 +140,30 @@ func TestPRListVimNavigationAndNarrowLayout(t *testing.T) {
 	if m.prList.cursor != len(m.prList.open)-1 {
 		t.Fatalf("G did not move PR list to bottom: %d", m.prList.cursor)
 	}
-	m.detail.SetHeight(3)
-	m.detail.SetContent(strings.Repeat("preview\n", 20))
-	m.detail.GotoBottom()
-	bottomOffset := m.detail.YOffset()
-	u, _ = m.Update(keyPress("ctrl+u"))
-	m = u.(Model)
-	if m.detail.YOffset() >= bottomOffset {
-		t.Fatal("Ctrl+U did not scroll PR preview up")
-	}
-	topOffset := m.detail.YOffset()
-	u, _ = m.Update(keyPress("ctrl+d"))
-	m = u.(Model)
-	if m.detail.YOffset() <= topOffset {
-		t.Fatal("Ctrl+D did not scroll PR preview down")
+	for _, tc := range []struct {
+		key                 string
+		height, start, want int
+	}{
+		{"ctrl+u", 18, 10, 7},
+		{"ctrl+d", 18, 10, 13},
+		{"ctrl+u", 18, 1, 0},
+		{"ctrl+d", 18, 18, 19},
+		{"ctrl+u", 18, 0, 0},
+		{"ctrl+d", 18, 19, 19},
+		{"ctrl+u", 3, 10, 9},
+		{"ctrl+d", 3, 10, 11},
+	} {
+		m.list.SetHeight(tc.height)
+		m.prList.cursor, m.pendingG = tc.start, true
+		u, _ = m.Update(keyPress(tc.key))
+		m = u.(Model)
+		if m.prList.cursor != tc.want || m.pendingG {
+			t.Fatalf("%s at height %d from %d: cursor=%d pendingG=%v, want %d", tc.key, tc.height, tc.start, m.prList.cursor, m.pendingG, tc.want)
+		}
+		_, _, line := m.prListRowLayout()
+		if line < m.list.YOffset() || line >= m.list.YOffset()+m.list.Height() {
+			t.Fatalf("selected PR line %d is outside the viewport at %d", line, m.list.YOffset())
+		}
 	}
 }
 

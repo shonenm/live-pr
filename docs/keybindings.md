@@ -19,7 +19,8 @@ Press `?` inside the TUI to toggle the full help.
 | `x` | close the PR |
 | `m` | merge the PR (pick merge commit / squash / rebase in the popup) |
 | `r` | refresh |
-| `gg` / `G`, `Ctrl+U` / `Ctrl+D` | jump / scroll |
+| `gg` / `G` | jump to the first / last loaded PR |
+| `Ctrl+U` / `Ctrl+D` | move selection up / down half a page of PR rows |
 | `q`, `Ctrl+C` | quit |
 
 ## PR detail

@@ -48,13 +48,14 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if next, cmd, handled := m.handlePRActionConfirmKey(msg); handled {
 		return next, cmd
 	}
-	if key.Matches(msg, m.keys.PreviewUp) {
-		scrollQuarter(&m.detail, false)
-		return m, nil
-	}
-	if key.Matches(msg, m.keys.PreviewDown) {
-		scrollQuarter(&m.detail, true)
-		return m, nil
+	if key.Matches(msg, m.keys.PreviewUp, m.keys.PreviewDown) {
+		m.pendingG = false
+		// Each PR occupies three lines; move half a viewport of PR rows.
+		step := max(1, m.list.Height()/2/3)
+		if key.Matches(msg, m.keys.PreviewUp) {
+			step = -step
+		}
+		return m, m.moveCursorBy(step)
 	}
 	if handled, cmd := m.handleVimNavigation(msg); handled {
 		return m, cmd
