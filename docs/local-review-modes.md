@@ -73,7 +73,9 @@ While a checked-out branch detail is open, live-pr checks a lightweight Git
 fingerprint every two seconds. The fingerprint includes `HEAD`, branch, index,
 worktree, and untracked state. A full local scan runs only when that fingerprint
 changes. Same-branch reloads retain the active tab, cursor, focus, and viewport.
-An external branch checkout rebuilds the model for the new branch.
+An external branch checkout rebuilds the model for the new branch. Refreshing
+with `r` re-arms this local watcher, so cleaning the worktree afterward still
+returns a PR-backed checkout from `LOCAL` to `LIVE` automatically.
 
 When the mode is `LIVE`, live-pr also polls lightweight GitHub head, PR state,
 draft state, and check metadata every 15 seconds. Failed requests retry after

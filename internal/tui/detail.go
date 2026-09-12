@@ -286,8 +286,10 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.remoteSectionsPending = 0
 		m.refreshing = false
 	}
+	// Refresh advances targetGeneration, so the old local poll can no longer fire.
+	localPoll := m.nextLocalPoll()
 	if msg.diffBase == "" {
-		return m, nil
+		return m, localPoll
 	}
 	if msg.readinessOK {
 		m.setGitMergeReadiness(msg.readiness, msg.readinessErr)
@@ -313,7 +315,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	if rangeChanged || m.detailView.fileCursor >= len(m.detailView.files) {
 		m.detailView.fileCursor = 0
 	}
-	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync())
+	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync(), localPoll)
 }
 
 func (m *Model) restartReview(sha, prURL string) tea.Cmd {
