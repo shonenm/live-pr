@@ -28,23 +28,23 @@ content without touching GitHub:
 live-pr demo
 ```
 
-1. Confirm the status line says `LOCAL`, includes ahead/behind counts, and says `diverged`.
+1. Confirm the status line says `LIVE`, includes ahead/behind counts, and says `diverged`.
 2. Press `c`; confirm `Published on PR`, `Local only`, `Remote only`, and `Working tree` are present.
 3. Select one row in each commit section and press `Enter`; confirm the selected commit diff opens.
 4. Select `Working tree`; confirm the untracked file appears.
-5. Press `b`, open the other open PR, and confirm the mode becomes `REMOTE`.
-6. Return to the checked-out PR and confirm the prior tab, cursor, focus, and viewport are retained.
+5. Press `b`, confirm `PR LIST`, open the other open PR, and confirm `REMOTE`.
+6. Return to the checked-out PR and confirm `LIVE`; same-target local refreshes must retain the tab, cursor, focus, and viewport.
 
 For a real PR, additionally verify this sequence:
 
 | Action | Expected state |
 | --- | --- |
 | Clean checkout equals published head | `LIVE` |
-| Edit, stage, or add an untracked file | `LOCAL · dirty` |
-| Commit without pushing | `LOCAL · N ahead` |
+| Edit, stage, or add an untracked file | `LIVE · dirty` |
+| Commit without pushing | `LIVE · N ahead` |
 | Push and press `r` | `LIVE` |
-| Update the PR from another clone | `LOCAL · N behind · remote update` |
-| Force-push a different history, then press `r` | `LOCAL · N ahead · M behind · diverged` |
+| Update the PR from another clone | `LIVE · N behind · remote update` |
+| Force-push a different history, then press `r` | `LIVE · N ahead · M behind · diverged` |
 
 Remote updates must not replace the active diff until `r` is pressed.
 
@@ -55,8 +55,12 @@ Remote updates must not replace the active diff until `r` is pressed.
 3. Confirm retry status advances through 30 seconds, one minute, then two minutes.
 4. Restore connectivity and press `r`; confirm the retry state clears immediately.
 5. While a refresh is running, edit a file and switch branches in another terminal.
-6. Confirm the new branch wins, stale responses do not restore the previous PR, and the spinner stops.
+6. Confirm checkout identity updates, the selected PR is preserved (REMOTE if no longer checked out), stale responses are ignored, and the spinner stops.
 7. Press `r` repeatedly during a local reload; confirm only one full refresh is active and no selection is lost.
+
+8. While in the PR list, switch branches externally and immediately open the new checkout's PR. It must use `LIVE`, even before the next timer tick.
+9. Resolve a temporary edit while a GitHub conversation update is in flight. After the next local scan, `dirty` must clear and GitHub polling must continue.
+10. Reuse a branch whose implicit cache points to an old closed PR. A new open PR must take precedence; an explicit checkout pin must not be replaced.
 
 ## Repository edge states
 

@@ -33,7 +33,7 @@ a real pull request.
 - Review from the TUI — inline comments plus a verdict (comment / approve / request changes) submitted together
 - Pluggable review pane — embedded Neovim CodeDiff, `delta`, or built-in git diff; switch with `--diff`
 - Local-first context — checked-out PR file diffs stay on the pushed head; unpushed commits and working-tree changes remain available in the commit picker
-- LOCAL / LIVE / REMOTE status line — distinguishes local work, a clean checkout matching its PR, and fetched PRs
+- PR LIST / LOCAL / LIVE / REMOTE status line — distinguishes the navigator, PR-less local work, the checkout's PR, and other fetched PRs; dirty/ahead/behind stay separate
 - Live PR monitoring — LIVE checkouts poll lightweight head, state, draft, and CI metadata without replacing the local review
 - PR export — `live-pr pr publish` creates or updates the GitHub PR with the timeline as its body
 - Mouse support — wheel scrolling per pane, click to select or open a PR, view tabs, and popup options

@@ -420,13 +420,17 @@ func (l prListModel) stackForPR(number int) (prfilter.Stack, bool) {
 
 func (m Model) withLocalPR(prs []gh.PR) []gh.PR {
 	items := append([]gh.PR(nil), prs...)
-	if m.cache.PR != nil && m.isCurrentTargetPR(*m.cache.PR) {
+	cache := m.cache
+	if m.remote {
+		cache = m.checkoutCache
+	}
+	if cache.PR != nil && m.isCurrentTargetPR(*cache.PR) {
 		for _, pr := range items {
-			if pr.Number == m.cache.PR.Number {
+			if pr.Number == cache.PR.Number {
 				return items
 			}
 		}
-		return append([]gh.PR{*m.cache.PR}, items...)
+		return append([]gh.PR{*cache.PR}, items...)
 	}
 	if !m.localAvailable {
 		return items

@@ -363,6 +363,8 @@ type Model struct {
 	localHeadOID              string
 	localFingerprint          string
 	localReloading            bool
+	checkoutReloading         bool
+	localGeneration           uint64 // checkout observation is independent of detail requests
 	localPollError            string
 	pollTimers                *pollTimers
 	revisionRelation          git.RevisionRelation
@@ -472,14 +474,8 @@ func New(version ...string) (Model, error) {
 	if changesErr != nil && status == "" {
 		status = "base comparison unavailable: " + changesErr.Error()
 	}
+	cache = resolveCheckoutCache(cache, navigator.PRs, branch)
 	currentPR := cache.PR
-	if currentPR != nil && !isCurrentPR(*currentPR, branch) && !cache.ExplicitCheckout {
-		currentPR = nil
-		cache = gh.NewCache(branch)
-	}
-	if currentPR == nil {
-		currentPR = currentBranchPR(navigator.PRs, branch)
-	}
 	defaultBranch := strings.TrimPrefix(defaultRef, "origin/")
 	localEligible := branch != defaultBranch
 	localDetail := shouldOpenLocal(branch, defaultBranch, currentPR != nil, st.HasData(), hasChanges)
@@ -506,6 +502,8 @@ func New(version ...string) (Model, error) {
 		ascii:           cfg.Accessibility.ASCII,
 		repository:      navigator.Repository,
 		currentBranch:   branch,
+		cache:           cache,
+		checkoutCache:   cache,
 		defaultBranch:   defaultBranch,
 		status:          status,
 		loadSpinner:     newLoadSpinner(),
@@ -575,10 +573,14 @@ func isCurrentPR(pr gh.PR, branch string) bool {
 
 func currentBranchPR(prs []gh.PR, branch string) *gh.PR {
 	for _, state := range []prListState{openPRListState, closedPRListState} {
+		var newest *gh.PR
 		for i := range prs {
-			if matchesListState(prs[i], state) && isCurrentPR(prs[i], branch) {
-				return &prs[i]
+			if prs[i].Number > 0 && matchesListState(prs[i], state) && isCurrentPR(prs[i], branch) && (newest == nil || prs[i].Number > newest.Number) {
+				newest = &prs[i]
 			}
+		}
+		if newest != nil {
+			return newest
 		}
 	}
 	return nil
@@ -608,10 +610,9 @@ func (m Model) detailMode() detailMode {
 	if m.remote {
 		return modeRemote
 	}
-	// A GitHub PR stays LIVE across rebase/merge; only an unpublished
-	// worktree or a branch with no PR is LOCAL. Remote-opened PRs never
-	// reach here until an explicit checkout.
-	if m.cache.PR != nil && !m.workingTreeDirty {
+	// Mode identifies the review target. Worktree changes and revision
+	// distance are independent annotations, not a change of PR identity.
+	if m.cache.PR != nil && m.cache.PR.Number > 0 {
 		return modeLive
 	}
 	return modeLocal
@@ -788,8 +789,9 @@ func (m Model) Init() tea.Cmd {
 	if m.screen == detailScreen && m.currentBranch != "HEAD" && !m.remote && m.cachePath != "" {
 		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()))
 	}
+	cmds = append(cmds, m.nextLocalPoll())
 	if m.screen == detailScreen {
-		cmds = append(cmds, m.dispatchRichContent(), m.nextLocalPoll(), m.nextCIPoll())
+		cmds = append(cmds, m.dispatchRichContent(), m.nextCIPoll())
 	}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
@@ -813,6 +815,13 @@ func (m *Model) startSpinner() tea.Cmd {
 	}
 	m.spinnerRunning = true
 	return m.loadSpinner.Tick
+}
+
+func (m *Model) cancelCIPoll() {
+	if m.pollTimers != nil && m.pollTimers.ci != nil {
+		m.pollTimers.ci()
+		m.pollTimers.ci = nil
+	}
 }
 
 func (m *Model) cancelPollTimers() {
@@ -845,6 +854,7 @@ func (m *Model) advanceAsyncGenerations(previous Model) {
 		}
 	}
 	m.targetGeneration = previous.targetGeneration + 1
+	m.localGeneration = previous.localGeneration + 1
 	m.prList.generation = previous.prList.generation + 1
 	m.detailView.resetCaches()
 }
@@ -863,7 +873,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	if !m.remote {
 		m.checkoutCache = m.cache
 	}
-	m.cancelPollTimers()
+	m.cancelCIPoll()
 	m.targetGeneration++
 	m.detailView.resetCaches()
 	if !m.remote || m.cache.PR == nil || m.cache.PR.Number != pr.Number {
