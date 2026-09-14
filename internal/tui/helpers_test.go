@@ -86,3 +86,18 @@ func testModel() Model {
 		keys: keys,
 	}
 }
+
+// completePRSelection supplies the checkout observation to UI-only tests.
+// Real Git/branch-switch coverage lives in mode_state_test.go.
+func completePRSelection(m Model) Model {
+	pr := *m.prList.selectedPR()
+	cache := m.cache
+	if m.remote {
+		cache = m.checkoutCache
+	}
+	cache.Head = m.currentBranch
+	next, _ := m.handlePRTargetPrepared(prTargetPrepared{
+		generation: m.targetGeneration, branch: m.currentBranch, cache: cache, pr: pr,
+	})
+	return next
+}

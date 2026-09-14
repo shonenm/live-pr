@@ -61,6 +61,7 @@ func TestPRListClickSelectsAndSecondClickOpens(t *testing.T) {
 	// Clicking the already-selected row opens it — the Enter equivalent.
 	u, _ = m.Update(click(5, contentTop+6))
 	m = u.(Model)
+	m = completePRSelection(m)
 	if m.screen != detailScreen {
 		t.Fatalf("second click did not open the PR: screen=%v", m.screen)
 	}
@@ -120,6 +121,7 @@ func TestPRListClickMapsThroughStackHeadersAndCollapse(t *testing.T) {
 	m.prList.cursor = 0
 	u, _ = m.Update(click(5, contentTop+1))
 	m = u.(Model)
+	m = completePRSelection(m)
 	if m.screen != detailScreen {
 		t.Fatalf("click on the collapsed stack's selected row did not open it: screen=%v", m.screen)
 	}

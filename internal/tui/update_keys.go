@@ -160,12 +160,14 @@ func (m Model) openSelectedPR() (Model, tea.Cmd) {
 	}
 	// Remember the tab so b returns here rather than guessing.
 	m.detailOrigin, m.detailOriginSet = m.prList.view, true
-	if !m.isCurrentTargetPR(*pr) {
-		return m, m.openRemote(*pr)
+	m.autoOpenCurrent = false
+	cache := m.cache
+	if m.remote {
+		cache = m.checkoutCache
 	}
-	st := store.ForBranch(m.root, m.currentBranch)
-	cache, _ := st.LoadGitHubCache()
-	return m, tea.Batch(m.startLocalLoad(st, cache, pr), m.startSpinner())
+	m.targetGeneration++
+	m.refreshing = true
+	return m, tea.Batch(preparePRTarget(m.root, *pr, cache, m.navigator.PRs, m.targetGeneration), m.startSpinner())
 }
 
 // handlePRActionConfirmKey drives the y/n confirmation for a pending PR
@@ -242,7 +244,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		selected := m.currentPRNumber()
 		m.prList.view = m.listViewForReturn(selected)
 		m.detailOriginSet = false
-		m.cancelPollTimers()
+		m.cancelCIPoll()
 		m.targetGeneration++
 		if m.diffTerminal != nil {
 			m.diffTerminal.Close()

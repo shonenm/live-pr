@@ -1,5 +1,8 @@
 # Local-first review release notes
 
+> Historical notes for the initial rollout. Current mode definitions and polling
+> behavior are documented in [Local review modes](local-review-modes.md).
+
 live-pr now treats the checked-out repository as a live review target before,
 during, and after publication to GitHub.
 

@@ -78,12 +78,13 @@ func TestReopenCheckoutAfterBrowsingRemotePRs(t *testing.T) {
 			if cmd == nil || m.screen != prListScreen {
 				t.Fatal("checkout was opened as remote instead of scheduling a local load")
 			}
+			m = completePRSelection(m)
 			m, _ = m.handleLocalLoaded(localLoaded{
 				generation: m.targetGeneration,
 				st:         store.ForBranch(m.root, m.currentBranch),
 				data:       localData{cache: checkout, base: "main", diffBase: "main", headRev: "HEAD", dirty: true},
 			})
-			if m.remote || m.detailMode() != modeLocal {
+			if m.remote || m.detailMode() != modeLive {
 				t.Fatalf("reopened checkout mode = %v, remote=%v", m.detailMode(), m.remote)
 			}
 		})
@@ -314,7 +315,7 @@ func TestPRListEnterOpensRemoteWithoutChangingCheckout(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, cmd := m.Update(keyPress("enter"))
-	m = u.(Model)
+	m = completePRSelection(u.(Model))
 	if cmd == nil || m.screen != detailScreen || !m.remote || m.detailView.head != "feature" || m.detailView.headRev != "refs/live-pr/pulls/14/head" || m.diffTerminal != nil {
 		t.Fatalf("remote target not opened: screen=%v remote=%v head=%q rev=%q terminal=%v", m.screen, m.remote, m.detailView.head, m.detailView.headRev, m.diffTerminal)
 	}

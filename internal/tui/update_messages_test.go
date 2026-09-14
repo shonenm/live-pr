@@ -414,7 +414,7 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m = u.(Model)
 	u, _ = m.Update(keyPress("enter"))
-	m = u.(Model)
+	m = completePRSelection(u.(Model))
 	generationA := m.targetGeneration
 	m.autoOpenCurrent = true
 	u, _ = m.Update(keyPress("b"))
@@ -424,7 +424,7 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	}
 	m.prList.restorePRSelection(2)
 	u, _ = m.Update(keyPress("enter"))
-	m = u.(Model)
+	m = completePRSelection(u.(Model))
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
 		t.Fatalf("target B not opened: %#v", m.cache.PR)
 	}
@@ -935,19 +935,23 @@ func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	}
 }
 
-func TestRemoteDetailIgnoresLocalBranchPoll(t *testing.T) {
+func TestRemoteDetailObservesCheckoutWithoutHydratingWorktreeChanges(t *testing.T) {
 	m := testModel()
-	m.screen, m.remote, m.currentBranch, m.targetGeneration = detailScreen, true, "main", 4
+	m.screen, m.remote, m.currentBranch, m.localGeneration = detailScreen, true, "main", 4
 	m.cache.PR = &gh.PR{Number: 9, HeadRefName: "feature"}
-	next, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "new"}})
-	if cmd != nil || next.remote != true || next.refreshing || next.currentBranch != "main" {
-		t.Fatalf("remote poll reacted to local git: remote:%v refreshing:%v branch:%q cmd:%v", next.remote, next.refreshing, next.currentBranch, cmd)
+	next, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "main", Fingerprint: "new"}})
+	if cmd == nil || !next.remote || next.refreshing || next.localReloading {
+		t.Fatalf("remote worktree poll = remote:%v refreshing:%v local:%v cmd:%v", next.remote, next.refreshing, next.localReloading, cmd)
+	}
+	next, cmd = m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "new"}})
+	if cmd == nil || !next.checkoutReloading {
+		t.Fatal("remote detail missed an external checkout")
 	}
 }
 
 func TestLocalStatePollReportsFailureAndRecovery(t *testing.T) {
 	m := testModel()
-	m.screen, m.currentBranch, m.localFingerprint, m.targetGeneration = detailScreen, "feature", "same", 4
+	m.screen, m.currentBranch, m.localFingerprint, m.localGeneration = detailScreen, "feature", "same", 4
 	failed, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, err: errors.New("git unavailable")})
 	if cmd == nil || failed.localPollError == "" || !strings.Contains(failed.status, "git unavailable") {
 		t.Fatalf("poll failure = %#v cmd=%v", failed, cmd)
@@ -966,7 +970,7 @@ func TestLocalStatePollReportsFailureAndRecovery(t *testing.T) {
 func TestLocalStatePollReloadsOnlyOnChange(t *testing.T) {
 	m := testModel()
 	m.screen, m.currentBranch, m.localFingerprint = detailScreen, "feature", "same"
-	m.targetGeneration = 4
+	m.targetGeneration, m.localGeneration = 4, 4
 	if unchanged, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "same"}}); cmd == nil || unchanged.localReloading {
 		t.Fatalf("unchanged local state = reloading:%v cmd:%v", unchanged.localReloading, cmd)
 	}

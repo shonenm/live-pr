@@ -111,13 +111,15 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 		m.navigator.FetchedAt = now
 	}
 	if m.screen == detailScreen && !m.remote && m.cache.PR == nil {
-		for i := range msg.page.PRs {
-			if isCurrentPR(msg.page.PRs[i], m.currentBranch) {
-				m.cache.PR = &msg.page.PRs[i]
-				m.localAvailable = false
-				break
-			}
+		if pr := currentBranchPR(msg.page.PRs, m.currentBranch); pr != nil {
+			m.cache.PR = pr
+			m.localAvailable = false
 		}
+	}
+	if m.remote {
+		m.checkoutCache = resolveCheckoutCache(m.checkoutCache, msg.page.PRs, m.currentBranch)
+	} else if m.screen == prListScreen {
+		m.cache = resolveCheckoutCache(m.cache, msg.page.PRs, m.currentBranch)
 	}
 	m.syncCachedPRState(msg.page.PRs)
 	m.applyPRFilters(selectedNumber)
@@ -171,6 +173,11 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 		return m, nil
 	}
 	m.localAvailable = false
+	if m.remote {
+		m.checkoutCache = resolveCheckoutCache(m.checkoutCache, []gh.PR{msg.pr}, m.currentBranch)
+	} else if m.screen == prListScreen {
+		m.cache = resolveCheckoutCache(m.cache, []gh.PR{msg.pr}, m.currentBranch)
+	}
 	m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
 	m.syncCachedPRState([]gh.PR{msg.pr})
 	// Only the PR list screen may switch views, and a refresh-triggered
@@ -399,6 +406,13 @@ func (m Model) handlePublishDone(msg publishDone) (Model, tea.Cmd) {
 
 }
 
+func samePRBoundary(a, b *gh.PR) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Number == b.Number && a.HeadRefOID == b.HeadRefOID && a.BaseRefName == b.BaseRefName && a.BaseRefOID == b.BaseRefOID
+}
+
 func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
@@ -406,9 +420,18 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 	if msg.err != nil {
 		m.refreshing, m.localReloading = false, false
 		m.status = msg.err.Error()
-		return m, m.nextLocalPoll()
+		return m, tea.Batch(m.nextLocalPoll(), m.nextCIPoll())
 	}
 	reloading := m.localReloading
+	if reloading {
+		if !samePRBoundary(msg.data.cache.PR, m.cache.PR) {
+			// A list/metadata response discovered a newer publication boundary
+			// while Git was being scanned. Recompute without rolling it back.
+			return m, m.startLocalLoad(msg.st, m.cache, m.cache.PR)
+		}
+		// Local scans own Git data, not newer comments, status, or PR metadata.
+		msg.data.cache = m.cache.Clone()
+	}
 	active, cursors, focus := m.detailView.active, m.detailView.cursors, m.detailView.focus
 	fileCursor, reviewSHA := m.detailView.fileCursor, m.detailView.reviewSHA
 	listOffset, explorerOffset, detailOffset := m.list.YOffset(), m.explorer.YOffset(), m.detail.YOffset()
@@ -423,7 +446,7 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 		m.explorer.SetYOffset(explorerOffset)
 		m.detail.SetYOffset(detailOffset)
 		m.notice = "Local changes updated"
-		cmds := []tea.Cmd{m.sync(), m.nextLocalPoll()}
+		cmds := []tea.Cmd{m.sync(), m.nextLocalPoll(), m.nextCIPoll()}
 		if m.diffTerminal != nil {
 			cmds = append(cmds, m.diffTerminal.Init())
 		}
@@ -446,7 +469,7 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 }
 
 func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration || m.screen != detailScreen || m.remote {
+	if msg.generation != m.localGeneration {
 		return m, nil
 	}
 	if msg.err != nil {
@@ -464,9 +487,16 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 		m.localPollError = ""
 		m.notice = "Local polling recovered"
 	}
+	if m.checkoutReloading {
+		return m, m.nextLocalPoll()
+	}
 	if msg.state.Branch != m.currentBranch {
-		m.refreshing = true
-		return m, tea.Batch(rebuildForLocalBranchChange(m.version, msg.generation), m.startSpinner())
+		m.checkoutReloading, m.refreshing = true, true
+		m.targetGeneration++
+		return m, tea.Batch(rebuildForLocalBranchChange(m.version, msg.generation), m.nextLocalPoll(), m.startSpinner())
+	}
+	if m.screen != detailScreen || m.remote || m.refreshing || m.publishing || m.reviewSubmitting || m.prActionRunning != noPRAction {
+		return m, m.nextLocalPoll()
 	}
 	if msg.state.Fingerprint == m.localFingerprint {
 		return m, m.nextLocalPoll()
@@ -487,9 +517,10 @@ func rebuildForLocalBranchChange(version string, generation uint64) tea.Cmd {
 }
 
 func (m Model) handleLocalBranchReloaded(msg localBranchReloaded) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration {
+	if msg.generation != m.localGeneration {
 		return m, nil
 	}
+	m.checkoutReloading = false
 	if msg.err != nil {
 		m.refreshing = false
 		m.status = "branch reload: " + msg.err.Error()
@@ -499,9 +530,25 @@ func (m Model) handleLocalBranchReloaded(msg localBranchReloaded) (Model, tea.Cm
 	next := *msg.next
 	next.w, next.h = m.w, m.h
 	next.advanceAsyncGenerations(m)
+	next.prList.view, next.prList.state, next.prList.filterQuery = m.prList.view, m.prList.state, m.prList.filterQuery
+	next.detailOrigin, next.detailOriginSet = m.detailOrigin, m.detailOriginSet
+	next.autoOpenCurrent = false
+	var targetCmd tea.Cmd
+	if m.screen == prListScreen {
+		if next.diffTerminal != nil {
+			next.diffTerminal.Close()
+			next.diffTerminal = nil
+		}
+		next.screen, next.refreshing = prListScreen, false
+	} else if m.cache.PR != nil && !next.isCurrentTargetPR(*m.cache.PR) {
+		// A checkout change must not silently replace the PR being reviewed.
+		targetCmd = next.openRemote(*m.cache.PR)
+	}
+	next.prList.activePage = prPageKey(next.prList.view, next.prList.state, next.prList.filterQuery)
+	next.applyPRFilters(m.prList.selectedPRNumber())
 	next.notice = "Checked-out branch changed"
 	next.layout()
-	return next, tea.Batch(next.Init(), next.sync())
+	return next, tea.Batch(targetCmd, next.Init(), next.sync())
 }
 
 func (m Model) detailSectionTargets(generation uint64, number int) bool {
@@ -700,12 +747,12 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	}
 	m.ciPollFailures = 0
 	if msg.pr.HeadRefOID != m.cache.PR.HeadRefOID {
-		// Record the new publication boundary so the derived mode immediately
-		// leaves LIVE, but keep the local review range untouched until r.
+		// Record the new publication boundary, but keep the selected review
+		// range untouched until r. LIVE still needs background status updates.
 		m.cache.PR.HeadRefOID = msg.pr.HeadRefOID
 		m.revisionRelation, m.revisionAhead, m.revisionBehind = git.RevisionUnknown, 0, 0
 		m.githubStatus = "GitHub: PR head changed · refresh required"
-		return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync())
+		return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll())
 	}
 	rollup := checkRollupState(msg.pr.Checks)
 	// A result identical to the cache skips the invalidation, row rebuild,

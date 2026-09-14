@@ -705,13 +705,14 @@ func TestBaseResolvedAppliesOnlyCurrentGeneration(t *testing.T) {
 	}
 }
 
-func TestRefreshRestartsLocalPollingAndReturnsToLive(t *testing.T) {
+func TestRefreshPreservesCheckoutPollingAndLiveTarget(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	m := testModel()
 	m.root, m.currentBranch, m.screen = t.TempDir(), "feature", detailScreen
 	m.cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", BaseRefName: "main"}
 	m.workingTreeDirty, m.localFingerprint = true, "dirty"
 	oldGeneration := m.targetGeneration
+	oldLocalGeneration := m.localGeneration
 	cancelled := false
 	m.pollTimers = &pollTimers{local: func() { cancelled = true }}
 	t.Cleanup(func() { m.cancelPollTimers() })
@@ -720,8 +721,8 @@ func TestRefreshRestartsLocalPollingAndReturnsToLive(t *testing.T) {
 	if m.targetGeneration == oldGeneration {
 		t.Fatal("refresh did not advance the request generation")
 	}
-	if _, cmd := m.Update(localPollTick{generation: oldGeneration}); cmd != nil {
-		t.Fatal("old polling generation should be discarded")
+	if _, cmd := m.Update(localPollTick{generation: oldLocalGeneration}); cmd == nil {
+		t.Fatal("detail refresh must not orphan checkout observation")
 	}
 	m, cmd := m.handleBaseResolved(baseResolved{
 		generation: m.targetGeneration, base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main",
@@ -729,17 +730,17 @@ func TestRefreshRestartsLocalPollingAndReturnsToLive(t *testing.T) {
 	if cmd == nil || !cancelled || m.pollTimers.local == nil {
 		t.Fatal("refresh did not replace the orphaned local poll timer")
 	}
-	if m.detailMode() != modeLocal {
-		t.Fatal("a dirty worktree must remain LOCAL")
+	if m.detailMode() != modeLive {
+		t.Fatal("a dirty PR-backed checkout must remain LIVE")
 	}
-	if _, cmd := m.Update(localPollTick{generation: m.targetGeneration}); cmd == nil {
+	if _, cmd := m.Update(localPollTick{generation: m.localGeneration}); cmd == nil {
 		t.Fatal("the new polling generation did not dispatch a Git scan")
 	}
 
 	// Cleaning the worktree after r must still trigger a reload, without
 	// another r or a trip through the PR list.
 	m, cmd = m.handleLocalStatePolled(localStatePolled{
-		generation: m.targetGeneration, state: git.LocalState{Branch: "feature", Fingerprint: "clean"},
+		generation: m.localGeneration, state: git.LocalState{Branch: "feature", Fingerprint: "clean"},
 	})
 	if cmd == nil || !m.localReloading {
 		t.Fatal("clean worktree did not trigger a local reload")

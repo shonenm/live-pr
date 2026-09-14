@@ -170,14 +170,6 @@ func (m *Model) reloadLocalConversation() {
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	m.detailView.events = events
-	if oid, err := git.Revision("HEAD"); err == nil {
-		m.localHeadOID = oid
-	}
-	if summary, err := git.WorktreeStatus(); err == nil {
-		m.worktreeSummary, m.workingTreeDirty = summary, summary.Total() > 0
-	} else {
-		m.status = "local git data: " + err.Error()
-	}
 	conclusion, err := os.ReadFile(store.ForBranch(m.root, m.currentBranch).Conclusion())
 	if err == nil {
 		m.detailView.summary = string(conclusion)
@@ -286,7 +278,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.remoteSectionsPending = 0
 		m.refreshing = false
 	}
-	// Refresh advances targetGeneration, so the old local poll can no longer fire.
+	// Reconcile observers after applying detail data; checkout polling has its own epoch.
 	localPoll := m.nextLocalPoll()
 	if msg.diffBase == "" {
 		return m, localPoll
@@ -315,7 +307,7 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	if rangeChanged || m.detailView.fileCursor >= len(m.detailView.files) {
 		m.detailView.fileCursor = 0
 	}
-	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync(), localPoll)
+	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync(), localPoll, m.nextCIPoll())
 }
 
 func (m *Model) restartReview(sha, prURL string) tea.Cmd {
