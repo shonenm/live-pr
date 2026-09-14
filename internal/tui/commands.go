@@ -29,7 +29,7 @@ import (
 
 // startLocalLoad gathers local detail in a Cmd and applies it on localLoaded.
 func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR) tea.Cmd {
-	m.cancelPollTimers()
+	m.cancelCIPoll()
 	cache = cache.Clone()
 	m.targetGeneration++
 	generation := m.targetGeneration
@@ -90,6 +90,9 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 	}
 	localHeadOID, headErr := git.Revision("HEAD")
 	localSnapshot, snapshotErr := git.CurrentLocalSnapshot()
+	if snapshotErr == nil && localSnapshot.State.Branch != st.Branch {
+		return localData{}, fmt.Errorf("checkout changed during local load: %s → %s", st.Branch, localSnapshot.State.Branch)
+	}
 	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(diffBase, commits, cache.PR)
 	revisionAhead, revisionBehind := 0, 0
 	if cache.PR != nil && cache.PR.HeadRefOID != "" {
@@ -223,12 +226,9 @@ func (m *Model) nextLocalPoll() tea.Cmd {
 		m.pollTimers.local()
 	}
 	m.pollTimers.local = nil
-	if m.screen == detailScreen && !m.remote {
-		cmd, cancel := scheduleLocalPoll(m.targetGeneration)
-		m.pollTimers.local = cancel
-		return cmd
-	}
-	return nil
+	cmd, cancel := scheduleLocalPoll(m.localGeneration)
+	m.pollTimers.local = cancel
+	return cmd
 }
 
 func ciPollDelay(failures int) time.Duration {

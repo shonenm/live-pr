@@ -78,7 +78,7 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	run("add", "file")
 	write("unstaged\n")
 	data = load()
-	if !data.dirty || data.worktree.Staged != 1 || data.worktree.Unstaged != 1 || mode(data, false) != modeLocal {
+	if !data.dirty || data.worktree.Staged != 1 || data.worktree.Unstaged != 1 || mode(data, false) != modeLive {
 		t.Fatalf("dirty = %#v mode:%v", data.worktree, mode(data, false))
 	}
 	if len(data.files) != 1 || data.files[0].Fingerprint != publishedFingerprint {
@@ -208,7 +208,7 @@ func TestExternalBranchSwitchRebuildsLocalModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("commit", "-am", "feature b")
-	msg := rebuildForLocalBranchChange("test", old.targetGeneration)().(localBranchReloaded)
+	msg := rebuildForLocalBranchChange("test", old.localGeneration)().(localBranchReloaded)
 	if msg.err != nil || msg.next == nil {
 		t.Fatalf("branch rebuild = next:%v err:%v", msg.next, msg.err)
 	}

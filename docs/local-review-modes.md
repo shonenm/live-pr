@@ -1,39 +1,54 @@
 # Local review modes
 
-live-pr shows the source of the review in the left side of the status line.
-The pane titles already identify the current UI view; the mode identifies which
-repository state the review represents.
+The status-line mode identifies the review target, not whether the worktree is
+clean or whether local and published commits match. Worktree and synchronization
+state are shown separately as `dirty`, `ahead`, `behind`, and `diverged`.
 
 ## Modes
 
-| Mode | Meaning | Diff source |
+| Mode | Meaning | Default diff source |
 | --- | --- | --- |
-| `LOCAL` | The checked-out branch has no PR, has commits not on the PR, or has index/worktree changes. | Published PR head when one exists; otherwise local `HEAD`, index, worktree, and untracked files |
-| `LIVE` | The checked-out branch has a PR, local `HEAD` equals the published PR head, and the worktree is clean. | Published PR head, with GitHub metadata layered on top |
-| `REMOTE` | A PR that is not the checked-out branch is open from the PR list. | The fetched `refs/live-pr/pulls/<number>/head` ref |
+| `PR LIST` | The PR navigator is open. This makes no claim about the checkout. | Selected PR preview |
+| `LOCAL` | Local detail has no associated GitHub PR. | Local `HEAD`, index, worktree, and untracked files |
+| `LIVE` | The reviewed PR is associated with the checked-out branch. | Published PR head, with GitHub metadata layered on top |
+| `REMOTE` | The reviewed PR is not the checkout's associated PR. | The fetched PR head |
 
-A PR can move from `LIVE` to `LOCAL` without closing the detail screen. A local
-commit or file edit makes the checkout local. A changed remote head also leaves
-`LIVE` and asks for an explicit refresh rather than replacing a review while it
-is being read.
+Editing, staging, committing, rebasing, or receiving a new remote head does not
+change a PR-backed review from `LIVE` to `LOCAL`. These operations update its
+worktree/revision annotations. Individual commits and the `Working tree` entry
+remain separately reviewable without changing which PR the screen belongs to.
 
-Browsing remote PRs preserves the checkout's PR identity, including explicitly
-checked-out forks. Returning with `b` and reopening the checkout uses local
-review mode; a different PR sharing the same branch name remains remote.
+## Checkout and PR identity
+
+Opening a PR checks the actual Git checkout before choosing local or remote
+review, even if a periodic checkout check just ran. A branch switch during local
+hydration rejects that result rather than displaying another branch's Git data.
+
+An implicit branch association prefers an open PR, then the newest PR number.
+A stale closed-PR cache does not pin a reused branch to its old PR. An explicit
+checkout pins that PR, including forks with a different local branch name;
+browsing another PR never silently replaces the pin.
+
+Checkout changes are observed in the list and in both local and remote detail.
+A background checkout change keeps the list open or preserves the selected PR.
+If that PR is no longer checked out, its review becomes `REMOTE`; opening the
+new checkout's PR uses `LIVE`. Browsing and returning with `b` does not discard
+the checkout association.
 
 ## State transitions
 
 ```mermaid
 stateDiagram-v2
     [*] --> LOCAL: branch without a matching PR
-    LOCAL --> LIVE: publish or refresh; clean HEAD equals PR head
-    LIVE --> LOCAL: edit, stage, commit, or remote head update
-    LOCAL --> LIVE: push/refresh; clean HEAD equals PR head
+    LOCAL --> LIVE: publish or discover the branch PR
+    LIVE --> LIVE: edit, commit, rebase, or remote update
     LOCAL --> REMOTE: open another PR
-    LIVE --> REMOTE: open another PR
-    REMOTE --> LOCAL: return to a changed checkout
-    REMOTE --> LIVE: return to a synchronized checkout
+    LIVE --> REMOTE: open another PR or check out a different branch
+    REMOTE --> LIVE: review the associated checkout PR
+    REMOTE --> LOCAL: open local detail without a PR
 ```
+
+The navigator is labeled `PR LIST`, separately from these detail states.
 
 The status line makes the non-synchronized relation explicit:
 
@@ -42,49 +57,45 @@ The status line makes the non-synchronized relation explicit:
 - `N ahead · M behind · diverged` means both histories have unique commits;
 - `dirty` means the index, worktree, or untracked set differs from `HEAD`.
 
-A force-pushed PR normally appears as diverged until `r` fetches the new PR ref.
-The commit picker then shows `Published on PR`, `Local only`, and `Remote only`
+A force-pushed PR normally appears as diverged after `r` fetches the new PR ref.
+The commit picker shows `Published on PR`, `Local only`, and `Remote only`
 sections from the Git graph's common ancestor.
 
 ## Local-first data ownership
 
-For the checked-out branch, local Git is authoritative for:
+Local Git owns the checkout snapshot: its fingerprint, worktree counts, local
+commits, merge base, revision distance, and conflict simulation. Conversation
+updates reload conversation content, not a partial worktree snapshot. This
+prevents a transient edit observed by one request from leaving a stale `dirty`
+flag after another observation returns to a clean fingerprint.
 
-- commits, subjects, and commit dates;
-- merge base, ahead/behind information, and conflict simulation;
-- staged, unstaged, and untracked content.
+GitHub owns the PR identity and metadata, comments, reviews, inline review
+comments, labels, assignees, linked issues, and CI/check results. Same-target
+local hydration cannot replace newer GitHub data with its old cache snapshot.
+If the PR publication boundary changed during the scan, the local scan is
+repeated against the current boundary before being applied.
 
 When the branch has a PR, its fetched publication boundary is authoritative for
 changed paths, per-file diffs, and diff statistics. A PR-less branch uses its
 local working tree for those views.
 
-GitHub remains authoritative for:
-
-- PR title, body, state, and draft state;
-- comments, reviews, inline review comments, labels, and assignees;
-- linked issues and CI/check results.
-
-The local detail request omits GitHub diff statistics and remote commit text.
-It retains commit OIDs so CI rollups can be matched to local commits.
-
 ## Automatic refresh
 
-While a checked-out branch detail is open, live-pr checks a lightweight Git
-fingerprint every two seconds. The fingerprint includes `HEAD`, branch, index,
-worktree, and untracked state. A full local scan runs only when that fingerprint
-changes. Same-branch reloads retain the active tab, cursor, focus, and viewport.
-An external branch checkout rebuilds the model for the new branch. Refreshing
-with `r` re-arms this local watcher, so cleaning the worktree afterward still
-returns a PR-backed checkout from `LOCAL` to `LIVE` automatically.
+A lightweight Git check runs every two seconds on every screen. Its request
+identity is independent of detail refreshes, so navigation and `r` cannot
+orphan checkout observation. A full local scan runs only when the fingerprint
+changes while local detail is active and no conflicting operation is running.
+Same-branch reloads retain the active tab, cursor, focus, and viewport.
 
-When the mode is `LIVE`, live-pr also polls lightweight GitHub head, PR state,
-draft state, and check metadata every 15 seconds. Failed requests retry after
-30 seconds, one minute, then at a capped two-minute interval. A successful poll
-or manual refresh resets the interval. `LOCAL` and `REMOTE` details do not run
-this remote poll.
+An open `LIVE` PR also polls lightweight GitHub head, PR state, draft state,
+and check metadata every 15 seconds, including while the worktree is dirty.
+Failed requests retry after 30 seconds, one minute, then a capped two-minute
+interval. Local reload completion reconciles both local and GitHub/CI timers.
+`LOCAL` and `REMOTE` details do not run this GitHub poll.
 
-Press `r` for an explicit GitHub refresh. Remote head changes are never applied
-to the active local diff implicitly.
+Press `r` for an explicit GitHub refresh. A head change reports that refresh is
+required while keeping the active review range unchanged; background status
+polling continues. Remote updates are not silently substituted into the diff.
 
 ## Commit and file views
 
@@ -97,11 +108,11 @@ binary files, symlinks, renames, deletions, conflicts, and submodule changes.
 
 ## Typical workflow
 
-1. Start on a feature branch. Before a PR exists, review commits and working-tree changes in `LOCAL`.
-2. Publish the PR. A clean matching checkout becomes `LIVE`; CI and PR state update automatically.
-3. Continue editing or committing. The same screen returns to `LOCAL` and preserves its tab, selection, and viewport.
-4. Push, then press `r` if needed. The fetched publication boundary updates commit sections and returns to `LIVE` when synchronized.
-5. Open another PR from the navigator to inspect its fetched snapshot in `REMOTE`; returning restores the checked-out branch's local review.
+1. Start on a feature branch without a PR and review it in `LOCAL`.
+2. Publish or discover its PR. The associated review becomes `LIVE`.
+3. Edit or commit. The review stays `LIVE`; `dirty` and revision counts change.
+4. Push, then press `r`. The fetched publication boundary and diff update.
+5. Press `b` for `PR LIST`, then open another PR in `REMOTE` or return to the checkout's PR in `LIVE`.
 
 ## Cache and offline behavior
 

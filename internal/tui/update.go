@@ -29,7 +29,7 @@ func asyncCompletion(msg tea.Msg) bool {
 		outboxFlushed,
 		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
-		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, rawDetailLoaded, baseResolved,
+		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, prTargetPrepared, rawDetailLoaded, baseResolved,
 		browserDone, tea.WindowSizeMsg, bspinner.TickMsg:
 		return true
 	}
@@ -168,12 +168,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localLoaded:
 		next, cmd := m.handleLocalLoaded(msg)
 		return next, cmd
+	case prTargetPrepared:
+		next, cmd := m.handlePRTargetPrepared(msg)
+		return next, cmd
 	case localPollTick:
-		if msg.generation != m.targetGeneration || m.screen != detailScreen || m.remote {
+		if msg.generation != m.localGeneration {
 			return m, nil
-		}
-		if m.refreshing || m.publishing || m.reviewSubmitting || m.prActionRunning != noPRAction {
-			return m, m.nextLocalPoll()
 		}
 		return m, pollLocalState(msg.generation)
 	case localStatePolled:

@@ -80,8 +80,8 @@ func TestDetailModeLocalLiveRemote(t *testing.T) {
 		t.Fatalf("rebased clean detail mode = %v", got)
 	}
 	m.workingTreeDirty = true
-	if got := m.detailMode(); got != modeLocal {
-		t.Fatalf("dirty detail mode = %v", got)
+	if got := m.detailMode(); got != modeLive {
+		t.Fatalf("dirty PR detail mode = %v", got)
 	}
 	m.workingTreeDirty, m.remote = false, true
 	if got := m.detailMode(); got != modeRemote {
@@ -162,7 +162,7 @@ func TestFooterShowsLocalContextAndFitsWidth(t *testing.T) {
 	m.detailView.commits = []git.Commit{{SHA: "one"}, {SHA: "two"}, {SHA: "three"}}
 	m.revisionRelation, m.revisionAhead, m.workingTreeDirty = git.RevisionLocalAhead, 2, true
 	footer := ansi.Strip(m.renderFooter())
-	for _, want := range []string{"LOCAL", "PR #7", "2 ahead", "dirty"} {
+	for _, want := range []string{"LIVE", "PR #7", "2 ahead", "dirty"} {
 		if !strings.Contains(footer, want) {
 			t.Fatalf("footer missing %q: %q", want, footer)
 		}

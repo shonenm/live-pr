@@ -319,7 +319,7 @@ func (m Model) renderHeader() string {
 
 func (m Model) dataModeLabel() string {
 	if m.screen == prListScreen {
-		return "REMOTE"
+		return "PR LIST"
 	}
 	switch m.detailMode() {
 	case modeLive:
@@ -346,6 +346,12 @@ func (m Model) dataModeColor() string {
 }
 
 func (m Model) dataModeContext() string {
+	if m.screen == prListScreen {
+		if m.currentBranch == "" {
+			return ""
+		}
+		return "checkout " + safeText(m.currentBranch)
+	}
 	parts := make([]string, 0, 4)
 	if m.cache.PR != nil && m.cache.PR.Number > 0 {
 		parts = append(parts, fmt.Sprintf("PR #%d", m.cache.PR.Number))
