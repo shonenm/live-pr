@@ -31,32 +31,51 @@ var renderCache = struct {
 // wraps at ASCII word boundaries, so for space-free runs like Japanese it
 // either leaves lines overflowing or — in mixed English/Japanese text —
 // breaks early next to an English word and wastes the rest of the line.
-// Render lets glamour style only, then wraps itself with ansi.WrapWc, which
+// Render lets glamour style only, then wraps itself with wrapLine, which
 // prefers word boundaries but breaks anywhere when a run of wide characters
-// fills the line.
-// ponytail: tables wider than this degrade; re-enable glamour wrapping with
-// per-element handling if GitHub-comment tables ever matter.
+// fills the line. GFM tables are split out and rendered at the pane width
+// with glamour's lipgloss TableWrap so cell text wraps like GitHub instead
+// of slicing box-drawing rows.
 const glamourWrapWidth = 500
 
 var renderer = struct {
 	sync.Mutex
-	r *glamour.TermRenderer
-}{}
+	prose *glamour.TermRenderer
+	table map[int]*glamour.TermRenderer
+}{table: map[int]*glamour.TermRenderer{}}
 
-func rendererFor() (*glamour.TermRenderer, error) {
-	renderer.Lock()
-	defer renderer.Unlock()
-	if renderer.r != nil {
-		return renderer.r, nil
-	}
-	r, err := glamour.NewTermRenderer(
+func newRenderer(wrap int, table bool) (*glamour.TermRenderer, error) {
+	opts := []glamour.TermRendererOption{
 		glamour.WithStyles(githubStyle()),
-		glamour.WithWordWrap(glamourWrapWidth),
-	)
+		glamour.WithWordWrap(wrap),
+	}
+	if table {
+		opts = append(opts, glamour.WithTableWrap(true), glamour.WithInlineTableLinks(true))
+	}
+	return glamour.NewTermRenderer(opts...)
+}
+
+func proseRendererLocked() (*glamour.TermRenderer, error) {
+	if renderer.prose != nil {
+		return renderer.prose, nil
+	}
+	r, err := newRenderer(glamourWrapWidth, false)
 	if err != nil {
 		return nil, err
 	}
-	renderer.r = r
+	renderer.prose = r
+	return r, nil
+}
+
+func tableRendererLocked(width int) (*glamour.TermRenderer, error) {
+	if r := renderer.table[width]; r != nil {
+		return r, nil
+	}
+	r, err := newRenderer(width, true)
+	if err != nil {
+		return nil, err
+	}
+	renderer.table[width] = r
 	return r, nil
 }
 
@@ -76,17 +95,10 @@ func Render(text string, width int) string {
 	}
 	renderCache.Unlock()
 
-	wr, err := rendererFor()
+	out, err := renderMarkdown(text, width)
 	if err != nil {
 		return text
 	}
-	renderer.Lock()
-	out, err := wr.Render(text)
-	renderer.Unlock()
-	if err != nil {
-		return text
-	}
-	out = wrapRendered(out, width)
 
 	renderCache.Lock()
 	if len(renderCache.items) >= 512 {
@@ -100,6 +112,44 @@ func Render(text string, width int) string {
 	renderCache.items[key] = out
 	renderCache.Unlock()
 	return out
+}
+
+func renderMarkdown(text string, width int) (string, error) {
+	parts := splitMarkdownParts(text)
+	renderer.Lock()
+	defer renderer.Unlock()
+	var b strings.Builder
+	first := true
+	for _, p := range parts {
+		if strings.TrimSpace(p.text) == "" {
+			continue
+		}
+		var wr *glamour.TermRenderer
+		var err error
+		if p.table {
+			wr, err = tableRendererLocked(width)
+		} else {
+			wr, err = proseRendererLocked()
+		}
+		if err != nil {
+			return "", err
+		}
+		out, err := wr.Render(p.text)
+		if err != nil {
+			return "", err
+		}
+		if p.table {
+			out = trimRendered(out)
+		} else {
+			out = wrapRendered(out, width)
+		}
+		if !first {
+			b.WriteString("\n\n")
+		}
+		first = false
+		b.WriteString(out)
+	}
+	return b.String(), nil
 }
 
 // csiSeq matches one ANSI CSI escape sequence (glamour output is SGR-only in
@@ -135,16 +185,24 @@ func trimTrailingSpace(s string) string {
 	return s[:last]
 }
 
+// trimRendered trims glamour's block padding without wrapping, so table
+// box-drawing rows stay intact.
+func trimRendered(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for i, l := range lines {
+		lines[i] = trimTrailingSpace(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // wrapRendered trims glamour's block padding and wraps any line wider than
 // width, keeping ANSI styles intact.
 func wrapRendered(s string, width int) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
+	lines := strings.Split(trimRendered(s), "\n")
 	for i, l := range lines {
-		l = trimTrailingSpace(l)
 		if xansi.StringWidth(l) > width {
-			l = wrapLine(l, width)
+			lines[i] = wrapLine(l, width)
 		}
-		lines[i] = l
 	}
 	return strings.Join(lines, "\n")
 }
