@@ -201,6 +201,10 @@ type baseResolved struct {
 	readiness                            git.MergeReadiness
 	readinessErr                         error
 	readinessOK                          bool
+	localFingerprint                     string
+	dirty                                bool
+	worktree                             git.WorktreeSummary
+	snapshotOK                           bool
 }
 
 // saveNavigatorCacheCmd persists the navigator cache off the Update goroutine.

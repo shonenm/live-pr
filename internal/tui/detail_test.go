@@ -737,21 +737,16 @@ func TestRefreshPreservesCheckoutPollingAndLiveTarget(t *testing.T) {
 		t.Fatal("the new polling generation did not dispatch a Git scan")
 	}
 
-	// Cleaning the worktree after r must still trigger a reload, without
-	// another r or a trip through the PR list.
+	// Worktree edits keep checkout observation running, but the file list
+	// and review pane stay put until r.
 	m, cmd = m.handleLocalStatePolled(localStatePolled{
 		generation: m.localGeneration, state: git.LocalState{Branch: "feature", Fingerprint: "clean"},
 	})
-	if cmd == nil || !m.localReloading {
-		t.Fatal("clean worktree did not trigger a local reload")
+	if cmd == nil {
+		t.Fatal("checkout observation must continue after a worktree change")
 	}
-	m, _ = m.handleLocalLoaded(localLoaded{
-		generation: m.targetGeneration,
-		st:         store.ForBranch(m.root, m.currentBranch),
-		data:       localData{cache: m.cache, base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main", localFingerprint: "clean"},
-	})
-	if m.detailMode() != modeLive {
-		t.Fatalf("clean checkout remained in mode %v", m.detailMode())
+	if m.localReloading {
+		t.Fatal("worktree changes must wait for r before reloading local files")
 	}
 }
 
@@ -772,14 +767,21 @@ func TestRefreshAppliesFreshReadinessOnUnchangedRange(t *testing.T) {
 	// behind count, conflicts, and the scans must still refresh.
 	u, _ := m.Update(baseResolved{
 		generation: 3, base: "main", diffBase: "origin/main", headRev: "HEAD", reviewRange: "origin/main",
-		commits:     []git.Commit{{SHA: "new1"}, {SHA: "new2"}},
-		files:       []git.ChangedFile{{Status: "M", Path: "a.go"}},
-		readiness:   git.MergeReadiness{Behind: 4, ConflictFiles: []string{"a.go"}},
-		readinessOK: true,
+		commits:          []git.Commit{{SHA: "new1"}, {SHA: "new2"}},
+		files:            []git.ChangedFile{{Status: "M", Path: "a.go"}},
+		readiness:        git.MergeReadiness{Behind: 4, ConflictFiles: []string{"a.go"}},
+		readinessOK:      true,
+		localFingerprint: "dirty-fp",
+		dirty:            true,
+		worktree:         git.WorktreeSummary{Unstaged: 1},
+		snapshotOK:       true,
 	})
 	m = u.(Model)
 	if m.detailView.mergeReadiness.Behind != 4 || len(m.detailView.mergeReadiness.ConflictFiles) != 1 {
 		t.Fatalf("stale readiness kept: %#v", m.detailView.mergeReadiness)
+	}
+	if !m.workingTreeDirty || m.localFingerprint != "dirty-fp" || m.worktreeSummary.Unstaged != 1 {
+		t.Fatalf("r did not apply local snapshot: dirty:%v fp:%q worktree:%#v", m.workingTreeDirty, m.localFingerprint, m.worktreeSummary)
 	}
 	if len(m.detailView.commits) != 2 || len(m.detailView.files) != 1 {
 		t.Fatalf("stale scans kept: commits=%d files=%d", len(m.detailView.commits), len(m.detailView.files))

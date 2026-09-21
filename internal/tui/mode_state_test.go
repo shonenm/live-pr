@@ -113,23 +113,17 @@ func TestModeConversationRefreshKeepsCoherentLocalSnapshot(t *testing.T) {
 	}
 }
 
-func TestModeDirtyReloadKeepsLiveCIPolling(t *testing.T) {
+func TestModeDirtyPollDoesNotReloadLocalFiles(t *testing.T) {
 	m, _ := modeFixture(t)
 	cancelled := false
 	m.pollTimers.ci = func() { cancelled = true }
 	modeWrite(t, "dirty\n")
 	pollModeFixture(t, m)
-	if !cancelled || m.detailMode() != modeLive {
-		t.Fatal("setup: dirty reload did not reconcile LIVE polling")
+	if cancelled || m.localReloading || m.detailMode() != modeLive {
+		t.Fatal("worktree edits must not auto-reload local files")
 	}
-	modeWrite(t, "clean\n")
-	pollModeFixture(t, m)
-	if m.detailMode() != modeLive {
-		t.Fatal("setup: clean reload did not restore LIVE")
-	}
-	t.Logf("returned to LIVE; CI timer installed=%v; local timer installed=%v", m.pollTimers.ci != nil, m.pollTimers.local != nil)
 	if m.pollTimers.ci == nil {
-		t.Fatal("LIVE never rearms its GitHub/CI polling after local reload")
+		t.Fatal("LIVE CI polling must continue while local files stay until r")
 	}
 }
 
@@ -137,16 +131,9 @@ func TestModeLocalReloadPreservesDiscoveredPR(t *testing.T) {
 	m, _ := modeFixture(t)
 	knownPR := *m.cache.PR
 	m.cache.PR = nil
-	m.localFingerprint = "previous snapshot"
-	state, err := git.CurrentLocalState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	next, cmd := m.handleLocalStatePolled(localStatePolled{generation: m.localGeneration, state: state})
-	*m = next
-	if !m.localReloading || cmd == nil {
-		t.Fatal("setup: expected local load")
-	}
+	m.localReloading = true
+	st := store.ForBranch(m.root, m.currentBranch)
+	cmd := m.startLocalLoad(st, m.cache, nil)
 	loaded := localLoadResult(t, cmd)
 	// The independent PR-list request resolves before the local load is applied.
 	*m, _ = m.handlePRListRefreshed(prListRefreshed{generation: m.prList.generation, key: m.prList.activePage, page: gh.PRPage{PRs: []gh.PR{knownPR}}})
@@ -248,8 +235,8 @@ func TestModePublishedRangeStaysLiveWithDirtyWorktree(t *testing.T) {
 	before := m.detailView.reviewRange
 	modeWrite(t, "dirty\n")
 	pollModeFixture(t, m)
-	t.Logf("mode=%s; published range unchanged=%v; dirty=%v", m.dataModeLabel(), m.detailView.reviewRange == before, m.workingTreeDirty)
-	if m.detailMode() != modeLive || !m.workingTreeDirty || m.detailView.reviewRange != before {
+	t.Logf("mode=%s; published range unchanged=%v; dirty=%v; reloading=%v", m.dataModeLabel(), m.detailView.reviewRange == before, m.workingTreeDirty, m.localReloading)
+	if m.detailMode() != modeLive || m.localReloading || m.detailView.reviewRange != before {
 		t.Fatal("dirty state must not change a published PR review target")
 	}
 }
@@ -275,7 +262,14 @@ func TestModeLiveDoesNotRequirePublishedHeadEquality(t *testing.T) {
 	m, _ := modeFixture(t)
 	modeGit(t, "commit", "--allow-empty", "-m", "local unpublished commit")
 	pollModeFixture(t, m)
-	t.Logf("mode=%s; local HEAD equals PR head=%v; dirty=%v", m.dataModeLabel(), m.localHeadOID == m.cache.PR.HeadRefOID, m.workingTreeDirty)
+	t.Logf("after poll: mode=%s; reloading=%v", m.dataModeLabel(), m.localReloading)
+	if m.detailMode() != modeLive || m.localReloading {
+		t.Fatal("unpublished commits must wait for r and must not change the PR review target")
+	}
+	m.localReloading = true
+	st := store.ForBranch(m.root, m.currentBranch)
+	*m, _ = m.handleLocalLoaded(localLoadResult(t, m.startLocalLoad(st, m.cache, m.cache.PR)))
+	t.Logf("after r: mode=%s; local HEAD equals PR head=%v; dirty=%v", m.dataModeLabel(), m.localHeadOID == m.cache.PR.HeadRefOID, m.workingTreeDirty)
 	if m.detailMode() != modeLive || m.localHeadOID == m.cache.PR.HeadRefOID {
 		t.Fatal("unpublished commits must not change the PR review target")
 	}
