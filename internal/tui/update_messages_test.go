@@ -967,7 +967,7 @@ func TestLocalStatePollReportsFailureAndRecovery(t *testing.T) {
 	}
 }
 
-func TestLocalStatePollReloadsOnlyOnChange(t *testing.T) {
+func TestLocalStatePollDoesNotReloadOnFingerprintChange(t *testing.T) {
 	m := testModel()
 	m.screen, m.currentBranch, m.localFingerprint = detailScreen, "feature", "same"
 	m.targetGeneration, m.localGeneration = 4, 4
@@ -975,8 +975,8 @@ func TestLocalStatePollReloadsOnlyOnChange(t *testing.T) {
 		t.Fatalf("unchanged local state = reloading:%v cmd:%v", unchanged.localReloading, cmd)
 	}
 	changed, cmd := m.handleLocalStatePolled(localStatePolled{generation: 4, state: git.LocalState{Branch: "feature", Fingerprint: "new"}})
-	if cmd == nil || !changed.localReloading || !changed.refreshing || changed.targetGeneration == 4 {
-		t.Fatalf("changed local state = reloading:%v refreshing:%v generation:%d cmd:%v", changed.localReloading, changed.refreshing, changed.targetGeneration, cmd)
+	if cmd == nil || changed.localReloading || changed.refreshing || changed.targetGeneration != 4 {
+		t.Fatalf("fingerprint change auto-reloaded local files: reloading:%v refreshing:%v generation:%d cmd:%v", changed.localReloading, changed.refreshing, changed.targetGeneration, cmd)
 	}
 }
 

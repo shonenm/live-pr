@@ -40,8 +40,9 @@ For a real PR, additionally verify this sequence:
 | Action | Expected state |
 | --- | --- |
 | Clean checkout equals published head | `LIVE` |
-| Edit, stage, or add an untracked file | `LIVE · dirty` |
-| Commit without pushing | `LIVE · N ahead` |
+| Edit, stage, or add an untracked file | `LIVE`; files stay until `r` |
+| Press `r` after a local edit | `LIVE · dirty` |
+| Commit without pushing, then press `r` | `LIVE · N ahead` |
 | Push and press `r` | `LIVE` |
 | Update the PR from another clone | `LIVE · N behind · remote update` |
 | Force-push a different history, then press `r` | `LIVE · N ahead · M behind · diverged` |
@@ -59,7 +60,7 @@ Remote updates must not replace the active diff until `r` is pressed.
 7. Press `r` repeatedly during a local reload; confirm only one full refresh is active and no selection is lost.
 
 8. While in the PR list, switch branches externally and immediately open the new checkout's PR. It must use `LIVE`, even before the next timer tick.
-9. Resolve a temporary edit while a GitHub conversation update is in flight. After the next local scan, `dirty` must clear and GitHub polling must continue.
+9. Resolve a temporary edit while a GitHub conversation update is in flight. Conversation must not mark the snapshot dirty; press `r` to clear `dirty` and confirm GitHub polling continues.
 10. Reuse a branch whose implicit cache points to an old closed PR. A new open PR must take precedence; an explicit checkout pin must not be replaced.
 
 ## Repository edge states
@@ -84,7 +85,7 @@ live-pr
 ```
 
 Confirm a non-default revision opens as `LOCAL`, GitHub branch lookup and
-publish are disabled, and local edits still refresh automatically.
+publish are disabled, and local edits wait for `r` before refreshing files.
 
 ### Shallow clone
 

@@ -83,8 +83,9 @@ local working tree for those views.
 
 A lightweight Git check runs every two seconds on every screen. Its request
 identity is independent of detail refreshes, so navigation and `r` cannot
-orphan checkout observation. A full local scan runs only when the fingerprint
-changes while local detail is active and no conflicting operation is running.
+orphan checkout observation. Checkout and branch changes still rebuild the
+session. File lists, diffs, worktree dirty state, and the review pane wait
+for `r` so agent edits do not restart the local review every two seconds.
 Same-branch reloads retain the active tab, cursor, focus, and viewport.
 
 An open `LIVE` PR also polls lightweight GitHub head, PR state, draft state,
@@ -93,9 +94,10 @@ Failed requests retry after 30 seconds, one minute, then a capped two-minute
 interval. Local reload completion reconciles both local and GitHub/CI timers.
 `LOCAL` and `REMOTE` details do not run this GitHub poll.
 
-Press `r` for an explicit GitHub refresh. A head change reports that refresh is
-required while keeping the active review range unchanged; background status
-polling continues. Remote updates are not silently substituted into the diff.
+Press `r` for an explicit refresh. It reloads GitHub metadata, the file list,
+and local worktree state. A head change reports that refresh is required while
+keeping the active review range unchanged; background status polling continues.
+Remote updates are not silently substituted into the diff.
 
 ## Commit and file views
 
@@ -110,7 +112,7 @@ binary files, symlinks, renames, deletions, conflicts, and submodule changes.
 
 1. Start on a feature branch without a PR and review it in `LOCAL`.
 2. Publish or discover its PR. The associated review becomes `LIVE`.
-3. Edit or commit. The review stays `LIVE`; `dirty` and revision counts change.
+3. Edit or commit. The review stays `LIVE`; press `r` to refresh `dirty` and revision counts.
 4. Push, then press `r`. The fetched publication boundary and diff update.
 5. Press `b` for `PR LIST`, then open another PR in `REMOTE` or return to the checkout's PR in `LIVE`.
 
