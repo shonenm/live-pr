@@ -495,15 +495,10 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 		m.targetGeneration++
 		return m, tea.Batch(rebuildForLocalBranchChange(m.version, msg.generation), m.nextLocalPoll(), m.startSpinner())
 	}
-	if m.screen != detailScreen || m.remote || m.refreshing || m.publishing || m.reviewSubmitting || m.prActionRunning != noPRAction {
-		return m, m.nextLocalPoll()
-	}
-	if msg.state.Fingerprint == m.localFingerprint {
-		return m, m.nextLocalPoll()
-	}
-	m.localReloading = true
-	st := store.ForBranch(m.root, m.currentBranch)
-	return m, tea.Batch(m.startLocalLoad(st, m.cache, m.cache.PR), m.startSpinner())
+	// Checkout observation stays on a timer. File lists, diffs, and the
+	// review pane wait for `r`: agent edits would otherwise restart them
+	// every two seconds.
+	return m, m.nextLocalPoll()
 }
 
 func rebuildForLocalBranchChange(version string, generation uint64) tea.Cmd {

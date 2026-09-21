@@ -181,8 +181,8 @@ func (m *Model) reloadLocalConversation() {
 }
 
 // resolveBase recomputes the review range off the Update goroutine: the merge
-// base, timeline sync, and range scans all spawn git. handleBaseResolved
-// reloads the review even when only the refs or working tree changed.
+// base, timeline sync, and range scans all spawn git. `r` and GitHub metadata
+// refresh go through here so file lists and worktree state stay until then.
 func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	generation := m.targetGeneration
 	headRev, remote, timelinePath := m.detailView.headRev, m.remote, m.timelinePath
@@ -235,6 +235,12 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 			// remote path recomputes this in fetchRemotePR instead.
 			msg.readiness, msg.readinessErr = git.CheckMergeReadiness(resolved, newHead)
 			msg.readinessOK = true
+			if snapshot, err := git.CurrentLocalSnapshot(); err == nil {
+				msg.localFingerprint = snapshot.State.Fingerprint
+				msg.dirty = snapshot.Worktree.Total() > 0
+				msg.worktree = snapshot.Worktree
+				msg.snapshotOK = true
+			}
 		}
 		return msg
 	}
@@ -303,6 +309,9 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 		m.localHeadOID, m.revisionRelation = msg.localHeadOID, msg.revisionRelation
 		m.revisionAhead, m.revisionBehind = msg.revisionAhead, msg.revisionBehind
 		m.publishedCommits, m.localDiverged = msg.publishedCommits, msg.localDiverged
+		if msg.snapshotOK {
+			m.localFingerprint, m.workingTreeDirty, m.worktreeSummary = msg.localFingerprint, msg.dirty, msg.worktree
+		}
 	}
 	if rangeChanged || m.detailView.fileCursor >= len(m.detailView.files) {
 		m.detailView.fileCursor = 0
