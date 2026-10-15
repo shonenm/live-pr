@@ -236,21 +236,50 @@ func TestPRListDefaultsToNewestFirst(t *testing.T) {
 }
 
 func TestPRViewSearchAndLocalOnlyFilters(t *testing.T) {
-	// GitHub's issue search cannot evaluate OR groups — it matches them as
-	// free text and returns nothing — so they stay out of the server query
-	// and are applied locally instead.
 	query := testModel().prViewSearch(needsMeView, openPRListState, "label:bug ci:failed merge:conflicting")
-	if query != "is:open label:bug" {
+	if query != "is:open (assignee:@me OR review-requested:@me) label:bug" {
 		t.Fatalf("needs-me query = %q", query)
 	}
 }
 
-// A view whose query GitHub cannot evaluate must still list and count the
-// right pull requests: the server returns a superset and the tab narrows it.
-func TestOrGroupViewFiltersAndCountsLocally(t *testing.T) {
+func TestReviewedByOrGroupUsesServerResults(t *testing.T) {
+	const query = "is:pr state:open (review-requested:@me OR reviewed-by:@me OR assignee:@me OR author:@me)"
+	for _, asView := range []bool{false, true} {
+		t.Run(fmt.Sprintf("view=%t", asView), func(t *testing.T) {
+			m := testModel()
+			m.screen, m.viewerLogin = prListScreen, "me"
+			m.views = []config.View{{Name: "Involved"}}
+			m.prList.view, m.prList.state = 0, openPRListState
+			if asView {
+				m.views[0].Query = query
+			} else {
+				m.prList.filterQuery = query
+			}
+			if got := m.prViewSearch(0, openPRListState, m.prList.filterQuery); got != "is:open is:pr (review-requested:@me OR reviewed-by:@me OR assignee:@me OR author:@me)" {
+				t.Fatalf("server query = %q", got)
+			}
+			m.prList.activePage = prPageKey(0, openPRListState, m.prList.filterQuery)
+			// A reviewed PR need not be authored, assigned, or requested of
+			// the viewer. Only GitHub has its review history.
+			reviewed := gh.PR{Number: 7, State: "OPEN", Author: gh.PRUser{Login: "you"}}
+			m.prList.pages = map[string]prPageState{m.prList.activePage: {prs: []gh.PR{reviewed}, total: 42, loaded: true, fresh: true}}
+			m.navigator = gh.NewNavigatorCache()
+			m.applyPRFilters(0)
+			if len(m.prList.open) != 1 || m.prList.open[0].Number != 7 {
+				t.Fatalf("reviewed PR was filtered out: %#v", m.prList.open)
+			}
+			if asView && m.viewCount(0) != 42 {
+				t.Fatalf("view count = %d, want server total 42", m.viewCount(0))
+			}
+		})
+	}
+}
+
+// Groups with local-only terms still filter and count the server superset.
+func TestLocalOrGroupViewFiltersAndCountsLocally(t *testing.T) {
 	m := testModel()
 	m.screen, m.viewerLogin = prListScreen, "me"
-	m.views = []config.View{{Name: "Needs me", Query: "(review-requested:@me OR assignee:@me OR author:@me)"}}
+	m.views = []config.View{{Name: "Needs me", Query: "(review-requested:@me OR assignee:@me OR author:@me OR ci:failed)"}}
 	m.prList.view, m.prList.state = 0, openPRListState
 	m.prList.activePage = prPageKey(0, openPRListState, "")
 	m.navigator = gh.NewNavigatorCache()

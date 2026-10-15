@@ -60,9 +60,11 @@ Mermaid rendering (with `termaid` installed) are included.
 
 - The PR navigator fetches only the active view's first 25 rows; reaching
   the final loaded row requests the next page. View counts become exact
-  once a view is fetched (`?` means unvisited). Search runs server-side;
-  `ci:` and `merge:` are local post-filters. GitHub Search caps any query
-  at its first 1,000 results.
+  once a view is fetched (`?` means unvisited). GitHub advanced search handles
+  OR groups and qualifiers such as `reviewed-by:@me` server-side. `ci:`,
+  `merge:`, and OR groups containing them are local post-filters. The `/`
+  filter is ANDed with the active view's query; use All to search without
+  a view restriction. GitHub Search caps any query at its first 1,000 results.
 - Review drafts live under repository XDG state, isolated by PR number and
   head commit. Submission re-checks the GitHub head SHA and refuses stale
   line comments after a push.

@@ -64,9 +64,15 @@ func TestSplitSeparatesServerAndLocalTerms(t *testing.T) {
 	if server != "author:me" || local != "ci:failed merge:conflicting" {
 		t.Fatalf("split filter = server:%q local:%q", server, local)
 	}
-	server, local = Split("(review-requested:@me OR assignee:@me OR author:@me) label:bug")
-	if server != "label:bug" || local != "(review-requested:@me OR assignee:@me OR author:@me)" {
+	server, local = Split("(review-requested:@me OR reviewed-by:@me OR assignee:@me OR author:@me) label:bug")
+	if server != "(review-requested:@me OR reviewed-by:@me OR assignee:@me OR author:@me) label:bug" || local != "" {
 		t.Fatalf("group split = server:%q local:%q", server, local)
+	}
+	// Groups containing local-only terms must be evaluated together.
+	for _, group := range []string{"(ci:failed OR author:@me)", "(assignee:@me OR merge:conflicting)"} {
+		if server, local := Split("label:bug " + group); server != "label:bug" || local != group {
+			t.Fatalf("local group = server:%q local:%q", server, local)
+		}
 	}
 	// An unclosed group still lands on the local side rather than leaking.
 	if server, local := Split("(a OR b"); server != "" || local != "(a OR b" {

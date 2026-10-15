@@ -271,9 +271,8 @@ func (m Model) matchesView(pr gh.PR, view prView) bool {
 		// The synthetic local PR belongs to every open tab.
 		return !m.viewDef(view).Closed()
 	}
-	// Evaluate the whole query, not just the server half: the parts GitHub
-	// cannot express (OR groups, ci:, merge:) are exactly the ones that have
-	// to be decided here.
+	// Evaluate the whole query, not just the server half: local-only terms
+	// (ci:, merge:, and groups containing them) must also be decided here.
 	query := strings.TrimSpace(m.viewDef(view).Query)
 	if query == "" {
 		return true
@@ -312,8 +311,8 @@ func (m *Model) applyPRFilters(selectedNumber int) {
 	m.recomputeViewCounts(page, paged)
 	m.prList.filtered = make([]gh.PR, 0, len(m.prList.all))
 	_, localFilter := prfilter.Split(m.prList.filterQuery)
-	// Server rows are trusted for the qualifiers GitHub ran; whatever it
-	// could not evaluate (OR groups, ci:, merge:) is still ours to apply.
+	// Trust server rows for GitHub qualifiers; local-only terms and groups
+	// containing them are still ours to apply.
 	_, viewLocal := prfilter.Split(m.viewDef(m.prList.view).Query)
 	for _, pr := range m.prList.all {
 		if page.loaded && pr.Number > 0 && sourceNumbers[pr.Number] {

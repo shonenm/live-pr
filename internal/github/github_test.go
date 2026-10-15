@@ -98,7 +98,7 @@ func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
 	if apiCalls != 2 || repoCalls != 1 || len(second.PRs) != 1 || second.PRs[0].Number != 2 || second.PageInfo.HasNextPage {
 		t.Fatalf("second page = %#v calls=%d", second, apiCalls)
 	}
-	if strings.Contains(requests[0], "after=") || !strings.Contains(requests[0], "pageSize=25") || !strings.Contains(requests[1], "after=C1") || !strings.Contains(requests[0], "repo:acme/repo is:pr is:open assignee:@me sort:updated-desc") || !strings.Contains(requests[0], "author{login avatarUrl}") || !strings.Contains(requests[0], "nodes{login avatarUrl}") || !strings.Contains(requests[0], "reviewDecision") {
+	if strings.Contains(requests[0], "after=") || !strings.Contains(requests[0], "pageSize=25") || !strings.Contains(requests[1], "after=C1") || !strings.Contains(requests[0], "repo:acme/repo is:pr is:open assignee:@me sort:updated-desc") || !strings.Contains(requests[0], "author{login avatarUrl}") || !strings.Contains(requests[0], "nodes{login avatarUrl}") || !strings.Contains(requests[0], "reviewDecision") || !strings.Contains(requests[0], "type:ISSUE_ADVANCED") {
 		t.Fatalf("requests = %#v", requests)
 	}
 }

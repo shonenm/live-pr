@@ -18,11 +18,20 @@ func Split(query string) (server, local string) {
 	for i := 0; i < len(tokens); i++ {
 		token := tokens[i]
 		if strings.HasPrefix(token, "(") {
-			// GitHub's issue search understands neither OR nor grouping: it
-			// matches the punctuation as free text and returns nothing, so
-			// groups are evaluated locally instead.
 			end := groupEnd(tokens, i)
-			localTokens = append(localTokens, tokens[i:end+1]...)
+			// Advanced search handles OR groups unless a local-only term
+			// requires evaluating the whole group here. Keep incomplete
+			// groups local while the user is typing.
+			local := !strings.HasSuffix(tokens[end], ")")
+			for _, term := range tokens[i : end+1] {
+				key, _, _ := strings.Cut(strings.Trim(strings.ToLower(term), "()"), ":")
+				local = local || key == "ci" || key == "merge"
+			}
+			if local {
+				localTokens = append(localTokens, tokens[i:end+1]...)
+			} else {
+				serverTokens = append(serverTokens, tokens[i:end+1]...)
+			}
 			i = end
 			continue
 		}
