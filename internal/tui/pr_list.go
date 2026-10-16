@@ -904,6 +904,37 @@ func (m *Model) prIndexAtListLine(line int) int {
 	return -1
 }
 
+// prStackPrefixes derives sibling boundaries from the stack's preorder walk.
+// A descendant is not a sibling, even when it is the final entry in a stack.
+func prStackPrefixes(entries []prfilter.StackEntry) []string {
+	hasSibling := make([]bool, len(entries))
+	var seenDepth []bool
+	for i := len(entries) - 1; i >= 0; i-- {
+		depth := entries[i].Depth
+		for len(seenDepth) <= depth {
+			seenDepth = append(seenDepth, false)
+		}
+		hasSibling[i] = seenDepth[depth]
+		seenDepth = seenDepth[:depth+1]
+		seenDepth[depth] = true
+	}
+	prefixes := make([]string, len(entries))
+	ancestors := []string{""}
+	for i, entry := range entries {
+		if entry.Depth == 0 {
+			continue // The root has no incoming edge.
+		}
+		indent := ancestors[entry.Depth-1]
+		marker, continuation := "└ ", "  "
+		if hasSibling[i] {
+			marker, continuation = "├ ", "│ "
+		}
+		prefixes[i] = indent + marker
+		ancestors = append(ancestors[:entry.Depth], indent+continuation)
+	}
+	return prefixes
+}
+
 func (m *Model) buildPRListRows() (string, int) {
 	if len(m.prList.open) == 0 {
 		message := stMuted.Render("(no pull requests in this view)")
@@ -929,6 +960,7 @@ func (m *Model) buildPRListRows() (string, int) {
 		hi = max(m.list.YOffset()+m.list.Height()-1, selectedLine) + m.list.Height() + 1
 	}
 	lines := make([]string, line)
+	prefixes := make([][]string, len(stacks))
 	for _, row := range placed {
 		stack := stacks[row.stack]
 		if row.entry < 0 {
@@ -954,11 +986,10 @@ func (m *Model) buildPRListRows() (string, int) {
 		entry := entries[row.entry]
 		prefix := ""
 		if grouped {
-			marker := "├ "
-			if row.entry == len(entries)-1 {
-				marker = "└ "
+			if prefixes[row.stack] == nil {
+				prefixes[row.stack] = prStackPrefixes(entries)
 			}
-			prefix = strings.Repeat("  ", entry.Depth) + marker
+			prefix = prefixes[row.stack][row.entry]
 		}
 		var rendered []string
 		if row.selected {
