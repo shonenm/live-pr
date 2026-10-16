@@ -481,7 +481,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	plain := ansi.Strip(m.buildPRList())
-	for _, want := range []string{"#1 · 3 PRs", "├ #1", "├ #2", "└ #3"} {
+	for _, want := range []string{"#1 · 3 PRs", "└ #2", "└ #3"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("stack render missing %q: %q", want, plain)
 		}
@@ -504,6 +504,51 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 	m = u.(Model)
 	if len(m.prList.open) != 3 || m.prList.collapsedStacks[m.prList.stacks[0].ID] {
 		t.Fatalf("expanded stack = prs:%#v collapsed:%#v", m.prList.open, m.prList.collapsedStacks)
+	}
+}
+
+func TestPRStackTreeRenderingUsesSiblingBoundaries(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	m.list.SetWidth(140)
+	m.list.SetHeight(100)
+	m.navigator.PRs = []gh.PR{
+		{Number: 1, Title: "Root", BaseRefName: "main", HeadRefName: "root"},
+		{Number: 8, Title: "A", BaseRefName: "root", HeadRefName: "a"},
+		{Number: 7, Title: "A1", BaseRefName: "a", HeadRefName: "a1"},
+		{Number: 6, Title: "A1a", BaseRefName: "a1", HeadRefName: "a1a"},
+		{Number: 5, Title: "A2", BaseRefName: "a", HeadRefName: "a2"},
+		{Number: 4, Title: "B", BaseRefName: "root", HeadRefName: "b"},
+		{Number: 3, Title: "B1", BaseRefName: "b", HeadRefName: "b1"},
+		{Number: 2, Title: "B1a", BaseRefName: "b1", HeadRefName: "b1a"},
+	}
+	m.applyPRFilters(1)
+	want := []string{
+		"#1 Root",
+		"├ #8 A",
+		"│ ├ #7 A1",
+		"│ │ └ #6 A1a",
+		"│ └ #5 A2",
+		"└ #4 B",
+		"  └ #3 B1",
+		"    └ #2 B1a",
+	}
+	// Exercise both selected and cached rows without changing the tree.
+	for _, cursor := range []int{0, 3} {
+		m.prList.cursor = cursor
+		rendered, _ := m.buildPRListRows()
+		lines := strings.Split(ansi.Strip(rendered), "\n")
+		if len(lines) != 1+3*len(want) {
+			t.Fatalf("tree layout has %d lines: %q", len(lines), rendered)
+		}
+		for i, title := range want {
+			// Ignore the leading row padding and state glyph, but preserve
+			// every space and connector of the tree prefix.
+			_, got, _ := strings.Cut(strings.TrimSpace(lines[1+3*i]), " ")
+			if got != title {
+				t.Errorf("cursor %d row %d = %q, want %q", cursor, i, got, title)
+			}
+		}
 	}
 }
 
