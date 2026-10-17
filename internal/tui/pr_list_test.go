@@ -79,21 +79,56 @@ func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
 		State:            "OPEN",
 		Mergeable:        "MERGEABLE",
 		MergeStateStatus: "CLEAN",
-		Checks:           []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}},
-		PreviewLoaded:    true,
-		Additions:        8,
-		Deletions:        3,
+		Checks: []gh.PRCheck{
+			{Status: "IN_PROGRESS"},
+			{Conclusion: "FAILURE"}, {Conclusion: "FAILURE"},
+			{Conclusion: "SUCCESS"}, {Conclusion: "SUCCESS"}, {Conclusion: "SUCCESS"},
+		},
+		PreviewLoaded: true,
+		Additions:     8,
+		Deletions:     3,
 	}
 	rows := strings.Join(m.renderPRRow(pr, true, ""), "\n")
 	bg := lipgloss.Color(cSelectedBg)
 	for _, want := range []string{
 		stGreenF.Background(bg).Render("⇄ mergeable"),
-		stGreenF.Background(bg).Render("✓ CI 1 passed"),
+		stAttention.Background(bg).Render("1"),
+		stRedF.Background(bg).Render("2"),
+		stGreenF.Background(bg).Render("3"),
 		stGreenF.Background(bg).Render("+8"),
 		stRedF.Background(bg).Render("-3"),
 	} {
 		if !strings.Contains(rows, want) {
 			t.Fatalf("selected PR row lost semantic style %q: %q", want, rows)
+		}
+	}
+}
+
+func TestPRRowCICountsMatchDetailBeforePreviewAndRefreshCache(t *testing.T) {
+	m := testModel()
+	m.w = 200
+	m.list.SetWidth(200)
+	pr := gh.PR{Number: 12, State: "OPEN", CheckRollupState: "FAILURE", CheckRollupCounts: &gh.PRCheckRollupCounts{
+		CheckRuns: []gh.PRCheckStateCount{{State: "IN_PROGRESS", Count: 1}, {State: "FAILURE", Count: 2}, {State: "SUCCESS", Count: 3}},
+	}}
+	rows := strings.Join(m.cachedPRRow(pr, ""), "\n")
+	want := stMuted.Render("CI") + stMuted.Render(" ") + stAttention.Render("1") + stMuted.Render("/") + stRedF.Render("2") + stMuted.Render("/") + stGreenF.Render("3")
+	if !strings.Contains(rows, want) || !strings.Contains(m.renderPRMeta(pr), want) {
+		t.Fatalf("list/detail CI counts differ: list=%q detail=%q", rows, m.renderPRMeta(pr))
+	}
+	if strings.Contains(rows, "failed") || strings.Contains(rows, "pending") || strings.Contains(rows, "passed") {
+		t.Fatalf("list still uses a single CI health state: %q", rows)
+	}
+	// Health and its deciding count stay the same; another bucket changes.
+	pr.CheckRollupCounts.CheckRuns[2].Count = 4
+	updated := strings.Join(m.cachedPRRow(pr, ""), "\n")
+	if updated == rows || !strings.Contains(ansi.Strip(updated), "CI 1/2/4") {
+		t.Fatalf("cached row kept stale CI counts: %q", updated)
+	}
+	for _, pr := range []gh.PR{{Number: 12}, {Number: 12, PreviewLoaded: true}} {
+		row := ansi.Strip(strings.Join(m.renderPRRow(pr, false, ""), "\n"))
+		if !strings.Contains(row, "CI") || strings.Contains(row, "CI 0") {
+			t.Fatalf("unknown/no checks should not fabricate counts: %q", row)
 		}
 	}
 }
@@ -486,7 +521,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 			t.Fatalf("stack render missing %q: %q", want, plain)
 		}
 	}
-	if !strings.Contains(plain, "CI 1 pending") || !strings.Contains(plain, "conflicts") {
+	if !strings.Contains(plain, "CI 1") || !strings.Contains(plain, "conflicts") {
 		t.Fatalf("PR row state missing: %q", plain)
 	}
 	if strings.Contains(plain, "3 PRs ·") {

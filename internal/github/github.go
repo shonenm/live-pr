@@ -48,6 +48,7 @@ type PR struct {
 	Commits               []PRCommit              `json:"commits,omitempty"`
 	Checks                []PRCheck               `json:"statusCheckRollup,omitempty"`
 	CheckRollupState      string                  `json:"checkRollupState,omitempty"`
+	CheckRollupCounts     *PRCheckRollupCounts    `json:"checkRollupCounts,omitempty"`
 	Author                PRUser                  `json:"author,omitempty"`
 	CreatedAt             string                  `json:"createdAt,omitempty"`
 	Assignees             []PRUser                `json:"assignees,omitempty"`
@@ -86,6 +87,19 @@ type PRCheck struct {
 	CompletedAt  string `json:"completedAt,omitempty"`
 	DetailsURL   string `json:"detailsUrl,omitempty"`
 	TargetURL    string `json:"targetUrl,omitempty"`
+}
+
+// PRCheckRollupCounts holds GitHub's complete per-state counts without loading
+// or paginating the individual checks for every PR in the list.
+type PRCheckRollupCounts struct {
+	CheckRuns      []PRCheckStateCount `json:"checkRunCountsByState"`
+	StatusContexts []PRCheckStateCount `json:"statusContextCountsByState"`
+}
+
+// PRCheckStateCount is one check-run or legacy-status aggregate.
+type PRCheckStateCount struct {
+	State string `json:"state"`
+	Count int    `json:"count"`
 }
 
 // URL is the check's log page: a check run's detailsUrl, or a legacy status
@@ -212,7 +226,8 @@ type prListNode struct {
 		} `json:"nodes"`
 	} `json:"reviewRequests"`
 	StatusCheckRollup struct {
-		State string `json:"state"`
+		State    string               `json:"state"`
+		Contexts *PRCheckRollupCounts `json:"contexts"`
 	} `json:"statusCheckRollup"`
 }
 
@@ -220,6 +235,7 @@ func (node prListNode) pullRequest(viewerReviewRequested bool) PR {
 	pr := node.PR
 	pr.Assignees, pr.Labels = node.Assignees.Nodes, node.Labels.Nodes
 	pr.CheckRollupState = node.StatusCheckRollup.State
+	pr.CheckRollupCounts = node.StatusCheckRollup.Contexts
 	pr.ViewerReviewRequested = viewerReviewRequested
 	pr.ReviewRequests = nil
 	for _, request := range node.ReviewRequests.Nodes {
@@ -405,7 +421,7 @@ func (c Client) SearchPRs(query, cursor string) (PRPage, error) {
 		return PRPage{}, err
 	}
 	query = strings.TrimSpace("repo:" + repoName + " is:pr " + query + " sort:updated-desc")
-	graphqlQuery := `query($searchQuery:String!,$pageSize:Int!,$after:String){viewer{login avatarUrl} search(query:$searchQuery,type:ISSUE_ADVANCED,first:$pageSize,after:$after){issueCount nodes{... on PullRequest{number url title state baseRefName baseRefOid headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login avatarUrl} assignees(first:10){nodes{login avatarUrl}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login avatarUrl}}}} labels(first:20){nodes{name color}} statusCheckRollup{state}}} pageInfo{hasNextPage startCursor endCursor}}}`
+	graphqlQuery := `query($searchQuery:String!,$pageSize:Int!,$after:String){viewer{login avatarUrl} search(query:$searchQuery,type:ISSUE_ADVANCED,first:$pageSize,after:$after){issueCount nodes{... on PullRequest{number url title state baseRefName baseRefOid headRefName headRefOid isDraft isCrossRepository mergeable mergeStateStatus reviewDecision updatedAt createdAt author{login avatarUrl} assignees(first:10){nodes{login avatarUrl}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login avatarUrl}}}} labels(first:20){nodes{name color}} statusCheckRollup{state contexts{checkRunCountsByState{count state} statusContextCountsByState{count state}}}}} pageInfo{hasNextPage startCursor endCursor}}}`
 	args := []string{"api", "graphql", "-F", "searchQuery=" + query, "-F", fmt.Sprintf("pageSize=%d", PRPageSize)}
 	if cursor != "" {
 		args = append(args, "-F", "after="+cursor)

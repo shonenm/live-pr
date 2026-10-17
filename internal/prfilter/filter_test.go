@@ -6,6 +6,45 @@ import (
 	gh "github.com/shonenm/live-pr/internal/github"
 )
 
+func TestPRCheckCountsFromRollupStates(t *testing.T) {
+	for _, test := range []struct {
+		state  string
+		bucket int
+	}{
+		{"IN_PROGRESS", 0}, {"PENDING", 0}, {"QUEUED", 0}, {"WAITING", 0},
+		{"ACTION_REQUIRED", 1}, {"CANCELLED", 1}, {"FAILURE", 1}, {"STALE", 1}, {"STARTUP_FAILURE", 1}, {"TIMED_OUT", 1},
+		{"COMPLETED", 2}, {"NEUTRAL", 2}, {"SKIPPED", 2}, {"SUCCESS", 2},
+	} {
+		t.Run(test.state, func(t *testing.T) {
+			pr := gh.PR{CheckRollupCounts: &gh.PRCheckRollupCounts{
+				CheckRuns: []gh.PRCheckStateCount{{State: test.state, Count: 123}},
+			}}
+			pending, failed, passed := PRCheckCounts(pr)
+			got := [3]int{pending, failed, passed}
+			var want [3]int
+			want[test.bucket] = 123
+			if got != want {
+				t.Fatalf("counts = %v, want %v", got, want)
+			}
+		})
+	}
+	pr := gh.PR{CheckRollupCounts: &gh.PRCheckRollupCounts{
+		CheckRuns:      []gh.PRCheckStateCount{{State: "QUEUED", Count: 2}},
+		StatusContexts: []gh.PRCheckStateCount{{State: "PENDING", Count: 1}, {State: "ERROR", Count: 4}, {State: "FAILURE", Count: 5}, {State: "SUCCESS", Count: 6}},
+	}}
+	if p, f, s := PRCheckCounts(pr); p != 3 || f != 9 || s != 6 {
+		t.Fatalf("combined check/status counts = %d/%d/%d", p, f, s)
+	}
+	pr.Checks = []gh.PRCheck{{Conclusion: "SUCCESS"}}
+	if p, f, s := PRCheckCounts(pr); p != 0 || f != 0 || s != 1 {
+		t.Fatalf("loaded checks did not override aggregate counts: %d/%d/%d", p, f, s)
+	}
+	pr.Checks, pr.PreviewLoaded = nil, true
+	if p, f, s := PRCheckCounts(pr); p != 0 || f != 0 || s != 0 {
+		t.Fatalf("loaded empty checks retained stale aggregates: %d/%d/%d", p, f, s)
+	}
+}
+
 func TestPRFilterSupportsGitHubTermsAndFreeText(t *testing.T) {
 	failed := []gh.PRCheck{{Status: "COMPLETED", Conclusion: "FAILURE"}}
 	pr := gh.PR{Number: 7, Title: "Fix Login", State: "OPEN", HeadRefName: "auth/fix", Author: gh.PRUser{Login: "alice"}, Assignees: []gh.PRUser{{Login: "me"}}, ReviewRequests: []gh.PRUser{{Login: "reviewer"}}, Labels: []gh.PRLabel{{Name: "bug"}}, Checks: failed, Mergeable: "CONFLICTING", IsDraft: false}

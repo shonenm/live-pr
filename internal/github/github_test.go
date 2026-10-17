@@ -80,7 +80,7 @@ func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
 		apiCalls++
 		requests = append(requests, strings.Join(args, " "))
 		if apiCalls == 1 {
-			return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":1,"state":"OPEN","baseRefOid":"base1","reviewDecision":"APPROVED"}],"pageInfo":{"hasNextPage":true,"startCursor":"S1","endCursor":"C1"}}}}`), nil
+			return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":1,"state":"OPEN","baseRefOid":"base1","reviewDecision":"APPROVED","statusCheckRollup":{"state":"FAILURE","contexts":{"checkRunCountsByState":[{"state":"QUEUED","count":2},{"state":"SUCCESS","count":123}],"statusContextCountsByState":[{"state":"ERROR","count":1}]}}}],"pageInfo":{"hasNextPage":true,"startCursor":"S1","endCursor":"C1"}}}}`), nil
 		}
 		return []byte(`{"data":{"viewer":{"login":"me"},"search":{"issueCount":30,"nodes":[{"number":2,"state":"OPEN"}],"pageInfo":{"hasNextPage":false,"startCursor":"S2","endCursor":"C2"}}}}`), nil
 	}}
@@ -90,6 +90,15 @@ func TestSearchPRsReturnsOnePageAndUsesExplicitCursor(t *testing.T) {
 	}
 	if apiCalls != 1 || first.Repository != "acme/repo" || first.TotalCount != 30 || len(first.PRs) != 1 || first.PRs[0].BaseRefOID != "base1" || first.PRs[0].ReviewDecision != "APPROVED" || !first.PageInfo.HasNextPage || first.PageInfo.EndCursor != "C1" {
 		t.Fatalf("first page = %#v calls=%d", first, apiCalls)
+	}
+	pr := first.PRs[0]
+	if pr.CheckRollupCounts == nil || len(pr.CheckRollupCounts.CheckRuns) != 2 || pr.CheckRollupCounts.CheckRuns[1].Count != 123 || pr.CheckRollupCounts.StatusContexts[0].State != "ERROR" || pr.CheckRollupState != "FAILURE" || pr.PreviewLoaded || len(pr.Checks) != 0 {
+		t.Fatalf("list CI aggregates = %#v", pr)
+	}
+	for _, field := range []string{"checkRunCountsByState{count state}", "statusContextCountsByState{count state}"} {
+		if !strings.Contains(requests[0], field) {
+			t.Fatalf("CI aggregate field %q not requested: %s", field, requests[0])
+		}
 	}
 	second, err := client.SearchPRs("is:open assignee:@me", first.PageInfo.EndCursor)
 	if err != nil {
