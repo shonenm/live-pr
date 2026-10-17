@@ -141,7 +141,16 @@ func (m Model) contextualKeys() keyMap {
 	return base
 }
 
-func (m Model) keyHelp() string { return m.help.View(m.contextualKeys()) }
+func (m Model) keyHelp() string {
+	help := m.help.View(m.contextualKeys())
+	if m.help.ShowAll {
+		legend := stMuted.Render("Merge: ") + stGreenF.Render("⇄") + stMuted.Render(" mergeable · ") +
+			stAttention.Render("⊘") + stMuted.Render(" blocked · ") + stRedF.Render("⚠") +
+			stMuted.Render(" conflicts · ? unknown")
+		return legend + "\n" + help
+	}
+	return help
+}
 
 var keys = keyMap{
 	Up:           key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),

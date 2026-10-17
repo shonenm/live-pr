@@ -53,10 +53,10 @@ func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
 	if got := reviewSummary("CHANGES_REQUESTED"); got != stRedF.Render("review changes requested") {
 		t.Fatalf("changes-requested review = %q", got)
 	}
-	if text, style := mergeState(gh.PR{Number: 1, MergeStateStatus: "BLOCKED"}); style.Render(text) != stRedF.Render("blocked") {
+	if _, text, style := mergeState(gh.PR{Number: 1, MergeStateStatus: "BLOCKED"}); style.Render(text) != stAttention.Render("blocked") {
 		t.Fatalf("blocked merge = %q", style.Render(text))
 	}
-	if text, style := mergeState(gh.PR{Number: 1, Mergeable: "MERGEABLE", MergeStateStatus: "UNSTABLE"}); style.Render(text) != stGreenF.Render("⇄ mergeable") {
+	if _, text, style := mergeState(gh.PR{Number: 1, Mergeable: "MERGEABLE", MergeStateStatus: "UNSTABLE"}); style.Render(text) != stGreenF.Render("⇄ mergeable") {
 		t.Fatalf("unstable merge = %q", style.Render(text))
 	}
 	if text, style := checkState([]gh.PRCheck{{Status: "IN_PROGRESS"}}); style.Render(text) != stAttention.Render("◐ CI 1 pending") {
@@ -67,6 +67,55 @@ func TestGitHubSemanticStatesUseMatchingStyles(t *testing.T) {
 	}
 	if got := prStateBadgeColor("MERGED"); got != cDoneEmphasis {
 		t.Fatalf("merged badge = %s", got)
+	}
+}
+
+func TestMergeGlyphsMatchListAndDetailHeader(t *testing.T) {
+	for _, test := range []struct {
+		name, mergeable, state, glyph, label string
+		style                                lipgloss.Style
+	}{
+		{"clean", "MERGEABLE", "CLEAN", "⇄", "⇄ mergeable", stGreenF},
+		{"unstable", "MERGEABLE", "UNSTABLE", "⇄", "⇄ mergeable", stGreenF},
+		{"blocked", "MERGEABLE", "BLOCKED", "⊘", "blocked", stAttention},
+		{"behind", "MERGEABLE", "BEHIND", "⊘", "behind", stAttention},
+		{"hooks", "MERGEABLE", "HAS_HOOKS", "⊘", "has hooks", stAttention},
+		{"draft", "MERGEABLE", "DRAFT", "⊘", "draft", stAttention},
+		{"conflicting", "CONFLICTING", "BLOCKED", "⚠", "⚠ conflicts", stRedF},
+		{"dirty", "UNKNOWN", "DIRTY", "⚠", "⚠ conflicts", stRedF},
+		{"unknown", "UNKNOWN", "UNKNOWN", "?", "unknown", stMuted},
+		{"missing", "", "", "?", "merge unknown", stMuted},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := testModel()
+			m.list.SetWidth(180)
+			pr := gh.PR{Number: 12, State: "OPEN", Mergeable: test.mergeable, MergeStateStatus: test.state}
+			glyph, label, style := mergeState(pr)
+			if glyph != test.glyph || label != test.label || style.Render(glyph) != test.style.Render(test.glyph) {
+				t.Fatalf("merge state = %q / %q", glyph, label)
+			}
+			if lipgloss.Width(glyph) != 1 {
+				t.Fatalf("merge glyph width = %d", lipgloss.Width(glyph))
+			}
+			for _, selected := range []bool{false, true} {
+				row := strings.Join(m.renderPRRow(pr, selected, ""), "\n")
+				want := test.style.Render(glyph)
+				if selected {
+					want = test.style.Background(lipgloss.Color(cSelectedBg)).Render(glyph)
+				}
+				if !strings.Contains(row, want) || strings.Contains(ansi.Strip(row), label) {
+					t.Fatalf("list did not use compact styled glyph: %q", row)
+				}
+			}
+			if header := m.renderPRMeta(pr); !strings.Contains(header, test.style.Render(glyph)) || strings.Contains(ansi.Strip(header), label) {
+				t.Fatalf("detail did not use compact styled glyph: %q", header)
+			}
+		})
+	}
+	for _, pr := range []gh.PR{{}, {Number: 12, State: "CLOSED"}, {Number: 12, State: "MERGED"}} {
+		if glyph, _, _ := mergeState(pr); glyph != "" {
+			t.Fatalf("local/completed PR has merge glyph %q", glyph)
+		}
 	}
 }
 
@@ -91,7 +140,7 @@ func TestSelectedPRRowPreservesSemanticStatusColors(t *testing.T) {
 	rows := strings.Join(m.renderPRRow(pr, true, ""), "\n")
 	bg := lipgloss.Color(cSelectedBg)
 	for _, want := range []string{
-		stGreenF.Background(bg).Render("⇄ mergeable"),
+		stGreenF.Background(bg).Render("⇄"),
 		stAttention.Background(bg).Render("1"),
 		stRedF.Background(bg).Render("2"),
 		stGreenF.Background(bg).Render("3"),
@@ -521,7 +570,7 @@ func TestPRStackRenderingAndCollapse(t *testing.T) {
 			t.Fatalf("stack render missing %q: %q", want, plain)
 		}
 	}
-	if !strings.Contains(plain, "CI 1") || !strings.Contains(plain, "conflicts") {
+	if !strings.Contains(plain, "CI 1") || !strings.Contains(plain, "⚠") {
 		t.Fatalf("PR row state missing: %q", plain)
 	}
 	if strings.Contains(plain, "3 PRs ·") {
