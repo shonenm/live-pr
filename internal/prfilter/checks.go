@@ -24,6 +24,32 @@ func CheckCounts(checks []gh.PRCheck) (pending, failed, passed int) {
 	return pending, failed, passed
 }
 
+// PRCheckCounts uses individual checks when loaded, otherwise the list's
+// complete state aggregates. Both sources use the same check classification.
+func PRCheckCounts(pr gh.PR) (pending, failed, passed int) {
+	if pr.PreviewLoaded || len(pr.Checks) > 0 || pr.CheckRollupCounts == nil {
+		return CheckCounts(pr.Checks)
+	}
+	add := func(check gh.PRCheck, count int) {
+		p, f, s := CheckCounts([]gh.PRCheck{check})
+		pending += p * count
+		failed += f * count
+		passed += s * count
+	}
+	for _, group := range pr.CheckRollupCounts.CheckRuns {
+		check := gh.PRCheck{Status: "COMPLETED", Conclusion: group.State}
+		switch group.State {
+		case "IN_PROGRESS", "PENDING", "QUEUED", "WAITING":
+			check = gh.PRCheck{Status: group.State}
+		}
+		add(check, group.Count)
+	}
+	for _, group := range pr.CheckRollupCounts.StatusContexts {
+		add(gh.PRCheck{State: group.State}, group.Count)
+	}
+	return pending, failed, passed
+}
+
 // CheckHealth reduces a PR's checks to one health word and the count that
 // decided it: any failure wins, then anything pending, then passes.
 func CheckHealth(checks []gh.PRCheck) (string, int) {

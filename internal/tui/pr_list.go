@@ -785,25 +785,25 @@ func prCheckSummary(pr gh.PR) string {
 	return style.Render(text)
 }
 
-func prCheckCounts(pr gh.PR) string {
-	if !pr.PreviewLoaded && len(pr.Checks) == 0 {
-		return stMuted.Render("CI")
+func prCheckCountSegments(pr gh.PR) []rowSegment {
+	pending, failed, passed := prfilter.PRCheckCounts(pr)
+	segments := []rowSegment{{text: "CI", style: stMuted}}
+	for _, bucket := range []struct {
+		count int
+		style lipgloss.Style
+	}{{pending, stAttention}, {failed, stRedF}, {passed, stGreenF}} {
+		if bucket.count == 0 {
+			continue
+		}
+		separator := "/"
+		if len(segments) == 1 {
+			separator = " "
+		}
+		segments = append(segments,
+			rowSegment{text: separator, style: stMuted},
+			rowSegment{text: strconv.Itoa(bucket.count), style: bucket.style})
 	}
-	pending, failed, passed := prfilter.CheckCounts(pr.Checks)
-	counts := make([]string, 0, 3)
-	if pending > 0 {
-		counts = append(counts, stAttention.Render(strconv.Itoa(pending)))
-	}
-	if failed > 0 {
-		counts = append(counts, stRedF.Render(strconv.Itoa(failed)))
-	}
-	if passed > 0 {
-		counts = append(counts, stGreenF.Render(strconv.Itoa(passed)))
-	}
-	if len(counts) == 0 {
-		return stMuted.Render("CI")
-	}
-	return stMuted.Render("CI ") + strings.Join(counts, stMuted.Render("/"))
+	return segments
 }
 
 func prCheckState(pr gh.PR) (string, lipgloss.Style) {
@@ -1006,11 +1006,12 @@ func (m *Model) cachedPRRow(pr gh.PR, prefix string) []string {
 	if m.prList.rowCache == nil {
 		m.prList.rowCache = map[prRowCacheKey][]string{}
 	}
-	health, count := prfilter.CheckHealth(pr.Checks)
+	pending, failed, passed := prfilter.PRCheckCounts(pr)
 	key := prRowCacheKey{
-		number: pr.Number, width: max(10, m.list.Width()), additions: pr.Additions, deletions: pr.Deletions, checkCount: count,
+		number: pr.Number, width: max(10, m.list.Width()), additions: pr.Additions, deletions: pr.Deletions,
+		pendingChecks: pending, failedChecks: failed, passedChecks: passed,
 		prefix: prefix, state: pr.State, title: pr.Title, author: pr.Author.Login, base: pr.BaseRefName, head: pr.HeadRefName,
-		mergeable: pr.Mergeable, mergeState: pr.MergeStateStatus, checkHealth: health, rollup: pr.CheckRollupState,
+		mergeable: pr.Mergeable, mergeState: pr.MergeStateStatus,
 		review: pr.ReviewDecision, draft: pr.IsDraft, previewLoaded: pr.PreviewLoaded, current: m.isCurrentTargetPR(pr),
 	}
 	if rows, ok := m.prList.rowCache[key]; ok {
@@ -1088,8 +1089,8 @@ func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) 
 		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
 			meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: mergeText, style: mergeStyle})
 		}
-		checkText, checkStyle := prCheckState(pr)
-		meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: checkText, style: checkStyle})
+		meta = append(meta, rowSegment{text: " · ", style: stMuted})
+		meta = append(meta, prCheckCountSegments(pr)...)
 		if reviewText, reviewStyle := reviewBadge(pr.ReviewDecision); reviewText != "" {
 			meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: reviewText, style: reviewStyle})
 		}
@@ -1174,7 +1175,7 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		}
 		labels = stMuted.Render("🏷 ") + strings.Join(pills, " ")
 	}
-	line := "  " + prCheckCounts(pr) + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + reviewers + "   " + labels
+	line := "  " + m.renderSegments(prCheckCountSegments(pr), "") + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + reviewers + "   " + labels
 	if m.w > 0 {
 		return ansi.Truncate(line, m.w, "…")
 	}
