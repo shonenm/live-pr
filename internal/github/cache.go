@@ -41,6 +41,12 @@ func (c Cache) Clone() Cache {
 		pr.Conversation = append([]PRConversationComment(nil), pr.Conversation...)
 		pr.Commits = append([]PRCommit(nil), pr.Commits...)
 		pr.Checks = append([]PRCheck(nil), pr.Checks...)
+		if pr.CheckRollupCounts != nil {
+			counts := *pr.CheckRollupCounts
+			counts.CheckRuns = append([]PRCheckStateCount(nil), counts.CheckRuns...)
+			counts.StatusContexts = append([]PRCheckStateCount(nil), counts.StatusContexts...)
+			pr.CheckRollupCounts = &counts
+		}
 		pr.Assignees = append([]PRUser(nil), pr.Assignees...)
 		pr.Labels = append([]PRLabel(nil), pr.Labels...)
 		pr.ReviewRequests = append([]PRUser(nil), pr.ReviewRequests...)

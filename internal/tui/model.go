@@ -217,11 +217,11 @@ type prPageState struct {
 }
 
 type prRowCacheKey struct {
-	number, width, additions, deletions, checkCount int
-	prefix, state, title, author, base, head        string
-	mergeable, mergeState, checkHealth, rollup      string
-	review                                          string
-	draft, previewLoaded, current                   bool
+	number, width, additions, deletions       int
+	pendingChecks, failedChecks, passedChecks int
+	prefix, state, title, author, base, head  string
+	mergeable, mergeState, review             string
+	draft, previewLoaded, current             bool
 }
 
 // listAnchor records which selected line the left pane was last scrolled to,
