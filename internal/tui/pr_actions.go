@@ -106,7 +106,7 @@ func (m Model) mergeConditionLines(pr gh.PR) []string {
 	if pr.IsDraft {
 		lines = append(lines, stAttention.Render("◌ draft"))
 	}
-	if text, style := mergeState(pr); text != "" {
+	if _, text, style := mergeState(pr); text != "" {
 		lines = append(lines, style.Render(text))
 	}
 	ciText, ciStyle := prCheckState(pr)

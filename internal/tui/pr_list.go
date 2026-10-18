@@ -632,7 +632,7 @@ func (m Model) buildPRPreview() string {
 		glyph, style := stateGlyph(state)
 		statusParts = append(statusParts, style.Render(glyph+" "+state))
 	}
-	if mergeText, mergeStyle := mergeState(*pr); mergeText != "" {
+	if _, mergeText, mergeStyle := mergeState(*pr); mergeText != "" {
 		statusParts = append(statusParts, mergeStyle.Render(mergeText))
 	}
 	statusParts = append(statusParts, prCheckSummary(*pr))
@@ -736,16 +736,18 @@ func reviewBadge(decision string) (string, lipgloss.Style) {
 	}
 }
 
-func mergeState(pr gh.PR) (string, lipgloss.Style) {
+// mergeState supplies a compact glyph for rows/headers and a descriptive label
+// for the preview and merge confirmation, using the same state classification.
+func mergeState(pr gh.PR) (glyph, label string, style lipgloss.Style) {
 	if pr.Number == 0 {
-		return "local", stMuted
+		return "", "local", stMuted
 	}
 	if strings.EqualFold(pr.State, "MERGED") || strings.EqualFold(pr.State, "CLOSED") {
-		return "", stMuted // merge readiness is meaningless once the PR is done
+		return "", "", stMuted // merge readiness is meaningless once the PR is done
 	}
 	state := strings.ToLower(strings.ReplaceAll(pr.MergeStateStatus, "_", " "))
 	if pr.Mergeable == "CONFLICTING" || pr.MergeStateStatus == "DIRTY" {
-		return "⚠ conflicts", stRedF
+		return "⚠", "⚠ conflicts", stRedF
 	}
 	if state == "" {
 		state = strings.ToLower(pr.Mergeable)
@@ -754,15 +756,13 @@ func mergeState(pr gh.PR) (string, lipgloss.Style) {
 		state = "merge unknown"
 	}
 	if pr.Mergeable == "MERGEABLE" && (pr.MergeStateStatus == "CLEAN" || pr.MergeStateStatus == "UNSTABLE") {
-		return "⇄ mergeable", stGreenF
+		return "⇄", "⇄ mergeable", stGreenF
 	}
 	switch pr.MergeStateStatus {
-	case "BLOCKED":
-		return state, stRedF
-	case "BEHIND", "HAS_HOOKS":
-		return state, stAttention
+	case "BLOCKED", "BEHIND", "HAS_HOOKS", "DRAFT":
+		return "⊘", state, stAttention
 	default:
-		return state, stMuted
+		return "?", state, stMuted
 	}
 }
 
@@ -1086,8 +1086,8 @@ func (m Model) prRowSegments(pr gh.PR, prefix string) (line, meta []rowSegment) 
 		meta = append(meta, rowSegment{text: state, style: glyphStyle})
 	}
 	if pr.Number > 0 {
-		if mergeText, mergeStyle := mergeState(pr); mergeText != "" {
-			meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: mergeText, style: mergeStyle})
+		if mergeGlyph, _, mergeStyle := mergeState(pr); mergeGlyph != "" {
+			meta = append(meta, rowSegment{text: " · ", style: stMuted}, rowSegment{text: mergeGlyph, style: mergeStyle})
 		}
 		meta = append(meta, rowSegment{text: " · ", style: stMuted})
 		meta = append(meta, prCheckCountSegments(pr)...)
@@ -1175,7 +1175,11 @@ func (m Model) renderPRMeta(pr gh.PR) string {
 		}
 		labels = stMuted.Render("🏷 ") + strings.Join(pills, " ")
 	}
-	line := "  " + m.renderSegments(prCheckCountSegments(pr), "") + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + reviewers + "   " + labels
+	merge := ""
+	if glyph, _, style := mergeState(pr); glyph != "" {
+		merge = style.Render(glyph) + "   "
+	}
+	line := "  " + merge + m.renderSegments(prCheckCountSegments(pr), "") + "   " + reviewSummary(pr.ReviewDecision) + "   " + assignees + reviewers + "   " + labels
 	if m.w > 0 {
 		return ansi.Truncate(line, m.w, "…")
 	}

@@ -1,6 +1,12 @@
 # Keybindings
 
-Press `?` inside the TUI to toggle the full help.
+Press `?` inside the TUI to toggle the full help, including the merge-status legend.
+
+PR list rows and the detail header show merge readiness as a single symbol:
+green `⇄` for mergeable, yellow `⊘` for blocked, red `⚠` for conflicts,
+and gray `?` for unknown. ASCII mode uses `=`, `x`, `!`, and `?` respectively.
+Local, closed, and merged PRs omit the symbol. The merge confirmation retains
+the descriptive state, including behind-base and hook requirements.
 
 ## PR list
 
