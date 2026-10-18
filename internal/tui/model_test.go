@@ -143,14 +143,34 @@ func TestContextualKeysMatchCurrentInteraction(t *testing.T) {
 
 func TestAccessibilityRenderingStripsColorAndReplacesUIGlyphs(t *testing.T) {
 	m := testModel()
-	input := stAccent.Render("LOCAL") + " ← feature · ✓ ◐ ╭─╮ 日本語"
+	input := stAccent.Render("LOCAL") + " ← feature · ✓ ◐ ╭─╮ ⇄ ⊘ ⚠ ? 日本語"
 	if got := m.accessibleContent(input); got != input {
 		t.Fatalf("default rendering changed: %q", got)
 	}
 	m.monochrome, m.ascii = true, true
 	got := m.accessibleContent(input)
-	if strings.Contains(got, "\x1b[") || strings.ContainsAny(got, "←·✓◐╭─╮") || !strings.Contains(got, "LOCAL < feature - OK ~ +-+ 日本語") {
+	if strings.Contains(got, "\x1b[") || strings.ContainsAny(got, "←·✓◐╭─╮⇄⊘⚠") || !strings.Contains(got, "LOCAL < feature - OK ~ +-+ = x ! ? 日本語") {
 		t.Fatalf("accessible rendering = %q", got)
+	}
+}
+
+func TestMergeGlyphLegendOnlyInFullHelp(t *testing.T) {
+	m := testModel()
+	if strings.Contains(m.keyHelp(), "Merge:") {
+		t.Fatal("merge legend crowded the short help")
+	}
+	m.help.ShowAll = true
+	full := ansi.Strip(m.keyHelp())
+	for _, want := range []string{"⇄ mergeable", "⊘ blocked", "⚠ conflicts", "? unknown"} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full help missing %q: %q", want, full)
+		}
+	}
+	m.ascii, m.monochrome = true, true
+	for _, want := range []string{"= mergeable", "x blocked", "! conflicts", "? unknown"} {
+		if got := m.accessibleContent(m.keyHelp()); !strings.Contains(got, want) || strings.Contains(got, "\x1b[") {
+			t.Fatalf("accessible help missing %q: %q", want, got)
+		}
 	}
 }
 
