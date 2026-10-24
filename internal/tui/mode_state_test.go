@@ -37,7 +37,7 @@ func modeFixture(t *testing.T) (*Model, *store.Store) {
 	cache := gh.NewCache("feature")
 	cache.PR = &gh.PR{Number: 10, State: "OPEN", Title: "Current checkout", HeadRefName: "feature", HeadRefOID: head, BaseRefName: "main", BaseRefOID: base}
 	st := store.ForBranch(root, "feature")
-	data, err := loadLocalData(st, cache, nil)
+	data, err := loadLocalData(st, cache, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -198,7 +198,15 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 	}
 	m.autoOpenCurrent = false
 	st := store.ForBranch(m.root, m.currentBranch)
-	cache, _ := st.LoadGitHubCache()
+	cache, cacheErr := st.LoadGitHubCache()
+	if cacheErr != nil {
+		cache = gh.NewCache(st.Branch)
+		if m.cache.Head == st.Branch && m.cache.PR != nil && m.cache.PR.Number == msg.pr.Number {
+			cache = m.cache.Clone()
+		}
+		cache.Warning = "GitHub cache ignored: " + cacheErr.Error()
+		m.status = cache.Warning
+	}
 	cache.PR = &msg.pr
 	return m, tea.Batch(saveCmd, m.startLocalLoad(st, cache, &msg.pr), m.startSpinner())
 
@@ -419,9 +427,9 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 		m.status = msg.err.Error()
 		return m, tea.Batch(m.nextLocalPoll(), m.nextCIPoll())
 	}
-	reloading := m.localReloading
+	reloading := m.localReloading || msg.refresh
 	if reloading {
-		if !samePRBoundary(msg.data.cache.PR, m.cache.PR) {
+		if !msg.refresh && !samePRBoundary(msg.data.cache.PR, m.cache.PR) {
 			// A list/metadata response discovered a newer publication boundary
 			// while Git was being scanned. Recompute without rolling it back.
 			return m, m.startLocalLoad(msg.st, m.cache, m.cache.PR)
@@ -792,7 +800,9 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 }
 
 func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
-	pr.Additions, pr.Deletions, pr.ChangedFiles = m.localStats.Additions, m.localStats.Deletions, m.localStats.Files
+	if m.localStatsErr == nil {
+		pr.Additions, pr.Deletions, pr.ChangedFiles = m.localStats.Additions, m.localStats.Deletions, m.localStats.Files
+	}
 	pr.CommitCount = len(m.detailView.commits)
 	localBySHA := make(map[string]git.Commit, len(m.detailView.commits))
 	for _, commit := range m.detailView.commits {
