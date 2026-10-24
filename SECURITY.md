@@ -48,6 +48,11 @@ them. The token
 command is executed without a shell, and its one-line output is passed only to
 the child CLI as `WOODPECKER_TOKEN`, without logging or persistence.
 
+**Static review output is terminal-sanitized.** Built-in Git diffs, commit
+patches, and configured `diff.display` output retain numeric SGR styling but
+not OSC, DCS, cursor controls, or other terminal commands. Embedded reviewers
+run in a PTY and remain trusted programs, not sanitized text renderers.
+
 **live-pr writes to your XDG state directory.** Timelines, review drafts,
 outbox entries, and cached GitHub data (including private repository content)
 are stored with owner-only permissions under `~/.local/state/live-pr` or the
