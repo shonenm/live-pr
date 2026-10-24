@@ -1,21 +1,21 @@
 package tui
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // cacheWrites orders snapshots by dispatch, not by goroutine scheduling. Model
 // copies and checkout replacements share this coordinator for the TUI lifetime.
 // It stores only generations, never cache payloads.
 type cacheWrites struct {
 	mu    sync.Mutex
-	next  uint64
+	next  atomic.Uint64
 	saved map[string]uint64
 }
 
 func (w *cacheWrites) prepare(path string, save func() error) func() error {
-	w.mu.Lock()
-	w.next++
-	generation := w.next
-	w.mu.Unlock()
+	generation := w.next.Add(1)
 	return func() error {
 		w.mu.Lock()
 		defer w.mu.Unlock()
