@@ -15,6 +15,11 @@ are reported separately and do not mean the executable is affected.
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub,
 cache-save, and TUI synchronization timings to stderr.
 
+Timeline commit synchronization locks its load/check/append transaction across
+processes, just like outbox updates. Sidecar `.lock` files are intentionally
+retained; deleting an active lock file would break mutual exclusion. Ordinary
+notes remain append-only and are not replaced by commit synchronization.
+
 ## CLI reference
 
 ```sh
