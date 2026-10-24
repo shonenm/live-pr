@@ -5,9 +5,26 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	gh "github.com/shonenm/live-pr/internal/github"
 )
+
+func TestCacheDispatchDoesNotWaitForDisk(t *testing.T) {
+	var w cacheWrites
+	started, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	defer func() { close(release); <-done }()
+	first := w.prepare("cache", func() error { close(started); <-release; return nil })
+	go func() { _ = first(); close(done) }()
+	<-started
+	dispatched := make(chan struct{})
+	go func() { _ = w.prepare("cache", func() error { return nil }); close(dispatched) }()
+	select {
+	case <-dispatched:
+	case <-time.After(time.Second):
+		t.Fatal("Update blocked behind an in-progress disk save")
+	}
+}
 
 func TestCacheSnapshotsCannotRollBack(t *testing.T) {
 	m := testModel()
