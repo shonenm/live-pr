@@ -1,21 +1,12 @@
 // Package atomicfile provides the final replacement step for temp-file saves.
 package atomicfile
 
-import (
-	"errors"
-	"os"
-	"runtime"
-)
+import "os"
 
-// Replace renames tmp over path. Windows cannot rename over an existing file,
-// so it removes the destination and retries there.
+// Replace renames tmp over path without deleting the destination on failure.
+// Go uses MoveFileEx(MOVEFILE_REPLACE_EXISTING) on Windows. Retrying by removing
+// path would destroy the old data when tmp is missing, locked, or unreadable.
+// Like os.Rename, this does not promise power-loss durability on every filesystem.
 func Replace(tmp, path string) error {
-	err := os.Rename(tmp, path)
-	if err == nil || runtime.GOOS != "windows" {
-		return err
-	}
-	if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-		return err
-	}
 	return os.Rename(tmp, path)
 }

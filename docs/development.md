@@ -3,9 +3,14 @@
 ## Building and checks
 
 ```sh
-just check          # tests, targeted race checks, vet, module verification, working-tree diff check
+GOTOOLCHAIN=go1.26.10 just check  # tests, race, lint, vulnerability scan, module and diff checks
 go build -o live-pr .
 ```
+
+Use the Go patch version in `go.mod` for checks and release-size comparisons.
+Go 1.26.10 fixes GO-2026-6809; the pinned linter cannot read Go 1.27 export data.
+The vulnerability gate checks reachable symbols. Non-reachable module findings
+are reported separately and do not mean the executable is affected.
 
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub,
 cache-save, and TUI synchronization timings to stderr.

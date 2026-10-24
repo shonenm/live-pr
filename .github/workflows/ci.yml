@@ -66,6 +66,12 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - os: macos-15-intel
+            goos: darwin
+            goarch: amd64
           - os: macos-latest
             goos: darwin
             goarch: arm64
@@ -83,7 +89,34 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+      - name: Smoke test release-equivalent archive
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          ext=""
+          if [[ "${{ matrix.goos }}" == windows ]]; then ext=".exe"; fi
+          go build -trimpath -ldflags="-s -w -X github.com/shonenm/live-pr/cmd.version=smoke" -o "$tmp/live-pr$ext" .
+          mkdir "$tmp/unpacked"
+          if [[ "$ext" == .exe ]]; then
+            SMOKE_DIR="$(cygpath -w "$tmp")"
+            export SMOKE_DIR
+            # shellcheck disable=SC2016 # Expanded by PowerShell, not Bash.
+            pwsh -NoProfile -Command 'Compress-Archive -Path "$env:SMOKE_DIR/live-pr.exe" -DestinationPath "$env:SMOKE_DIR/release.zip"; Expand-Archive -Path "$env:SMOKE_DIR/release.zip" -DestinationPath "$env:SMOKE_DIR/unpacked"'
+            archive="$tmp/release.zip"
+          else
+            tar -czf "$tmp/release.tar.gz" -C "$tmp" live-pr
+            tar -xzf "$tmp/release.tar.gz" -C "$tmp/unpacked"
+            archive="$tmp/release.tar.gz"
+          fi
+          "$tmp/unpacked/live-pr$ext" --version | grep -F smoke
+          "$tmp/unpacked/live-pr$ext" skill print | grep -F 'name: live-pr'
+          printf 'binary bytes: '; wc -c < "$tmp/live-pr$ext"
+          printf 'archive bytes: '; wc -c < "$archive"
       - run: go test ./internal/embeddedterm
       - name: Test core workflows on macOS and Windows
         if: runner.os != 'Linux'
-        run: go test ./internal/git ./internal/github ./internal/store
+        run: go test ./internal/git ./internal/github ./internal/store ./internal/atomicfile ./internal/config ./internal/timeline ./internal/publish
