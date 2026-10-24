@@ -15,6 +15,11 @@ are reported separately and do not mean the executable is affected.
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub,
 cache-save, and TUI synchronization timings to stderr.
 
+TUI branch and navigator cache saves use dispatch-ordered snapshots. A delayed
+older command cannot replace a newer successfully saved snapshot. This ordering
+is shared across checkout reloads within one TUI; it is not a cross-process
+merge policy. Files still use temporary-file replacement to avoid partial JSON.
+
 ## CLI reference
 
 ```sh
