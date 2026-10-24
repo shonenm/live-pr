@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -306,19 +307,36 @@ func pollCI(client githubClient, generation uint64, number int) tea.Cmd {
 }
 
 func richContentKey(width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity) [sha256.Size]byte {
-	var input strings.Builder
-	// Width participates in the key so a resize invalidates rendered mermaid.
-	fmt.Fprintf(&input, "%d\x00", width)
+	h := sha256.New()
+	var buffer [1024]byte
+	write := func(value string) {
+		for len(value) > 0 {
+			n := copy(buffer[:], value)
+			_, _ = h.Write(buffer[:n])
+			value = value[n:]
+		}
+		_, _ = h.Write([]byte{0})
+	}
+	// Stream fields without allocating a concatenated copy of every body.
+	// Width still invalidates rendered mermaid on resize.
+	write(strconv.Itoa(width))
 	if pr != nil {
-		fmt.Fprintf(&input, "%s\x00%s\x00%s\x00", pr.Author.Login, pr.Author.AvatarURL, pr.Body)
+		write(pr.Author.Login)
+		write(pr.Author.AvatarURL)
+		write(pr.Body)
 	}
 	for _, comment := range comments {
-		fmt.Fprintf(&input, "%s\x00%s\x00%s\x00", comment.User.Login, comment.User.AvatarURL, comment.Body)
+		write(comment.User.Login)
+		write(comment.User.AvatarURL)
+		write(comment.Body)
 	}
 	for _, activity := range activities {
-		fmt.Fprintf(&input, "%s\x00%s\x00", activity.Actor.Login, activity.Actor.AvatarURL)
+		write(activity.Actor.Login)
+		write(activity.Actor.AvatarURL)
 	}
-	return sha256.Sum256([]byte(input.String()))
+	var key [sha256.Size]byte
+	h.Sum(key[:0])
+	return key
 }
 
 func loadAvatarColors(ctx context.Context, avatars map[string]string) map[string]string {

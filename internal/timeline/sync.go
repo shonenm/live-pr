@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/shonenm/live-pr/internal/event"
+	"github.com/shonenm/live-pr/internal/filelock"
 	"github.com/shonenm/live-pr/internal/git"
 )
 
@@ -40,11 +41,16 @@ func WithCommits(events []event.Event, commits []git.Commit) []event.Event {
 // sha is already present are skipped, so it is safe to run on every TUI open.
 // Returns the number of new events appended.
 func SyncCommits(ctx context.Context, path, base string) (int, error) {
-	existing, err := event.Load(path)
+	commits, err := git.Commits(ctx, base)
 	if err != nil {
 		return 0, err
 	}
-	commits, err := git.Commits(ctx, base)
+	unlock, err := filelock.Acquire(path)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = unlock() }()
+	existing, err := event.Load(path)
 	if err != nil {
 		return 0, err
 	}

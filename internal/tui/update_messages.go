@@ -15,6 +15,7 @@ import (
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prfilter"
 	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/internal/terminaltext"
 )
 
 func appendUniquePRs(existing, added []gh.PR) []gh.PR {
@@ -289,7 +290,7 @@ func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
 			m.status = ""
 		}
 		m.detailView.shownKey = "rendered\x00" + msg.key
-		m.detail.SetContent(m.detailView.diffCache[msg.key])
+		m.detail.SetContent(terminaltext.SanitizeSGR(m.detailView.diffCache[msg.key]))
 		m.detail.GotoTop()
 	}
 	return m, nil

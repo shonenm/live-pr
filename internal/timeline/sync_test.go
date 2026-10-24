@@ -1,10 +1,13 @@
 package timeline
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/shonenm/live-pr/internal/event"
@@ -19,6 +22,68 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@x")
 	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestSyncCommitsConcurrentProcesses(t *testing.T) {
+	if path := os.Getenv("LIVE_PR_TEST_SYNC_PATH"); path != "" {
+		if _, err := SyncCommits(context.Background(), path, "main"); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q", "-b", "main")
+	gitCmd(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
+	gitCmd(t, dir, "checkout", "-q", "-b", "feature")
+	for i := 0; i < 8; i++ {
+		gitCmd(t, dir, "commit", "-q", "--allow-empty", "-m", fmt.Sprint(i))
+	}
+	path := filepath.Join(dir, "timeline.jsonl")
+	if err := event.Append(path, event.New(event.Note, "keep note", "")); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Go(func() {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestSyncCommitsConcurrentProcesses$")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "LIVE_PR_TEST_SYNC_PATH="+path)
+			var output bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &output, &output
+			if err := cmd.Run(); err != nil {
+				t.Errorf("child: %v %s", err, output.String())
+			}
+		})
+	}
+	wg.Wait()
+	events, err := event.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 9 || events[0].Title != "keep note" {
+		t.Fatalf("events = %+v", events)
+	}
+	seen := map[string]bool{}
+	for _, ev := range events[1:] {
+		if ev.SHA == "" || seen[ev.SHA] {
+			t.Fatalf("duplicate or empty SHA: %+v", ev)
+		}
+		seen[ev.SHA] = true
+	}
+}
+
+func TestSyncCommitsLockFailure(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init", "-q", "-b", "main")
+	gitCmd(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
+	t.Chdir(dir)
+	path := filepath.Join(dir, "timeline.jsonl")
+	if err := os.Mkdir(path+".lock", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncCommits(context.Background(), path, "main"); err == nil {
+		t.Fatal("lock error lost")
 	}
 }
 
