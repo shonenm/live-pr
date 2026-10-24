@@ -4,11 +4,13 @@ package tui
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,7 +42,7 @@ func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR)
 		hint = &pr
 	}
 	return func() tea.Msg {
-		data, err := loadLocalData(st, cache, hint)
+		data, err := loadLocalData(st, cache, hint, "")
 		return localLoaded{generation: generation, st: st, data: data, err: err}
 	}
 }
@@ -48,7 +50,7 @@ func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR)
 // loadLocal is the synchronous variant for startup, before the UI runs.
 func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) error {
 	m.targetGeneration++
-	data, err := loadLocalData(st, cache, hintedPR)
+	data, err := loadLocalData(st, cache, hintedPR, "")
 	if err != nil {
 		return err
 	}
@@ -56,7 +58,7 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	return nil
 }
 
-func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData, error) {
+func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string) (localData, error) {
 	if done := debugtime.Start("tui local hydration"); done != nil {
 		defer done()
 	}
@@ -70,9 +72,12 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		pr := *hintedPR
 		cache.PR = &pr
 	}
-	base := git.ResolveBase(cache.Base(git.DefaultBase()))
+	if base == "" {
+		base = cache.Base(git.DefaultBase())
+	}
+	base = git.ResolveBase(base)
 	diffBase, headRev, reviewRange := localReviewRange(base, cache.PR, "HEAD", false)
-	_, _ = timeline.SyncCommits(st.Timeline(), diffBase)
+	_, syncErr := timeline.SyncCommits(st.Timeline(), diffBase)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
 		return localData{}, err
@@ -84,7 +89,7 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 		fileHead = headRev
 	}
 	files, fileErr := git.ChangedFilesRange(diffBase, fileHead)
-	stats, _ := git.DiffStats(diffBase, fileHead)
+	stats, statsErr := git.DiffStats(diffBase, fileHead)
 	if len(files) > stats.Files {
 		stats.Files = len(files)
 	}
@@ -95,34 +100,60 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR) (localData,
 	}
 	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(diffBase, commits, cache.PR)
 	revisionAhead, revisionBehind := 0, 0
+	var revisionErr error
 	if cache.PR != nil && cache.PR.HeadRefOID != "" {
-		revisionAhead, revisionBehind, _ = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
+		revisionAhead, revisionBehind, revisionErr = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
+		if revisionErr != nil {
+			revisionRelation = git.RevisionUnknown
+		}
 	}
 	worktree := localSnapshot.Worktree
 	dirty := worktree.Total() > 0
-	conclusion, _ := os.ReadFile(st.Conclusion())
+	conclusion, conclusionErr := os.ReadFile(st.Conclusion())
+	if errors.Is(conclusionErr, os.ErrNotExist) {
+		conclusionErr = nil
+	}
+	var warnings []string
+	for _, failure := range []struct {
+		name string
+		err  error
+	}{
+		{"timeline sync", syncErr}, {"commits", commitErr}, {"files", fileErr},
+		{"diff statistics", statsErr}, {"HEAD", headErr}, {"worktree", snapshotErr},
+		{"revision distance", revisionErr}, {"conclusion", conclusionErr},
+	} {
+		if failure.err != nil {
+			warnings = append(warnings, failure.name+": "+failure.err.Error())
+		}
+	}
+	if cache.Warning != "" {
+		warnings = append(warnings, cache.Warning)
+	}
 	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(base, "HEAD")
 	return localData{
-		cache:             cache,
-		base:              base,
-		diffBase:          diffBase,
-		headRev:           headRev,
-		reviewRange:       reviewRange,
-		events:            events,
-		commits:           commits,
-		remoteCommits:     remoteCommits,
-		files:             files,
-		stats:             stats,
-		localHeadOID:      localHeadOID,
-		localFingerprint:  localSnapshot.State.Fingerprint,
-		revisionRelation:  revisionRelation,
-		revisionAhead:     revisionAhead,
-		revisionBehind:    revisionBehind,
-		publishedCommits:  publishedCommits,
-		localDiverged:     localDiverged,
-		dirty:             dirty,
-		worktree:          worktree,
-		incomplete:        commitErr != nil || fileErr != nil || snapshotErr != nil || headErr != nil,
+		cache:            cache,
+		base:             base,
+		diffBase:         diffBase,
+		headRev:          headRev,
+		reviewRange:      reviewRange,
+		events:           events,
+		commits:          commits,
+		remoteCommits:    remoteCommits,
+		files:            files,
+		stats:            stats,
+		localHeadOID:     localHeadOID,
+		localFingerprint: localSnapshot.State.Fingerprint,
+		revisionRelation: revisionRelation,
+		revisionAhead:    revisionAhead,
+		revisionBehind:   revisionBehind,
+		publishedCommits: publishedCommits,
+		localDiverged:    localDiverged,
+		dirty:            dirty,
+		worktree:         worktree,
+		incomplete:       len(warnings) > 0,
+		warning:          strings.Join(warnings, "; "),
+		commitsErr:       commitErr, filesErr: fileErr, statsErr: statsErr,
+		headErr: headErr, snapshotErr: snapshotErr, revisionErr: revisionErr, conclusionErr: conclusionErr,
 		conclusion:        string(conclusion),
 		mergeReadiness:    mergeReadiness,
 		mergeReadinessErr: mergeReadinessErr,
@@ -273,19 +304,36 @@ func pollCI(client githubClient, generation uint64, number int) tea.Cmd {
 }
 
 func richContentKey(width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity) [sha256.Size]byte {
-	var input strings.Builder
-	// Width participates in the key so a resize invalidates rendered mermaid.
-	fmt.Fprintf(&input, "%d\x00", width)
+	h := sha256.New()
+	var buffer [1024]byte
+	write := func(value string) {
+		for len(value) > 0 {
+			n := copy(buffer[:], value)
+			_, _ = h.Write(buffer[:n])
+			value = value[n:]
+		}
+		_, _ = h.Write([]byte{0})
+	}
+	// Stream fields without allocating a concatenated copy of every body.
+	// Width still invalidates rendered mermaid on resize.
+	write(strconv.Itoa(width))
 	if pr != nil {
-		fmt.Fprintf(&input, "%s\x00%s\x00%s\x00", pr.Author.Login, pr.Author.AvatarURL, pr.Body)
+		write(pr.Author.Login)
+		write(pr.Author.AvatarURL)
+		write(pr.Body)
 	}
 	for _, comment := range comments {
-		fmt.Fprintf(&input, "%s\x00%s\x00%s\x00", comment.User.Login, comment.User.AvatarURL, comment.Body)
+		write(comment.User.Login)
+		write(comment.User.AvatarURL)
+		write(comment.Body)
 	}
 	for _, activity := range activities {
-		fmt.Fprintf(&input, "%s\x00%s\x00", activity.Actor.Login, activity.Actor.AvatarURL)
+		write(activity.Actor.Login)
+		write(activity.Actor.AvatarURL)
 	}
-	return sha256.Sum256([]byte(input.String()))
+	var key [sha256.Size]byte
+	h.Sum(key[:0])
+	return key
 }
 
 func loadAvatarColors(avatars map[string]string) map[string]string {

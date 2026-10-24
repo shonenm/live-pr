@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,32 @@ import (
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 )
+
+func TestRichContentKeyStreamsAllFields(t *testing.T) {
+	body := strings.Repeat("日本語", 2000)
+	pr := &gh.PR{Author: gh.PRUser{Login: "author", AvatarURL: "avatar"}, Body: body}
+	comments := []gh.Comment{{Body: "comment"}}
+	want := sha256.Sum256([]byte("80\x00author\x00avatar\x00" + body + "\x00\x00\x00comment\x00"))
+	if got := richContentKey(80, pr, comments, nil); got != want {
+		t.Fatalf("streamed key = %x, want %x", got, want)
+	}
+}
+
+var benchmarkRichKey [32]byte
+
+func BenchmarkRichContentKey(b *testing.B) {
+	for _, size := range []int{1024, 1024 * 1024} {
+		b.Run(fmt.Sprintf("bytes=%d", size), func(b *testing.B) {
+			pr := &gh.PR{Body: strings.Repeat("x", size)}
+			comments := []gh.Comment{{Body: "comment"}}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				benchmarkRichKey = richContentKey(80, pr, comments, nil)
+			}
+		})
+	}
+}
 
 func benchmarkConversationModel(size int) Model {
 	m := testModel()
