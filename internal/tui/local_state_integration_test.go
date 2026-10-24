@@ -49,7 +49,7 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", HeadRefOID: published, BaseRefName: "main", State: "OPEN"}
 	load := func() localData {
 		t.Helper()
-		data, err := loadLocalData(st, cache, nil)
+		data, err := loadLocalData(st, cache, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -165,6 +165,11 @@ func TestCheckoutRebuildsPRModelAndPersistsExplicitCache(t *testing.T) {
 	}
 	next, cmd := old.handleCheckoutReloaded(msg)
 	defer next.close()
+	// Persistence is dispatched only after the rebuilt model is accepted.
+	batch := cmd().(tea.BatchMsg)
+	if saved := batch[len(batch)-1]().(cacheSaved); saved.err != nil {
+		t.Fatal(saved.err)
+	}
 	cached, cacheErr := gh.LoadCache(store.ForBranch(root, "feature").GitHubCache(), "feature")
 	if cmd == nil || cacheErr != nil || cached.PR == nil || cached.PR.Number != 42 || !cached.ExplicitCheckout || next.currentBranch != "feature" || next.screen != detailScreen || next.cache.PR == nil || next.cache.PR.Number != 42 || !next.cache.ExplicitCheckout || next.w != 100 || next.h != 30 || next.targetGeneration != 4 || next.prList.generation != 5 || next.notice != "PR #42 loaded" {
 		t.Fatalf("checkout model = branch:%q screen:%v cache:%#v disk:%#v cacheErr:%v size:%dx%d generations:%d/%d notice:%q cmd:%v", next.currentBranch, next.screen, next.cache, cached, cacheErr, next.w, next.h, next.targetGeneration, next.prList.generation, next.notice, cmd)

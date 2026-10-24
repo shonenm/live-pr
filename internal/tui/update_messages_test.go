@@ -263,7 +263,7 @@ func TestPRListRefreshPreservesCacheAndSelection(t *testing.T) {
 		t.Fatalf("successful refresh lost selection: prs=%v cursor=%d", m.prList.open, m.prList.cursor)
 	}
 	// Persisting rides an async Cmd; run it here to check the payload.
-	if msg := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
+	if msg := m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
 		t.Fatalf("navigator save failed: %#v", msg)
 	}
 	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
@@ -735,7 +735,7 @@ func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
 	if snapshot, ok := m.navigator.Snapshot(14); !ok || len(snapshot.Comments) != 1 {
 		t.Fatalf("in-memory snapshot = %#v ok=%v", snapshot, ok)
 	}
-	if msg := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
+	if msg := m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
 		t.Fatalf("navigator save failed: %#v", msg)
 	}
 	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
@@ -1127,11 +1127,12 @@ func TestCIPollReplacesCommitsWholesaleForAsyncSave(t *testing.T) {
 }
 
 func TestAsyncCacheSaveUsesDispatchSnapshot(t *testing.T) {
+	m := testModel()
 	path := filepath.Join(t.TempDir(), "github.json")
 	cache := gh.NewCache("feature")
 	cache.PR = &gh.PR{Number: 1, Commits: []gh.PRCommit{{OID: "old"}}}
 	cache.Comments = []gh.Comment{{Body: "old"}}
-	cmd := saveCacheCmd(path, cache)
+	cmd := m.saveCacheCmd(path, cache)
 	cache.PR.Number, cache.PR.Commits[0].OID, cache.Comments[0].Body = 2, "new", "new"
 	if msg := cmd(); msg != nil {
 		if saved, ok := msg.(cacheSaved); !ok || saved.err != nil {
@@ -1145,7 +1146,8 @@ func TestAsyncCacheSaveUsesDispatchSnapshot(t *testing.T) {
 }
 
 func TestAsyncCacheSaveSkipsRemoteWithoutPath(t *testing.T) {
-	if cmd := saveCacheCmd("", gh.NewCache("feature")); cmd != nil {
+	m := testModel()
+	if cmd := m.saveCacheCmd("", gh.NewCache("feature")); cmd != nil {
 		t.Fatal("remote cache without a path scheduled a save")
 	}
 }

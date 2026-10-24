@@ -338,6 +338,7 @@ type githubClient interface {
 // state — a method that both mutates and dispatches keeps an action name
 // (startLocalLoad, dispatchRichContent), never a plain *Cmd suffix.
 type Model struct {
+	cacheWrites               *cacheWrites
 	client                    githubClient
 	checkoutHead              func(branch string) error
 	screen                    screen
@@ -367,6 +368,8 @@ type Model struct {
 	localAvailable            bool
 	localTitle                string
 	localStats                git.ChangeStats
+	localStatsErr             error
+	localRevisionErr          error
 	remoteStats               git.ChangeStats
 	localCommitCount          int
 	localHeadOID              string
@@ -477,9 +480,11 @@ func New(version ...string) (Model, error) {
 	defaultRef := git.DefaultBase()
 	base := git.ResolveBase(cache.Base(defaultRef))
 	hasChanges, changesErr := git.HasChanges(base, "HEAD")
-	dirty, _ := git.HasUncommittedChanges()
-	worktree, _ := git.WorktreeStatus()
-	hasChanges = hasChanges || dirty || worktree.Total() > 0
+	worktree, worktreeErr := git.WorktreeStatus()
+	hasChanges = hasChanges || worktree.Total() > 0
+	if worktreeErr != nil {
+		status = "worktree unavailable: " + worktreeErr.Error()
+	}
 	if changesErr != nil && status == "" {
 		status = "base comparison unavailable: " + changesErr.Error()
 	}
@@ -501,6 +506,7 @@ func New(version ...string) (Model, error) {
 	}
 
 	m := Model{
+		cacheWrites:     &cacheWrites{},
 		client:          gh.New(),
 		pollTimers:      &pollTimers{},
 		checkoutHead:    git.CheckoutPullHead,
@@ -699,6 +705,29 @@ func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (
 }
 
 func (m *Model) applyLocal(st *store.Store, data localData) {
+	// Keep partial results only within the same branch and publication boundary.
+	if !m.remote && m.timelinePath == st.Timeline() && samePRBoundary(m.cache.PR, data.cache.PR) {
+		if data.commitsErr != nil {
+			data.commits, data.remoteCommits = m.detailView.commits, m.detailView.remoteCommits
+			data.publishedCommits, data.localDiverged = m.publishedCommits, m.localDiverged
+		}
+		if data.filesErr != nil {
+			data.files = m.detailView.files
+		}
+		if data.statsErr != nil {
+			data.stats = m.localStats
+		}
+		if data.headErr != nil {
+			data.localHeadOID = m.localHeadOID
+		}
+		if data.snapshotErr != nil {
+			data.localFingerprint, data.dirty, data.worktree = m.localFingerprint, m.workingTreeDirty, m.worktreeSummary
+		}
+		if data.conclusionErr != nil {
+			data.conclusion = m.detailView.summary
+		}
+	}
+	m.localStatsErr, m.localRevisionErr = data.statsErr, data.revisionErr
 	m.detailView.resetCaches()
 	if m.remote {
 		// Coming from a remote PR is a target switch; a local reload of the
@@ -706,7 +735,7 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 		m.detailView.pruneRichContent()
 	}
 	if data.incomplete {
-		m.status = "local git data is incomplete"
+		m.status = "local data is incomplete: " + data.warning
 	}
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
@@ -854,6 +883,7 @@ func (m *Model) close() {
 }
 
 func (m *Model) advanceAsyncGenerations(previous Model) {
+	m.cacheWrites = previous.cacheWrites
 	if previous.pollTimers != nil {
 		if previous.pollTimers.local != nil {
 			previous.pollTimers.local()

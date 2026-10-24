@@ -64,6 +64,7 @@ func (m *Model) buildPRList() string {
 
 func testModel() Model {
 	return Model{
+		cacheWrites:  &cacheWrites{},
 		client:       &fakeGH{},
 		checkoutHead: func(string) error { return nil },
 		views:        config.DefaultViews(),

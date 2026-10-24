@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/shonenm/live-pr/internal/filelock"
 )
 
 // OutboxEntry is one conversation comment queued while offline: a new post,
@@ -79,12 +81,7 @@ func mutateOutbox(path string, mutate func([]OutboxEntry) []OutboxEntry) ([]Outb
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = lock.Close() }()
-	unlock, err := lockOutbox(lock)
+	unlock, err := filelock.Acquire(path)
 	if err != nil {
 		return nil, err
 	}

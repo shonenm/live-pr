@@ -275,6 +275,9 @@ func (m Model) renderHeader() string {
 	l1 := badge + "  " + stBold.Render(safeText(title))
 	stats := m.detailStats()
 	scope := fmt.Sprintf("%d files", stats.Files) + " " + stGreenF.Render(fmt.Sprintf("+%d", stats.Additions)) + " " + stRedF.Render(fmt.Sprintf("-%d", stats.Deletions))
+	if !m.remote && m.localStatsErr != nil {
+		scope = "diff statistics unavailable"
+	}
 	if m.detailView.reviewSHA != "" {
 		scope = "commit " + m.detailView.reviewSHA
 	}
@@ -358,6 +361,9 @@ func (m Model) dataModeContext() string {
 		parts = append(parts, fmt.Sprintf("PR #%d", m.cache.PR.Number))
 	}
 	if !m.remote {
+		if m.localRevisionErr != nil {
+			parts = append(parts, "revision distance unavailable")
+		}
 		switch m.revisionRelation {
 		case git.RevisionLocalAhead:
 			parts = append(parts, fmt.Sprintf("%d ahead", m.revisionAhead))

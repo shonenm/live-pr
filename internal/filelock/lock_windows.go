@@ -1,6 +1,6 @@
 //go:build windows
 
-package store
+package filelock
 
 import (
 	"os"
@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func lockOutbox(file *os.File) (func() error, error) {
+func lock(file *os.File) (func() error, error) {
 	var overlapped windows.Overlapped
 	handle := windows.Handle(file.Fd())
 	if err := windows.LockFileEx(handle, windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &overlapped); err != nil {

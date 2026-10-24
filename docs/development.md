@@ -15,6 +15,49 @@ are reported separately and do not mean the executable is affected.
 Set `LIVE_PR_DEBUG_TIMING=1` to print opt-in startup, Git, GitHub,
 cache-save, and TUI synchronization timings to stderr.
 
+## Rendering budgets and measurements
+
+Markdown output caching retains at most 512 entries and 8 MiB of input/output
+payloads. Entries larger than 256 KiB are rendered but not cached. FIFO eviction
+releases both input and output; the budget is not a limit on transient renderer
+allocations or the entire process heap. Concurrent duplicate inserts count once.
+
+On Apple M2 with Go 1.26.10, `BenchmarkRender/cache-hit` changed from about
+731 ns / 256 B to 351 ns / 128 B after removing redundant input sanitization.
+A 1 MiB `BenchmarkRichContentKey` changed from about 691 µs / 3.17 MB to
+430 µs / 0 B using a bounded streaming hash buffer. Hashing still scans all bytes;
+no additional invalidation cache was introduced.
+
+`BenchmarkApplyPRPage` remained about 0.22 ms for 25 rows and 19.5 ms for 2,500
+rows. The latter is beyond the normal page size. No extra PR-list caching was
+added without a measured normal-page bottleneck. Reproduce these measurements
+with the existing benchmarks, keeping Go version, fixture and hardware fixed:
+
+```sh
+GOTOOLCHAIN=go1.26.10 go test ./internal/markdown -run '^$' -bench BenchmarkRender -benchmem
+GOTOOLCHAIN=go1.26.10 go test ./internal/tui -run '^$' -bench 'BenchmarkRichContentKey|BenchmarkApplyPRPage' -benchmem
+```
+
+## Local state and errors
+
+Timeline commit synchronization locks its load/check/append transaction across
+processes, just like outbox updates. Sidecar `.lock` files are intentionally
+retained; deleting an active lock file would break mutual exclusion. Ordinary
+notes remain append-only and are not replaced by commit synchronization.
+
+TUI branch and navigator cache saves use dispatch-ordered snapshots. A delayed
+older command cannot replace a newer successfully saved snapshot. This ordering
+is shared across checkout reloads within one TUI; it is not a cross-process
+merge policy. Files still use temporary-file replacement to avoid partial JSON.
+
+Local startup and refresh share the same data loader. Failed auxiliary reads
+are reported as incomplete data, with unavailable diff statistics and revision
+distance distinguished from zero. A same-target reload keeps valid previous
+fields when their replacement could not be read; switching targets never
+carries those fields across. Missing conclusion files are normal, unlike I/O
+errors. Automatic PR resolution reports cache read failures and retains only
+matching in-memory PR data.
+
 ## CLI reference
 
 ```sh

@@ -497,6 +497,26 @@ func TestConfiguredDiffDisplayIsAsyncCachedAndRejectsStaleResults(t *testing.T) 
 	}
 }
 
+func TestDiffDisplayRemovesTerminalControls(t *testing.T) {
+	payload := "\x1b[31m+safe\x1b[0m\x1b]52;c;cGF5bG9hZA==\a\x1bPpayload\x1b\\"
+	for _, key := range []string{"file:example", "commit:abc"} {
+		for _, filtered := range []bool{false, true} {
+			m := testModel()
+			m.detail.SetWidth(80)
+			m.detail.SetHeight(10)
+			m.syncDetail(detailContent{key: key, raw: payload, renderable: true})
+			if filtered {
+				m.detailView.diffKey = key
+				m, _ = m.handleDiffRendered(diffRendered{key: key, output: payload})
+			}
+			view := m.detail.View()
+			if !strings.Contains(view, "+safe") || strings.Contains(view, "\x1b]") || strings.Contains(view, "\x1bP") {
+				t.Fatalf("unsafe diff %s filtered=%v: %q", key, filtered, view)
+			}
+		}
+	}
+}
+
 func TestDefaultDiffDisplayUsesRawOutput(t *testing.T) {
 	m := testModel()
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})

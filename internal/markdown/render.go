@@ -22,10 +22,55 @@ type cacheKey struct {
 	text  string
 }
 
-var renderCache = struct {
+const (
+	maxRenderCacheEntries = 512
+	maxRenderCacheBytes   = 8 * 1024 * 1024
+	maxRenderEntryBytes   = 256 * 1024
+)
+
+type renderedCache struct {
 	sync.Mutex
 	items map[cacheKey]string
-}{items: map[cacheKey]string{}}
+	order []cacheKey
+	bytes int // retained input and output payloads, not total Go heap usage
+}
+
+var renderCache = renderedCache{items: map[cacheKey]string{}}
+
+func (c *renderedCache) get(key cacheKey) (string, bool) {
+	c.Lock()
+	defer c.Unlock()
+	out, ok := c.items[key]
+	return out, ok
+}
+
+func (c *renderedCache) put(key cacheKey, out string) {
+	size := len(key.text) + len(out)
+	if size > maxRenderEntryBytes {
+		return
+	}
+	c.Lock()
+	defer c.Unlock()
+	// Concurrent misses may have rendered the same immutable entry.
+	if _, exists := c.items[key]; exists {
+		return
+	}
+	for len(c.items) >= maxRenderCacheEntries || c.bytes+size > maxRenderCacheBytes {
+		old := c.order[0]
+		c.order[0] = cacheKey{} // release text even while the slice backing array survives
+		c.order = c.order[1:]
+		c.bytes -= len(old.text) + len(c.items[old])
+		delete(c.items, old)
+	}
+	if c.items == nil {
+		c.items = make(map[cacheKey]string)
+	}
+	// A short substring must not retain its caller's potentially huge buffer.
+	key.text, out = strings.Clone(key.text), strings.Clone(out)
+	c.items[key] = out
+	c.order = append(c.order, key)
+	c.bytes += size
+}
 
 // glamourWrapWidth is deliberately far wider than any pane. Glamour only
 // wraps at ASCII word boundaries, so for space-free runs like Japanese it
@@ -86,31 +131,17 @@ func Render(text string, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	text = terminaltext.Sanitize(text)
 	key := cacheKey{width: width, text: text}
-	renderCache.Lock()
-	if out, ok := renderCache.items[key]; ok {
-		renderCache.Unlock()
+	if out, ok := renderCache.get(key); ok {
 		return out
 	}
-	renderCache.Unlock()
 
 	out, err := renderMarkdown(text, width)
 	if err != nil {
 		return text
 	}
 
-	renderCache.Lock()
-	if len(renderCache.items) >= 512 {
-		// Drop a single entry instead of clearing the whole cache, so one
-		// overflow does not force a full re-render of every visible card.
-		for k := range renderCache.items {
-			delete(renderCache.items, k)
-			break
-		}
-	}
-	renderCache.items[key] = out
-	renderCache.Unlock()
+	renderCache.put(key, out)
 	return out
 }
 
