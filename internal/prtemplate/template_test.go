@@ -1,6 +1,7 @@
 package prtemplate
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +28,7 @@ func TestLoadUsesGitHubDefaultTemplateLocations(t *testing.T) {
 func TestSeed(t *testing.T) {
 	newStore := func(t *testing.T) *store.Store {
 		t.Setenv("XDG_STATE_HOME", t.TempDir())
-		return store.ForBranch(t.TempDir(), "feature")
+		return store.ForBranch(context.Background(), t.TempDir(), "feature")
 	}
 
 	t.Run("existing conclusion is left untouched", func(t *testing.T) {

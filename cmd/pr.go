@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/shonenm/live-pr/internal/publish"
@@ -21,7 +22,7 @@ var prCmd = &cobra.Command{
 
 func runPreview(cmd *cobra.Command) error {
 	base, _ := cmd.Flags().GetString("base")
-	preview, err := buildPRPreview(base)
+	preview, err := buildPRPreview(context.Background(), base)
 	if err != nil {
 		return err
 	}
@@ -33,7 +34,7 @@ func runPublish(cmd *cobra.Command) error {
 	base, _ := cmd.Flags().GetString("base")
 	draft, _ := cmd.Flags().GetBool("draft")
 	force, _ := cmd.Flags().GetBool("force-managed-body")
-	result, err := publishPullRequest(publish.Options{Base: base, Draft: draft, ForceManagedBody: force})
+	result, err := publishPullRequest(context.Background(), publish.Options{Base: base, Draft: draft, ForceManagedBody: force})
 	if err != nil {
 		return err
 	}

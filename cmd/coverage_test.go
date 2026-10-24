@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -44,7 +45,7 @@ func cmdRepo(t *testing.T) *store.Store {
 	if err := os.Chdir(repo); err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +96,7 @@ func TestReviewWriteCommandsPersistDraft(t *testing.T) {
 	if err := gh.SaveCache(st.GitHubCache(), cache); err != nil {
 		t.Fatal(err)
 	}
-	draftPath := store.PullRequestReviewDraft(st.Root, 12)
+	draftPath := store.PullRequestReviewDraft(context.Background(), st.Root, 12)
 
 	// body
 	bodyCmd := flagCmd(map[string]string{"body": "", "body-file": ""}, nil)
@@ -220,7 +221,7 @@ func TestLoadStatusRefreshUpdatesCache(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

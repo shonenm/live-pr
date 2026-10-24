@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -81,7 +82,7 @@ func TestReopenCheckoutAfterBrowsingRemotePRs(t *testing.T) {
 			m = completePRSelection(m)
 			m, _ = m.handleLocalLoaded(localLoaded{
 				generation: m.targetGeneration,
-				st:         store.ForBranch(m.root, m.currentBranch),
+				st:         store.ForBranch(context.Background(), m.root, m.currentBranch),
 				data:       localData{cache: checkout, base: "main", diffBase: "main", headRev: "HEAD", dirty: true},
 			})
 			if m.remote || m.detailMode() != modeLive {

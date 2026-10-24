@@ -9,7 +9,7 @@ test:
 
 # Run race detection where asynchronous state is concentrated.
 race:
-    go test -race ./internal/github ./internal/tui
+    go test -race ./internal/github ./internal/tui ./internal/process
 
 # Check gofmt formatting.
 fmt-check:

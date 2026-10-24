@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -123,7 +124,7 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	}
 	m.syncCachedPRState(msg.page.PRs)
 	m.applyPRFilters(selectedNumber)
-	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prList.generation, msg.page.PRs)}
+	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.commandContext(), m.prList.generation, msg.page.PRs)}
 	if cacheUpdated {
 		cmds = append(cmds, m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
@@ -197,7 +198,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 		return m, tea.Batch(saveCmd, m.sync())
 	}
 	m.autoOpenCurrent = false
-	st := store.ForBranch(m.root, m.currentBranch)
+	st := store.ForBranch(m.commandContext(), m.root, m.currentBranch)
 	cache, cacheErr := st.LoadGitHubCache()
 	if cacheErr != nil {
 		cache = gh.NewCache(st.Branch)
@@ -260,7 +261,7 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	// filters read (ci:, merge:, label:, draft:, state, title haystack) and
 	// the refs stack building keys on, so filtered/open can genuinely change.
 	m.applyPRFilters(selectedNumber)
-	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prList.generation, []gh.PR{msg.pr})}
+	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.commandContext(), m.prList.generation, []gh.PR{msg.pr})}
 	// Only persist when the visible row's preview loads; background prefetches
 	// stay in memory and ride the next page-load/refresh save.
 	if m.prList.selectedPRNumber() == msg.number {
@@ -326,16 +327,16 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 	}
 	m.status = fmt.Sprintf("PR #%d · reloading…", msg.number)
 	m.refreshing = true
-	return m, tea.Batch(rebuildAfterCheckout(m.version, m.targetGeneration, msg), m.startSpinner())
+	return m, tea.Batch(rebuildAfterCheckout(m.commandContext(), m.version, m.targetGeneration, msg), m.startSpinner())
 
 }
 
 // rebuildAfterCheckout reconstructs the Model in a Cmd: New plus the local
 // hydration spawn a dozen git subprocesses, which froze the UI when run
 // inside the handler.
-func rebuildAfterCheckout(version string, generation uint64, msg prActionDone) tea.Cmd {
+func rebuildAfterCheckout(ctx context.Context, version string, generation uint64, msg prActionDone) tea.Cmd {
 	return func() tea.Msg {
-		next, err := New(version)
+		next, err := newModel(ctx, version)
 		if err != nil {
 			return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
 		}
@@ -343,7 +344,7 @@ func rebuildAfterCheckout(version string, generation uint64, msg prActionDone) t
 			cache := gh.NewCache(next.currentBranch)
 			pr := msg.pr
 			cache.PR, cache.ExplicitCheckout = &pr, true
-			if err := next.loadLocal(store.ForBranch(next.root, next.currentBranch), cache, &pr); err != nil {
+			if err := next.loadLocal(store.ForBranch(ctx, next.root, next.currentBranch), cache, &pr); err != nil {
 				return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
 			}
 		}
@@ -364,7 +365,7 @@ func (m Model) handleCheckoutReloaded(msg checkoutReloaded) (Model, tea.Cmd) {
 		m.status = msg.err.Error()
 		return m, nil
 	}
-	m.close()
+	m.closeView()
 	next := *msg.next
 	next.w, next.h = m.w, m.h
 	next.advanceAsyncGenerations(m)
@@ -498,7 +499,7 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 	if msg.state.Branch != m.currentBranch {
 		m.checkoutReloading, m.refreshing = true, true
 		m.targetGeneration++
-		return m, tea.Batch(rebuildForLocalBranchChange(m.version, msg.generation), m.nextLocalPoll(), m.startSpinner())
+		return m, tea.Batch(rebuildForLocalBranchChange(m.commandContext(), m.version, msg.generation), m.nextLocalPoll(), m.startSpinner())
 	}
 	// Checkout observation stays on a timer. File lists, diffs, and the
 	// review pane wait for `r`: agent edits would otherwise restart them
@@ -506,9 +507,9 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 	return m, m.nextLocalPoll()
 }
 
-func rebuildForLocalBranchChange(version string, generation uint64) tea.Cmd {
+func rebuildForLocalBranchChange(ctx context.Context, version string, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		next, err := New(version)
+		next, err := newModel(ctx, version)
 		if err != nil {
 			return localBranchReloaded{generation: generation, err: err}
 		}
@@ -526,7 +527,7 @@ func (m Model) handleLocalBranchReloaded(msg localBranchReloaded) (Model, tea.Cm
 		m.status = "branch reload: " + msg.err.Error()
 		return m, m.nextLocalPoll()
 	}
-	m.close()
+	m.closeView()
 	next := *msg.next
 	next.w, next.h = m.w, m.h
 	next.advanceAsyncGenerations(m)
@@ -602,7 +603,7 @@ func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
 	m.remoteSectionsPending = 3
 	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.prURL, "", m.detailView.reviewedMarksPath))
 	m.layout()
-	return m, tea.Batch(fetchRemoteCommits(msg.number, msg.generation, msg.diffBase, msg.headRef), fetchRemoteConflicts(msg.number, msg.generation, msg.base, msg.headRef), fetchRemoteFiles(msg.number, msg.generation, msg.diffBase, msg.headRef), m.sync())
+	return m, tea.Batch(fetchRemoteCommits(m.commandContext(), msg.number, msg.generation, msg.diffBase, msg.headRef), fetchRemoteConflicts(m.commandContext(), msg.number, msg.generation, msg.base, msg.headRef), fetchRemoteFiles(m.commandContext(), msg.number, msg.generation, msg.diffBase, msg.headRef), m.sync())
 }
 
 func (m Model) handleRemoteCommitsLoaded(msg remoteCommitsLoaded) (Model, tea.Cmd) {

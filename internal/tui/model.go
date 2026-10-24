@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -338,6 +339,8 @@ type githubClient interface {
 // state — a method that both mutates and dispatches keeps an action name
 // (startLocalLoad, dispatchRichContent), never a plain *Cmd suffix.
 type Model struct {
+	ctx                       context.Context
+	cancel                    context.CancelFunc
 	cacheWrites               *cacheWrites
 	client                    githubClient
 	checkoutHead              func(branch string) error
@@ -445,18 +448,29 @@ type Model struct {
 // New builds a navigator-aware model without creating branch state unless the
 // current checkout is routed to local detail.
 func New(version ...string) (Model, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m, err := newModel(ctx, version...)
+	if err != nil {
+		cancel()
+		return Model{}, err
+	}
+	m.cancel = cancel
+	return m, nil
+}
+
+func newModel(ctx context.Context, version ...string) (Model, error) {
 	if done := debugtime.Start("tui startup"); done != nil {
 		defer done()
 	}
-	root, err := git.RepoRoot()
+	root, err := git.RepoRoot(ctx)
 	if err != nil {
 		return Model{}, err
 	}
-	branch, err := git.CurrentBranch()
+	branch, err := git.CurrentBranch(ctx)
 	if err != nil {
 		return Model{}, err
 	}
-	if err := store.MigrateLegacy(root); err != nil {
+	if err := store.MigrateLegacy(ctx, root); err != nil {
 		return Model{}, fmt.Errorf("migrate live-pr state: %w", err)
 	}
 	cfg, err := config.Load(root)
@@ -464,23 +478,23 @@ func New(version ...string) (Model, error) {
 		return Model{}, err
 	}
 	applyTheme(theme.ByName(cfg.Theme))
-	navigatorPath := store.NavigatorCache(root)
+	navigatorPath := store.NavigatorCache(ctx, root)
 	navigator, navErr := gh.LoadNavigatorCache(navigatorPath)
 	status := ""
 	if navErr != nil {
 		navigator = gh.NewNavigatorCache()
 		status = "PR list cache ignored: " + navErr.Error()
 	}
-	st := store.ForBranch(root, branch)
+	st := store.ForBranch(ctx, root, branch)
 	cache, cacheErr := st.LoadGitHubCache()
 	if cacheErr != nil {
 		cache = gh.NewCache(branch)
 		status = "GitHub cache ignored: " + cacheErr.Error()
 	}
-	defaultRef := git.DefaultBase()
-	base := git.ResolveBase(cache.Base(defaultRef))
-	hasChanges, changesErr := git.HasChanges(base, "HEAD")
-	worktree, worktreeErr := git.WorktreeStatus()
+	defaultRef := git.DefaultBase(ctx)
+	base := git.ResolveBase(ctx, cache.Base(defaultRef))
+	hasChanges, changesErr := git.HasChanges(ctx, base, "HEAD")
+	worktree, worktreeErr := git.WorktreeStatus(ctx)
 	hasChanges = hasChanges || worktree.Total() > 0
 	if worktreeErr != nil {
 		status = "worktree unavailable: " + worktreeErr.Error()
@@ -506,10 +520,11 @@ func New(version ...string) (Model, error) {
 	}
 
 	m := Model{
+		ctx:             ctx,
 		cacheWrites:     &cacheWrites{},
-		client:          gh.New(),
+		client:          gh.New(ctx),
 		pollTimers:      &pollTimers{},
-		checkoutHead:    git.CheckoutPullHead,
+		checkoutHead:    func(branch string) error { return git.CheckoutPullHead(ctx, branch) },
 		screen:          prListScreen,
 		version:         first(version),
 		root:            root,
@@ -663,23 +678,23 @@ func shouldOpenLocal(branch, defaultBranch string, hasPR, hasData, hasChanges bo
 	return branch != defaultBranch && (hasPR || hasData || hasChanges)
 }
 
-func localReviewBase(base string, pr *gh.PR) string {
+func localReviewBase(ctx context.Context, base string, pr *gh.PR) string {
 	if pr != nil && pr.BaseRefOID != "" {
-		if mergeBase, err := git.MergeBase(pr.BaseRefOID, "HEAD"); err == nil {
+		if mergeBase, err := git.MergeBase(ctx, pr.BaseRefOID, "HEAD"); err == nil {
 			return mergeBase
 		}
 	}
-	if mergeBase, err := git.MergeBase(base, "HEAD"); err == nil {
+	if mergeBase, err := git.MergeBase(ctx, base, "HEAD"); err == nil {
 		return mergeBase
 	}
 	return base
 }
 
-func remoteReviewBase(pr gh.PR) string {
+func remoteReviewBase(ctx context.Context, pr gh.PR) string {
 	if pr.BaseRefOID != "" {
 		return pr.BaseRefOID
 	}
-	return git.ResolveBase(pr.BaseRefName)
+	return git.ResolveBase(ctx, pr.BaseRefName)
 }
 
 func publishedReviewHead(pr *gh.PR) string {
@@ -692,10 +707,10 @@ func publishedReviewHead(pr *gh.PR) string {
 	return fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
 }
 
-func localReviewRange(base string, pr *gh.PR, currentHead string, remote bool) (diffBase, headRev, reviewRange string) {
-	diffBase = localReviewBase(base, pr)
+func localReviewRange(ctx context.Context, base string, pr *gh.PR, currentHead string, remote bool) (diffBase, headRev, reviewRange string) {
+	diffBase = localReviewBase(ctx, base, pr)
 	if head := publishedReviewHead(pr); head != "" {
-		base = remoteReviewBase(*pr)
+		base = remoteReviewBase(ctx, *pr)
 		return base, head, base + "..." + head
 	}
 	if remote {
@@ -818,6 +833,9 @@ func Run(version string, opts ...Option) error {
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.commandContext().Err() != nil {
+		return nil
+	}
 	// loadSpinner and spinnerRunning are initialized in New(); the value
 	// receiver here would discard any mutation anyway.
 	cmds := []tea.Cmd{fetchPRList(m.client, m.prList.generation, m.prList.activePage, m.prViewSearch(m.prList.view, m.prList.state, m.prList.filterQuery), "", false), m.loadSpinner.Tick}
@@ -875,7 +893,21 @@ func (m *Model) cancelPollTimers() {
 	m.pollTimers.local, m.pollTimers.ci = nil, nil
 }
 
+func (m Model) commandContext() context.Context {
+	if m.ctx != nil {
+		return m.ctx
+	}
+	return context.Background() // zero-value models used by command-only tests
+}
+
 func (m *Model) close() {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.closeView()
+}
+
+func (m *Model) closeView() {
 	m.cancelPollTimers()
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
@@ -883,6 +915,7 @@ func (m *Model) close() {
 }
 
 func (m *Model) advanceAsyncGenerations(previous Model) {
+	m.ctx, m.cancel = previous.ctx, previous.cancel
 	m.cacheWrites = previous.cacheWrites
 	if previous.pollTimers != nil {
 		if previous.pollTimers.local != nil {
@@ -926,8 +959,8 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.screen, m.remote = detailScreen, true
 	m.remoteStats = git.ChangeStats{}
 	m.detailView.title = pr.Title
-	m.detailView.base = git.ResolveBase(pr.BaseRefName)
-	m.detailView.diffBase = remoteReviewBase(pr)
+	m.detailView.base = git.ResolveBase(m.commandContext(), pr.BaseRefName)
+	m.detailView.diffBase = remoteReviewBase(m.commandContext(), pr)
 	m.detailView.head = pr.HeadRefName
 	m.detailView.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
 	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
@@ -952,7 +985,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.status = "loading PR refs…"
 	m.githubStatus = "GitHub: cached · refreshing selected PR…"
 	m.layout()
-	return tea.Batch(fetchRemotePR(m.client, pr, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
+	return tea.Batch(fetchRemotePR(m.commandContext(), m.client, pr, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
 }
 
 func (m *Model) handleVimNavigation(msg tea.KeyPressMsg) (bool, tea.Cmd) {

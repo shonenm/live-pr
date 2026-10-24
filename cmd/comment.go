@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,7 +58,7 @@ func readTextFlag(cmd *cobra.Command, inlineName, fileName string) (string, erro
 }
 
 func currentTimeline() (string, []event.Event, error) {
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		return "", nil, err
 	}

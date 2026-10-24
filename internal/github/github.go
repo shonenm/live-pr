@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shonenm/live-pr/internal/process"
 	"net/url"
 	"os"
 	"os/exec"
@@ -267,20 +268,23 @@ type Client struct {
 }
 
 // New returns a GitHub CLI client.
-func New() Client {
+func New(ctx context.Context) Client {
 	run := func(timeout time.Duration, args ...string) ([]byte, error) {
 		if done := debugtime.Start("github gh " + args[0]); done != nil {
 			defer done()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		// stdout and stderr must stay separate: gh prints warnings (update
 		// notices, deprecations) on stderr, and mixing them into stdout made
 		// every JSON decode fail inscrutably.
-		cmd := exec.CommandContext(ctx, "gh", args...)
+		cmd := process.CommandContext(ctx, "gh", args...)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		err := cmd.Run()
+		if err != nil && ctx.Err() != nil {
+			err = ctx.Err()
+		}
 		return stdout.Bytes(), runError(err, timeout, ctx.Err() == context.DeadlineExceeded, stderr.String())
 	}
 	return Client{

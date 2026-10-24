@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,11 +14,11 @@ import (
 
 func TestCommentOutboxScopesByPR(t *testing.T) {
 	root := t.TempDir()
-	got := CommentOutbox(root, 42)
+	got := CommentOutbox(context.Background(), root, 42)
 	if filepath.Base(got) != "42.json" || filepath.Base(filepath.Dir(got)) != "outbox" {
 		t.Fatalf("comment outbox path = %q", got)
 	}
-	if got == CommentOutbox(root, 43) {
+	if got == CommentOutbox(context.Background(), root, 43) {
 		t.Fatal("different PRs must not share an outbox file")
 	}
 }
@@ -31,7 +32,7 @@ func TestLoadOutboxMissingFileIsEmptyQueue(t *testing.T) {
 
 func TestOutboxRoundTrip(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	path := CommentOutbox(t.TempDir(), 7)
+	path := CommentOutbox(context.Background(), t.TempDir(), 7)
 	if _, err := AppendOutbox(path, OutboxEntry{PR: 7, Body: "first"}); err != nil {
 		t.Fatal(err)
 	}

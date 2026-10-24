@@ -4,8 +4,8 @@ package diffview
 import (
 	"context"
 	"fmt"
+	"github.com/shonenm/live-pr/internal/process"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -18,20 +18,17 @@ const (
 )
 
 // Render pipes raw diff to command and returns its bounded stdout.
-func Render(command, raw string, width int) (string, error) {
-	return render(command, raw, width, defaultTimeout)
+func Render(ctx context.Context, command, raw string, width int) (string, error) {
+	return render(ctx, command, raw, width, defaultTimeout)
 }
 
-func render(command, raw string, width int, timeout time.Duration) (string, error) {
+func render(ctx context.Context, command, raw string, width int, timeout time.Duration) (string, error) {
 	if strings.TrimSpace(command) == "" {
 		return raw, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	configureProcess(cmd)
-	cmd.Cancel = func() error { return killProcessTree(cmd) }
-	cmd.WaitDelay = 100 * time.Millisecond
+	cmd := process.CommandContext(ctx, "sh", "-c", command)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("COLUMNS=%d", width), fmt.Sprintf("LIVE_PR_DIFF_WIDTH=%d", width))
 	cmd.Stdin = strings.NewReader(raw)
 	stdout := &boundedBuffer{limit: maxStdoutBytes}

@@ -37,6 +37,9 @@ func asyncCompletion(msg tea.Msg) bool {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.commandContext().Err() != nil {
+		return m, nil
+	}
 	// A modal popup owns the keyboard only; async completions fall through to
 	// the main switch below so background work keeps landing.
 	if m.overlay != nil && !asyncCompletion(msg) {
@@ -175,7 +178,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation != m.localGeneration {
 			return m, nil
 		}
-		return m, pollLocalState(msg.generation)
+		return m, pollLocalState(m.commandContext(), msg.generation)
 	case localStatePolled:
 		next, cmd := m.handleLocalStatePolled(msg)
 		return next, cmd

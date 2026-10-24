@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -30,7 +31,7 @@ func restorePRCommands(t *testing.T) {
 func TestRunPreviewPrintsAssembledPR(t *testing.T) {
 	restorePRCommands(t)
 	gotBase := ""
-	buildPRPreview = func(base string) (publish.Preview, error) {
+	buildPRPreview = func(_ context.Context, base string) (publish.Preview, error) {
 		gotBase = base
 		return publish.Preview{Title: "Title", Body: "Body\n", Base: "release", Head: "feature"}, nil
 	}
@@ -47,7 +48,7 @@ func TestRunPreviewPrintsAssembledPR(t *testing.T) {
 func TestRunPublishForwardsOptionsAndReportsResult(t *testing.T) {
 	restorePRCommands(t)
 	var got publish.Options
-	publishPullRequest = func(opts publish.Options) (publish.Result, error) {
+	publishPullRequest = func(_ context.Context, opts publish.Options) (publish.Result, error) {
 		got = opts
 		return publish.Result{PR: gh.PR{URL: "https://example/pr/12"}, Created: true}, nil
 	}
@@ -62,7 +63,7 @@ func TestRunPublishForwardsOptionsAndReportsResult(t *testing.T) {
 		t.Fatalf("publish = options:%#v output:%q", got, out.String())
 	}
 
-	publishPullRequest = func(publish.Options) (publish.Result, error) {
+	publishPullRequest = func(context.Context, publish.Options) (publish.Result, error) {
 		return publish.Result{PR: gh.PR{URL: "https://example/pr/12"}}, nil
 	}
 	out.Reset()
@@ -74,12 +75,12 @@ func TestRunPublishForwardsOptionsAndReportsResult(t *testing.T) {
 func TestRunPRDryRunAndPublishFailure(t *testing.T) {
 	restorePRCommands(t)
 	previewCalls, publishCalls := 0, 0
-	buildPRPreview = func(string) (publish.Preview, error) {
+	buildPRPreview = func(context.Context, string) (publish.Preview, error) {
 		previewCalls++
 		return publish.Preview{Title: "Dry", Base: "main", Head: "feature"}, nil
 	}
 	boom := errors.New("publish failed")
-	publishPullRequest = func(publish.Options) (publish.Result, error) {
+	publishPullRequest = func(context.Context, publish.Options) (publish.Result, error) {
 		publishCalls++
 		return publish.Result{}, boom
 	}

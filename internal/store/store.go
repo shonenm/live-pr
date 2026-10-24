@@ -2,6 +2,7 @@
 package store
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -34,19 +35,19 @@ type Store struct {
 
 // Discover resolves the store for the current repo and branch, creating the
 // per-branch directory if needed.
-func Discover() (*Store, error) {
-	root, err := git.RepoRoot()
+func Discover(ctx context.Context) (*Store, error) {
+	root, err := git.RepoRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := MigrateLegacy(root); err != nil {
+	if err := MigrateLegacy(ctx, root); err != nil {
 		return nil, err
 	}
-	branch, err := git.CurrentBranch()
+	branch, err := git.CurrentBranch(ctx)
 	if err != nil {
 		return nil, err
 	}
-	st := ForBranch(root, branch)
+	st := ForBranch(ctx, root, branch)
 	if err := os.MkdirAll(st.Dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -54,8 +55,8 @@ func Discover() (*Store, error) {
 }
 
 // ForBranch resolves branch paths without creating files or directories.
-func ForBranch(root, branch string) *Store {
-	return &Store{Root: root, Branch: branch, Dir: filepath.Join(repoStateRoot(root), branchSlug(branch))}
+func ForBranch(ctx context.Context, root, branch string) *Store {
+	return &Store{Root: root, Branch: branch, Dir: filepath.Join(repoStateRoot(ctx, root), branchSlug(branch))}
 }
 
 // Ensure creates the branch data directory.
@@ -103,17 +104,19 @@ func (s *Store) WriteConclusion(body string) error {
 func (s *Store) GitHubCache() string { return filepath.Join(s.Dir, "github.json") }
 
 // NavigatorCache is the repository-wide PR list and remote snapshot cache.
-func NavigatorCache(root string) string { return filepath.Join(repoStateRoot(root), "github-prs.json") }
+func NavigatorCache(ctx context.Context, root string) string {
+	return filepath.Join(repoStateRoot(ctx, root), "github-prs.json")
+}
 
 // PullRequestReviewDraft is an unpublished review isolated by pull-request number.
-func PullRequestReviewDraft(root string, number int) string {
-	return filepath.Join(repoStateRoot(root), "reviews", fmt.Sprintf("%d.json", number))
+func PullRequestReviewDraft(ctx context.Context, root string, number int) string {
+	return filepath.Join(repoStateRoot(ctx, root), "reviews", fmt.Sprintf("%d.json", number))
 }
 
 // MigrateLegacy moves data from the old repository-local .live-pr/ layout.
 // Legacy config.toml is renamed to .live-pr.toml when possible; the old path
 // remains readable through config.Load if migration cannot move it.
-func MigrateLegacy(root string) error {
+func MigrateLegacy(ctx context.Context, root string) error {
 	legacy := filepath.Join(root, ".live-pr")
 	entries, err := os.ReadDir(legacy)
 	if errors.Is(err, os.ErrNotExist) {
@@ -122,7 +125,7 @@ func MigrateLegacy(root string) error {
 	if err != nil {
 		return err
 	}
-	state := repoStateRoot(root)
+	state := repoStateRoot(ctx, root)
 	legacyConfig := filepath.Join(legacy, "config.toml")
 	newConfig := filepath.Join(root, ".live-pr.toml")
 	if _, err := os.Stat(legacyConfig); err == nil {
@@ -138,7 +141,7 @@ func MigrateLegacy(root string) error {
 		}
 		var target string
 		if entry.Name() == "github-prs.json" {
-			target = NavigatorCache(root)
+			target = NavigatorCache(ctx, root)
 		} else if entry.IsDir() {
 			target = filepath.Join(state, entry.Name())
 		} else {
@@ -169,7 +172,7 @@ var sharedRoots sync.Map // absolute checkout root -> shared identity path
 // is the checkout root itself (so existing state directories keep working);
 // linked worktrees map to the main checkout instead of getting their own
 // duplicated caches. Non-repository roots (tests) fall back to the path.
-func sharedRepoPath(root string) string {
+func sharedRepoPath(ctx context.Context, root string) string {
 	clean, err := filepath.Abs(root)
 	if err != nil {
 		clean = root
@@ -178,15 +181,17 @@ func sharedRepoPath(root string) string {
 		return cached.(string)
 	}
 	path := clean
-	if common, err := git.CommonDir(clean); err == nil {
+	if common, err := git.CommonDir(ctx, clean); err == nil {
 		path = filepath.Dir(common)
 	}
-	sharedRoots.Store(clean, path)
+	if ctx.Err() == nil {
+		sharedRoots.Store(clean, path)
+	}
 	return path
 }
 
-func repoStateRoot(root string) string {
-	clean := sharedRepoPath(root)
+func repoStateRoot(ctx context.Context, root string) string {
+	clean := sharedRepoPath(ctx, root)
 	hash := sha256.Sum256([]byte(clean))
 	name := filepath.Base(filepath.Clean(clean))
 	return filepath.Join(stateRoot(), "repos", slug(name)+"-"+hex.EncodeToString(hash[:])[:12])
@@ -232,12 +237,12 @@ func branchSlug(branch string) string {
 // pull request when its number is known, else the local branch. Marks are
 // per-scope files so moving between PRs (stacked ones included) never leaks
 // another review's progress.
-func ReviewedMarksPath(root string, prNumber int, branch string) string {
+func ReviewedMarksPath(ctx context.Context, root string, prNumber int, branch string) string {
 	name := "branch-" + branchSlug(branch)
 	if prNumber > 0 {
 		name = strconv.Itoa(prNumber)
 	}
-	return filepath.Join(repoStateRoot(root), "reviewed", name+".json")
+	return filepath.Join(repoStateRoot(ctx, root), "reviewed", name+".json")
 }
 
 // LoadReviewedMarks reads a marks file: a JSON object of path → fingerprint.

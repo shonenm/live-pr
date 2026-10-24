@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -24,7 +25,7 @@ var summaryShowCmd = &cobra.Command{
 	Short: "Print the current final summary",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		st, err := store.Discover()
+		st, err := store.Discover(context.Background())
 		if err != nil {
 			return err
 		}
@@ -55,7 +56,7 @@ var summarySetCmd = &cobra.Command{
 		if strings.TrimSpace(body) == "" {
 			return fmt.Errorf("summary must not be empty")
 		}
-		st, err := store.Discover()
+		st, err := store.Discover(context.Background())
 		if err != nil {
 			return err
 		}
@@ -82,7 +83,7 @@ var summaryEditCmd = &cobra.Command{
 	Short: "Open the final summary in $VISUAL or $EDITOR",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		st, err := store.Discover()
+		st, err := store.Discover(context.Background())
 		if err != nil {
 			return err
 		}

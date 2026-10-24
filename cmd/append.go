@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -14,7 +15,7 @@ func addEvent(cmd *cobra.Command, kind event.Kind, title, body, sha, author stri
 	if err := validateEventInput(kind, title, author); err != nil {
 		return err
 	}
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		return err
 	}

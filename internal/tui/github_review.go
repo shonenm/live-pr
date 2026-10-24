@@ -20,7 +20,7 @@ func (m *Model) loadReviewDraft() error {
 	if m.cache.PR == nil || m.cache.PR.Number <= 0 || strings.TrimSpace(m.cache.PR.HeadRefOID) == "" {
 		return errors.New("GitHub review requires a PR with a known head commit")
 	}
-	m.reviewDraftPath = store.PullRequestReviewDraft(m.root, m.cache.PR.Number)
+	m.reviewDraftPath = store.PullRequestReviewDraft(m.commandContext(), m.root, m.cache.PR.Number)
 	draft, err := gh.LoadReviewDraft(m.reviewDraftPath, m.cache.PR.Number, m.cache.PR.HeadRefOID)
 	if err != nil {
 		return err
@@ -111,7 +111,7 @@ func (m Model) handleRemoteCommentDone(msg remoteCommentDone) (Model, tea.Cmd) {
 	}
 	m.targetGeneration++
 	if m.remote {
-		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
+		return m, tea.Batch(fetchRemotePR(m.commandContext(), m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 	}
 	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 }
@@ -325,7 +325,7 @@ func (m Model) handleReviewSubmitted(msg reviewSubmitted) (Model, tea.Cmd) {
 	// isCurrentTargetPR, and would wipe the remote detail.
 	m.targetGeneration++
 	if m.remote {
-		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
+		return m, tea.Batch(fetchRemotePR(m.commandContext(), m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 	}
 	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"testing"
@@ -40,7 +41,7 @@ func setupSessionRepo(t *testing.T) {
 
 func TestLoadSessionWithoutCacheStartsEmpty(t *testing.T) {
 	setupSessionRepo(t)
-	st, cache, err := LoadSession()
+	st, cache, err := LoadSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +55,7 @@ func TestLoadSessionWithoutCacheStartsEmpty(t *testing.T) {
 
 func TestLoadSessionRecoversMalformedGitHubCache(t *testing.T) {
 	setupSessionRepo(t)
-	st, _, err := LoadSession()
+	st, _, err := LoadSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestLoadSessionRecoversMalformedGitHubCache(t *testing.T) {
 	if err := os.WriteFile(st.GitHubCache(), []byte("{broken"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	gotStore, cache, err := LoadSession()
+	gotStore, cache, err := LoadSession(context.Background())
 	if err != nil || gotStore == nil || cache.PR != nil || cache.Head != "feature" || cache.Warning == "" {
 		t.Fatalf("recovered session = store:%v cache:%#v err=%v", gotStore, cache, err)
 	}
@@ -72,7 +73,7 @@ func TestLoadSessionRecoversMalformedGitHubCache(t *testing.T) {
 
 func TestLoadSessionLoadsSavedBranchCache(t *testing.T) {
 	setupSessionRepo(t)
-	st, _, err := LoadSession()
+	st, _, err := LoadSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestLoadSessionLoadsSavedBranchCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, cache, err := LoadSession()
+	_, cache, err := LoadSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestLoadSessionLoadsSavedBranchCache(t *testing.T) {
 
 func TestLoadSessionResetsCacheFromAnotherBranch(t *testing.T) {
 	setupSessionRepo(t)
-	st, _, err := LoadSession()
+	st, _, err := LoadSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestLoadSessionResetsCacheFromAnotherBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, cache, err := LoadSession()
+	_, cache, err := LoadSession(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

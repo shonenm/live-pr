@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/shonenm/live-pr/internal/process"
 	"net/url"
 	"os"
 	"os/exec"
@@ -27,9 +28,9 @@ type woodpeckerStep struct {
 	workflow, name, state, duration string
 }
 
-func runCICommand(command, root, repository string, pr gh.PR, generation uint64) tea.Cmd {
+func runCICommand(ctx context.Context, command, root, repository string, pr gh.PR, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("sh", "-c", command)
+		cmd := process.CommandContext(ctx, "sh", "-c", command)
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(),
 			"LIVE_PR_REPO="+repository,
@@ -48,9 +49,9 @@ func runCICommand(command, root, repository string, pr gh.PR, generation uint64)
 	}
 }
 
-func runWoodpeckerCI(root, repository, server string, cliCommand, tokenCommand []string, pr gh.PR, generation uint64) tea.Cmd {
+func runWoodpeckerCI(ctx context.Context, root, repository, server string, cliCommand, tokenCommand []string, pr gh.PR, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 
 		env := os.Environ()
@@ -75,7 +76,7 @@ func runWoodpeckerCI(root, repository, server string, cliCommand, tokenCommand [
 }
 
 func readCIToken(ctx context.Context, root string, command []string) (string, error) {
-	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	cmd := process.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
@@ -115,7 +116,7 @@ func runWoodpeckerCLI(ctx context.Context, root string, env, command []string, a
 	if len(command) == 0 {
 		command = []string{"woodpecker-cli"}
 	}
-	cmd := exec.CommandContext(ctx, command[0], append(command[1:], args...)...)
+	cmd := process.CommandContext(ctx, command[0], append(command[1:], args...)...)
 	cmd.Dir, cmd.Env = root, env
 	out, err := cmd.Output()
 	if err != nil {

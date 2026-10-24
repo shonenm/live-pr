@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"runtime"
@@ -774,7 +775,7 @@ func TestLocalRefreshRejectsSameNamedFork(t *testing.T) {
 func TestEmptyLocalPRStaysOpenAfterGitHubLookup(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
-	st := store.ForBranch(root, "feature")
+	st := store.ForBranch(context.Background(), root, "feature")
 	if err := st.Ensure(); err != nil {
 		t.Fatal(err)
 	}
@@ -983,7 +984,7 @@ func TestLocalStatePollDoesNotReloadOnFingerprintChange(t *testing.T) {
 func TestDetachedLocalLoadSkipsGitHub(t *testing.T) {
 	m := testModel()
 	m.screen, m.currentBranch, m.targetGeneration = detailScreen, "HEAD", 3
-	st := store.ForBranch(t.TempDir(), "HEAD")
+	st := store.ForBranch(context.Background(), t.TempDir(), "HEAD")
 	data := localData{cache: gh.NewCache("HEAD"), base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main"}
 	loaded, cmd := m.handleLocalLoaded(localLoaded{generation: 3, st: st, data: data})
 	if cmd == nil || loaded.refreshing || loaded.githubStatus != "Local only · detached HEAD" {
@@ -996,7 +997,7 @@ func TestAutomaticLocalReloadPreservesNavigation(t *testing.T) {
 	m.screen, m.targetGeneration, m.localReloading = detailScreen, 3, true
 	m.detailView.active, m.detailView.focus = commitsTab, focusReview
 	m.detailView.cursors[commitsTab], m.detailView.fileCursor = 1, 1
-	st := store.ForBranch(t.TempDir(), "feature")
+	st := store.ForBranch(context.Background(), t.TempDir(), "feature")
 	data := localData{cache: gh.NewCache("feature"), base: "main", diffBase: "main", headRev: "HEAD", reviewRange: "main", localFingerprint: "new",
 		commits: []git.Commit{{SHA: "one"}, {SHA: "two"}}, files: []git.ChangedFile{{Path: "a"}, {Path: "b"}}}
 	reloaded, cmd := m.handleLocalLoaded(localLoaded{generation: 3, st: st, data: data})
@@ -1229,7 +1230,7 @@ func TestLocalLoadRunsOffTheUpdateGoroutine(t *testing.T) {
 	}
 
 	// Stale completions are dropped.
-	stale, _ := m.Update(localLoaded{generation: m.targetGeneration - 1, st: store.ForBranch(m.root, "feature/x")})
+	stale, _ := m.Update(localLoaded{generation: m.targetGeneration - 1, st: store.ForBranch(context.Background(), m.root, "feature/x")})
 	if stale.(Model).screen != prListScreen {
 		t.Fatal("stale localLoaded applied")
 	}
@@ -1239,7 +1240,7 @@ func TestLocalLoadRunsOffTheUpdateGoroutine(t *testing.T) {
 	cache.PR = &pr
 	done, _ := m.Update(localLoaded{
 		generation: m.targetGeneration,
-		st:         store.ForBranch(m.root, "feature/x"),
+		st:         store.ForBranch(context.Background(), m.root, "feature/x"),
 		data:       localData{cache: cache, base: "main", diffBase: "main", headRev: "HEAD"},
 	})
 	m = done.(Model)

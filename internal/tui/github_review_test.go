@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -50,7 +51,7 @@ func TestCommentKeysSplitConversationAndInlineReview(t *testing.T) {
 	u, _ = m.Update(keyPress("ctrl+s"))
 	m = u.(Model)
 
-	path := store.PullRequestReviewDraft(m.root, 12)
+	path := store.PullRequestReviewDraft(context.Background(), m.root, 12)
 	draft, err := gh.LoadReviewDraft(path, 12, "abc123")
 	if err != nil || len(draft.Comments) != 1 || draft.Comments[0].Line != 3 {
 		t.Fatalf("saved draft = %#v err=%v", draft, err)
@@ -62,7 +63,7 @@ func TestReviewSubmitPopupAndResult(t *testing.T) {
 	m := testModel()
 	m.root = t.TempDir()
 	m.cache.PR = &gh.PR{Number: 12, HeadRefOID: "abc123"}
-	path := store.PullRequestReviewDraft(m.root, 12)
+	path := store.PullRequestReviewDraft(context.Background(), m.root, 12)
 	draft := gh.NewReviewDraft(12, "abc123")
 	draft.Body = "Changes required"
 	if err := gh.SaveReviewDraft(path, draft); err != nil {
@@ -123,7 +124,7 @@ func TestReviewSubmissionCompletionOwnsSubmittedDraft(t *testing.T) {
 		m.cache.PR = &pr
 		draft := gh.NewReviewDraft(pr.Number, pr.HeadRefOID)
 		draft.Body = "submitted review"
-		path := store.PullRequestReviewDraft(m.root, pr.Number)
+		path := store.PullRequestReviewDraft(context.Background(), m.root, pr.Number)
 		if err := gh.SaveReviewDraft(path, draft); err != nil {
 			t.Fatal(err)
 		}
@@ -148,7 +149,7 @@ func TestReviewSubmissionCompletionOwnsSubmittedDraft(t *testing.T) {
 		other := gh.PR{Number: 22, HeadRefOID: "bbb", HeadRefName: "b"}
 		otherDraft := gh.NewReviewDraft(other.Number, other.HeadRefOID)
 		otherDraft.Body = "unpublished other review"
-		otherPath := store.PullRequestReviewDraft(m.root, other.Number)
+		otherPath := store.PullRequestReviewDraft(context.Background(), m.root, other.Number)
 		if err := gh.SaveReviewDraft(otherPath, otherDraft); err != nil {
 			t.Fatal(err)
 		}

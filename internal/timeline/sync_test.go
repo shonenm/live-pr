@@ -1,6 +1,7 @@
 package timeline
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,7 +39,7 @@ func TestSyncCommitsIdempotent(t *testing.T) {
 
 	tl := filepath.Join(dir, "timeline.jsonl")
 
-	n, err := SyncCommits(tl, "main")
+	n, err := SyncCommits(context.Background(), tl, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +48,7 @@ func TestSyncCommitsIdempotent(t *testing.T) {
 	}
 
 	// Running again must add nothing (idempotent by sha).
-	if n, err = SyncCommits(tl, "main"); err != nil || n != 0 {
+	if n, err = SyncCommits(context.Background(), tl, "main"); err != nil || n != 0 {
 		t.Fatalf("second sync: want 0/nil, got %d/%v", n, err)
 	}
 

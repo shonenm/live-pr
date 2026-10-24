@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"context"
 
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -43,18 +44,18 @@ type prTargetPrepared struct {
 // Check Git at selection time as well as polling: a checkout can change
 // between any two timer ticks. Never hydrate the previous branch's store
 // from Git belonging to a different checkout.
-func preparePRTarget(root string, pr gh.PR, previous gh.Cache, known []gh.PR, generation uint64) tea.Cmd {
+func preparePRTarget(ctx context.Context, root string, pr gh.PR, previous gh.Cache, known []gh.PR, generation uint64) tea.Cmd {
 	previous = previous.Clone()
 	known = append(append([]gh.PR(nil), known...), pr)
 	return func() tea.Msg {
 		msg := prTargetPrepared{generation: generation, pr: pr}
-		branch, err := git.CurrentBranch()
+		branch, err := git.CurrentBranch(ctx)
 		if err != nil {
 			msg.err = err
 			return msg
 		}
 		msg.branch = branch
-		cache, err := store.ForBranch(root, branch).LoadGitHubCache()
+		cache, err := store.ForBranch(ctx, root, branch).LoadGitHubCache()
 		if err != nil {
 			msg.err = err
 			return msg
@@ -86,6 +87,6 @@ func (m Model) handlePRTargetPrepared(msg prTargetPrepared) (Model, tea.Cmd) {
 	if !m.isCurrentTargetPR(msg.pr) {
 		return m, tea.Batch(m.openRemote(msg.pr), poll)
 	}
-	st := store.ForBranch(m.root, msg.branch)
+	st := store.ForBranch(m.commandContext(), m.root, msg.branch)
 	return m, tea.Batch(m.startLocalLoad(st, msg.cache, &msg.pr), poll, m.startSpinner())
 }

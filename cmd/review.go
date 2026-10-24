@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 )
 
 func currentReviewDraft() (*store.Store, gh.PR, gh.ReviewDraft, error) {
-	st, cache, err := store.LoadSession()
+	st, cache, err := store.LoadSession(context.Background())
 	if err != nil {
 		return nil, gh.PR{}, gh.ReviewDraft{}, err
 	}
@@ -22,7 +23,7 @@ func currentReviewDraft() (*store.Store, gh.PR, gh.ReviewDraft, error) {
 	if cache.PR != nil {
 		pr = *cache.PR
 	} else {
-		pr, err = gh.New().FindForHead(st.Branch)
+		pr, err = gh.New(context.Background()).FindForHead(st.Branch)
 		if err != nil {
 			return nil, gh.PR{}, gh.ReviewDraft{}, err
 		}
@@ -30,7 +31,7 @@ func currentReviewDraft() (*store.Store, gh.PR, gh.ReviewDraft, error) {
 	if pr.Number <= 0 || strings.TrimSpace(pr.HeadRefOID) == "" {
 		return nil, gh.PR{}, gh.ReviewDraft{}, errors.New("pull request head commit is unavailable; refresh the PR first")
 	}
-	draft, err := gh.LoadReviewDraft(store.PullRequestReviewDraft(st.Root, pr.Number), pr.Number, pr.HeadRefOID)
+	draft, err := gh.LoadReviewDraft(store.PullRequestReviewDraft(context.Background(), st.Root, pr.Number), pr.Number, pr.HeadRefOID)
 	return st, pr, draft, err
 }
 
@@ -66,10 +67,10 @@ var reviewBodyCmd = &cobra.Command{
 			return err
 		}
 		draft.Body = strings.TrimSpace(body)
-		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(st.Root, draft.PR), draft); err != nil {
+		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(context.Background(), st.Root, draft.PR), draft); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), store.PullRequestReviewDraft(st.Root, draft.PR))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), store.PullRequestReviewDraft(context.Background(), st.Root, draft.PR))
 		return nil
 	},
 }
@@ -95,7 +96,7 @@ var reviewAddCmd = &cobra.Command{
 			return err
 		}
 		draft.Comments = append(draft.Comments, comment)
-		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(st.Root, draft.PR), draft); err != nil {
+		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(context.Background(), st.Root, draft.PR), draft); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), len(draft.Comments))
@@ -118,7 +119,7 @@ var reviewDeleteCmd = &cobra.Command{
 			return fmt.Errorf("review comment %d not found", index)
 		}
 		draft.Comments = append(draft.Comments[:index-1], draft.Comments[index:]...)
-		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(st.Root, draft.PR), draft); err != nil {
+		if err := gh.SaveReviewDraft(store.PullRequestReviewDraft(context.Background(), st.Root, draft.PR), draft); err != nil {
 			return err
 		}
 		return nil
@@ -127,12 +128,12 @@ var reviewDeleteCmd = &cobra.Command{
 
 var reviewClearCmd = &cobra.Command{
 	Use: "clear", Short: "Discard the pending review", Args: cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		st, _, draft, err := currentReviewDraft()
 		if err != nil {
 			return err
 		}
-		if err := os.Remove(store.PullRequestReviewDraft(st.Root, draft.PR)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.Remove(store.PullRequestReviewDraft(context.Background(), st.Root, draft.PR)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
@@ -147,10 +148,10 @@ var reviewSubmitCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := gh.New().SubmitReview(draft, gh.ReviewEvent(strings.ToUpper(event))); err != nil {
+		if err := gh.New(context.Background()).SubmitReview(draft, gh.ReviewEvent(strings.ToUpper(event))); err != nil {
 			return err
 		}
-		if err := os.Remove(store.PullRequestReviewDraft(st.Root, draft.PR)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.Remove(store.PullRequestReviewDraft(context.Background(), st.Root, draft.PR)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "submitted %s review for PR #%d\n", strings.ToUpper(event), draft.PR)

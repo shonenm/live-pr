@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -317,11 +318,11 @@ func TestCommitSectionsClassifiesDivergedHistory(t *testing.T) {
 	remote := run("rev-parse", "HEAD")
 	run("switch", "feature")
 	t.Chdir(dir)
-	local, err := git.CommitsRange("main", "HEAD")
+	local, err := git.CommitsRange(context.Background(), "main", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	relation, publishedCount, diverged, remoteOnly := commitSections("main", local, &gh.PR{HeadRefOID: remote})
+	relation, publishedCount, diverged, remoteOnly := commitSections(context.Background(), "main", local, &gh.PR{HeadRefOID: remote})
 	if relation != git.RevisionDiverged || publishedCount != 1 || !diverged || len(remoteOnly) != 1 || remoteOnly[0].Subject != "remote" {
 		t.Fatalf("sections = relation:%v published:%d diverged:%v remote:%#v", relation, publishedCount, diverged, remoteOnly)
 	}
@@ -419,7 +420,7 @@ func TestCommitPickerCancelKeepsBranchTerminal(t *testing.T) {
 func TestReloadLocalConversationReadsExternalCLIChanges(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
-	st := store.ForBranch(root, "feature")
+	st := store.ForBranch(context.Background(), root, "feature")
 	if err := st.Ensure(); err != nil {
 		t.Fatal(err)
 	}
@@ -826,7 +827,7 @@ func TestTargetSwitchPrunesRichBodies(t *testing.T) {
 }
 
 func TestApplyLocalFromRemotePrunesRichBodies(t *testing.T) {
-	st := store.ForBranch(t.TempDir(), "feature")
+	st := store.ForBranch(context.Background(), t.TempDir(), "feature")
 	m := testModel()
 	m.screen, m.remote = detailScreen, true
 	m.detailView.richBodies = map[string]string{"body": "rendered"}

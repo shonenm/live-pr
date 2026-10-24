@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ func TestSeedSummaryUsesRepositoryPullRequestTemplate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".github", "pull_request_template.md"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	st := store.ForBranch(root, "feature")
+	st := store.ForBranch(context.Background(), root, "feature")
 	if err := st.Ensure(); err != nil {
 		t.Fatal(err)
 	}

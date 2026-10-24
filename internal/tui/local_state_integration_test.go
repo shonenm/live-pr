@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -44,12 +45,12 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	run("commit", "-am", "published")
 	published := run("rev-parse", "HEAD")
 	t.Chdir(root)
-	st := store.ForBranch(root, "feature")
+	st := store.ForBranch(context.Background(), root, "feature")
 	cache := gh.NewCache("feature")
 	cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", HeadRefOID: published, BaseRefName: "main", State: "OPEN"}
 	load := func() localData {
 		t.Helper()
-		data, err := loadLocalData(st, cache, nil, "")
+		data, err := loadLocalData(context.Background(), st, cache, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -159,7 +160,7 @@ func TestCheckoutRebuildsPRModelAndPersistsExplicitCache(t *testing.T) {
 	// runPRAction has completed the checkout before reconstruction begins.
 	run("switch", "feature")
 	pr := gh.PR{Number: 42, State: "OPEN", BaseRefName: "main", HeadRefName: "feature", HeadRefOID: head}
-	msg := rebuildAfterCheckout("test", old.targetGeneration, prActionDone{number: 42, pr: pr})().(checkoutReloaded)
+	msg := rebuildAfterCheckout(context.Background(), "test", old.targetGeneration, prActionDone{number: 42, pr: pr})().(checkoutReloaded)
 	if msg.err != nil || msg.next == nil {
 		t.Fatalf("checkout rebuild = next:%v err:%v", msg.next, msg.err)
 	}
@@ -170,7 +171,7 @@ func TestCheckoutRebuildsPRModelAndPersistsExplicitCache(t *testing.T) {
 	if saved := batch[len(batch)-1]().(cacheSaved); saved.err != nil {
 		t.Fatal(saved.err)
 	}
-	cached, cacheErr := gh.LoadCache(store.ForBranch(root, "feature").GitHubCache(), "feature")
+	cached, cacheErr := gh.LoadCache(store.ForBranch(context.Background(), root, "feature").GitHubCache(), "feature")
 	if cmd == nil || cacheErr != nil || cached.PR == nil || cached.PR.Number != 42 || !cached.ExplicitCheckout || next.currentBranch != "feature" || next.screen != detailScreen || next.cache.PR == nil || next.cache.PR.Number != 42 || !next.cache.ExplicitCheckout || next.w != 100 || next.h != 30 || next.targetGeneration != 4 || next.prList.generation != 5 || next.notice != "PR #42 loaded" {
 		t.Fatalf("checkout model = branch:%q screen:%v cache:%#v disk:%#v cacheErr:%v size:%dx%d generations:%d/%d notice:%q cmd:%v", next.currentBranch, next.screen, next.cache, cached, cacheErr, next.w, next.h, next.targetGeneration, next.prList.generation, next.notice, cmd)
 	}
@@ -213,7 +214,7 @@ func TestExternalBranchSwitchRebuildsLocalModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("commit", "-am", "feature b")
-	msg := rebuildForLocalBranchChange("test", old.localGeneration)().(localBranchReloaded)
+	msg := rebuildForLocalBranchChange(context.Background(), "test", old.localGeneration)().(localBranchReloaded)
 	if msg.err != nil || msg.next == nil {
 		t.Fatalf("branch rebuild = next:%v err:%v", msg.next, msg.err)
 	}
@@ -269,7 +270,7 @@ func TestRefreshReloadsFilesFromLatestPRHead(t *testing.T) {
 			m := testModel()
 			m.root, m.currentBranch, m.detailView.head = root, "feature", "feature"
 			m.screen = detailScreen
-			m.timelinePath = store.ForBranch(root, "feature").Timeline()
+			m.timelinePath = store.ForBranch(context.Background(), root, "feature").Timeline()
 			m.cachePath = filepath.Join(t.TempDir(), "github.json")
 			m.navigatorPath = filepath.Join(t.TempDir(), "navigator.json")
 			m.cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", BaseRefName: "main", BaseRefOID: base, HeadRefOID: oldHead}

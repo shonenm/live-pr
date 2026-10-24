@@ -167,7 +167,7 @@ func (m Model) openSelectedPR() (Model, tea.Cmd) {
 	}
 	m.targetGeneration++
 	m.refreshing = true
-	return m, tea.Batch(preparePRTarget(m.root, *pr, cache, m.navigator.PRs, m.targetGeneration), m.startSpinner())
+	return m, tea.Batch(preparePRTarget(m.commandContext(), m.root, *pr, cache, m.navigator.PRs, m.targetGeneration), m.startSpinner())
 }
 
 // handlePRActionConfirmKey drives the y/n confirmation for a pending PR
@@ -402,10 +402,10 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.githubStatus = "GitHub: refreshing…"
 		if m.remote && m.cache.PR != nil {
 			m.targetGeneration++
-			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
+			return m, tea.Batch(fetchRemotePR(m.commandContext(), m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
 		}
 		if m.currentBranch == "HEAD" {
-			st := store.ForBranch(m.root, m.currentBranch)
+			st := store.ForBranch(m.commandContext(), m.root, m.currentBranch)
 			return m, tea.Batch(m.startLocalLoad(st, m.cache, nil), m.startSpinner())
 		}
 		m.targetGeneration++
@@ -442,7 +442,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		base := m.detailView.base
 		generation := m.targetGeneration
 		return m, tea.Batch(func() tea.Msg {
-			result, err := publish.Run(publish.Options{Base: base})
+			result, err := publish.Run(m.commandContext(), publish.Options{Base: base})
 			return publishDone{generation: generation, result: result, err: err}
 		}, m.startSpinner())
 	case key.Matches(msg, m.keys.CopyURL):
@@ -479,9 +479,9 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		var ciCmd tea.Cmd
 		switch m.ciProvider {
 		case "woodpecker":
-			ciCmd = runWoodpeckerCI(m.root, m.repository, m.ciServer, m.ciCLICommand, m.ciTokenCommand, *m.cache.PR, m.targetGeneration)
+			ciCmd = runWoodpeckerCI(m.commandContext(), m.root, m.repository, m.ciServer, m.ciCLICommand, m.ciTokenCommand, *m.cache.PR, m.targetGeneration)
 		case "":
-			ciCmd = runCICommand(m.ciCommand, m.root, m.repository, *m.cache.PR, m.targetGeneration)
+			ciCmd = runCICommand(m.commandContext(), m.ciCommand, m.root, m.repository, *m.cache.PR, m.targetGeneration)
 		default:
 			provider, generation := m.ciProvider, m.targetGeneration
 			ciCmd = func() tea.Msg {

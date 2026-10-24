@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -13,7 +14,7 @@ import (
 
 func TestPullRequestReviewDraftUsesRepositoryState(t *testing.T) {
 	root := t.TempDir()
-	got := PullRequestReviewDraft(root, 42)
+	got := PullRequestReviewDraft(context.Background(), root, 42)
 	if filepath.Base(got) != "42.json" || filepath.Base(filepath.Dir(got)) != "reviews" {
 		t.Fatalf("PR review draft path = %q", got)
 	}
@@ -23,7 +24,7 @@ func TestForBranchUsesUserStateOutsideRepository(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
 	root := filepath.Join(t.TempDir(), "repo")
-	st := ForBranch(root, "feature/review")
+	st := ForBranch(context.Background(), root, "feature/review")
 	if strings.HasPrefix(st.Dir, root) || strings.Contains(st.Dir, ".live-pr") {
 		t.Fatalf("store remained repository-local: %q", st.Dir)
 	}
@@ -46,10 +47,10 @@ func TestMigrateLegacyState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".live-pr", "config.toml"), []byte("[diff]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := MigrateLegacy(root); err != nil {
+	if err := MigrateLegacy(context.Background(), root); err != nil {
 		t.Fatal(err)
 	}
-	st := ForBranch(root, "feature-x")
+	st := ForBranch(context.Background(), root, "feature-x")
 	if _, err := os.Stat(filepath.Join(st.Dir, "timeline.jsonl")); err != nil {
 		t.Fatalf("migrated timeline missing: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestMigrateLegacyState(t *testing.T) {
 
 func TestWriteConclusionTrimsAndReplaces(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	st := ForBranch(filepath.Join(t.TempDir(), "repo"), "feature")
+	st := ForBranch(context.Background(), filepath.Join(t.TempDir(), "repo"), "feature")
 	if st.HasData() {
 		t.Fatal("fresh store should have no data")
 	}
@@ -155,8 +156,8 @@ func TestWorktreesShareRepositoryState(t *testing.T) {
 	run(main, "commit", "--allow-empty", "-m", "base")
 	run(main, "worktree", "add", "-b", "feature", linked)
 
-	fromMain := repoStateRoot(main)
-	fromWorktree := repoStateRoot(linked)
+	fromMain := repoStateRoot(context.Background(), main)
+	fromWorktree := repoStateRoot(context.Background(), linked)
 	if fromMain != fromWorktree {
 		t.Fatalf("worktree state split: main=%q worktree=%q", fromMain, fromWorktree)
 	}
@@ -176,25 +177,25 @@ func TestWorktreesShareRepositoryState(t *testing.T) {
 func TestReviewedMarksPathScopesByPRAndBranch(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
-	pr := ReviewedMarksPath(root, 101, "feature/x")
+	pr := ReviewedMarksPath(context.Background(), root, 101, "feature/x")
 	if filepath.Base(pr) != "101.json" || filepath.Base(filepath.Dir(pr)) != "reviewed" {
 		t.Fatalf("PR marks path = %q", pr)
 	}
-	if stacked := ReviewedMarksPath(root, 102, "feature/x"); stacked == pr {
+	if stacked := ReviewedMarksPath(context.Background(), root, 102, "feature/x"); stacked == pr {
 		t.Fatalf("stacked PRs on one branch share a marks file: %q", stacked)
 	}
-	branch := ReviewedMarksPath(root, 0, "feature/x")
+	branch := ReviewedMarksPath(context.Background(), root, 0, "feature/x")
 	if !strings.HasPrefix(filepath.Base(branch), "branch-feature-x") || branch == pr {
 		t.Fatalf("branch-scoped marks path = %q", branch)
 	}
-	if other := ReviewedMarksPath(root, 0, "feature/y"); other == branch {
+	if other := ReviewedMarksPath(context.Background(), root, 0, "feature/y"); other == branch {
 		t.Fatalf("distinct branches share a marks file: %q", other)
 	}
 }
 
 func TestReviewedMarksRoundTrip(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	path := ReviewedMarksPath(t.TempDir(), 7, "main")
+	path := ReviewedMarksPath(context.Background(), t.TempDir(), 7, "main")
 
 	marks, err := LoadReviewedMarks(path)
 	if err != nil || marks == nil || len(marks) != 0 {

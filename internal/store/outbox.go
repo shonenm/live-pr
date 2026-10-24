@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,8 +23,8 @@ type OutboxEntry struct {
 // CommentOutbox locates the queued-comment file for one pull request,
 // isolated by PR number the way review drafts are so switching PRs never
 // mixes queues.
-func CommentOutbox(root string, number int) string {
-	return filepath.Join(repoStateRoot(root), "outbox", fmt.Sprintf("%d.json", number))
+func CommentOutbox(ctx context.Context, root string, number int) string {
+	return filepath.Join(repoStateRoot(ctx, root), "outbox", fmt.Sprintf("%d.json", number))
 }
 
 // LoadOutbox reads the queued comments; a missing file is an empty queue.

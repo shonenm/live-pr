@@ -1,6 +1,6 @@
 //go:build !windows
 
-package diffview
+package process
 
 import (
 	"errors"

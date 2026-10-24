@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,7 +22,7 @@ func TestGitErrorIncludesOperationAndStderr(t *testing.T) {
 	}
 	t.Setenv("PATH", dir)
 
-	_, err := Commits("main")
+	_, err := Commits(context.Background(), "main")
 	if err == nil || !strings.Contains(err.Error(), "git log") || !strings.Contains(err.Error(), "fatal: deliberate failure") {
 		t.Fatalf("git error = %v", err)
 	}
@@ -51,7 +52,7 @@ func TestCompareRevisions(t *testing.T) {
 	run("commit", "--allow-empty", "-m", "remote")
 	remote := run("rev-parse", "HEAD")
 	t.Chdir(dir)
-	if ahead, behind, err := RevisionDistance(local, remote); err != nil || ahead != 1 || behind != 1 {
+	if ahead, behind, err := RevisionDistance(context.Background(), local, remote); err != nil || ahead != 1 || behind != 1 {
 		t.Fatalf("RevisionDistance = %d,%d,%v", ahead, behind, err)
 	}
 	for _, tc := range []struct {
@@ -63,7 +64,7 @@ func TestCompareRevisions(t *testing.T) {
 		{base, local, RevisionRemoteAhead},
 		{local, remote, RevisionDiverged},
 	} {
-		got, err := CompareRevisions(tc.local, tc.remote)
+		got, err := CompareRevisions(context.Background(), tc.local, tc.remote)
 		if err != nil || got != tc.want {
 			t.Fatalf("CompareRevisions(%s,%s)=%v,%v want %v", tc.local[:7], tc.remote[:7], got, err, tc.want)
 		}
@@ -112,7 +113,7 @@ func TestFetchPullLeavesCheckoutUntouched(t *testing.T) {
 	beforeStatus := runIn(clone, "status", "--porcelain")
 	t.Chdir(clone)
 
-	ref, fetchedOID, err := FetchPull(7, "main")
+	ref, fetchedOID, err := FetchPull(context.Background(), 7, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +164,7 @@ func TestCheckoutPullHeadTracksAndFastForwardsSameRepoHead(t *testing.T) {
 	runIn(root, "clone", "--branch", "main", origin, clone)
 	t.Chdir(clone)
 
-	if err := CheckoutPullHead("feature"); err != nil {
+	if err := CheckoutPullHead(context.Background(), "feature"); err != nil {
 		t.Fatal(err)
 	}
 	if got := runIn(clone, "branch", "--show-current"); got != "feature" {
@@ -186,7 +187,7 @@ func TestCheckoutPullHeadTracksAndFastForwardsSameRepoHead(t *testing.T) {
 	runIn(seed, "push", "origin", "feature")
 	runIn(clone, "switch", "main")
 
-	if err := CheckoutPullHead("feature"); err != nil {
+	if err := CheckoutPullHead(context.Background(), "feature"); err != nil {
 		t.Fatal(err)
 	}
 	if got := runIn(clone, "branch", "--show-current"); got != "feature" {
@@ -196,7 +197,7 @@ func TestCheckoutPullHeadTracksAndFastForwardsSameRepoHead(t *testing.T) {
 		t.Fatalf("re-checkout revision = %q, want fast-forwarded %q", got, secondOID)
 	}
 
-	if err := CheckoutPullHead("-not-a-branch"); err == nil || !strings.Contains(err.Error(), "invalid pull request head") {
+	if err := CheckoutPullHead(context.Background(), "-not-a-branch"); err == nil || !strings.Contains(err.Error(), "invalid pull request head") {
 		t.Fatalf("invalid branch error = %v", err)
 	}
 }
@@ -237,7 +238,7 @@ func TestCheckMergeReadinessDoesNotTouchCheckout(t *testing.T) {
 	before := run("status", "--porcelain")
 	t.Chdir(dir)
 
-	readiness, err := CheckMergeReadiness("main", "feature")
+	readiness, err := CheckMergeReadiness(context.Background(), "main", "feature")
 	if err != nil || readiness.Behind != 1 || len(readiness.ConflictFiles) != 1 || readiness.ConflictFiles[0] != "file.txt" {
 		t.Fatalf("readiness = %#v err=%v", readiness, err)
 	}
@@ -276,7 +277,7 @@ func TestCheckMergeReadinessFindsDivergentAppendConflicts(t *testing.T) {
 	run("commit", "-am", "theirs")
 	t.Chdir(dir)
 
-	readiness, err := CheckMergeReadiness("main", "feature")
+	readiness, err := CheckMergeReadiness(context.Background(), "main", "feature")
 	if err != nil || readiness.Behind != 1 || len(readiness.ConflictFiles) != 1 || readiness.ConflictFiles[0] != "plan" {
 		t.Fatalf("divergent append readiness = %#v err=%v", readiness, err)
 	}
@@ -313,49 +314,49 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 
 	t.Chdir(dir)
 
-	files, err := ChangedFilesRange("main", "HEAD")
+	files, err := ChangedFilesRange(context.Background(), "main", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed, err := HasChanges("main", "HEAD"); err != nil || !changed {
+	if changed, err := HasChanges(context.Background(), "main", "HEAD"); err != nil || !changed {
 		t.Fatalf("feature changes = %v, err=%v", changed, err)
 	}
-	if dirty, err := HasUncommittedChanges(); err != nil || dirty {
+	if dirty, err := HasUncommittedChanges(context.Background()); err != nil || dirty {
 		t.Fatalf("clean worktree = %v, err=%v", dirty, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "uncommitted.txt"), []byte("dirty\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if dirty, err := HasUncommittedChanges(); err != nil || !dirty {
+	if dirty, err := HasUncommittedChanges(context.Background()); err != nil || !dirty {
 		t.Fatalf("dirty worktree = %v, err=%v", dirty, err)
 	}
-	if summary, err := WorktreeStatus(); err != nil || summary.Untracked != 1 || summary.Total() != 1 {
+	if summary, err := WorktreeStatus(context.Background()); err != nil || summary.Untracked != 1 || summary.Total() != 1 {
 		t.Fatalf("worktree summary = %#v, err=%v", summary, err)
 	}
-	stateBefore, err := CurrentLocalState()
+	stateBefore, err := CurrentLocalState(context.Background())
 	if err != nil || stateBefore.Branch != "feature" || stateBefore.Fingerprint == "" {
 		t.Fatalf("local state = %#v, err=%v", stateBefore, err)
 	}
-	stats, err := DiffStats("main", "HEAD")
+	stats, err := DiffStats(context.Background(), "main", "HEAD")
 	if err != nil || stats.Files != 2 || stats.Additions != 1 || stats.Deletions != 1 {
 		t.Fatalf("diff stats = %#v, err=%v", stats, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("after\nextra\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	stateAfter, err := CurrentLocalState()
+	stateAfter, err := CurrentLocalState(context.Background())
 	if err != nil || stateAfter.Fingerprint == stateBefore.Fingerprint {
 		t.Fatalf("local state did not change: before=%#v after=%#v err=%v", stateBefore, stateAfter, err)
 	}
-	worktree, err := DiffStats("main", "")
+	worktree, err := DiffStats(context.Background(), "main", "")
 	if err != nil || worktree.Files != 3 || worktree.Additions != 3 || worktree.Deletions != 1 {
 		t.Fatalf("worktree stats = %#v, err=%v", worktree, err)
 	}
-	worktreeFiles, err := ChangedFilesRange("main", "")
+	worktreeFiles, err := ChangedFilesRange(context.Background(), "main", "")
 	if err != nil || len(worktreeFiles) != 3 || worktreeFiles[2].Path != "uncommitted.txt" || worktreeFiles[2].Status != "A" {
 		t.Fatalf("worktree files = %#v, err=%v", worktreeFiles, err)
 	}
-	if diff, err := FileDiffRange("main", "", "uncommitted.txt"); err != nil || !strings.Contains(diff, "dirty") {
+	if diff, err := FileDiffRange(context.Background(), "main", "", "uncommitted.txt"); err != nil || !strings.Contains(diff, "dirty") {
 		t.Fatalf("untracked diff = %q, err=%v", diff, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("after\n"), 0o644); err != nil {
@@ -376,42 +377,42 @@ func TestChangedFilesAndFileDiff(t *testing.T) {
 	if modified == nil || modified.Status != "M" || renamed == nil || !strings.HasPrefix(renamed.Status, "R") || renamed.OldPath != "old.go" {
 		t.Fatalf("unexpected files: %#v", files)
 	}
-	if diff, err := FileDiffRange("main", "HEAD", "file.txt"); err != nil || !strings.Contains(diff, "-before") || !strings.Contains(diff, "after") {
+	if diff, err := FileDiffRange(context.Background(), "main", "HEAD", "file.txt"); err != nil || !strings.Contains(diff, "-before") || !strings.Contains(diff, "after") {
 		t.Fatalf("unexpected diff: %q, err=%v", diff, err)
 	}
-	if diff, err := FileDiffRange("main", "HEAD", renamed.OldPath, renamed.Path); err != nil || !strings.Contains(diff, "rename from old.go") || !strings.Contains(diff, "rename to new.go") {
+	if diff, err := FileDiffRange(context.Background(), "main", "HEAD", renamed.OldPath, renamed.Path); err != nil || !strings.Contains(diff, "rename from old.go") || !strings.Contains(diff, "rename to new.go") {
 		t.Fatalf("unexpected rename diff: %q, err=%v", diff, err)
 	}
 	runGit("update-ref", "refs/remotes/origin/release", "HEAD~1")
-	if got := ResolveBase("release"); got != "origin/release" {
+	if got := ResolveBase(context.Background(), "release"); got != "origin/release" {
 		t.Fatalf("resolved base = %q", got)
 	}
-	if got := ResolveBase("local-only"); got != "local-only" {
+	if got := ResolveBase(context.Background(), "local-only"); got != "local-only" {
 		t.Fatalf("local fallback = %q", got)
 	}
-	featureOID, err := run("rev-parse", "HEAD")
+	featureOID, err := run(context.Background(), "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
-	mainOID, err := run("rev-parse", "main")
+	mainOID, err := run(context.Background(), "rev-parse", "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mergeBase, err := MergeBase("main", "HEAD"); err != nil || mergeBase != mainOID {
+	if mergeBase, err := MergeBase(context.Background(), "main", "HEAD"); err != nil || mergeBase != mainOID {
 		t.Fatalf("merge base = %q, want %q, err=%v", mergeBase, mainOID, err)
 	}
 	runGit("update-ref", "refs/live-pr/pulls/1/head", featureOID)
 	runGit("switch", "main")
-	if changed, err := HasChanges("main", "HEAD"); err != nil || changed {
+	if changed, err := HasChanges(context.Background(), "main", "HEAD"); err != nil || changed {
 		t.Fatalf("main changes = %v, err=%v", changed, err)
 	}
-	if local, err := FileDiffRange("main", "HEAD"); err != nil || local != "" {
+	if local, err := FileDiffRange(context.Background(), "main", "HEAD"); err != nil || local != "" {
 		t.Fatalf("main...HEAD should be empty: %q, err=%v", local, err)
 	}
-	if remote, err := FileDiffRange("main", "refs/live-pr/pulls/1/head"); err != nil || !strings.Contains(remote, "after") {
+	if remote, err := FileDiffRange(context.Background(), "main", "refs/live-pr/pulls/1/head"); err != nil || !strings.Contains(remote, "after") {
 		t.Fatalf("explicit remote diff = %q, err=%v", remote, err)
 	}
-	commits, err := CommitsRange("main", "refs/live-pr/pulls/1/head")
+	commits, err := CommitsRange(context.Background(), "main", "refs/live-pr/pulls/1/head")
 	if err != nil || len(commits) != 1 {
 		t.Fatalf("explicit commits = %#v, err=%v", commits, err)
 	}
@@ -453,7 +454,7 @@ func TestCurrentLocalSnapshotSummarizesOneStatusScan(t *testing.T) {
 	if err := os.WriteFile("untracked", []byte("new\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := CurrentLocalSnapshot()
+	snapshot, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || snapshot.State.Branch != "main" || snapshot.State.Fingerprint == "" || snapshot.Worktree != (WorktreeSummary{Staged: 1, Unstaged: 1, Untracked: 1}) {
 		t.Fatalf("snapshot = %#v err=%v", snapshot, err)
 	}
@@ -473,18 +474,18 @@ func TestCurrentLocalSnapshotTracksRepeatedDirtyContent(t *testing.T) {
 	if err := os.WriteFile("tracked", []byte("first edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	first, err := CurrentLocalSnapshot()
+	first, err := CurrentLocalSnapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	unchanged, err := CurrentLocalSnapshot()
+	unchanged, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || unchanged.State.Fingerprint != first.State.Fingerprint {
 		t.Fatalf("unchanged dirty state changed fingerprint: first=%q next=%q err=%v", first.State.Fingerprint, unchanged.State.Fingerprint, err)
 	}
 	if err := os.WriteFile("tracked", []byte("second edit with different size\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	second, err := CurrentLocalSnapshot()
+	second, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || second.State.Fingerprint == first.State.Fingerprint {
 		t.Fatalf("repeated tracked edit was missed: first=%q second=%q err=%v", first.State.Fingerprint, second.State.Fingerprint, err)
 	}
@@ -497,14 +498,14 @@ func TestCurrentLocalSnapshotTracksRepeatedDirtyContent(t *testing.T) {
 	if err := os.WriteFile(path, []byte("first\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	untrackedFirst, err := CurrentLocalSnapshot()
+	untrackedFirst, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || untrackedFirst.Worktree.Untracked != 1 {
 		t.Fatalf("untracked directory snapshot = %#v err=%v", untrackedFirst, err)
 	}
 	if err := os.WriteFile(path, []byte("second with different size\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	untrackedSecond, err := CurrentLocalSnapshot()
+	untrackedSecond, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || untrackedSecond.State.Fingerprint == untrackedFirst.State.Fingerprint {
 		t.Fatalf("repeated untracked edit was missed: first=%q second=%q err=%v", untrackedFirst.State.Fingerprint, untrackedSecond.State.Fingerprint, err)
 	}
@@ -520,13 +521,13 @@ func TestCurrentLocalSnapshotFingerprintIncludesBranchHeadAndIndex(t *testing.T)
 	}
 	run("add", ".")
 	run("commit", "-m", "base")
-	main, err := CurrentLocalSnapshot()
+	main, err := CurrentLocalSnapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	run("switch", "-c", "feature")
-	branch, err := CurrentLocalSnapshot()
+	branch, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || branch.State.Branch != "feature" || branch.State.Fingerprint == main.State.Fingerprint {
 		t.Fatalf("branch snapshot = %#v err=%v", branch, err)
 	}
@@ -534,7 +535,7 @@ func TestCurrentLocalSnapshotFingerprintIncludesBranchHeadAndIndex(t *testing.T)
 		t.Fatal(err)
 	}
 	run("add", "tracked")
-	indexOne, err := CurrentLocalSnapshot()
+	indexOne, err := CurrentLocalSnapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,12 +543,12 @@ func TestCurrentLocalSnapshotFingerprintIncludesBranchHeadAndIndex(t *testing.T)
 		t.Fatal(err)
 	}
 	run("add", "tracked")
-	indexTwo, err := CurrentLocalSnapshot()
+	indexTwo, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || indexTwo.State.Fingerprint == indexOne.State.Fingerprint {
 		t.Fatalf("index update was missed: first=%q second=%q err=%v", indexOne.State.Fingerprint, indexTwo.State.Fingerprint, err)
 	}
 	run("commit", "-m", "head update")
-	head, err := CurrentLocalSnapshot()
+	head, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || head.State.Fingerprint == indexTwo.State.Fingerprint {
 		t.Fatalf("HEAD update was missed: index=%q head=%q err=%v", indexTwo.State.Fingerprint, head.State.Fingerprint, err)
 	}
@@ -580,15 +581,15 @@ func TestUntrackedBinaryAndSymlinkStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	stats, err := DiffStats("HEAD", "")
+	stats, err := DiffStats(context.Background(), "HEAD", "")
 	if err != nil || stats.Files != 2 || stats.Additions != 1 {
 		t.Fatalf("untracked stats = %#v err=%v", stats, err)
 	}
-	files, err := ChangedFilesRange("HEAD", "")
+	files, err := ChangedFilesRange(context.Background(), "HEAD", "")
 	if err != nil || len(files) != 2 || files[0].Fingerprint == files[1].Fingerprint {
 		t.Fatalf("untracked files = %#v err=%v", files, err)
 	}
-	if diff, err := FileDiffRange("HEAD", "", "binary.dat", "link"); err != nil || !strings.Contains(diff, "Binary files") || !strings.Contains(diff, "new file mode 120000") {
+	if diff, err := FileDiffRange(context.Background(), "HEAD", "", "binary.dat", "link"); err != nil || !strings.Contains(diff, "Binary files") || !strings.Contains(diff, "new file mode 120000") {
 		t.Fatalf("binary/symlink diff = %q err=%v", diff, err)
 	}
 }
@@ -622,7 +623,7 @@ func TestChangedFilesRangeMarksConflicts(t *testing.T) {
 	run(false, "switch", "feature")
 	run(true, "merge", "main")
 	t.Chdir(dir)
-	files, err := ChangedFilesRange("main", "")
+	files, err := ChangedFilesRange(context.Background(), "main", "")
 	if err != nil || len(files) != 1 || files[0].Status != "U" {
 		t.Fatalf("conflict files = %#v err=%v", files, err)
 	}
@@ -641,11 +642,11 @@ func TestWorkingTreeHashTracksNestedRepository(t *testing.T) {
 	cmd("config", "user.email", "test@example.com")
 	cmd("config", "user.name", "Test")
 	cmd("commit", "--allow-empty", "-m", "base")
-	before := workingTreeHash(dir)
+	before := workingTreeHash(context.Background(), dir)
 	if err := os.WriteFile(filepath.Join(dir, "dirty"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	after := workingTreeHash(dir)
+	after := workingTreeHash(context.Background(), dir)
 	if before == "" || before == after {
 		t.Fatalf("nested repository fingerprint did not change: %q", before)
 	}
@@ -673,7 +674,7 @@ func TestChangedFilesRangeFingerprints(t *testing.T) {
 	run("mv", "renamed.go", "moved.go")
 	run("commit", "-am", "first")
 
-	before, err := ChangedFilesRange("main", "HEAD")
+	before, err := ChangedFilesRange(context.Background(), "main", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,7 +699,7 @@ func TestChangedFilesRangeFingerprints(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("commit", "-am", "second")
-	after, err := ChangedFilesRange("main", "HEAD")
+	after, err := ChangedFilesRange(context.Background(), "main", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,14 +733,14 @@ func TestChangedFilesRangeHashesWorkingTree(t *testing.T) {
 	if err := os.WriteFile("f.go", []byte("package a\n// one\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	first, err := ChangedFilesRange("HEAD", "")
+	first, err := ChangedFilesRange(context.Background(), "HEAD", "")
 	if err != nil || len(first) != 1 {
 		t.Fatalf("changed files = %#v err=%v", first, err)
 	}
 	if err := os.WriteFile("f.go", []byte("package a\n// two\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	second, err := ChangedFilesRange("HEAD", "")
+	second, err := ChangedFilesRange(context.Background(), "HEAD", "")
 	if err != nil || len(second) != 1 {
 		t.Fatalf("changed files = %#v err=%v", second, err)
 	}
@@ -767,7 +768,7 @@ func TestChangedFilesRangeHashesFromSubdirectory(t *testing.T) {
 	// Launching from a subdirectory must still hash the uncommitted file:
 	// --raw paths are repo-root relative, not cwd relative.
 	t.Chdir("sub")
-	files, err := ChangedFilesRange("HEAD", "")
+	files, err := ChangedFilesRange(context.Background(), "HEAD", "")
 	if err != nil || len(files) != 1 {
 		t.Fatalf("changed files = %#v err=%v", files, err)
 	}
@@ -788,13 +789,13 @@ func TestFileDiffRangeAndShowSurfaceErrors(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "base")
 
-	if out, err := Show("HEAD"); err != nil || !strings.Contains(out, "base") {
+	if out, err := Show(context.Background(), "HEAD"); err != nil || !strings.Contains(out, "base") {
 		t.Fatalf("Show(HEAD) = %q, err=%v", out, err)
 	}
-	if out, err := FileDiffRange("no-such-branch", "HEAD"); err == nil || !strings.Contains(err.Error(), "git diff") {
+	if out, err := FileDiffRange(context.Background(), "no-such-branch", "HEAD"); err == nil || !strings.Contains(err.Error(), "git diff") {
 		t.Fatalf("FileDiffRange with bad base: out=%q err=%v, want git diff error", out, err)
 	}
-	if out, err := Show("deadbeef"); err == nil || !strings.Contains(err.Error(), "git show") {
+	if out, err := Show(context.Background(), "deadbeef"); err == nil || !strings.Contains(err.Error(), "git show") {
 		t.Fatalf("Show with bad sha: out=%q err=%v, want git show error", out, err)
 	}
 }
@@ -842,7 +843,7 @@ func TestContentConflictsMergeFileFallback(t *testing.T) {
 	write("big.txt", "theirs\n")
 	run("commit", "-am", "theirs")
 
-	files, err := contentConflicts("main", "feature")
+	files, err := contentConflicts(context.Background(), "main", "feature")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -864,7 +865,7 @@ func TestDefaultBaseFindsSoleCustomAncestor(t *testing.T) {
 	run("commit", "--allow-empty", "-m", "base")
 	run("switch", "-c", "feature")
 	run("commit", "--allow-empty", "-m", "feature")
-	if got := DefaultBase(); got != "develop" {
+	if got := DefaultBase(context.Background()); got != "develop" {
 		t.Fatalf("custom default base = %q", got)
 	}
 }
@@ -880,20 +881,20 @@ func TestDefaultBaseFallbackOrder(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "base")
 
-	if got := DefaultBase(); got != "main" {
+	if got := DefaultBase(context.Background()); got != "main" {
 		t.Fatalf("no origin/HEAD, no main/master = %q, want fallback main", got)
 	}
 	run("branch", "master")
-	if got := DefaultBase(); got != "master" {
+	if got := DefaultBase(context.Background()); got != "master" {
 		t.Fatalf("master only = %q, want master", got)
 	}
 	run("branch", "main")
-	if got := DefaultBase(); got != "main" {
+	if got := DefaultBase(context.Background()); got != "main" {
 		t.Fatalf("main and master = %q, want main preferred", got)
 	}
 	run("update-ref", "refs/remotes/origin/develop", "HEAD")
 	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
-	if got := DefaultBase(); got != "origin/develop" {
+	if got := DefaultBase(context.Background()); got != "origin/develop" {
 		t.Fatalf("origin/HEAD set = %q, want origin/develop", got)
 	}
 }

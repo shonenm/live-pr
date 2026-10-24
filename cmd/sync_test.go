@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"os/exec"
 	"strings"
 	"testing"
@@ -30,7 +31,7 @@ func TestSyncUsesCachedPRBase(t *testing.T) {
 	run("switch", "-c", "feature")
 	run("commit", "--allow-empty", "-m", "feature")
 	t.Chdir(dir)
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,15 +37,15 @@ func modeFixture(t *testing.T) (*Model, *store.Store) {
 	head := modeGit(t, "rev-parse", "HEAD")
 	cache := gh.NewCache("feature")
 	cache.PR = &gh.PR{Number: 10, State: "OPEN", Title: "Current checkout", HeadRefName: "feature", HeadRefOID: head, BaseRefName: "main", BaseRefOID: base}
-	st := store.ForBranch(root, "feature")
-	data, err := loadLocalData(st, cache, nil, "")
+	st := store.ForBranch(context.Background(), root, "feature")
+	data, err := loadLocalData(context.Background(), st, cache, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := testModel()
 	m.root, m.currentBranch, m.defaultBranch = root, "feature", "main"
 	m.pollTimers = &pollTimers{}
-	m.navigatorPath = store.NavigatorCache(root)
+	m.navigatorPath = store.NavigatorCache(context.Background(), root)
 	m.applyLocal(st, data)
 	m.refreshing = false
 	t.Cleanup(m.close)
@@ -72,7 +73,7 @@ func modeWrite(t *testing.T, body string) {
 
 func pollModeFixture(t *testing.T, m *Model) {
 	t.Helper()
-	state, err := git.CurrentLocalState()
+	state, err := git.CurrentLocalState(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestModeConversationRefreshKeepsCoherentLocalSnapshot(t *testing.T) {
 	if got := modeGit(t, "status", "--short"); got != "" {
 		t.Fatalf("not clean: %q", got)
 	}
-	current, err := git.CurrentLocalState()
+	current, err := git.CurrentLocalState(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func TestModeLocalReloadPreservesDiscoveredPR(t *testing.T) {
 	knownPR := *m.cache.PR
 	m.cache.PR = nil
 	m.localReloading = true
-	st := store.ForBranch(m.root, m.currentBranch)
+	st := store.ForBranch(context.Background(), m.root, m.currentBranch)
 	cmd := m.startLocalLoad(st, m.cache, nil)
 	loaded := localLoadResult(t, cmd)
 	// The independent PR-list request resolves before the local load is applied.
@@ -168,7 +169,7 @@ func TestModeCheckoutChangedWhileListOpen(t *testing.T) {
 			next, cmd := m.openSelectedPR()
 			*m = next
 			*m, _ = m.handlePRTargetPrepared(preparedTargetResult(t, cmd))
-			actual, err := git.CurrentBranch()
+			actual, err := git.CurrentBranch(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -267,7 +268,7 @@ func TestModeLiveDoesNotRequirePublishedHeadEquality(t *testing.T) {
 		t.Fatal("unpublished commits must wait for r and must not change the PR review target")
 	}
 	m.localReloading = true
-	st := store.ForBranch(m.root, m.currentBranch)
+	st := store.ForBranch(context.Background(), m.root, m.currentBranch)
 	*m, _ = m.handleLocalLoaded(localLoadResult(t, m.startLocalLoad(st, m.cache, m.cache.PR)))
 	t.Logf("after r: mode=%s; local HEAD equals PR head=%v; dirty=%v", m.dataModeLabel(), m.localHeadOID == m.cache.PR.HeadRefOID, m.workingTreeDirty)
 	if m.detailMode() != modeLive || m.localHeadOID == m.cache.PR.HeadRefOID {
@@ -379,7 +380,7 @@ func TestModeExternalCheckoutPreservesScreenAndReviewTarget(t *testing.T) {
 			}
 			selected := m.currentPRNumber()
 			modeGit(t, "switch", "-c", "other")
-			state, err := git.CurrentLocalState()
+			state, err := git.CurrentLocalState(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}

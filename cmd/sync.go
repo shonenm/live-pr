@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -26,18 +27,18 @@ func runSync(out io.Writer, requestedBase string) error {
 	var err error
 	if base == "" {
 		var cache gh.Cache
-		st, cache, err = store.LoadSession()
+		st, cache, err = store.LoadSession(context.Background())
 		if err == nil {
-			base = cache.Base(git.DefaultBase())
+			base = cache.Base(git.DefaultBase(context.Background()))
 		}
 	} else {
-		st, err = store.Discover()
+		st, err = store.Discover(context.Background())
 	}
 	if err != nil {
 		return err
 	}
-	resolved := git.ResolveBase(base)
-	n, err := timeline.SyncCommits(st.Timeline(), resolved)
+	resolved := git.ResolveBase(context.Background(), base)
+	n, err := timeline.SyncCommits(context.Background(), st.Timeline(), resolved)
 	if err != nil {
 		return err
 	}

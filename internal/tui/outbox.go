@@ -25,7 +25,7 @@ func (m *Model) refreshOutbox() {
 	if m.cache.PR == nil || m.cache.PR.Number <= 0 {
 		return
 	}
-	m.outboxPath = store.CommentOutbox(m.root, m.cache.PR.Number)
+	m.outboxPath = store.CommentOutbox(m.commandContext(), m.root, m.cache.PR.Number)
 	entries, err := store.LoadOutbox(m.outboxPath)
 	if err != nil {
 		m.status = "outbox: " + err.Error()
@@ -41,7 +41,7 @@ func (m Model) queueOfflineComment(msg remoteCommentDone) (Model, tea.Cmd, bool)
 	if msg.body == "" || msg.deleted || msg.number <= 0 || gh.StatusHint(msg.err) != "" {
 		return m, nil, false
 	}
-	path := store.CommentOutbox(m.root, msg.number)
+	path := store.CommentOutbox(m.commandContext(), m.root, msg.number)
 	entries, err := store.AppendOutbox(path, store.OutboxEntry{PR: msg.number, Body: msg.body, CommentID: msg.editID})
 	currentTarget := msg.generation == m.targetGeneration && m.cache.PR != nil && m.cache.PR.Number == msg.number
 	if err != nil {
@@ -108,7 +108,7 @@ func (m Model) handleOutboxFlushed(msg outboxFlushed) (Model, tea.Cmd) {
 	// the file update never waits on the generation guard below — leaving
 	// them queued would double-post on the next flush.
 	if len(msg.posted) > 0 {
-		path := store.CommentOutbox(m.root, msg.number)
+		path := store.CommentOutbox(m.commandContext(), m.root, msg.number)
 		if _, err := store.RemoveOutbox(path, msg.posted...); err != nil {
 			m.status = "outbox: " + err.Error()
 		}
@@ -130,7 +130,7 @@ func (m Model) handleOutboxFlushed(msg outboxFlushed) (Model, tea.Cmd) {
 	// split as handleRemoteCommentDone.
 	m.targetGeneration++
 	if m.remote {
-		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
+		return m, tea.Batch(fetchRemotePR(m.commandContext(), m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 	}
 	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.startSpinner())
 }

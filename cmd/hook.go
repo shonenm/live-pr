@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,7 +26,7 @@ var hookStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Claude Code Stop hook: summarize the session into the timeline",
 	// Always returns nil: a hook must never block or fail the agent.
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		var payload struct {
 			TranscriptPath string `json:"transcript_path"`
 			Cwd            string `json:"cwd"`
@@ -35,7 +36,7 @@ var hookStopCmd = &cobra.Command{
 			_ = os.Chdir(payload.Cwd)
 		}
 
-		st, err := store.Discover()
+		st, err := store.Discover(context.Background())
 		if err != nil {
 			return nil // not a git repo → nothing to summarize
 		}

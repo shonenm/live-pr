@@ -28,6 +28,18 @@ carries those fields across. Missing conclusion files are normal, unlike I/O
 errors. Automatic PR resolution reports cache read failures and retains only
 matching in-memory PR data.
 
+TUI commands share a lifetime context, including Git/GitHub, local hydration,
+checkout rebuilds, static diff filters, configured CI, avatar fetching, and
+Mermaid rendering. Closing the application cancels this context and suppresses
+late UI updates. Replacing the Model closes only its view resources and retains
+the lifetime. Unix cancellation kills the process group; Windows uses native
+`taskkill /T` with direct-process termination if tree cleanup fails. Output-pipe
+waits are bounded. Browser applications opened explicitly remain independent.
+
+Cancellation is not a rollback of a push, comment, review, or publish that may
+already have reached the server. The application does not automatically repeat
+such operations on cancellation; inspect remote state before retrying.
+
 ## CLI reference
 
 ```sh

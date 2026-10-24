@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -27,7 +28,7 @@ var initCmd = &cobra.Command{
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), hookSnippet)
 			return nil
 		}
-		st, err := store.Discover()
+		st, err := store.Discover(context.Background())
 		if err != nil {
 			return err
 		}
