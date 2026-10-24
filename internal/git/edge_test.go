@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"os/exec"
@@ -32,11 +33,11 @@ func TestLinkedWorktreeCommonDirIsAbsoluteFromRelativePath(t *testing.T) {
 	runGitAt(t, repo, "commit", "--allow-empty", "-m", "base")
 	runGitAt(t, repo, "worktree", "add", "-b", "feature", linked)
 	t.Chdir(root)
-	mainDir, err := CommonDir("repo")
+	mainDir, err := CommonDir(context.Background(), "repo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	linkedDir, err := CommonDir("linked")
+	linkedDir, err := CommonDir(context.Background(), "linked")
 	if err != nil || !filepath.IsAbs(mainDir) || mainDir != linkedDir {
 		t.Fatalf("common dirs = %q %q err=%v", mainDir, linkedDir, err)
 	}
@@ -60,11 +61,11 @@ func TestDetachedSnapshotAndUnicodePath(t *testing.T) {
 	if err := os.WriteFile(path, []byte("changed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := CurrentLocalSnapshot()
+	snapshot, err := CurrentLocalSnapshot(context.Background())
 	if err != nil || snapshot.State.Branch != "HEAD" || snapshot.Worktree.Unstaged != 1 {
 		t.Fatalf("detached snapshot = %#v err=%v", snapshot, err)
 	}
-	files, err := ChangedFilesRange("HEAD", "")
+	files, err := ChangedFilesRange(context.Background(), "HEAD", "")
 	if err != nil || len(files) != 1 || files[0].Path != filepath.ToSlash(path) {
 		t.Fatalf("unicode files = %#v err=%v", files, err)
 	}
@@ -102,11 +103,11 @@ func TestShallowPullRefSupportsLocalReview(t *testing.T) {
 	originURL := (&url.URL{Scheme: "file", Path: originPath}).String()
 	runGitAt(t, root, "clone", "--depth=1", "--branch", "feature", originURL, clone)
 	t.Chdir(clone)
-	ref, oid, err := FetchPull(7, "main")
+	ref, oid, err := FetchPull(context.Background(), 7, "main")
 	if err != nil || oid != head {
 		t.Fatalf("FetchPull = %q %q err=%v", ref, oid, err)
 	}
-	files, err := ChangedFilesRange("origin/main", "")
+	files, err := ChangedFilesRange(context.Background(), "origin/main", "")
 	if err != nil || len(files) != 1 || files[0].Path != "file" {
 		t.Fatalf("shallow local files = %#v err=%v", files, err)
 	}

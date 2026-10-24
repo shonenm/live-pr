@@ -1,6 +1,7 @@
 package publish
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -47,7 +48,7 @@ func setupRepo(t *testing.T) *store.Store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func setupRepo(t *testing.T) *store.Store {
 
 func TestBuildPreview(t *testing.T) {
 	st := setupRepo(t)
-	preview, err := BuildPreview("main")
+	preview, err := BuildPreview(context.Background(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +80,7 @@ func TestBuildPreview(t *testing.T) {
 func TestBuildPreviewErrorsAndOptionalConclusion(t *testing.T) {
 	t.Run("commit enumeration", func(t *testing.T) {
 		setupRepo(t)
-		if _, err := BuildPreview("missing-base"); err == nil || !strings.Contains(err.Error(), "git log") {
+		if _, err := BuildPreview(context.Background(), "missing-base"); err == nil || !strings.Contains(err.Error(), "git log") {
 			t.Fatalf("commit enumeration error = %v", err)
 		}
 	})
@@ -91,7 +92,7 @@ func TestBuildPreviewErrorsAndOptionalConclusion(t *testing.T) {
 		if err := os.Mkdir(st.Conclusion(), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := BuildPreview("main"); err == nil {
+		if _, err := BuildPreview(context.Background(), "main"); err == nil {
 			t.Fatal("expected conclusion read error")
 		}
 	})
@@ -100,7 +101,7 @@ func TestBuildPreviewErrorsAndOptionalConclusion(t *testing.T) {
 		if err := os.Remove(st.Conclusion()); err != nil {
 			t.Fatal(err)
 		}
-		preview, err := BuildPreview("main")
+		preview, err := BuildPreview(context.Background(), "main")
 		if err != nil || preview.Title != "feature" {
 			t.Fatalf("missing conclusion preview = %#v, err=%v", preview, err)
 		}
@@ -152,7 +153,7 @@ func TestRunCreatesAndCachesPublishedBody(t *testing.T) {
 	st := setupRepo(t)
 	client := &fakeGitHub{missing: true, pr: gh.PR{Number: 12, URL: "https://example/pr/12", State: "OPEN"}}
 	pushed := ""
-	result, err := run(Options{Base: "main", Draft: true}, client, func(branch string) error {
+	result, err := run(context.Background(), Options{Base: "main", Draft: true}, client, func(branch string) error {
 		pushed = branch
 		return nil
 	})
@@ -181,7 +182,7 @@ func TestRunUpdatesExistingPRAndCache(t *testing.T) {
 	}
 	client := &fakeGitHub{pr: gh.PR{Number: 12, URL: "https://example/pr/12", Body: old}}
 	pushed := false
-	result, err := run(Options{Base: "main"}, client, func(string) error { pushed = true; return nil })
+	result, err := run(context.Background(), Options{Base: "main"}, client, func(string) error { pushed = true; return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,14 +207,14 @@ func TestRunUsesAndProtectsExistingPRBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &fakeGitHub{pr: gh.PR{Number: 12, URL: "https://example/pr/12", Body: old, BaseRefName: "release"}}
-	if _, err := run(Options{}, client, func(string) error { return nil }); err != nil {
+	if _, err := run(context.Background(), Options{}, client, func(string) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	got, err := gh.LoadCache(st.GitHubCache(), "feature")
 	if err != nil || got.Base("") != "release" {
 		t.Fatalf("remote base not cached: cache=%#v err=%v", got, err)
 	}
-	if _, err := run(Options{Base: "main"}, client, func(string) error { return nil }); err == nil || !strings.Contains(err.Error(), "open PR base") {
+	if _, err := run(context.Background(), Options{Base: "main"}, client, func(string) error { return nil }); err == nil || !strings.Contains(err.Error(), "open PR base") {
 		t.Fatalf("expected base mismatch, got %v", err)
 	}
 }
@@ -222,7 +223,7 @@ func TestRunStopsWhenPushFails(t *testing.T) {
 	setupRepo(t)
 	client := &fakeGitHub{missing: true, pr: gh.PR{URL: "https://example/pr/12"}}
 	pushErr := errors.New("push failed")
-	_, err := run(Options{Base: "main"}, client, func(string) error { return pushErr })
+	_, err := run(context.Background(), Options{Base: "main"}, client, func(string) error { return pushErr })
 	if !errors.Is(err, pushErr) || client.created || client.updated {
 		t.Fatalf("remote mutation occurred after push failure: err=%v client=%#v", err, client)
 	}
@@ -238,7 +239,7 @@ func TestRunStopsOnRemoteMutationFailure(t *testing.T) {
 	}
 	updateErr := errors.New("update failed")
 	client := &fakeGitHub{pr: gh.PR{Number: 12, Body: old}, updateErr: updateErr}
-	_, err := run(Options{Base: "main"}, client, func(string) error { return nil })
+	_, err := run(context.Background(), Options{Base: "main"}, client, func(string) error { return nil })
 	if !errors.Is(err, updateErr) || !client.updated {
 		t.Fatalf("expected update failure, got err=%v client=%#v", err, client)
 	}
@@ -255,7 +256,7 @@ func TestRunStopsBeforePushOnManagedBodyConflict(t *testing.T) {
 	remote := strings.Replace(prbody.Render("# Remote edit", nil), "Remote edit", "Edited on GitHub", 1)
 	client := &fakeGitHub{pr: gh.PR{Number: 12, Body: remote}}
 	pushed := false
-	_, err := run(Options{Base: "main"}, client, func(string) error { pushed = true; return nil })
+	_, err := run(context.Background(), Options{Base: "main"}, client, func(string) error { pushed = true; return nil })
 	if !errors.Is(err, prbody.ErrManagedConflict) || pushed || client.updated {
 		t.Fatalf("conflict was not fail-closed: err=%v pushed=%v updated=%v", err, pushed, client.updated)
 	}
@@ -268,7 +269,7 @@ func TestRunRecoversPRNumberWhenReadBackFails(t *testing.T) {
 		pr:                 gh.PR{Number: 12, URL: "https://github.com/o/r/pull/77", State: "OPEN"},
 		findAfterCreateErr: errors.New("read-back failed"),
 	}
-	result, err := run(Options{Base: "main"}, client, func(string) error { return nil })
+	result, err := run(context.Background(), Options{Base: "main"}, client, func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}

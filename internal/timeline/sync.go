@@ -2,6 +2,7 @@
 package timeline
 
 import (
+	"context"
 	"strings"
 
 	"github.com/shonenm/live-pr/internal/event"
@@ -39,8 +40,8 @@ func WithCommits(events []event.Event, commits []git.Commit) []event.Event {
 // the timeline, in commit order (oldest first). It is idempotent: commits whose
 // sha is already present are skipped, so it is safe to run on every TUI open.
 // Returns the number of new events appended.
-func SyncCommits(path, base string) (int, error) {
-	commits, err := git.Commits(base)
+func SyncCommits(ctx context.Context, path, base string) (int, error) {
+	commits, err := git.Commits(ctx, base)
 	if err != nil {
 		return 0, err
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -171,7 +172,7 @@ func (m *Model) reloadLocalConversation() {
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	m.detailView.events = events
-	conclusion, err := os.ReadFile(store.ForBranch(m.root, m.currentBranch).Conclusion())
+	conclusion, err := os.ReadFile(store.ForBranch(m.commandContext(), m.root, m.currentBranch).Conclusion())
 	if err == nil {
 		m.detailView.summary = string(conclusion)
 		m.detailView.title = prbody.Title(m.detailView.summary, m.currentBranch)
@@ -187,7 +188,7 @@ func (m *Model) reloadLocalConversation() {
 func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	generation := m.targetGeneration
 	headRev, remote := m.detailView.headRev, m.remote
-	st := store.ForBranch(m.root, m.currentBranch)
+	st := store.ForBranch(m.commandContext(), m.root, m.currentBranch)
 	cache := m.cache.Clone()
 	var prCopy *gh.PR
 	if pr != nil {
@@ -200,13 +201,13 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 		if !remote {
 			var fetchErr error
 			if prCopy != nil && prCopy.Number > 0 && prCopy.BaseRefName != "" {
-				_, oid, err := git.FetchPull(prCopy.Number, prCopy.BaseRefName)
+				_, oid, err := git.FetchPull(m.commandContext(), prCopy.Number, prCopy.BaseRefName)
 				fetchErr = err
 				if err == nil {
 					prCopy.HeadRefOID = oid
 				}
 			}
-			data, err := loadLocalData(st, cache, prCopy, base)
+			data, err := loadLocalData(m.commandContext(), st, cache, prCopy, base)
 			if fetchErr != nil {
 				data.incomplete = true
 				data.warning = strings.TrimSpace(data.warning + "; PR refs: " + fetchErr.Error())
@@ -214,26 +215,26 @@ func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 			msg.local, msg.localStore, msg.err = &data, st, err
 			return msg
 		}
-		resolved := git.ResolveBase(base)
-		diffBase, newHead, reviewRange := localReviewRange(resolved, prCopy, headRev, true)
+		resolved := git.ResolveBase(m.commandContext(), base)
+		diffBase, newHead, reviewRange := localReviewRange(m.commandContext(), resolved, prCopy, headRev, true)
 		msg.base, msg.diffBase, msg.headRev, msg.reviewRange = resolved, diffBase, newHead, reviewRange
 		if diffBase == "" {
 			return msg
 		}
 		var commitsErr, filesErr, statsErr error
-		msg.commits, commitsErr = git.CommitsRange(diffBase, newHead)
-		msg.files, filesErr = git.ChangedFilesRange(diffBase, newHead)
-		msg.stats, statsErr = git.DiffStats(diffBase, newHead)
+		msg.commits, commitsErr = git.CommitsRange(m.commandContext(), diffBase, newHead)
+		msg.files, filesErr = git.ChangedFilesRange(m.commandContext(), diffBase, newHead)
+		msg.stats, statsErr = git.DiffStats(m.commandContext(), diffBase, newHead)
 		msg.err = errors.Join(commitsErr, filesErr, statsErr)
 		return msg
 	}
 }
 
-func commitSections(diffBase string, local []git.Commit, pr *gh.PR) (git.RevisionRelation, int, bool, []git.Commit) {
+func commitSections(ctx context.Context, diffBase string, local []git.Commit, pr *gh.PR) (git.RevisionRelation, int, bool, []git.Commit) {
 	if pr == nil || pr.HeadRefOID == "" {
 		return git.RevisionUnknown, 0, false, nil
 	}
-	relation, err := git.CompareRevisions("HEAD", pr.HeadRefOID)
+	relation, err := git.CompareRevisions(ctx, "HEAD", pr.HeadRefOID)
 	if err != nil {
 		return git.RevisionUnknown, 0, false, nil
 	}
@@ -241,18 +242,18 @@ func commitSections(diffBase string, local []git.Commit, pr *gh.PR) (git.Revisio
 	case git.RevisionSynced:
 		return relation, len(local), false, nil
 	case git.RevisionLocalAhead:
-		localOnly, _ := git.CommitsRange(pr.HeadRefOID, "HEAD")
+		localOnly, _ := git.CommitsRange(ctx, pr.HeadRefOID, "HEAD")
 		return relation, max(0, len(local)-len(localOnly)), false, nil
 	case git.RevisionRemoteAhead:
-		remoteOnly, _ := git.CommitsRange("HEAD", pr.HeadRefOID)
+		remoteOnly, _ := git.CommitsRange(ctx, "HEAD", pr.HeadRefOID)
 		return relation, len(local), false, remoteOnly
 	case git.RevisionDiverged:
-		common, err := git.MergeBase("HEAD", pr.HeadRefOID)
+		common, err := git.MergeBase(ctx, "HEAD", pr.HeadRefOID)
 		if err != nil {
 			return relation, 0, true, nil
 		}
-		published, _ := git.CommitsRange(diffBase, common)
-		remoteOnly, _ := git.CommitsRange(common, pr.HeadRefOID)
+		published, _ := git.CommitsRange(ctx, diffBase, common)
+		remoteOnly, _ := git.CommitsRange(ctx, common, pr.HeadRefOID)
 		return relation, len(published), true, remoteOnly
 	default:
 		return relation, 0, false, nil
@@ -336,9 +337,9 @@ func (m Model) prURL() string {
 	return ""
 }
 
-func renderDiff(generation uint64, key, command, raw string, width int) tea.Cmd {
+func renderDiff(ctx context.Context, generation uint64, key, command, raw string, width int) tea.Cmd {
 	return func() tea.Msg {
-		out, err := diffview.Render(command, raw, width)
+		out, err := diffview.Render(ctx, command, raw, width)
 		return diffRendered{generation: generation, key: key, output: out, raw: raw, err: err}
 	}
 }
@@ -376,7 +377,7 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 			shownKey = "rendered\x00" + key
 		} else if !m.detailView.diffPending[key] {
 			m.detailView.diffPending[key] = true
-			cmd = renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width())
+			cmd = renderDiff(m.commandContext(), m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width())
 		}
 	}
 	if shownKey == m.detailView.shownKey {
@@ -505,7 +506,7 @@ func (d detailModel) selectedFile() *git.ChangedFile {
 // Each PR (or unpublished branch) owns its own persisted set, so moving
 // between PRs — stacked ones included — never carries progress across.
 func (m *Model) loadReviewedMarks(prNumber int, branch string) {
-	m.detailView.reviewedMarksPath = store.ReviewedMarksPath(m.root, prNumber, branch)
+	m.detailView.reviewedMarksPath = store.ReviewedMarksPath(m.commandContext(), m.root, prNumber, branch)
 	marks, err := store.LoadReviewedMarks(m.detailView.reviewedMarksPath)
 	if err != nil {
 		m.status = "reviewed marks: " + err.Error()
@@ -1013,7 +1014,7 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 			}
 			key := fmt.Sprintf("file:%s...%s:%s:%s:%s", m.detailView.diffBase, m.detailView.headRev, file.Status, file.OldPath, file.Path)
 			d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) {
-				return git.FileDiffRange(m.detailView.diffBase, head, paths...)
+				return git.FileDiffRange(m.commandContext(), m.detailView.diffBase, head, paths...)
 			})
 			if loadErr != "" {
 				return detailContent{raw: stMuted.Render("(diff unavailable: " + loadErr + ")")}, nil
@@ -1028,7 +1029,7 @@ func (m *Model) loadDetail() (detailContent, tea.Cmd) {
 		return detailContent{raw: stMuted.Render("(no changes in selected file)")}, nil
 	}
 	key := "range:" + m.detailView.diffBase + "..." + m.detailView.headRev
-	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.FileDiffRange(m.detailView.diffBase, head) })
+	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.FileDiffRange(m.commandContext(), m.detailView.diffBase, head) })
 	if loadErr != "" {
 		return detailContent{raw: stMuted.Render("(diff unavailable: " + loadErr + ")")}, nil
 	}
@@ -1046,7 +1047,7 @@ func (m *Model) loadCommitDetail(sha string) (detailContent, tea.Cmd) {
 		return detailContent{raw: stMuted.Render("no commit selected")}, nil
 	}
 	key := "commit:" + sha
-	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.Show(sha) })
+	d, loadErr, cached, cmd := m.cachedRawDetail(key, func() (string, error) { return git.Show(m.commandContext(), sha) })
 	if loadErr != "" {
 		return detailContent{raw: stMuted.Render("(commit unavailable: " + loadErr + ")")}, nil
 	}

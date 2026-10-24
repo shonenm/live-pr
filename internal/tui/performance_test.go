@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"strings"
@@ -111,7 +112,7 @@ func BenchmarkCachedRichContent(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				batch := loadRichContent(80, nil, comments, nil, map[string]bool{"": true}, cached)().(tea.BatchMsg)
+				batch := loadRichContent(context.Background(), 80, nil, comments, nil, map[string]bool{"": true}, cached)().(tea.BatchMsg)
 				_ = batch[0]()
 			}
 		})

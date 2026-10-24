@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -438,7 +439,7 @@ func TestFetchRemotePRPropagatesClientError(t *testing.T) {
 		return gh.PRDetail{PreviewErr: boom}
 	}}
 	pr := gh.PR{Number: 15, BaseRefName: "main", HeadRefOID: "head"}
-	msg := fetchRemotePRDetail(client, pr, 9, gh.PRDetail{})().(remoteLoaded)
+	msg := fetchRemotePRDetail(context.Background(), client, pr, 9, gh.PRDetail{})().(remoteLoaded)
 	if gotNumber != 15 {
 		t.Fatalf("LoadPRDetail(%d); want 15", gotNumber)
 	}

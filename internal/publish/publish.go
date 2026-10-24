@@ -2,6 +2,7 @@
 package publish
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -45,23 +46,23 @@ type githubClient interface {
 }
 
 // BuildPreview assembles the current conclusion and timeline.
-func BuildPreview(base string) (Preview, error) {
-	st, err := store.Discover()
+func BuildPreview(ctx context.Context, base string) (Preview, error) {
+	st, err := store.Discover(ctx)
 	if err != nil {
 		return Preview{}, err
 	}
-	return buildPreview(st, base)
+	return buildPreview(ctx, st, base)
 }
 
 // buildPreview assembles the preview from an already-resolved store, so callers
 // that have one need not re-discover it.
-func buildPreview(st *store.Store, base string) (Preview, error) {
-	base = git.ResolveBase(base)
+func buildPreview(ctx context.Context, st *store.Store, base string) (Preview, error) {
+	base = git.ResolveBase(ctx, base)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
 		return Preview{}, err
 	}
-	commits, err := git.Commits(base)
+	commits, err := git.Commits(ctx, base)
 	if err != nil {
 		return Preview{}, err
 	}
@@ -80,25 +81,25 @@ func buildPreview(st *store.Store, base string) (Preview, error) {
 }
 
 // Run explicitly pushes the branch and creates or updates its PR.
-func Run(opts Options) (Result, error) {
-	client := gh.New()
-	return run(opts, client, git.Push)
+func Run(ctx context.Context, opts Options) (Result, error) {
+	client := gh.New(ctx)
+	return run(ctx, opts, client, func(branch string) error { return git.Push(ctx, branch) })
 }
 
-func run(opts Options, client githubClient, push func(string) error) (Result, error) {
-	st, cache, err := store.LoadSession()
+func run(ctx context.Context, opts Options, client githubClient, push func(string) error) (Result, error) {
+	st, cache, err := store.LoadSession(ctx)
 	if err != nil {
 		return Result{}, err
 	}
 	pr, findErr := client.FindOpen(st.Branch)
-	base, err := resolvePublishBase(opts.Base, cache, pr, findErr)
+	base, err := resolvePublishBase(ctx, opts.Base, cache, pr, findErr)
 	if err != nil {
 		return Result{}, err
 	}
-	if _, err := timeline.SyncCommits(st.Timeline(), git.ResolveBase(base)); err != nil {
+	if _, err := timeline.SyncCommits(ctx, st.Timeline(), git.ResolveBase(ctx, base)); err != nil {
 		return Result{}, err
 	}
-	preview, err := buildPreview(st, base)
+	preview, err := buildPreview(ctx, st, base)
 	if err != nil {
 		return Result{}, err
 	}
@@ -144,7 +145,7 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 
 // resolvePublishBase picks the base ref: an open PR's base wins (and rejects a
 // conflicting request), otherwise the requested base, otherwise the cache default.
-func resolvePublishBase(requested string, cache gh.Cache, pr gh.PR, findErr error) (string, error) {
+func resolvePublishBase(ctx context.Context, requested string, cache gh.Cache, pr gh.PR, findErr error) (string, error) {
 	if findErr == nil && pr.BaseRefName != "" {
 		if req := normalizeBase(requested); req != "" && req != pr.BaseRefName {
 			return "", fmt.Errorf("open PR base is %s, not %s", pr.BaseRefName, req)
@@ -152,7 +153,7 @@ func resolvePublishBase(requested string, cache gh.Cache, pr gh.PR, findErr erro
 		return pr.BaseRefName, nil
 	}
 	if requested == "" {
-		return cache.Base(git.DefaultBase()), nil
+		return cache.Base(git.DefaultBase(ctx)), nil
 	}
 	return requested, nil
 }

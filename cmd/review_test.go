@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,7 +39,7 @@ func TestReviewDraftCLIHelpersUseCurrentPRRevision(t *testing.T) {
 	if err := os.Chdir(repo); err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +50,7 @@ func TestReviewDraftCLIHelpersUseCurrentPRRevision(t *testing.T) {
 	}
 
 	gotStore, pr, draft, err := currentReviewDraft()
-	if err != nil || store.PullRequestReviewDraft(gotStore.Root, pr.Number) != store.PullRequestReviewDraft(st.Root, pr.Number) || pr.Number != 12 || draft.Commit != "abc123" {
+	if err != nil || store.PullRequestReviewDraft(context.Background(), gotStore.Root, pr.Number) != store.PullRequestReviewDraft(context.Background(), st.Root, pr.Number) || pr.Number != 12 || draft.Commit != "abc123" {
 		t.Fatalf("current review = store:%#v pr:%#v draft:%#v err=%v", gotStore, pr, draft, err)
 	}
 }

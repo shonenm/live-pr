@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -47,28 +48,28 @@ func BenchmarkChangeDetection(b *testing.B) {
 
 			b.Run("quiet", func(b *testing.B) {
 				for range b.N {
-					if _, err := HasChanges("main", "HEAD"); err != nil {
+					if _, err := HasChanges(context.Background(), "main", "HEAD"); err != nil {
 						b.Fatal(err)
 					}
 				}
 			})
 			b.Run("enumerate", func(b *testing.B) {
 				for range b.N {
-					if _, err := ChangedFilesRange("main", "HEAD"); err != nil {
+					if _, err := ChangedFilesRange(context.Background(), "main", "HEAD"); err != nil {
 						b.Fatal(err)
 					}
 				}
 			})
 			b.Run("worktree", func(b *testing.B) {
 				for range b.N {
-					if _, err := HasUncommittedChanges(); err != nil {
+					if _, err := HasUncommittedChanges(context.Background()); err != nil {
 						b.Fatal(err)
 					}
 				}
 			})
 			b.Run("local-snapshot", func(b *testing.B) {
 				for range b.N {
-					if _, err := CurrentLocalSnapshot(); err != nil {
+					if _, err := CurrentLocalSnapshot(context.Background()); err != nil {
 						b.Fatal(err)
 					}
 				}

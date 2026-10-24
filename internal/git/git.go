@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/shonenm/live-pr/internal/process"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,15 +21,18 @@ import (
 	"github.com/shonenm/live-pr/internal/debugtime"
 )
 
-func run(args ...string) (string, error) {
+func run(ctx context.Context, args ...string) (string, error) {
 	if done := debugtime.Start("git " + args[0]); done != nil {
 		defer done()
 	}
-	cmd := exec.Command("git", args...)
+	cmd := process.CommandContext(ctx, "git", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
 			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, detail)
@@ -39,15 +43,15 @@ func run(args ...string) (string, error) {
 }
 
 // RepoRoot returns the absolute path to the current repository's top level.
-func RepoRoot() (string, error) {
-	return run("rev-parse", "--show-toplevel")
+func RepoRoot(ctx context.Context) (string, error) {
+	return run(ctx, "rev-parse", "--show-toplevel")
 }
 
 // CommonDir returns the absolute path of the repository's common .git
 // directory for the checkout at dir. Linked worktrees share it with their
 // main checkout, so it identifies the repository across worktrees.
-func CommonDir(dir string) (string, error) {
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir")
+func CommonDir(ctx context.Context, dir string) (string, error) {
+	cmd := process.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--git-common-dir")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -86,12 +90,14 @@ func CommonDir(dir string) (string, error) {
 }
 
 // CurrentBranch returns the checked-out branch name (e.g. "main", "feature/x").
-func CurrentBranch() (string, error) {
-	return run("rev-parse", "--abbrev-ref", "HEAD")
+func CurrentBranch(ctx context.Context) (string, error) {
+	return run(ctx, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
 // Revision resolves rev to its full object ID.
-func Revision(rev string) (string, error) { return run("rev-parse", "--verify", rev+"^{commit}") }
+func Revision(ctx context.Context, rev string) (string, error) {
+	return run(ctx, "rev-parse", "--verify", rev+"^{commit}")
+}
 
 // RevisionRelation describes local relative to a published revision.
 type RevisionRelation uint8
@@ -106,8 +112,8 @@ const (
 
 // CompareRevisions classifies local relative to remote by graph reachability.
 // RevisionDistance returns commits unique to local and remote.
-func RevisionDistance(local, remote string) (ahead, behind int, err error) {
-	out, err := run("rev-list", "--left-right", "--count", local+"..."+remote)
+func RevisionDistance(ctx context.Context, local, remote string) (ahead, behind int, err error) {
+	out, err := run(ctx, "rev-list", "--left-right", "--count", local+"..."+remote)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -117,26 +123,26 @@ func RevisionDistance(local, remote string) (ahead, behind int, err error) {
 	return ahead, behind, nil
 }
 
-func CompareRevisions(local, remote string) (RevisionRelation, error) {
-	localOID, err := Revision(local)
+func CompareRevisions(ctx context.Context, local, remote string) (RevisionRelation, error) {
+	localOID, err := Revision(ctx, local)
 	if err != nil {
 		return RevisionUnknown, err
 	}
-	remoteOID, err := Revision(remote)
+	remoteOID, err := Revision(ctx, remote)
 	if err != nil {
 		return RevisionUnknown, err
 	}
 	if localOID == remoteOID {
 		return RevisionSynced, nil
 	}
-	remoteIsAncestor, err := IsAncestor(remoteOID, localOID)
+	remoteIsAncestor, err := IsAncestor(ctx, remoteOID, localOID)
 	if err != nil {
 		return RevisionUnknown, err
 	}
 	if remoteIsAncestor {
 		return RevisionLocalAhead, nil
 	}
-	localIsAncestor, err := IsAncestor(localOID, remoteOID)
+	localIsAncestor, err := IsAncestor(ctx, localOID, remoteOID)
 	if err != nil {
 		return RevisionUnknown, err
 	}
@@ -147,8 +153,8 @@ func CompareRevisions(local, remote string) (RevisionRelation, error) {
 }
 
 // IsAncestor reports whether ancestor is reachable from descendant.
-func IsAncestor(ancestor, descendant string) (bool, error) {
-	cmd := exec.Command("git", "merge-base", "--is-ancestor", "--end-of-options", ancestor, descendant)
+func IsAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	cmd := process.CommandContext(ctx, "git", "merge-base", "--is-ancestor", "--end-of-options", ancestor, descendant)
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
@@ -162,16 +168,19 @@ func IsAncestor(ancestor, descendant string) (bool, error) {
 // Push pushes the branch to origin, setting upstream. A stalled SSH/HTTPS
 // transport must not hang the caller forever, so the push is bounded; the
 // limit is longer than FetchPull's because a push carries data up.
-func Push(branch string) error {
+func Push(ctx context.Context, branch string) error {
 	if done := debugtime.Start("git push"); done != nil {
 		defer done()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "push", "-u", "origin", branch)
+	cmd := process.CommandContext(ctx, "git", "push", "-u", "origin", branch)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if _, err := cmd.Output(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
 			return fmt.Errorf("git push -u origin %s: %w: %s", branch, err, detail)
@@ -184,25 +193,25 @@ func Push(branch string) error {
 // DefaultBase returns the branch to compare against: the remote's default
 // (origin/HEAD, e.g. "origin/main") when known, else a local main/master,
 // falling back to "main".
-func DefaultBase() string {
-	if out, err := run("symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil && out != "" {
+func DefaultBase(ctx context.Context) string {
+	if out, err := run(ctx, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil && out != "" {
 		return out
 	}
 	for _, b := range []string{"main", "master"} {
-		if _, err := run("rev-parse", "--verify", "--quiet", "refs/heads/"+b); err == nil {
+		if _, err := run(ctx, "rev-parse", "--verify", "--quiet", "refs/heads/"+b); err == nil {
 			return b
 		}
 	}
 	// A custom-default clone may lack origin/HEAD. Use the sole local branch
 	// proven to be an ancestor of the checkout; ambiguity still falls back.
-	current, _ := CurrentBranch()
-	if refs, err := run("for-each-ref", "--format=%(refname:short)", "refs/heads"); err == nil {
+	current, _ := CurrentBranch(ctx)
+	if refs, err := run(ctx, "for-each-ref", "--format=%(refname:short)", "refs/heads"); err == nil {
 		candidate := ""
 		for _, ref := range strings.Split(refs, "\n") {
 			if ref == "" || ref == current {
 				continue
 			}
-			ancestor, err := IsAncestor(ref, "HEAD")
+			ancestor, err := IsAncestor(ctx, ref, "HEAD")
 			if err != nil || !ancestor {
 				continue
 			}
@@ -221,22 +230,22 @@ func DefaultBase() string {
 
 // ResolveBase turns a GitHub base name into the freshest local Git revision,
 // preferring its origin remote-tracking ref when available.
-func ResolveBase(base string) string {
+func ResolveBase(ctx context.Context, base string) string {
 	if base == "" {
-		return DefaultBase()
+		return DefaultBase(ctx)
 	}
 	if strings.HasPrefix(base, "origin/") {
 		return base
 	}
-	if _, err := run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+base); err == nil {
+	if _, err := run(ctx, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+base); err == nil {
 		return "origin/" + base
 	}
 	return base
 }
 
 // MergeBase returns the best common ancestor of two revisions.
-func MergeBase(base, head string) (string, error) {
-	out, err := run("merge-base", "--end-of-options", base, head)
+func MergeBase(ctx context.Context, base, head string) (string, error) {
+	out, err := run(ctx, "merge-base", "--end-of-options", base, head)
 	if err != nil {
 		return "", fmt.Errorf("git merge-base %s %s: %w", base, head, err)
 	}
@@ -252,12 +261,14 @@ type Commit struct {
 }
 
 // Commits returns the commits in base..HEAD, oldest first.
-func Commits(base string) ([]Commit, error) { return CommitsRange(base, "HEAD") }
+func Commits(ctx context.Context, base string) ([]Commit, error) {
+	return CommitsRange(ctx, base, "HEAD")
+}
 
 // CommitsRange returns commits in base..head, oldest first.
-func CommitsRange(base, head string) ([]Commit, error) {
+func CommitsRange(ctx context.Context, base, head string) ([]Commit, error) {
 	// \x1f separates fields, \x1e separates records (so bodies may contain \n).
-	out, err := run("log", "--reverse",
+	out, err := run(ctx, "log", "--reverse",
 		"--date=format:%Y-%m-%dT%H:%M",
 		"--format=%h%x1f%ad%x1f%s%x1f%b%x1e",
 		"--end-of-options", base+".."+head)
@@ -296,8 +307,8 @@ type MergeReadiness struct {
 
 // CheckMergeReadiness simulates merging head into base without touching HEAD,
 // the index, or the worktree.
-func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
-	behindText, err := run("rev-list", "--count", "--end-of-options", head+".."+base)
+func CheckMergeReadiness(ctx context.Context, base, head string) (MergeReadiness, error) {
+	behindText, err := run(ctx, "rev-list", "--count", "--end-of-options", head+".."+base)
 	if err != nil {
 		return MergeReadiness{}, err
 	}
@@ -305,7 +316,7 @@ func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
 	if _, err := fmt.Sscan(behindText, &readiness.Behind); err != nil {
 		return MergeReadiness{}, fmt.Errorf("parse commits behind %q: %w", behindText, err)
 	}
-	cmd := exec.Command("git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "--end-of-options", base, head)
+	cmd := process.CommandContext(ctx, "git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "--end-of-options", base, head)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, mergeErr := cmd.Output()
@@ -326,7 +337,7 @@ func CheckMergeReadiness(base, head string) (MergeReadiness, error) {
 	if len(readiness.ConflictFiles) > 0 {
 		return readiness, nil
 	}
-	extra, err := contentConflicts(base, head)
+	extra, err := contentConflicts(ctx, base, head)
 	if err != nil {
 		return readiness, err
 	}
@@ -353,16 +364,16 @@ const (
 	maxContentConflictBlob  = 1 << 20
 )
 
-func contentConflicts(base, head string) ([]string, error) {
-	mergeBase, err := MergeBase(base, head)
+func contentConflicts(ctx context.Context, base, head string) ([]string, error) {
+	mergeBase, err := MergeBase(ctx, base, head)
 	if err != nil {
 		return nil, err
 	}
-	baseFiles, err := changedPaths(mergeBase, base)
+	baseFiles, err := changedPaths(ctx, mergeBase, base)
 	if err != nil {
 		return nil, err
 	}
-	headFiles, err := changedPaths(mergeBase, head)
+	headFiles, err := changedPaths(ctx, mergeBase, head)
 	if err != nil {
 		return nil, err
 	}
@@ -383,9 +394,9 @@ func contentConflicts(base, head string) ([]string, error) {
 	defer func() { _ = os.RemoveAll(dir) }()
 	var files []string
 	for _, path := range overlap {
-		ours, oursOK := blob(head, path)
-		theirs, theirsOK := blob(base, path)
-		ancestor, ancestorOK := blob(mergeBase, path)
+		ours, oursOK := blob(ctx, head, path)
+		theirs, theirsOK := blob(ctx, base, path)
+		ancestor, ancestorOK := blob(ctx, mergeBase, path)
 		if !oursOK || !theirsOK {
 			// The path changed on both sides but is absent on one: a
 			// modify/delete overlap, which is a conflict. (Absent on both
@@ -413,7 +424,7 @@ func contentConflicts(base, head string) ([]string, error) {
 		if err := os.WriteFile(theirsPath, theirs, 0o600); err != nil {
 			return nil, err
 		}
-		cmd := exec.Command("git", "merge-file", "--quiet", oursPath, basePath, theirsPath)
+		cmd := process.CommandContext(ctx, "git", "merge-file", "--quiet", oursPath, basePath, theirsPath)
 		if err := cmd.Run(); err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
@@ -425,8 +436,8 @@ func contentConflicts(base, head string) ([]string, error) {
 	return files, nil
 }
 
-func changedPaths(from, to string) (map[string]bool, error) {
-	out, err := run("diff", "--name-only", "-z", from, to)
+func changedPaths(ctx context.Context, from, to string) (map[string]bool, error) {
+	out, err := run(ctx, "diff", "--name-only", "-z", from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -439,8 +450,8 @@ func changedPaths(from, to string) (map[string]bool, error) {
 	return paths, nil
 }
 
-func blob(rev, path string) ([]byte, bool) {
-	out, err := exec.Command("git", "show", rev+":"+path).Output()
+func blob(ctx context.Context, rev, path string) ([]byte, bool) {
+	out, err := process.CommandContext(ctx, "git", "show", rev+":"+path).Output()
 	if err != nil {
 		return nil, false
 	}
@@ -462,12 +473,12 @@ func looksLikeOID(value string) bool {
 // DiffStats returns file and line counts for the given range. An empty head
 // compares the working tree against base. Binary files count toward Files but
 // not line totals.
-func DiffStats(base, head string) (ChangeStats, error) {
+func DiffStats(ctx context.Context, base, head string) (ChangeStats, error) {
 	rangeSpec := base
 	if head != "" {
 		rangeSpec = base + "..." + head
 	}
-	out, err := run("diff", "--numstat", "--end-of-options", rangeSpec)
+	out, err := run(ctx, "diff", "--numstat", "--end-of-options", rangeSpec)
 	if err != nil {
 		return ChangeStats{}, err
 	}
@@ -493,8 +504,8 @@ func DiffStats(base, head string) (ChangeStats, error) {
 		}
 	}
 	if head == "" {
-		root, _ := RepoRoot()
-		untracked, _ := run("ls-files", "--others", "--exclude-standard", "-z")
+		root, _ := RepoRoot(ctx)
+		untracked, _ := run(ctx, "ls-files", "--others", "--exclude-standard", "-z")
 		for _, path := range strings.Split(untracked, "\x00") {
 			if path == "" {
 				continue
@@ -542,8 +553,8 @@ type LocalSnapshot struct {
 // one porcelain-v2 scan. The fingerprint additionally hashes only unstaged
 // tracked files and untracked files, so repeated dirty edits trigger polling
 // without reading clean tracked content.
-func CurrentLocalSnapshot() (LocalSnapshot, error) {
-	status, err := run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal")
+func CurrentLocalSnapshot(ctx context.Context) (LocalSnapshot, error) {
+	status, err := run(ctx, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal")
 	if err != nil {
 		return LocalSnapshot{}, err
 	}
@@ -576,7 +587,7 @@ func CurrentLocalSnapshot() (LocalSnapshot, error) {
 	}
 
 	if hasUntracked {
-		untracked, err := run("ls-files", "--others", "--exclude-standard", "--full-name", "-z")
+		untracked, err := run(ctx, "ls-files", "--others", "--exclude-standard", "--full-name", "-z")
 		if err != nil {
 			return LocalSnapshot{}, err
 		}
@@ -589,7 +600,7 @@ func CurrentLocalSnapshot() (LocalSnapshot, error) {
 	fingerprint := sha256.New()
 	_, _ = fingerprint.Write([]byte(status))
 	if len(dirtyPaths) > 0 {
-		root, err := RepoRoot()
+		root, err := RepoRoot(ctx)
 		if err != nil {
 			return LocalSnapshot{}, err
 		}
@@ -597,7 +608,7 @@ func CurrentLocalSnapshot() (LocalSnapshot, error) {
 			_, _ = fingerprint.Write([]byte{'\x00'})
 			_, _ = fingerprint.Write([]byte(path))
 			_, _ = fingerprint.Write([]byte{'\x00'})
-			_, _ = fingerprint.Write([]byte(workingTreeHash(filepath.Join(root, path))))
+			_, _ = fingerprint.Write([]byte(workingTreeHash(ctx, filepath.Join(root, path))))
 		}
 	}
 	snapshot.State.Fingerprint = hex.EncodeToString(fingerprint.Sum(nil))
@@ -623,29 +634,29 @@ func porcelainV2Path(record string) string {
 	return parts[fields-1]
 }
 
-func CurrentLocalState() (LocalState, error) {
-	snapshot, err := CurrentLocalSnapshot()
+func CurrentLocalState(ctx context.Context) (LocalState, error) {
+	snapshot, err := CurrentLocalSnapshot(ctx)
 	return snapshot.State, err
 }
 
 // WorktreeStatus summarizes index, worktree, and untracked entries.
-func WorktreeStatus() (WorktreeSummary, error) {
-	snapshot, err := CurrentLocalSnapshot()
+func WorktreeStatus(ctx context.Context) (WorktreeSummary, error) {
+	snapshot, err := CurrentLocalSnapshot(ctx)
 	return snapshot.Worktree, err
 }
 
 // HasUncommittedChanges reports whether the index, worktree, or untracked files differ from HEAD.
-func HasUncommittedChanges() (bool, error) {
-	out, err := run("status", "--porcelain", "--untracked-files=normal")
+func HasUncommittedChanges(ctx context.Context) (bool, error) {
+	out, err := run(ctx, "status", "--porcelain", "--untracked-files=normal")
 	return out != "", err
 }
 
 // HasChanges reports whether base...head contains any changed paths.
-func HasChanges(base, head string) (bool, error) {
+func HasChanges(ctx context.Context, base, head string) (bool, error) {
 	if done := debugtime.Start("git diff --quiet"); done != nil {
 		defer done()
 	}
-	cmd := exec.Command("git", "diff", "--quiet", "--end-of-options", base+"..."+head, "--")
+	cmd := process.CommandContext(ctx, "git", "diff", "--quiet", "--end-of-options", base+"..."+head, "--")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -675,14 +686,14 @@ type ChangedFile struct {
 
 // ChangedFilesRange returns changed paths in the given range. An empty head
 // compares the working tree against base and includes untracked files.
-func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
+func ChangedFilesRange(ctx context.Context, base, head string) ([]ChangedFile, error) {
 	rangeSpec := base
 	if head != "" {
 		rangeSpec = base + "..." + head
 	}
 	// --raw carries the pre/post blob IDs alongside the status, which gives
 	// each file a diff fingerprint at no extra cost.
-	out, err := run("diff", "--raw", "-z", "--end-of-options", rangeSpec)
+	out, err := run(ctx, "diff", "--raw", "-z", "--end-of-options", rangeSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -709,18 +720,18 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 		if root == "" {
 			// Paths in --raw output are repo-root relative; resolve the root
 			// once per scan so hashing works from subdirectory launches too.
-			root, _ = RepoRoot()
+			root, _ = RepoRoot(ctx)
 		}
-		file.Fingerprint = fileFingerprint(srcBlob, dstBlob, root, file.Path)
+		file.Fingerprint = fileFingerprint(ctx, srcBlob, dstBlob, root, file.Path)
 		if head == "" {
 			if info, err := os.Stat(filepath.Join(root, file.Path)); err == nil && info.IsDir() {
-				file.Fingerprint += ":" + workingTreeHash(filepath.Join(root, file.Path))
+				file.Fingerprint += ":" + workingTreeHash(ctx, filepath.Join(root, file.Path))
 			}
 		}
 		files = append(files, file)
 	}
 	if head == "" {
-		if conflicts, err := run("diff", "--name-only", "--diff-filter=U", "-z"); err == nil && conflicts != "" {
+		if conflicts, err := run(ctx, "diff", "--name-only", "--diff-filter=U", "-z"); err == nil && conflicts != "" {
 			byPath := make(map[string]int, len(files))
 			for i := range files {
 				byPath[files[i].Path] = i
@@ -733,21 +744,21 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 					files[i].Status = "U"
 					continue
 				}
-				files = append(files, ChangedFile{Status: "U", Path: path, Fingerprint: "conflict:" + workingTreeHash(filepath.Join(root, path))})
+				files = append(files, ChangedFile{Status: "U", Path: path, Fingerprint: "conflict:" + workingTreeHash(ctx, filepath.Join(root, path))})
 			}
 		}
-		untracked, err := run("ls-files", "--others", "--exclude-standard", "-z")
+		untracked, err := run(ctx, "ls-files", "--others", "--exclude-standard", "-z")
 		if err != nil {
 			return nil, err
 		}
 		if root == "" {
-			root, _ = RepoRoot()
+			root, _ = RepoRoot(ctx)
 		}
 		for _, path := range strings.Split(untracked, "\x00") {
 			if path == "" {
 				continue
 			}
-			files = append(files, ChangedFile{Status: "A", Path: path, Fingerprint: "untracked:" + workingTreeHash(filepath.Join(root, path))})
+			files = append(files, ChangedFile{Status: "A", Path: path, Fingerprint: "untracked:" + workingTreeHash(ctx, filepath.Join(root, path))})
 		}
 	}
 	return files, nil
@@ -757,12 +768,12 @@ func ChangedFilesRange(base, head string) ([]ChangedFile, error) {
 // committed revisions; an uncommitted post-image has no blob, so the working
 // tree's content is hashed instead. An unreadable file (a deletion) keeps the
 // null ID, which is still stable for that state.
-func fileFingerprint(srcBlob, dstBlob, root, path string) string {
+func fileFingerprint(ctx context.Context, srcBlob, dstBlob, root, path string) string {
 	if strings.Trim(dstBlob, "0") == "" {
 		if root != "" {
 			path = filepath.Join(root, path)
 		}
-		if sum := workingTreeHash(path); sum != "" {
+		if sum := workingTreeHash(ctx, path); sum != "" {
 			dstBlob = sum
 		}
 	}
@@ -783,7 +794,7 @@ var (
 )
 
 // workingTreeHash hashes a working-tree file, memoized on (mtime, size).
-func workingTreeHash(path string) string {
+func workingTreeHash(ctx context.Context, path string) string {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return ""
@@ -804,7 +815,7 @@ func workingTreeHash(path string) string {
 	}
 	var data []byte
 	if info.IsDir() {
-		data, err = exec.Command("git", "-C", path, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal").Output()
+		data, err = process.CommandContext(ctx, "git", "-C", path, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal").Output()
 	} else {
 		data, err = os.ReadFile(path)
 	}
@@ -822,19 +833,19 @@ func workingTreeHash(path string) string {
 // FileDiffRange returns the colorized base...head patch for selected paths.
 // An empty head compares through the working tree and includes selected
 // untracked files without changing the index.
-func FileDiffRange(base, head string, paths ...string) (string, error) {
+func FileDiffRange(ctx context.Context, base, head string, paths ...string) (string, error) {
 	rangeSpec := base
 	if head != "" {
 		rangeSpec = base + "..." + head
 	}
 	args := []string{"diff", "--color=always", "--end-of-options", rangeSpec, "--"}
 	args = append(args, paths...)
-	out, err := run(args...)
+	out, err := run(ctx, args...)
 	if err != nil {
 		return "", err
 	}
 	if head == "" {
-		untracked, _ := run("ls-files", "--others", "--exclude-standard", "-z")
+		untracked, _ := run(ctx, "ls-files", "--others", "--exclude-standard", "-z")
 		untrackedSet := map[string]bool{}
 		for _, path := range strings.Split(untracked, "\x00") {
 			untrackedSet[path] = path != ""
@@ -851,7 +862,7 @@ func FileDiffRange(base, head string, paths ...string) (string, error) {
 			if !untrackedSet[path] {
 				continue
 			}
-			cmd := exec.Command("git", "diff", "--no-index", "--color=always", "--", os.DevNull, path)
+			cmd := process.CommandContext(ctx, "git", "diff", "--no-index", "--color=always", "--", os.DevNull, path)
 			data, diffErr := cmd.Output()
 			var exitErr *exec.ExitError
 			if diffErr != nil && !(errors.As(diffErr, &exitErr) && exitErr.ExitCode() == 1) {
@@ -870,8 +881,8 @@ func FileDiffRange(base, head string, paths ...string) (string, error) {
 
 // Show returns the full `git show` for a commit (stat + colorized patch),
 // capped to a sane number of lines.
-func Show(sha string) (string, error) {
-	out, err := run("show", "--color=always", "--stat", "-p", "--end-of-options", sha)
+func Show(ctx context.Context, sha string) (string, error) {
+	out, err := run(ctx, "show", "--color=always", "--stat", "-p", "--end-of-options", sha)
 	if err != nil {
 		return "", err
 	}
@@ -888,26 +899,29 @@ func truncate(s string, maxLines int) string {
 
 // FetchPull fetches a GitHub pull ref and its base without changing HEAD,
 // the index, or the worktree. It returns the namespaced local head ref.
-func FetchPull(number int, base string) (string, string, error) {
+func FetchPull(ctx context.Context, number int, base string) (string, string, error) {
 	if done := debugtime.Start("git fetch pull"); done != nil {
 		defer done()
 	}
 	if number <= 0 {
 		return "", "", fmt.Errorf("invalid pull request number %d", number)
 	}
-	if _, err := run("check-ref-format", "--branch", base); err != nil {
-		return "", "", fmt.Errorf("invalid pull request base %q", base)
+	if _, err := run(ctx, "check-ref-format", "--branch", base); err != nil {
+		return "", "", fmt.Errorf("invalid pull request base %q: %w", base, err)
 	}
 	headRef := fmt.Sprintf("refs/live-pr/pulls/%d/head", number)
 	baseSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", base, base)
 	headSpec := fmt.Sprintf("+refs/pull/%d/head:%s", number, headRef)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
+	cmd := process.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return "", "", ctx.Err()
+		}
 		return "", "", fmt.Errorf("git fetch PR #%d: %w: %s", number, err, strings.TrimSpace(string(out)))
 	}
-	oid, err := run("rev-parse", headRef)
+	oid, err := run(ctx, "rev-parse", headRef)
 	if err != nil {
 		return "", "", fmt.Errorf("resolve fetched PR #%d: %w", number, err)
 	}
@@ -920,27 +934,30 @@ func FetchPull(number int, base string) (string, string, error) {
 // one that already exists (a diverged branch fails the same way it does under
 // gh). Fork heads need gh's cross-repository remote wiring and must not come
 // here.
-func CheckoutPullHead(branch string) error {
+func CheckoutPullHead(ctx context.Context, branch string) error {
 	if done := debugtime.Start("git checkout pull head"); done != nil {
 		defer done()
 	}
-	if _, err := run("check-ref-format", "--branch", branch); err != nil {
-		return fmt.Errorf("invalid pull request head %q", branch)
+	if _, err := run(ctx, "check-ref-format", "--branch", branch); err != nil {
+		return fmt.Errorf("invalid pull request head %q: %w", branch, err)
 	}
 	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branch, branch)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", refSpec)
+	cmd := process.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", refSpec)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("git fetch %s: %w: %s", branch, err, strings.TrimSpace(string(out)))
 	}
-	if _, err := run("rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
-		if _, err := run("switch", "--end-of-options", branch); err != nil {
+	if _, err := run(ctx, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		if _, err := run(ctx, "switch", "--end-of-options", branch); err != nil {
 			return err
 		}
-		_, err := run("merge", "--ff-only", "--end-of-options", "refs/remotes/origin/"+branch)
+		_, err := run(ctx, "merge", "--ff-only", "--end-of-options", "refs/remotes/origin/"+branch)
 		return err
 	}
-	_, err := run("switch", "-c", branch, "--track", "--end-of-options", "origin/"+branch)
+	_, err := run(ctx, "switch", "-c", branch, "--track", "--end-of-options", "origin/"+branch)
 	return err
 }

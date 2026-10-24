@@ -2,6 +2,7 @@ package timeline
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,7 +27,7 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 
 func TestSyncCommitsConcurrentProcesses(t *testing.T) {
 	if path := os.Getenv("LIVE_PR_TEST_SYNC_PATH"); path != "" {
-		if _, err := SyncCommits(path, "main"); err != nil {
+		if _, err := SyncCommits(context.Background(), path, "main"); err != nil {
 			t.Fatal(err)
 		}
 		return
@@ -81,7 +82,7 @@ func TestSyncCommitsLockFailure(t *testing.T) {
 	if err := os.Mkdir(path+".lock", 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SyncCommits(path, "main"); err == nil {
+	if _, err := SyncCommits(context.Background(), path, "main"); err == nil {
 		t.Fatal("lock error lost")
 	}
 }
@@ -103,7 +104,7 @@ func TestSyncCommitsIdempotent(t *testing.T) {
 
 	tl := filepath.Join(dir, "timeline.jsonl")
 
-	n, err := SyncCommits(tl, "main")
+	n, err := SyncCommits(context.Background(), tl, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestSyncCommitsIdempotent(t *testing.T) {
 	}
 
 	// Running again must add nothing (idempotent by sha).
-	if n, err = SyncCommits(tl, "main"); err != nil || n != 0 {
+	if n, err = SyncCommits(context.Background(), tl, "main"); err != nil || n != 0 {
 		t.Fatalf("second sync: want 0/nil, got %d/%v", n, err)
 	}
 

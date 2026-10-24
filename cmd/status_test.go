@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestLoadStatusUsesCachedPullRequest(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	st, err := store.Discover()
+	st, err := store.Discover(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

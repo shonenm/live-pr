@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ func TestLocalLoadReportsPartialFailures(t *testing.T) {
 	if err := os.Mkdir(st.Conclusion(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	data, err := loadLocalData(st, cache, nil, "missing-base")
+	data, err := loadLocalData(context.Background(), st, cache, nil, "missing-base")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestLocalPartialFailurePreservesSameTargetData(t *testing.T) {
 	m.detailView.summary = "keep summary"
 	m.localStats = git.ChangeStats{Files: 3, Additions: 5}
 	m.detailView.files = []git.ChangedFile{{Path: "keep.go"}}
-	data, err := loadLocalData(st, m.cache.Clone(), nil, "")
+	data, err := loadLocalData(context.Background(), st, m.cache.Clone(), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func TestLocalPartialFailurePreservesSameTargetData(t *testing.T) {
 func TestRefreshUsesLocalLoadErrorPolicy(t *testing.T) {
 	m, st := modeFixture(t)
 	m.cache = gh.NewCache(st.Branch)
-	startup, err := loadLocalData(st, m.cache, nil, "missing-base")
+	startup, err := loadLocalData(context.Background(), st, m.cache, nil, "missing-base")
 	if err != nil {
 		t.Fatal(err)
 	}

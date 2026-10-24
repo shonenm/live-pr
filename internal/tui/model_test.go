@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,22 +43,22 @@ func TestReviewRangesUseLocalMergeBaseAndRemoteHistoricalBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
-	if got := localReviewBase("main", nil); got != "local-merge-base" {
+	if got := localReviewBase(context.Background(), "main", nil); got != "local-merge-base" {
 		t.Fatalf("local review base = %q", got)
 	}
 	pr := gh.PR{BaseRefName: "main", BaseRefOID: "historical-base"}
-	if got := remoteReviewBase(pr); got != "historical-base" {
+	if got := remoteReviewBase(context.Background(), pr); got != "historical-base" {
 		t.Fatalf("remote review base = %q", got)
 	}
 }
 
 func TestPublishedCheckoutUsesPublishedReviewRange(t *testing.T) {
 	pr := &gh.PR{Number: 12, BaseRefOID: "baseoid", HeadRefOID: "pushedhead"}
-	diffBase, headRev, reviewRange := localReviewRange("main", pr, "HEAD", false)
+	diffBase, headRev, reviewRange := localReviewRange(context.Background(), "main", pr, "HEAD", false)
 	if diffBase != "baseoid" || headRev != "pushedhead" || reviewRange != "baseoid...pushedhead" {
 		t.Fatalf("published local range = %q %q %q", diffBase, headRev, reviewRange)
 	}
-	diffBase, headRev, reviewRange = localReviewRange("main", nil, "HEAD", false)
+	diffBase, headRev, reviewRange = localReviewRange(context.Background(), "main", nil, "HEAD", false)
 	if headRev != "HEAD" || reviewRange != diffBase {
 		t.Fatalf("unpublished local range = %q %q %q", diffBase, headRev, reviewRange)
 	}
@@ -981,7 +982,7 @@ func TestDefaultBaseBranchIsAccented(t *testing.T) {
 // rewritten bodies belong in the map.
 func TestLoadRichContentReusesRenderedBodies(t *testing.T) {
 	body := "```mermaid\ngraph TD;A-->B;\n```"
-	cmd := loadRichContent(80, &gh.PR{Body: body}, nil, nil, map[string]bool{"": true}, map[string]string{body: "cached diagram"})
+	cmd := loadRichContent(context.Background(), 80, &gh.PR{Body: body}, nil, nil, map[string]bool{"": true}, map[string]string{body: "cached diagram"})
 	for _, sub := range cmd().(tea.BatchMsg) {
 		if msg, ok := sub().(richBodiesLoaded); ok {
 			if msg.bodies[body] != "cached diagram" {
@@ -998,7 +999,7 @@ func TestLoadRichContentSkipsBodiesWithoutMermaid(t *testing.T) {
 	comments := []gh.Comment{{Body: "plain comment"}}
 	// resolved covers the only avatar login (""), so the avatar half of the
 	// batch has nothing to download.
-	cmd := loadRichContent(80, pr, comments, nil, map[string]bool{"": true}, nil)
+	cmd := loadRichContent(context.Background(), 80, pr, comments, nil, map[string]bool{"": true}, nil)
 	batch, ok := cmd().(tea.BatchMsg)
 	if !ok {
 		t.Fatalf("loadRichContent did not batch: %T", cmd())

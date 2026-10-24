@@ -235,7 +235,7 @@ func (o localEditOverlay) save(m Model) (Model, tea.Cmd) {
 	if o.mode == addRemoteComment || o.mode == editRemoteComment {
 		return o.saveRemoteComment(m)
 	}
-	st := store.ForBranch(m.root, m.currentBranch)
+	st := store.ForBranch(m.commandContext(), m.root, m.currentBranch)
 	selectedKey := "local-summary"
 	var err error
 	switch o.mode {

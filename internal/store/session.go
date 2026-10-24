@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 
 	gh "github.com/shonenm/live-pr/internal/github"
@@ -15,8 +16,8 @@ func (s *Store) LoadGitHubCache() (gh.Cache, error) {
 // plus its GitHub cache, which carries the resolved PR when one is known.
 // Malformed cache data is re-fetchable, so it becomes an empty cache carrying
 // a warning; filesystem errors remain fatal.
-func LoadSession() (*Store, gh.Cache, error) {
-	st, err := Discover()
+func LoadSession(ctx context.Context) (*Store, gh.Cache, error) {
+	st, err := Discover(ctx)
 	if err != nil {
 		return nil, gh.Cache{}, err
 	}

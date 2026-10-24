@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -47,7 +48,7 @@ func TestHandleRemoteCommentDoneQueuesNetworkFailure(t *testing.T) {
 	if len(model.outbox) != 1 || model.outbox[0].Body != "hello from the train" || model.outbox[0].PR != 7 {
 		t.Fatalf("outbox = %+v; want the failed comment queued", model.outbox)
 	}
-	entries, err := store.LoadOutbox(store.CommentOutbox(m.root, 7))
+	entries, err := store.LoadOutbox(store.CommentOutbox(context.Background(), m.root, 7))
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("outbox file = %+v, %v; want the entry persisted", entries, err)
 	}
@@ -72,7 +73,7 @@ func TestHandleRemoteCommentDonePersistsStaleFailureForSourcePR(t *testing.T) {
 			err:        errors.New("dial tcp: connection refused"),
 		})
 		model := next.(Model)
-		entries, err := store.LoadOutbox(store.CommentOutbox(m.root, 7))
+		entries, err := store.LoadOutbox(store.CommentOutbox(context.Background(), m.root, 7))
 		if err != nil || len(entries) != 1 || entries[0].Body != "preserve after refresh" || entries[0].CommentID != 31 {
 			t.Fatalf("source outbox = %+v, %v", entries, err)
 		}
@@ -84,7 +85,7 @@ func TestHandleRemoteCommentDonePersistsStaleFailureForSourcePR(t *testing.T) {
 	t.Run("PR switch", func(t *testing.T) {
 		m := outboxTestModel(t, 7)
 		generation := m.targetGeneration
-		sourcePath := store.CommentOutbox(m.root, 7)
+		sourcePath := store.CommentOutbox(context.Background(), m.root, 7)
 		other := gh.PR{Number: 8, HeadRefName: "feature/y", HeadRefOID: "bbb", State: "OPEN"}
 		_ = m.openRemote(other)
 		next, cmd := m.Update(remoteCommentDone{
@@ -98,7 +99,7 @@ func TestHandleRemoteCommentDonePersistsStaleFailureForSourcePR(t *testing.T) {
 		if err != nil || len(source) != 1 || source[0].PR != 7 || source[0].Body != "belongs to seven" {
 			t.Fatalf("source outbox = %+v, %v", source, err)
 		}
-		otherEntries, err := store.LoadOutbox(store.CommentOutbox(m.root, 8))
+		otherEntries, err := store.LoadOutbox(store.CommentOutbox(context.Background(), m.root, 8))
 		if err != nil || len(otherEntries) != 0 {
 			t.Fatalf("current PR outbox was contaminated: %+v, %v", otherEntries, err)
 		}
@@ -120,7 +121,7 @@ func TestHandleRemoteCommentDoneDoesNotQueueAuthError(t *testing.T) {
 	if len(model.outbox) != 0 {
 		t.Fatalf("outbox = %+v; auth failures must not queue", model.outbox)
 	}
-	if _, err := os.Stat(store.CommentOutbox(m.root, 7)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(store.CommentOutbox(context.Background(), m.root, 7)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("outbox file exists for an auth failure: %v", err)
 	}
 	if !strings.HasPrefix(model.status, "comment: ") {

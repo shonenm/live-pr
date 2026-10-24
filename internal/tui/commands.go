@@ -42,7 +42,7 @@ func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR)
 		hint = &pr
 	}
 	return func() tea.Msg {
-		data, err := loadLocalData(st, cache, hint, "")
+		data, err := loadLocalData(m.commandContext(), st, cache, hint, "")
 		return localLoaded{generation: generation, st: st, data: data, err: err}
 	}
 }
@@ -50,7 +50,7 @@ func (m *Model) startLocalLoad(st *store.Store, cache gh.Cache, hintedPR *gh.PR)
 // loadLocal is the synchronous variant for startup, before the UI runs.
 func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) error {
 	m.targetGeneration++
-	data, err := loadLocalData(st, cache, hintedPR, "")
+	data, err := loadLocalData(m.commandContext(), st, cache, hintedPR, "")
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,10 @@ func (m *Model) loadLocal(st *store.Store, cache gh.Cache, hintedPR *gh.PR) erro
 	return nil
 }
 
-func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string) (localData, error) {
+func loadLocalData(ctx context.Context, st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string) (localData, error) {
+	if err := ctx.Err(); err != nil {
+		return localData{}, err
+	}
 	if done := debugtime.Start("tui local hydration"); done != nil {
 		defer done()
 	}
@@ -73,36 +76,36 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string
 		cache.PR = &pr
 	}
 	if base == "" {
-		base = cache.Base(git.DefaultBase())
+		base = cache.Base(git.DefaultBase(ctx))
 	}
-	base = git.ResolveBase(base)
-	diffBase, headRev, reviewRange := localReviewRange(base, cache.PR, "HEAD", false)
-	_, syncErr := timeline.SyncCommits(st.Timeline(), diffBase)
+	base = git.ResolveBase(ctx, base)
+	diffBase, headRev, reviewRange := localReviewRange(ctx, base, cache.PR, "HEAD", false)
+	_, syncErr := timeline.SyncCommits(ctx, st.Timeline(), diffBase)
 	events, err := event.Load(st.Timeline())
 	if err != nil {
 		return localData{}, err
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	commits, commitErr := git.Commits(diffBase)
+	commits, commitErr := git.Commits(ctx, diffBase)
 	fileHead := ""
 	if publishedReviewHead(cache.PR) != "" {
 		fileHead = headRev
 	}
-	files, fileErr := git.ChangedFilesRange(diffBase, fileHead)
-	stats, statsErr := git.DiffStats(diffBase, fileHead)
+	files, fileErr := git.ChangedFilesRange(ctx, diffBase, fileHead)
+	stats, statsErr := git.DiffStats(ctx, diffBase, fileHead)
 	if len(files) > stats.Files {
 		stats.Files = len(files)
 	}
-	localHeadOID, headErr := git.Revision("HEAD")
-	localSnapshot, snapshotErr := git.CurrentLocalSnapshot()
+	localHeadOID, headErr := git.Revision(ctx, "HEAD")
+	localSnapshot, snapshotErr := git.CurrentLocalSnapshot(ctx)
 	if snapshotErr == nil && localSnapshot.State.Branch != st.Branch {
 		return localData{}, fmt.Errorf("checkout changed during local load: %s → %s", st.Branch, localSnapshot.State.Branch)
 	}
-	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(diffBase, commits, cache.PR)
+	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(ctx, diffBase, commits, cache.PR)
 	revisionAhead, revisionBehind := 0, 0
 	var revisionErr error
 	if cache.PR != nil && cache.PR.HeadRefOID != "" {
-		revisionAhead, revisionBehind, revisionErr = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
+		revisionAhead, revisionBehind, revisionErr = git.RevisionDistance(ctx, "HEAD", cache.PR.HeadRefOID)
 		if revisionErr != nil {
 			revisionRelation = git.RevisionUnknown
 		}
@@ -129,7 +132,7 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string
 	if cache.Warning != "" {
 		warnings = append(warnings, cache.Warning)
 	}
-	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(base, "HEAD")
+	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(ctx, base, "HEAD")
 	return localData{
 		cache:            cache,
 		base:             base,
@@ -242,9 +245,9 @@ func scheduleLocalPoll(generation uint64) (tea.Cmd, context.CancelFunc) {
 	return schedulePoll(localPollInterval, localPollTick{generation: generation})
 }
 
-func pollLocalState(generation uint64) tea.Cmd {
+func pollLocalState(ctx context.Context, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		state, err := git.CurrentLocalState()
+		state, err := git.CurrentLocalState(ctx)
 		return localStatePolled{generation: generation, state: state, err: err}
 	}
 }
@@ -336,8 +339,8 @@ func richContentKey(width int, pr *gh.PR, comments []gh.Comment, activities []gh
 	return key
 }
 
-func loadAvatarColors(avatars map[string]string) map[string]string {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func loadAvatarColors(ctx context.Context, avatars map[string]string) map[string]string {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	colors := map[string]string{}
 	var mu sync.Mutex
@@ -366,7 +369,7 @@ func loadAvatarColors(avatars map[string]string) map[string]string {
 	return colors
 }
 
-func loadListAvatarColors(generation uint64, prs []gh.PR) tea.Cmd {
+func loadListAvatarColors(ctx context.Context, generation uint64, prs []gh.PR) tea.Cmd {
 	avatars := map[string]string{}
 	for _, pr := range prs {
 		avatars[pr.Author.Login] = pr.Author.AvatarURL
@@ -381,7 +384,7 @@ func loadListAvatarColors(generation uint64, prs []gh.PR) tea.Cmd {
 		}
 	}
 	return func() tea.Msg {
-		return listAvatarColorsLoaded{generation: generation, colors: loadAvatarColors(avatars)}
+		return listAvatarColorsLoaded{generation: generation, colors: loadAvatarColors(ctx, avatars)}
 	}
 }
 
@@ -412,10 +415,10 @@ func (m *Model) dispatchRichContent() tea.Cmd {
 	for login := range m.avatarColors {
 		resolved[login] = true
 	}
-	return loadRichContent(width, m.cache.PR, m.cache.Comments, m.cache.Activities, resolved, cached)
+	return loadRichContent(m.commandContext(), width, m.cache.PR, m.cache.Comments, m.cache.Activities, resolved, cached)
 }
 
-func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity, resolved map[string]bool, cached map[string]string) tea.Cmd {
+func loadRichContent(ctx context.Context, width int, pr *gh.PR, comments []gh.Comment, activities []gh.Activity, resolved map[string]bool, cached map[string]string) tea.Cmd {
 	key := richContentKey(width, pr, comments, activities)
 	bodies := make([]string, 0, len(comments)+1)
 	avatars := map[string]string{}
@@ -435,7 +438,7 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 	}
 	return tea.Batch(
 		func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			results := make(map[string]string, len(cached))
 			for _, body := range bodies {
@@ -463,7 +466,7 @@ func loadRichContent(width int, pr *gh.PR, comments []gh.Comment, activities []g
 			return richBodiesLoaded{key: key, bodies: results}
 		},
 		func() tea.Msg {
-			return avatarColorsLoaded{key: key, colors: loadAvatarColors(avatars)}
+			return avatarColorsLoaded{key: key, colors: loadAvatarColors(ctx, avatars)}
 		},
 	)
 }
@@ -482,36 +485,36 @@ func fetchConversation(client githubClient, number int, generation uint64) tea.C
 	}
 }
 
-func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, _ gh.PRDetail) tea.Cmd {
+func fetchRemotePR(ctx context.Context, client githubClient, pr gh.PR, generation uint64, _ gh.PRDetail) tea.Cmd {
 	metadata := func() tea.Msg {
 		fresh, err := client.FindPreview(pr.Number)
 		return githubMetadataRefreshed{generation: generation, pr: fresh, err: err}
 	}
 	refs := func() tea.Msg {
-		headRef, headOID, err := git.FetchPull(pr.Number, pr.BaseRefName)
-		return remoteRefsLoaded{generation: generation, number: pr.Number, prURL: pr.URL, headRef: headRef, headOID: headOID, base: git.ResolveBase(pr.BaseRefName), diffBase: remoteReviewBase(pr), err: err}
+		headRef, headOID, err := git.FetchPull(ctx, pr.Number, pr.BaseRefName)
+		return remoteRefsLoaded{generation: generation, number: pr.Number, prURL: pr.URL, headRef: headRef, headOID: headOID, base: git.ResolveBase(ctx, pr.BaseRefName), diffBase: remoteReviewBase(ctx, pr), err: err}
 	}
 	return tea.Batch(metadata, fetchConversation(client, pr.Number, generation), pollCI(client, generation, pr.Number), refs)
 }
 
-func fetchRemoteCommits(number int, generation uint64, diffBase, headRef string) tea.Cmd {
+func fetchRemoteCommits(ctx context.Context, number int, generation uint64, diffBase, headRef string) tea.Cmd {
 	return func() tea.Msg {
-		commits, err := git.CommitsRange(diffBase, headRef)
+		commits, err := git.CommitsRange(ctx, diffBase, headRef)
 		return remoteCommitsLoaded{generation: generation, number: number, commits: commits, err: err}
 	}
 }
 
-func fetchRemoteConflicts(number int, generation uint64, base, headRef string) tea.Cmd {
+func fetchRemoteConflicts(ctx context.Context, number int, generation uint64, base, headRef string) tea.Cmd {
 	return func() tea.Msg {
-		readiness, err := git.CheckMergeReadiness(base, headRef)
+		readiness, err := git.CheckMergeReadiness(ctx, base, headRef)
 		return remoteConflictsLoaded{generation: generation, number: number, readiness: readiness, err: err}
 	}
 }
 
-func fetchRemoteFiles(number int, generation uint64, diffBase, headRef string) tea.Cmd {
+func fetchRemoteFiles(ctx context.Context, number int, generation uint64, diffBase, headRef string) tea.Cmd {
 	return func() tea.Msg {
-		files, err := git.ChangedFilesRange(diffBase, headRef)
-		stats, statsErr := git.DiffStats(diffBase, headRef)
+		files, err := git.ChangedFilesRange(ctx, diffBase, headRef)
+		stats, statsErr := git.DiffStats(ctx, diffBase, headRef)
 		if err == nil {
 			err = statsErr
 		}
@@ -519,7 +522,7 @@ func fetchRemoteFiles(number int, generation uint64, diffBase, headRef string) t
 	}
 }
 
-func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
+func fetchRemotePRDetail(ctx context.Context, client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
 	return func() tea.Msg {
 		var headRef, headOID string
 		var comments []gh.Comment
@@ -533,7 +536,7 @@ func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev 
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			headRef, headOID, refErr = git.FetchPull(number, base)
+			headRef, headOID, refErr = git.FetchPull(ctx, number, base)
 		}()
 		go func() {
 			defer wg.Done()
@@ -562,12 +565,12 @@ func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev 
 		var files []git.ChangedFile
 		var stats git.ChangeStats
 		if refErr == nil && snapshotErr == nil {
-			resolvedBase = git.ResolveBase(pr.BaseRefName)
-			diffBase = remoteReviewBase(pr)
-			readiness, readinessErr = git.CheckMergeReadiness(resolvedBase, headRef)
-			commits, _ = git.CommitsRange(diffBase, headRef)
-			files, _ = git.ChangedFilesRange(diffBase, headRef)
-			stats, _ = git.DiffStats(diffBase, headRef)
+			resolvedBase = git.ResolveBase(ctx, pr.BaseRefName)
+			diffBase = remoteReviewBase(ctx, pr)
+			readiness, readinessErr = git.CheckMergeReadiness(ctx, resolvedBase, headRef)
+			commits, _ = git.CommitsRange(ctx, diffBase, headRef)
+			files, _ = git.ChangedFilesRange(ctx, diffBase, headRef)
+			stats, _ = git.DiffStats(ctx, diffBase, headRef)
 		}
 		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, stats: stats, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, snapshotErr: snapshotErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
 	}

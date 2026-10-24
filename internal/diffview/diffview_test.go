@@ -1,13 +1,14 @@
 package diffview
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestRender(t *testing.T) {
-	out, err := render("sed 's/foo/bar/g'", "foo\n", 80, time.Second)
+	out, err := render(context.Background(), "sed 's/foo/bar/g'", "foo\n", 80, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +18,7 @@ func TestRender(t *testing.T) {
 }
 
 func TestRenderProvidesPaneWidth(t *testing.T) {
-	out, err := render(`printf '%s/%s' "$COLUMNS" "$LIVE_PR_DIFF_WIDTH"`, "", 72, time.Second)
+	out, err := render(context.Background(), `printf '%s/%s' "$COLUMNS" "$LIVE_PR_DIFF_WIDTH"`, "", 72, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,11 +28,11 @@ func TestRenderProvidesPaneWidth(t *testing.T) {
 }
 
 func TestRenderFailureAndTimeout(t *testing.T) {
-	if _, err := render("printf 'broken\\nextra' >&2; exit 2", "diff", 80, time.Second); err == nil || !strings.Contains(err.Error(), "broken") || strings.Contains(err.Error(), "extra") {
+	if _, err := render(context.Background(), "printf 'broken\\nextra' >&2; exit 2", "diff", 80, time.Second); err == nil || !strings.Contains(err.Error(), "broken") || strings.Contains(err.Error(), "extra") {
 		t.Fatalf("expected one-line stderr, got %v", err)
 	}
 	start := time.Now()
-	if _, err := render("sleep 1 | cat", "diff", 80, 20*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
+	if _, err := render(context.Background(), "sleep 1 | cat", "diff", 80, 20*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout, got %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
@@ -47,7 +48,7 @@ func TestBoundedBufferDiscardsExcess(t *testing.T) {
 }
 
 func TestRenderTruncatesOutput(t *testing.T) {
-	out, err := render("awk 'BEGIN { for (i=0; i<805; i++) print i }'", "", 80, time.Second)
+	out, err := render(context.Background(), "awk 'BEGIN { for (i=0; i<805; i++) print i }'", "", 80, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

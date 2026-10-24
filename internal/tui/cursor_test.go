@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -52,7 +53,7 @@ func TestFilterCursorSitsAfterTheQuery(t *testing.T) {
 
 func TestEditorOverlayCursorTracksTheCaret(t *testing.T) {
 	root := t.TempDir()
-	st := store.ForBranch(root, "feature")
+	st := store.ForBranch(context.Background(), root, "feature")
 	if err := st.Ensure(); err != nil {
 		t.Fatal(err)
 	}

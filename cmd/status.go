@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,12 +39,12 @@ type statusOutput struct {
 }
 
 func loadStatus(refresh bool) (statusOutput, error) {
-	st, cache, err := store.LoadSession()
+	st, cache, err := store.LoadSession(context.Background())
 	if err != nil {
 		return statusOutput{}, err
 	}
 	if refresh {
-		pr, findErr := gh.New().FindForHead(st.Branch)
+		pr, findErr := gh.New(context.Background()).FindForHead(st.Branch)
 		switch {
 		case findErr == nil:
 			cache.PR = &pr
@@ -66,7 +67,7 @@ func loadStatus(refresh bool) (statusOutput, error) {
 		return statusOutput{}, conclusionErr
 	}
 	out := statusOutput{
-		Repository: st.Root, Branch: st.Branch, Base: cache.Base(git.DefaultBase()),
+		Repository: st.Root, Branch: st.Branch, Base: cache.Base(git.DefaultBase(context.Background())),
 		Target: "local", Events: len(events), HasConclusion: conclusionErr == nil,
 		StateDirectory: st.Dir, CacheFetchedAt: cache.FetchedAt, Warning: cache.Warning,
 	}

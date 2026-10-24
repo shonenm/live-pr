@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ import (
 func TestLocalPRCommentsCanBeManagedFromTUI(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
-	st := store.ForBranch(root, "feature")
+	st := store.ForBranch(context.Background(), root, "feature")
 	if err := st.Ensure(); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestLocalPRCommentsCanBeManagedFromTUI(t *testing.T) {
 func TestLocalPRSummaryCanBeEditedFromTUI(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
-	st := store.ForBranch(root, "feature")
+	st := store.ForBranch(context.Background(), root, "feature")
 	if err := st.WriteConclusion("# Initial\n"); err != nil {
 		t.Fatal(err)
 	}

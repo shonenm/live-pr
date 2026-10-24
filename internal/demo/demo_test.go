@@ -1,6 +1,7 @@
 package demo
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,11 +54,11 @@ func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	preview, err := gh.New().FindPreview(101)
+	preview, err := gh.New(context.Background()).FindPreview(101)
 	if err != nil || !strings.Contains(preview.Body, "```mermaid") || !strings.Contains(preview.Body, "K --> N[Local terminal]") || preview.Author.AvatarURL == "" {
 		t.Fatalf("demo preview = %#v err=%v", preview, err)
 	}
-	detail := gh.New().LoadPRDetail(101, gh.PRDetail{})
+	detail := gh.New(context.Background()).LoadPRDetail(101, gh.PRDetail{})
 	if detail.CommentsErr != nil || len(detail.Comments) != 1 || detail.Comments[0].User.AvatarURL == "" {
 		t.Fatalf("demo comments = %#v err=%v", detail.Comments, detail.CommentsErr)
 	}
@@ -89,22 +90,22 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	list, err := gh.New().SearchPRs("is:open", "")
+	list, err := gh.New(context.Background()).SearchPRs("is:open", "")
 	if err != nil || list.TotalCount != 2 || len(list.PRs) != 2 || list.PRs[0].Number != 101 || list.PRs[1].Number != 102 {
 		t.Fatalf("GitHub client open page = %#v err=%v", list, err)
 	}
-	preview, err := gh.New().FindPreview(102)
+	preview, err := gh.New(context.Background()).FindPreview(102)
 	if err != nil || preview.Number != 102 || !preview.PreviewLoaded || len(preview.Conversation) != 1 || len(preview.Commits) != 1 || preview.Commits[0].CheckRollupState != "SUCCESS" {
 		t.Fatalf("GitHub client preview = %#v err=%v", preview, err)
 	}
-	currentPreview, err := gh.New().FindPreview(101)
+	currentPreview, err := gh.New(context.Background()).FindPreview(101)
 	if err != nil || len(currentPreview.Commits) != 3 || currentPreview.Commits[0].CheckRollupState != "FAILURE" || currentPreview.Commits[0].MessageHeadline == "" || currentPreview.Commits[0].CommittedDate == "" || currentPreview.Commits[2].CheckRollupState != "SUCCESS" {
 		t.Fatalf("GitHub client mixed commit CI preview = %#v err=%v", currentPreview, err)
 	}
-	if relation, err := git.CompareRevisions("HEAD", currentPreview.HeadRefOID); err != nil || relation != git.RevisionDiverged {
+	if relation, err := git.CompareRevisions(context.Background(), "HEAD", currentPreview.HeadRefOID); err != nil || relation != git.RevisionDiverged {
 		t.Fatalf("demo revision relation = %v err=%v", relation, err)
 	}
-	if summary, err := git.WorktreeStatus(); err != nil || summary.Untracked != 1 {
+	if summary, err := git.WorktreeStatus(context.Background()); err != nil || summary.Untracked != 1 {
 		t.Fatalf("demo working tree = %#v err=%v", summary, err)
 	}
 
@@ -130,7 +131,7 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	if state, err := os.ReadFile(filepath.Join(stateDir, "pr-101")); err != nil || strings.TrimSpace(string(state)) != "CLOSED" {
 		t.Fatalf("merge state = %q err=%v", state, err)
 	}
-	merged, err := gh.New().FindForHead("demo/git")
+	merged, err := gh.New(context.Background()).FindForHead("demo/git")
 	if err != nil || merged.Number != 101 || merged.State != "CLOSED" {
 		t.Fatalf("merged branch lookup = %#v err=%v", merged, err)
 	}
@@ -140,7 +141,7 @@ func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	}
 	run("pr", "reopen", "102")
 	run("pr", "ready", "102", "--undo")
-	draft, err := gh.New().Find(102)
+	draft, err := gh.New(context.Background()).Find(102)
 	if err != nil || draft.State != "OPEN" || !draft.IsDraft {
 		t.Fatalf("draft state = %#v err=%v", draft, err)
 	}
