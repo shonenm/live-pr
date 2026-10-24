@@ -78,9 +78,11 @@ optional; raw git diff is built in.
 
 Platforms: macOS and Linux are the supported targets — macOS is what live-pr is
 developed on, and the full test suite (plus `go vet` and the race detector) runs
-on Linux in CI. The macOS and Windows CI jobs only compile everything and run
-the terminal-embedding tests. Releases include a Windows archive, but Windows is
-build-verified only: nobody exercises the TUI there, so treat it as untested.
+on Linux in CI. All five release targets build and execute archive smoke tests;
+macOS and Windows also run terminal-embedding, Git/GitHub, state, configuration,
+timeline, and publish tests. Windows interactive TUI behavior is still untested.
+Windows saves use Go's native replacement operation without deleting old data
+when replacement fails.
 
 ## Quick start
 
