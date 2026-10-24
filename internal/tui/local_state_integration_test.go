@@ -49,7 +49,7 @@ func TestLocalReviewStateLifecycle(t *testing.T) {
 	cache.PR = &gh.PR{Number: 1, HeadRefName: "feature", HeadRefOID: published, BaseRefName: "main", State: "OPEN"}
 	load := func() localData {
 		t.Helper()
-		data, err := loadLocalData(st, cache, nil)
+		data, err := loadLocalData(st, cache, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}

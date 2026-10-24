@@ -185,6 +185,9 @@ func (m Model) saveCacheCmd(path string, cache gh.Cache) tea.Cmd {
 }
 
 type baseResolved struct {
+	local                                *localData
+	localStore                           *store.Store
+	err                                  error
 	generation                           uint64
 	prURL                                string
 	base, diffBase, headRev, reviewRange string
@@ -277,32 +280,35 @@ type listAvatarColorsLoaded struct {
 // localData is everything loadLocalData gathers off the Update goroutine; the
 // git subprocesses involved froze the UI when run inside a message handler.
 type localData struct {
-	cache             gh.Cache
-	base              string
-	diffBase          string
-	headRev           string
-	reviewRange       string
-	events            []event.Event
-	commits           []git.Commit
-	remoteCommits     []git.Commit
-	files             []git.ChangedFile
-	stats             git.ChangeStats
-	localHeadOID      string
-	localFingerprint  string
-	revisionRelation  git.RevisionRelation
-	revisionAhead     int
-	revisionBehind    int
-	publishedCommits  int
-	localDiverged     bool
-	dirty             bool
-	worktree          git.WorktreeSummary
-	incomplete        bool
-	conclusion        string
-	mergeReadiness    git.MergeReadiness
-	mergeReadinessErr error
+	warning                                                                          string
+	commitsErr, filesErr, statsErr, headErr, snapshotErr, revisionErr, conclusionErr error
+	cache                                                                            gh.Cache
+	base                                                                             string
+	diffBase                                                                         string
+	headRev                                                                          string
+	reviewRange                                                                      string
+	events                                                                           []event.Event
+	commits                                                                          []git.Commit
+	remoteCommits                                                                    []git.Commit
+	files                                                                            []git.ChangedFile
+	stats                                                                            git.ChangeStats
+	localHeadOID                                                                     string
+	localFingerprint                                                                 string
+	revisionRelation                                                                 git.RevisionRelation
+	revisionAhead                                                                    int
+	revisionBehind                                                                   int
+	publishedCommits                                                                 int
+	localDiverged                                                                    bool
+	dirty                                                                            bool
+	worktree                                                                         git.WorktreeSummary
+	incomplete                                                                       bool
+	conclusion                                                                       string
+	mergeReadiness                                                                   git.MergeReadiness
+	mergeReadinessErr                                                                error
 }
 
 type localLoaded struct {
+	refresh    bool
 	generation uint64
 	st         *store.Store
 	data       localData

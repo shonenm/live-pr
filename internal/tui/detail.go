@@ -2,6 +2,7 @@ package tui
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"hash/maphash"
 	"os"
@@ -21,7 +22,6 @@ import (
 	"github.com/shonenm/live-pr/internal/prbody"
 	"github.com/shonenm/live-pr/internal/store"
 	"github.com/shonenm/live-pr/internal/terminaltext"
-	"github.com/shonenm/live-pr/internal/timeline"
 )
 
 // detailFocus identifies which detail-screen pane owns keyboard input: the
@@ -186,63 +186,45 @@ func (m *Model) reloadLocalConversation() {
 // refresh go through here so file lists and worktree state stay until then.
 func (m Model) resolveBase(base string, pr *gh.PR, prURL string) tea.Cmd {
 	generation := m.targetGeneration
-	headRev, remote, timelinePath := m.detailView.headRev, m.remote, m.timelinePath
+	headRev, remote := m.detailView.headRev, m.remote
+	st := store.ForBranch(m.root, m.currentBranch)
+	cache := m.cache.Clone()
 	var prCopy *gh.PR
 	if pr != nil {
 		c := *pr
 		prCopy = &c
+		cache.PR = prCopy
 	}
 	return func() tea.Msg {
 		msg := baseResolved{generation: generation, prURL: prURL}
-		if !remote && prCopy != nil && prCopy.Number > 0 && prCopy.BaseRefName != "" {
-			if _, oid, err := git.FetchPull(prCopy.Number, prCopy.BaseRefName); err == nil {
-				prCopy.HeadRefOID = oid
+		if !remote {
+			var fetchErr error
+			if prCopy != nil && prCopy.Number > 0 && prCopy.BaseRefName != "" {
+				_, oid, err := git.FetchPull(prCopy.Number, prCopy.BaseRefName)
+				fetchErr = err
+				if err == nil {
+					prCopy.HeadRefOID = oid
+				}
 			}
+			data, err := loadLocalData(st, cache, prCopy, base)
+			if fetchErr != nil {
+				data.incomplete = true
+				data.warning = strings.TrimSpace(data.warning + "; PR refs: " + fetchErr.Error())
+			}
+			msg.local, msg.localStore, msg.err = &data, st, err
+			return msg
 		}
 		resolved := git.ResolveBase(base)
-		diffBase, newHead, reviewRange := localReviewRange(resolved, prCopy, headRev, remote)
+		diffBase, newHead, reviewRange := localReviewRange(resolved, prCopy, headRev, true)
 		msg.base, msg.diffBase, msg.headRev, msg.reviewRange = resolved, diffBase, newHead, reviewRange
 		if diffBase == "" {
 			return msg
 		}
-		if !remote {
-			_, _ = timeline.SyncCommits(timelinePath, diffBase)
-			if events, err := event.Load(timelinePath); err == nil {
-				sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-				msg.events, msg.eventsOK = events, true
-			}
-		}
-		msg.commits, _ = git.CommitsRange(diffBase, newHead)
-		if !remote {
-			msg.commits, _ = git.Commits(diffBase)
-			fileHead := ""
-			if publishedReviewHead(prCopy) != "" {
-				fileHead = newHead
-			}
-			msg.files, _ = git.ChangedFilesRange(diffBase, fileHead)
-			msg.stats, _ = git.DiffStats(diffBase, fileHead)
-			msg.localHeadOID, _ = git.Revision("HEAD")
-			msg.revisionRelation, msg.publishedCommits, msg.localDiverged, msg.remoteCommits = commitSections(diffBase, msg.commits, prCopy)
-			if prCopy != nil && prCopy.HeadRefOID != "" {
-				msg.revisionAhead, msg.revisionBehind, _ = git.RevisionDistance("HEAD", prCopy.HeadRefOID)
-			}
-		} else {
-			msg.files, _ = git.ChangedFilesRange(diffBase, newHead)
-			msg.stats, _ = git.DiffStats(diffBase, newHead)
-		}
-		if !remote {
-			// Conflict files and the behind count go stale even when the
-			// range string is unchanged: the base ref keeps moving. The
-			// remote path recomputes this in fetchRemotePR instead.
-			msg.readiness, msg.readinessErr = git.CheckMergeReadiness(resolved, newHead)
-			msg.readinessOK = true
-			if snapshot, err := git.CurrentLocalSnapshot(); err == nil {
-				msg.localFingerprint = snapshot.State.Fingerprint
-				msg.dirty = snapshot.Worktree.Total() > 0
-				msg.worktree = snapshot.Worktree
-				msg.snapshotOK = true
-			}
-		}
+		var commitsErr, filesErr, statsErr error
+		msg.commits, commitsErr = git.CommitsRange(diffBase, newHead)
+		msg.files, filesErr = git.ChangedFilesRange(diffBase, newHead)
+		msg.stats, statsErr = git.DiffStats(diffBase, newHead)
+		msg.err = errors.Join(commitsErr, filesErr, statsErr)
 		return msg
 	}
 }
@@ -280,6 +262,15 @@ func commitSections(diffBase string, local []git.Commit, pr *gh.PR) (git.Revisio
 func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
+	}
+	if msg.local != nil {
+		m.remoteSectionsPending = 0
+		return m.handleLocalLoaded(localLoaded{generation: msg.generation, st: msg.localStore, data: *msg.local, err: msg.err, refresh: true})
+	}
+	if msg.err != nil {
+		m.refreshing = false
+		m.status = "review data unavailable: " + msg.err.Error()
+		return m, tea.Batch(m.nextLocalPoll(), m.nextCIPoll())
 	}
 	if !m.remote {
 		m.remoteSectionsPending = 0
