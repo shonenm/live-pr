@@ -20,7 +20,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test ./...
-      - run: go test -race ./internal/github ./internal/tui
+      - run: go test -race ./internal/github ./internal/tui ./internal/store ./internal/timeline
       - name: Check gofmt
         shell: bash
         run: |

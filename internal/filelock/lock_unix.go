@@ -1,13 +1,13 @@
 //go:build !windows
 
-package store
+package filelock
 
 import (
 	"os"
 	"syscall"
 )
 
-func lockOutbox(file *os.File) (func() error, error) {
+func lock(file *os.File) (func() error, error) {
 	for {
 		if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != syscall.EINTR {
 			if err != nil {

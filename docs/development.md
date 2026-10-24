@@ -38,6 +38,26 @@ GOTOOLCHAIN=go1.26.10 go test ./internal/markdown -run '^$' -bench BenchmarkRend
 GOTOOLCHAIN=go1.26.10 go test ./internal/tui -run '^$' -bench 'BenchmarkRichContentKey|BenchmarkApplyPRPage' -benchmem
 ```
 
+## Local state and errors
+
+Timeline commit synchronization locks its load/check/append transaction across
+processes, just like outbox updates. Sidecar `.lock` files are intentionally
+retained; deleting an active lock file would break mutual exclusion. Ordinary
+notes remain append-only and are not replaced by commit synchronization.
+
+TUI branch and navigator cache saves use dispatch-ordered snapshots. A delayed
+older command cannot replace a newer successfully saved snapshot. This ordering
+is shared across checkout reloads within one TUI; it is not a cross-process
+merge policy. Files still use temporary-file replacement to avoid partial JSON.
+
+Local startup and refresh share the same data loader. Failed auxiliary reads
+are reported as incomplete data, with unavailable diff statistics and revision
+distance distinguished from zero. A same-target reload keeps valid previous
+fields when their replacement could not be read; switching targets never
+carries those fields across. Missing conclusion files are normal, unlike I/O
+errors. Automatic PR resolution reports cache read failures and retains only
+matching in-memory PR data.
+
 ## CLI reference
 
 ```sh
