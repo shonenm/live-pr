@@ -20,6 +20,7 @@ import (
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prbody"
 	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/internal/terminaltext"
 	"github.com/shonenm/live-pr/internal/timeline"
 )
 
@@ -391,7 +392,7 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 		return cmd
 	}
 	m.detailView.shownKey = shownKey
-	m.detail.SetContent(output)
+	m.detail.SetContent(terminaltext.SanitizeSGR(output))
 	m.detail.GotoTop()
 	return cmd
 }

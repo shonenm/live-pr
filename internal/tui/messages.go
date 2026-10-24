@@ -173,13 +173,14 @@ type cacheSaved struct {
 }
 
 // saveCacheCmd persists an isolated branch-cache snapshot off the Update goroutine.
-func saveCacheCmd(path string, cache gh.Cache) tea.Cmd {
+func (m Model) saveCacheCmd(path string, cache gh.Cache) tea.Cmd {
 	if path == "" {
 		return nil
 	}
 	cache = cache.Clone()
+	save := m.cacheWrites.prepare(path, func() error { return gh.SaveCache(path, cache) })
 	return func() tea.Msg {
-		return cacheSaved{err: gh.SaveCache(path, cache)}
+		return cacheSaved{err: save()}
 	}
 }
 
@@ -210,10 +211,14 @@ type baseResolved struct {
 // saveNavigatorCacheCmd persists the navigator cache off the Update goroutine.
 // The clone happens here, on the Update goroutine, so the write never races
 // with later handler mutations; only failures produce a message.
-func saveNavigatorCacheCmd(path string, navigator gh.NavigatorCache) tea.Cmd {
+func (m Model) saveNavigatorCacheCmd(path string, navigator gh.NavigatorCache) tea.Cmd {
+	if path == "" {
+		return nil
+	}
 	snapshot := navigator.Clone()
+	save := m.cacheWrites.prepare(path, func() error { return gh.SaveNavigatorCache(path, snapshot) })
 	return func() tea.Msg {
-		if err := gh.SaveNavigatorCache(path, snapshot); err != nil {
+		if err := save(); err != nil {
 			return navigatorCacheSaved{err: err}
 		}
 		return nil

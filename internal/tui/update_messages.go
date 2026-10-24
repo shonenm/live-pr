@@ -14,6 +14,7 @@ import (
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prfilter"
 	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/internal/terminaltext"
 )
 
 func appendUniquePRs(existing, added []gh.PR) []gh.PR {
@@ -125,7 +126,7 @@ func (m Model) handlePRListRefreshed(msg prListRefreshed) (Model, tea.Cmd) {
 	m.applyPRFilters(selectedNumber)
 	cmds := []tea.Cmd{m.sync(), loadListAvatarColors(m.prList.generation, msg.page.PRs)}
 	if cacheUpdated {
-		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
+		cmds = append(cmds, m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
 	m.githubStatus = fmt.Sprintf("GitHub: %d of %d %s pull requests", len(page.prs), page.total, m.viewName(m.prList.view))
 	_, localFilter := prfilter.Split(m.prList.filterQuery)
@@ -192,7 +193,7 @@ func (m Model) handleCurrentBranchPRLoaded(msg currentBranchPRLoaded) (Model, te
 		selected = m.prList.selectedPRNumber()
 	}
 	m.applyPRFilters(selected)
-	saveCmd := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
+	saveCmd := m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
 	if m.screen != prListScreen || !m.autoOpenCurrent {
 		return m, tea.Batch(saveCmd, m.sync())
 	}
@@ -257,7 +258,7 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	// stay in memory and ride the next page-load/refresh save.
 	if m.prList.selectedPRNumber() == msg.number {
 		m.status = ""
-		cmds = append(cmds, saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
+		cmds = append(cmds, m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 	}
 	return m, tea.Batch(cmds...)
 
@@ -280,7 +281,7 @@ func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
 			m.status = ""
 		}
 		m.detailView.shownKey = "rendered\x00" + msg.key
-		m.detail.SetContent(m.detailView.diffCache[msg.key])
+		m.detail.SetContent(terminaltext.SanitizeSGR(m.detailView.diffCache[msg.key]))
 		m.detail.GotoTop()
 	}
 	return m, nil
@@ -338,9 +339,6 @@ func rebuildAfterCheckout(version string, generation uint64, msg prActionDone) t
 			if err := next.loadLocal(store.ForBranch(next.root, next.currentBranch), cache, &pr); err != nil {
 				return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
 			}
-			if err := gh.SaveCache(next.cachePath, next.cache); err != nil {
-				return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout cache: %w", err)}
-			}
 		}
 		return checkoutReloaded{generation: generation, number: msg.number, next: &next}
 	}
@@ -365,7 +363,7 @@ func (m Model) handleCheckoutReloaded(msg checkoutReloaded) (Model, tea.Cmd) {
 	next.advanceAsyncGenerations(m)
 	next.notice = fmt.Sprintf("PR #%d loaded", msg.number)
 	next.layout()
-	return next, tea.Batch(next.Init(), next.sync())
+	return next, tea.Batch(next.Init(), next.sync(), next.saveCacheCmd(next.cachePath, next.cache))
 }
 
 func (m Model) handleBrowserDone(msg browserDone) (Model, tea.Cmd) {
@@ -680,7 +678,7 @@ func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
 	m.cache.FetchedAt = now
 	m.detailView.invalidateConversation()
 	m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
-	saveCmd := saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
+	saveCmd := m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
 	if msg.refErr != nil {
 		m.status = msg.refErr.Error()
 		m.githubStatus = "GitHub: Conversation updated · review ref unavailable"
@@ -747,7 +745,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 		m.cache.PR.HeadRefOID = msg.pr.HeadRefOID
 		m.revisionRelation, m.revisionAhead, m.revisionBehind = git.RevisionUnknown, 0, 0
 		m.githubStatus = "GitHub: PR head changed · refresh required"
-		return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll())
+		return m, tea.Batch(m.saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll())
 	}
 	rollup := checkRollupState(msg.pr.Checks)
 	// A result identical to the cache skips the invalidation, row rebuild,
@@ -791,7 +789,7 @@ func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	m.githubStatus = "GitHub: CI updated now"
 	m.layout()
 	cmd := m.sync()
-	return m, tea.Batch(cmd, m.nextCIPoll(), saveCacheCmd(m.cachePath, m.cache))
+	return m, tea.Batch(cmd, m.nextCIPoll(), m.saveCacheCmd(m.cachePath, m.cache))
 }
 
 func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
@@ -869,7 +867,7 @@ func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model
 	if !m.remote {
 		diffCmd = m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL)
 	}
-	return m, tea.Batch(diffCmd, saveNavigatorCacheCmd(m.navigatorPath, m.navigator), saveCacheCmd(m.cachePath, m.cache), m.sync())
+	return m, tea.Batch(diffCmd, m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator), m.saveCacheCmd(m.cachePath, m.cache), m.sync())
 }
 
 func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed) (Model, tea.Cmd) {
@@ -918,7 +916,7 @@ func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed
 	m.detailView.invalidateConversation()
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	return m, tea.Batch(saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent(), m.startOutboxFlush())
+	return m, tea.Batch(m.saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent(), m.startOutboxFlush())
 }
 
 func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
@@ -950,7 +948,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 			m.prList.activePage = prPageKey(m.prList.view, m.prList.state, "")
 		}
 		m.applyPRFilters(msg.pr.Number)
-		diffCmd = tea.Batch(m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
+		diffCmd = tea.Batch(m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
 		m.refreshMergeReadiness()
 		stale := []string{}
 		if msg.commentsErr == nil {
@@ -1004,7 +1002,7 @@ func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
 	m.detailView.invalidateConversation()
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	return m, tea.Batch(diffCmd, flushCmd, saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent())
+	return m, tea.Batch(diffCmd, flushCmd, m.saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent())
 
 }
 

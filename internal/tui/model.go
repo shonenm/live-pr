@@ -338,6 +338,7 @@ type githubClient interface {
 // state — a method that both mutates and dispatches keeps an action name
 // (startLocalLoad, dispatchRichContent), never a plain *Cmd suffix.
 type Model struct {
+	cacheWrites               *cacheWrites
 	client                    githubClient
 	checkoutHead              func(branch string) error
 	screen                    screen
@@ -501,6 +502,7 @@ func New(version ...string) (Model, error) {
 	}
 
 	m := Model{
+		cacheWrites:     &cacheWrites{},
 		client:          gh.New(),
 		pollTimers:      &pollTimers{},
 		checkoutHead:    git.CheckoutPullHead,
@@ -854,6 +856,7 @@ func (m *Model) close() {
 }
 
 func (m *Model) advanceAsyncGenerations(previous Model) {
+	m.cacheWrites = previous.cacheWrites
 	if previous.pollTimers != nil {
 		if previous.pollTimers.local != nil {
 			previous.pollTimers.local()

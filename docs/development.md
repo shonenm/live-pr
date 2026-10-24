@@ -20,6 +20,11 @@ processes, just like outbox updates. Sidecar `.lock` files are intentionally
 retained; deleting an active lock file would break mutual exclusion. Ordinary
 notes remain append-only and are not replaced by commit synchronization.
 
+TUI branch and navigator cache saves use dispatch-ordered snapshots. A delayed
+older command cannot replace a newer successfully saved snapshot. This ordering
+is shared across checkout reloads within one TUI; it is not a cross-process
+merge policy. Files still use temporary-file replacement to avoid partial JSON.
+
 ## CLI reference
 
 ```sh
