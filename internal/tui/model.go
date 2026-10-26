@@ -1176,6 +1176,9 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 		m.prList.previewedPR = selected
 		m.detail.GotoTop()
 	}
+	// PR rows have two content lines; keeping only the title visible can
+	// leave the metadata clipped at the bottom of the viewport.
+	keepLineVisible(&m.list, selectedLine+1)
 	keepLineVisible(&m.list, selectedLine)
 	preview := m.ensureSelectedPRPreview()
 	return tea.Batch(start, preview, m.startSpinner())
