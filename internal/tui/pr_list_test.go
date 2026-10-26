@@ -651,6 +651,30 @@ func TestPRListScrollTracksRenderedRows(t *testing.T) {
 	}
 }
 
+func TestPRListKeepsBothSelectedLinesVisible(t *testing.T) {
+	m := testModel()
+	m.screen = prListScreen
+	for i := 1; i <= 20; i++ {
+		m.prList.open = append(m.prList.open, gh.PR{Number: i, Title: "PR", PreviewLoaded: true})
+	}
+	m.prList.stacks = prfilter.BuildStacks(m.prList.open)
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 80, Height: 10}, {Width: 140, Height: 24}, {Width: 50, Height: 12},
+	} {
+		u, _ := m.Update(size)
+		m = u.(Model)
+		// Traverse both ways, including the final item, after each resize.
+		for step := 0; step < 2*len(m.prList.open); step++ {
+			m.prList.cursor = min(step, 2*len(m.prList.open)-1-step)
+			m.syncPRListScreen(nil)
+			_, _, first := m.prListRowLayout()
+			if top, bottom := m.list.YOffset(), m.list.YOffset()+m.list.Height()-1; first < top || first+1 > bottom {
+				t.Fatalf("size %dx%d cursor %d: row %d..%d clipped by viewport %d..%d", size.Width, size.Height, m.prList.cursor, first, first+1, top, bottom)
+			}
+		}
+	}
+}
+
 func TestPRRowShowsLabelPills(t *testing.T) {
 	m := testModel()
 	m.list.SetWidth(160)
