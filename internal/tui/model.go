@@ -820,7 +820,7 @@ func Run(version string, opts ...Option) error {
 func (m Model) Init() tea.Cmd {
 	// loadSpinner and spinnerRunning are initialized in New(); the value
 	// receiver here would discard any mutation anyway.
-	cmds := []tea.Cmd{fetchPRList(m.client, m.prList.generation, m.prList.activePage, m.prViewSearch(m.prList.view, m.prList.state, m.prList.filterQuery), "", false), m.loadSpinner.Tick}
+	cmds := []tea.Cmd{fetchPRList(m.client, m.prList.generation, m.prList.activePage, m.prViewSearch(m.prList.view, m.prList.state, m.prList.filterQuery), "", false, len(m.prList.pages[m.prList.activePage].prs)), m.loadSpinner.Tick}
 	if m.screen == prListScreen && m.currentBranch != "HEAD" && m.localAvailable && m.autoOpenCurrent {
 		cmds = append(cmds, fetchCurrentBranchPR(m.client, m.currentBranch))
 	}
