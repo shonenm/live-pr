@@ -1,14 +1,39 @@
 package tui
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	bspinner "charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 )
+
+// detectTMUXTrueColor runs off the update loop and upgrades only when tmux
+// explicitly advertises RGB for its client. Failure leaves the profile alone.
+func detectTMUXTrueColor() tea.Msg {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	args := []string{"display-message", "-p"}
+	if pane := os.Getenv("TMUX_PANE"); pane != "" {
+		args = append(args, "-t", pane)
+	}
+	args = append(args, "#{client_termfeatures}")
+	out, err := exec.CommandContext(ctx, "tmux", args...).Output()
+	if err != nil {
+		return nil
+	}
+	for feature := range strings.SplitSeq(strings.TrimSpace(string(out)), ",") {
+		if feature == "RGB" {
+			return tea.ColorProfileMsg{Profile: colorprofile.TrueColor}
+		}
+	}
+	return nil
+}
 
 func isShiftTab(msg tea.KeyPressMsg) bool {
 	return msg.String() == "shift+tab"
@@ -80,11 +105,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.ColorProfileMsg:
-		// tmux-256color does not advertise RGB through TERM or COLORTERM.
-		// Ask tmux instead; Bubble Tea upgrades the renderer on a positive
-		// reply. Keep this scoped to tmux: not every terminal handles XTGETTCAP.
+		if os.Getenv("TMUX") != "" && msg.Profile == colorprofile.TrueColor {
+			// A profile change does not invalidate unchanged renderer cells.
+			// Repaint so the initial downsampled colors do not remain onscreen.
+			return m, tea.ClearScreen
+		}
+		// colorprofile checks RGB/Tc in `tmux info`, but terminal-features
+		// can enable RGB without either terminfo flag being present.
 		if os.Getenv("TMUX") != "" && (msg.Profile == colorprofile.ANSI || msg.Profile == colorprofile.ANSI256) {
-			return m, tea.Batch(tea.RequestCapability("RGB"), tea.RequestCapability("Tc"))
+			return m, detectTMUXTrueColor
 		}
 		return m, nil
 
