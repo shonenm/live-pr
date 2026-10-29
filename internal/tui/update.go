@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	bspinner "charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
 func isShiftTab(msg tea.KeyPressMsg) bool {
@@ -30,7 +32,7 @@ func asyncCompletion(msg tea.Msg) bool {
 		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
 		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, prTargetPrepared, rawDetailLoaded, baseResolved,
-		browserDone, tea.WindowSizeMsg, bspinner.TickMsg:
+		browserDone, tea.WindowSizeMsg, tea.ColorProfileMsg, bspinner.TickMsg:
 		return true
 	}
 	return false
@@ -77,6 +79,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tea.ColorProfileMsg:
+		// tmux-256color does not advertise RGB through TERM or COLORTERM.
+		// Ask tmux instead; Bubble Tea upgrades the renderer on a positive
+		// reply. Keep this scoped to tmux: not every terminal handles XTGETTCAP.
+		if os.Getenv("TMUX") != "" && (msg.Profile == colorprofile.ANSI || msg.Profile == colorprofile.ANSI256) {
+			return m, tea.Batch(tea.RequestCapability("RGB"), tea.RequestCapability("Tc"))
+		}
+		return m, nil
+
 	case bspinner.TickMsg:
 		var cmd tea.Cmd
 		m.loadSpinner, cmd = m.loadSpinner.Update(msg)
