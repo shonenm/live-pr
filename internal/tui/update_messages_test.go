@@ -3,12 +3,14 @@ package tui
 import (
 	"errors"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/git"
@@ -17,6 +19,51 @@ import (
 	"github.com/shonenm/live-pr/internal/publish"
 	"github.com/shonenm/live-pr/internal/store"
 )
+
+func TestTMUXColorProfileRequestsTrueColorCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		tmux    string
+		profile colorprofile.Profile
+		query   bool
+	}{
+		{"tmux 256 colors", "/tmp/tmux-1000/default,123,0", colorprofile.ANSI256, true},
+		{"tmux 16 colors", "/tmp/tmux-1000/default,123,0", colorprofile.ANSI, true},
+		{"already truecolor", "/tmp/tmux-1000/default,123,0", colorprofile.TrueColor, false},
+		{"no color", "/tmp/tmux-1000/default,123,0", colorprofile.ASCII, false},
+		{"no tty", "/tmp/tmux-1000/default,123,0", colorprofile.NoTTY, false},
+		{"outside tmux", "", colorprofile.ANSI256, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TMUX", tc.tmux)
+			for _, modal := range []bool{false, true} {
+				m := testModel()
+				if modal {
+					m.overlay = viewManagerOverlay{}
+				}
+				_, cmd := m.Update(tea.ColorProfileMsg{Profile: tc.profile})
+				if !tc.query {
+					if cmd != nil {
+						t.Fatalf("modal=%v: unexpected capability query", modal)
+					}
+					continue
+				}
+				if cmd == nil {
+					t.Fatalf("modal=%v: missing capability query", modal)
+				}
+				batch, ok := cmd().(tea.BatchMsg)
+				if !ok || len(batch) != 2 {
+					t.Fatalf("modal=%v: expected two capability queries, got %#v", modal, batch)
+				}
+				for i, capability := range []string{"RGB", "Tc"} {
+					if got, want := batch[i](), tea.RequestCapability(capability)(); !reflect.DeepEqual(got, want) {
+						t.Fatalf("query %d = %#v, want %#v", i, got, want)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestCurrentBranchResolutionKeepsLocalOrShowsMergedPR(t *testing.T) {
 	m := testModel()
