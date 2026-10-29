@@ -430,6 +430,71 @@ func TestPRPaginationAppendsOnceAndCachesView(t *testing.T) {
 	}
 }
 
+func TestPRRefreshPreservesLoadedStacks(t *testing.T) {
+	for _, start := range []string{"reload", "startup"} {
+		for _, outcome := range []string{"success", "failure", "removed"} {
+			t.Run(start+"/"+outcome, func(t *testing.T) {
+				m := testModel()
+				m.screen, m.prList.view, m.prList.state = prListScreen, allPRsView, openPRListState
+				m.prList.activePage = prPageKey(allPRsView, openPRListState, "")
+				parent := gh.PR{Number: 1, State: "OPEN", HeadRefName: "parent", BaseRefName: "main"}
+				child := gh.PR{Number: 2, State: "OPEN", HeadRefName: "child", BaseRefName: "parent"}
+				m.prList.pages = map[string]prPageState{m.prList.activePage: {
+					prs: []gh.PR{child, parent}, total: 3, loaded: true, fresh: true,
+				}}
+				m.prList.collapsedStacks = map[string]bool{"pr:1": true}
+				m.applyPRFilters(1)
+				var cursors []string
+				m.client = &fakeGH{searchPRs: func(query, cursor string) (gh.PRPage, error) {
+					cursors = append(cursors, cursor)
+					switch cursor {
+					case "":
+						return gh.PRPage{PRs: []gh.PR{child}, TotalCount: 3, PageInfo: gh.PageInfo{HasNextPage: true, EndCursor: "C1"}}, nil
+					case "C1":
+						if outcome == "failure" {
+							return gh.PRPage{}, fmt.Errorf("offline")
+						}
+						if outcome == "removed" {
+							return gh.PRPage{TotalCount: 1}, nil
+						}
+						parent.Title = "fresh parent"
+						return gh.PRPage{PRs: []gh.PR{parent}, TotalCount: 3, PageInfo: gh.PageInfo{HasNextPage: true, EndCursor: "C2"}}, nil
+					default:
+						t.Fatalf("unexpected cursor %q", cursor)
+						return gh.PRPage{}, nil
+					}
+				}}
+				cmd := m.Init()
+				if start == "reload" {
+					cmd = m.requestPRPage(true)
+				}
+				// Both commands put the list fetch first, before the spinner.
+				msg := cmd().(tea.BatchMsg)[0]().(prListRefreshed)
+				if !reflect.DeepEqual(cursors, []string{"", "C1"}) {
+					t.Fatalf("cursors = %v, want both loaded pages", cursors)
+				}
+				m, _ = m.handlePRListRefreshed(msg)
+				page := m.prList.pages[m.prList.activePage]
+				if outcome == "removed" {
+					if len(page.prs) != 1 || page.hasNext || len(m.prList.open) != 1 || m.prList.open[0].Number != 2 {
+						t.Fatalf("removed parent retained: %#v", page)
+					}
+					return
+				}
+				if len(page.prs) != 2 || len(m.prList.stacks) != 1 || len(m.prList.stacks[0].Entries) != 2 || len(m.prList.open) != 1 || m.prList.selectedPRNumber() != 1 {
+					t.Fatalf("refresh lost stack/selection: page=%#v stacks=%#v", page, m.prList.stacks)
+				}
+				if outcome == "success" && (page.endCursor != "C2" || !page.hasNext || page.prs[1].Title != "fresh parent") {
+					t.Fatalf("refresh did not advance: %#v", page)
+				}
+				if outcome == "failure" && (msg.err == nil || page.prs[1].Title != "") {
+					t.Fatalf("failed refresh replaced cached rows: %#v", page)
+				}
+			})
+		}
+	}
+}
+
 func TestPRViewSwitchUsesFreshPageWithoutRequest(t *testing.T) {
 	m := testModel()
 	m.screen, m.prList.view, m.prList.state = prListScreen, assignedView, openPRListState

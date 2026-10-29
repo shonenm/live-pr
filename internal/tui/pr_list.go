@@ -206,7 +206,7 @@ func (m *Model) requestPRPage(reset bool) tea.Cmd {
 	m.prList.pages[key] = page
 	m.prList.refreshing = true
 	m.githubStatus = "GitHub: fetching " + m.viewName(m.prList.view) + " pull requests…"
-	return tea.Batch(fetchPRList(m.client, m.prList.generation, key, m.prViewSearch(m.prList.view, m.prList.state, m.prList.filterQuery), cursor, appendPage), m.startSpinner())
+	return tea.Batch(fetchPRList(m.client, m.prList.generation, key, m.prViewSearch(m.prList.view, m.prList.state, m.prList.filterQuery), cursor, appendPage, len(page.prs)), m.startSpinner())
 }
 
 func (m *Model) applyPRViewState(selectedNumber int) tea.Cmd {

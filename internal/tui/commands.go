@@ -160,9 +160,19 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string
 	}, nil
 }
 
-func fetchPRList(client githubClient, generation uint64, key, query, cursor string, appendPage bool) tea.Cmd {
+func fetchPRList(client githubClient, generation uint64, key, query, cursor string, appendPage bool, minCount int) tea.Cmd {
 	return func() tea.Msg {
 		page, err := client.SearchPRs(query, cursor)
+		// Replace a refreshed list only after recovering its loaded range.
+		// Publishing the first page alone drops cross-page stack parents.
+		for err == nil && !appendPage && page.PageInfo.HasNextPage && len(page.PRs) < minCount {
+			var next gh.PRPage
+			next, err = client.SearchPRs(query, page.PageInfo.EndCursor)
+			if err == nil {
+				page.PRs = appendUniquePRs(page.PRs, next.PRs)
+				page.TotalCount, page.PageInfo = next.TotalCount, next.PageInfo
+			}
+		}
 		return prListRefreshed{generation: generation, key: key, appendPage: appendPage, page: page, err: err}
 	}
 }
