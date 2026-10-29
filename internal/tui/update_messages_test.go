@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -20,7 +21,7 @@ import (
 	"github.com/shonenm/live-pr/internal/store"
 )
 
-func TestTMUXColorProfileRequestsTrueColorCapabilities(t *testing.T) {
+func TestTMUXColorProfileDetectsClientFeatures(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		tmux    string
@@ -42,6 +43,12 @@ func TestTMUXColorProfileRequestsTrueColorCapabilities(t *testing.T) {
 					m.overlay = viewManagerOverlay{}
 				}
 				_, cmd := m.Update(tea.ColorProfileMsg{Profile: tc.profile})
+				if tc.tmux != "" && tc.profile == colorprofile.TrueColor {
+					if cmd == nil || !reflect.DeepEqual(cmd(), tea.ClearScreen()) {
+						t.Fatal("TrueColor must repaint previously downsampled cells")
+					}
+					continue
+				}
 				if !tc.query {
 					if cmd != nil {
 						t.Fatalf("modal=%v: unexpected capability query", modal)
@@ -51,15 +58,62 @@ func TestTMUXColorProfileRequestsTrueColorCapabilities(t *testing.T) {
 				if cmd == nil {
 					t.Fatalf("modal=%v: missing capability query", modal)
 				}
-				batch, ok := cmd().(tea.BatchMsg)
-				if !ok || len(batch) != 2 {
-					t.Fatalf("modal=%v: expected two capability queries, got %#v", modal, batch)
+				// The command is exercised separately with a fake tmux, never
+				// against the developer's running server.
+			}
+		})
+	}
+}
+
+func TestDetectTMUXTrueColor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX fake executable")
+	}
+	for _, tc := range []struct {
+		name, features, pane string
+		fail, wantRGB        bool
+	}{
+		{"RGB feature without terminfo flags", "bpaste,RGB,title", "%42", false, true},
+		{"RGB only", "RGB", "", false, true},
+		{"256 colors", "bpaste,title", "%42", false, false},
+		{"no attached client", "", "%42", false, false},
+		{"not an exact feature", "notRGB", "%42", false, false},
+		{"command failure", "RGB", "%42", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("PATH", dir)
+			t.Setenv("TMUX_PANE", tc.pane)
+			script := "#!/bin/sh\n[ \"$1\" = display-message ] && [ \"$2\" = -p ] || exit 1\nshift 2\n"
+			if tc.pane != "" {
+				script += "[ \"$1\" = -t ] && [ \"$2\" = \"$TMUX_PANE\" ] || exit 1\nshift 2\n"
+			}
+			script += "[ \"$#\" = 1 ] && [ \"$1\" = '#{client_termfeatures}' ] || exit 1\n"
+			script += "printf '%s\\n' '" + tc.features + "'\n"
+			if tc.fail {
+				script += "exit 1\n"
+			}
+			if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+			_, probe := testModel().Update(tea.ColorProfileMsg{Profile: colorprofile.ANSI256})
+			if probe == nil {
+				t.Fatal("missing tmux feature probe")
+			}
+			msg := probe()
+			if !tc.wantRGB {
+				if msg != nil {
+					t.Fatalf("unexpected upgrade: %#v", msg)
 				}
-				for i, capability := range []string{"RGB", "Tc"} {
-					if got, want := batch[i](), tea.RequestCapability(capability)(); !reflect.DeepEqual(got, want) {
-						t.Fatalf("query %d = %#v, want %#v", i, got, want)
-					}
-				}
+				return
+			}
+			if got, ok := msg.(tea.ColorProfileMsg); !ok || got.Profile != colorprofile.TrueColor {
+				t.Fatalf("expected TrueColor, got %#v", msg)
+			}
+			// Applying the successful detection repaints, without another probe.
+			if _, cmd := testModel().Update(msg); cmd == nil || !reflect.DeepEqual(cmd(), tea.ClearScreen()) {
+				t.Fatal("TrueColor update must clear the downsampled screen")
 			}
 		})
 	}
