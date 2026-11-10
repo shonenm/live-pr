@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
-      - run: echo "$TOP-$STEP" > out.txt
+      - run: echo "$TOP-$STEP-$SETUP" > out.txt
         env:
           STEP: step
       - name: pipefail
@@ -64,7 +64,7 @@ func TestLoadAndRun(t *testing.T) {
 	}
 	root := t.TempDir()
 	writeWorkflow(t, root)
-	jobs, err := Load(root, ".github/workflows/ci.yml", []string{"test", "expr", "matrix", "lint"}, map[string]string{"actions/setup-go": "true"})
+	jobs, err := Load(root, ".github/workflows/ci.yml", []string{"test", "expr", "matrix", "lint"}, map[string]string{"actions/setup-go": `echo SETUP=exported >> "$GITHUB_ENV"`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +89,8 @@ func TestLoadAndRun(t *testing.T) {
 	if want := []string{StateSuccess, StateSuccess, StateFailure, StateSkipped}; !reflect.DeepEqual(states, want) {
 		t.Errorf("states = %v, want %v", states, want)
 	}
-	if out, _ := os.ReadFile(filepath.Join(root, "out.txt")); string(out) != "top-step\n" {
-		t.Errorf("out.txt = %q, want workflow and step env applied", out)
+	if out, _ := os.ReadFile(filepath.Join(root, "out.txt")); string(out) != "top-step-exported\n" {
+		t.Errorf("out.txt = %q, want workflow, step, and exported env applied", out)
 	}
 
 	if _, err := Load(root, ".github/workflows/ci.yml", []string{"missing"}, nil); err == nil {

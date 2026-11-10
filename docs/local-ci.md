@@ -26,6 +26,11 @@ local pass comparable to a remote one. `uses:` steps are environment setup and
 need a local replacement, keyed by action name without the `@ref`;
 `actions/checkout` is satisfied by the checkout itself.
 
+Steps can pass environment to later steps of the job by appending `KEY=value`
+lines to `$GITHUB_ENV`, as on GitHub Actions. Use it in a replacement to pin
+the toolchain the remote action would install; a newer local toolchain is a
+real difference, not a detail.
+
 A job stays remote-only, with the reason shown in the checks view, when it uses
 a `strategy` matrix, `services`, a `container`, `defaults`, a step-level
 `if:`, a `${{ }}` expression in a `run:` or `env:`, or a `uses:` step without a
@@ -38,7 +43,8 @@ workflow = ".github/workflows/ci.yml"   # default
 jobs = ["test"]
 
 [ci.local.uses]
-"actions/setup-go" = "go version"
+# Pin the toolchain to go.mod, as setup-go's go-version-file does remotely.
+"actions/setup-go" = 'echo "GOTOOLCHAIN=go$(sed -n "s/^go //p" go.mod)" >> "$GITHUB_ENV"'
 "golangci/golangci-lint-action" = "golangci-lint run"
 ```
 
