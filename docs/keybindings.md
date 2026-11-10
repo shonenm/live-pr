@@ -39,6 +39,7 @@ the descriptive state, including behind-base and hook requirements.
 | `j` / `k` | move selection / scroll the focused pane |
 | `c` / `f` / `i` | commits / conflicts / CI checks view (`Esc` back to conversation) |
 | `Enter` | on a commit: review that commit |
+| `R` | run the `[ci.local]` workflow jobs in the checkout and attest the result ([local CI](local-ci.md)) |
 | `a` | post a conversation comment (GitHub PR) or a local note |
 | `A` | add an inline review comment for the selected file |
 | `v` | review: pick a verdict (comment / approve / request changes), write the body, submit |

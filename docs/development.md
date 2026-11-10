@@ -85,6 +85,9 @@ live-pr review add internal/app.go --line 42 --side RIGHT --body "Handle this er
 live-pr review show --json
 live-pr review submit --event REQUEST_CHANGES   # or COMMENT / APPROVE
 
+live-pr ci run            # run the [ci.local] jobs in the checkout and sign an attestation
+live-pr ci verify-script  # print the verifier a remote CI job runs
+
 live-pr pr preview        # preview the generated managed PR body
 live-pr pr publish        # push and create or update the GitHub PR
 ```

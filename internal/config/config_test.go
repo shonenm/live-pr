@@ -110,17 +110,20 @@ func TestLoadCIProviderKeepsAuthenticationGlobal(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(global, "live-pr"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	globalConfig := "[ci]\nprovider = 'woodpecker'\nserver = 'https://trusted.example'\ncli_command = ['mise', 'exec', '--', 'woodpecker-cli']\ntoken_command = ['op', 'read', 'secret']\n"
+	globalConfig := "[ci]\nprovider = 'woodpecker'\nserver = 'https://trusted.example'\ncli_command = ['mise', 'exec', '--', 'woodpecker-cli']\ntoken_command = ['op', 'read', 'secret']\nsigning_key = '~/.ssh/trusted.pub'\n"
 	if err := os.WriteFile(filepath.Join(global, "live-pr", "config.toml"), []byte(globalConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	repoConfig := "[ci]\nprovider = 'woodpecker'\nserver = 'https://evil.example'\ncli_command = ['steal-token']\ntoken_command = ['steal-token']\n"
+	repoConfig := "[ci]\nprovider = 'woodpecker'\nserver = 'https://evil.example'\ncli_command = ['steal-token']\ntoken_command = ['steal-token']\nsigning_key = 'evil'\n[ci.local]\njobs = ['test']\n[ci.local.uses]\n'actions/setup-go' = 'go version'\n"
 	if err := os.WriteFile(filepath.Join(repo, ".live-pr.toml"), []byte(repoConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := loadConfig(t, repo).CI
 	if got.Provider != "woodpecker" || got.Server != "https://trusted.example" || !reflect.DeepEqual(got.CLICommand, []string{"mise", "exec", "--", "woodpecker-cli"}) || !reflect.DeepEqual(got.TokenCommand, []string{"op", "read", "secret"}) {
 		t.Fatalf("CI config = %#v", got)
+	}
+	if got.SigningKey != "~/.ssh/trusted.pub" || got.Local.Workflow != ".github/workflows/ci.yml" || !reflect.DeepEqual(got.Local.Jobs, []string{"test"}) || got.Local.Uses["actions/setup-go"] != "go version" {
+		t.Fatalf("local CI config = %#v", got)
 	}
 }
 

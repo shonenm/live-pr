@@ -1,6 +1,6 @@
 ---
 name: live-pr
-description: Maintains a local living pull request with a final PR-template summary and a sparse decision timeline. Use while implementing a pull request, when a material design decision changes, when significant review feedback changes scope or behavior, or when preparing/publishing the final PR with live-pr.
+description: Maintains a local living pull request with a final PR-template summary and a sparse decision timeline. Use while implementing a pull request, when a material design decision changes, when significant review feedback changes scope or behavior, when preparing/publishing the final PR with live-pr, or when running or setting up live-pr local CI.
 license: MIT
 compatibility: Requires the live-pr and git commands in a Git repository.
 metadata:
@@ -88,6 +88,24 @@ live-pr review submit --event REQUEST_CHANGES
 ```
 
 Events are `COMMENT`, `APPROVE`, and `REQUEST_CHANGES`. `RIGHT` addresses new/context lines and `LEFT` addresses deleted lines. Submission verifies that the PR head SHA still matches the reviewed revision; if it changed, review the new revision and recreate the stale draft. Use `live-pr review delete <index>` or `live-pr review clear` only before submission.
+
+## Local CI
+
+When the repository configures `[ci.local]` in `.live-pr.toml`, check your work with the same jobs the remote workflow runs:
+
+```sh
+live-pr ci run
+```
+
+A non-zero exit means a job failed; fix the cause and rerun. Never weaken a test, the workflow, or `[ci.local.uses]` to make it pass. Attestation needs a clean checkout and the user's signing key, so "not attested" after a passing run is expected for agents and is not an error to work around.
+
+To set local CI up for a repository when the user asks:
+
+1. Pick workflow jobs made of `run:` steps and setup actions. Jobs with a matrix, services, a container, `if:`, or `${{ }}` expressions in `run:`/`env:` stay remote-only; rewrite such a step only with the user's agreement.
+2. Add `[ci.local] jobs = [...]` to `.live-pr.toml`, plus a `[ci.local.uses]` entry for every `uses:` step except `actions/checkout`. The replacement must do locally what the action does remotely (`"actions/setup-go" = "go version"`, `"golangci/golangci-lint-action" = "golangci-lint run"`).
+3. Run `live-pr ci run` until every configured job is reported as run, not "remote only".
+4. Write `live-pr ci verify-script` to `.live-pr/verify.sh`, add an `attest` job that runs `sh .live-pr/verify.sh "${{ github.event.pull_request.base.sha || github.event.before }}"` and exposes one output per job, and gate each job with `needs: attest` and `if: needs.attest.outputs.<job> != 'attested'`.
+5. Ask the user to add their public key to `.live-pr/allowed_signers` (`live-pr <public key>` per line) and to set `ci.signing_key` in their global config. Do not create, choose, or read signing keys yourself.
 
 ## Finalize the summary
 

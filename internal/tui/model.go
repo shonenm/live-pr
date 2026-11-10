@@ -59,7 +59,7 @@ const (
 )
 
 type keyMap struct {
-	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, ManageViews, CopyURL, Help, Quit key.Binding
+	Up, Down, PreviewUp, PreviewDown, Top, Bottom, PrevView, NextView, Filter, ToggleStack, Focus, FocusRight, FocusLeft, Commits, Conflicts, Checks, RunCI, Select, Back, PRList, Browse, Refresh, Publish, Merge, Checkout, Close, Status, AddComment, InlineReview, EditLocal, DeleteLocal, Review, ManageViews, CopyURL, Help, Quit key.Binding
 }
 
 // helpGroups is the single source of help ordering; ShortHelp flattens it and
@@ -70,7 +70,7 @@ type keyMap struct {
 func (k keyMap) helpGroups() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PreviewUp, k.PreviewDown, k.Top, k.Bottom, k.PrevView, k.NextView, k.Filter, k.ToggleStack, k.Focus, k.FocusRight, k.Commits, k.Conflicts, k.Checks, k.Select, k.Back, k.PRList},
-		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.Browse, k.CopyURL, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.ManageViews, k.Help, k.Quit},
+		{k.AddComment, k.InlineReview, k.EditLocal, k.DeleteLocal, k.Review, k.Status, k.RunCI, k.Browse, k.CopyURL, k.Refresh, k.Publish, k.Merge, k.Checkout, k.Close, k.ManageViews, k.Help, k.Quit},
 	}
 }
 
@@ -126,6 +126,9 @@ func (m Model) contextualKeys() keyMap {
 	if !m.remote {
 		base.Publish = m.keys.Publish
 	}
+	if m.canRunLocalCI() {
+		base.RunCI = m.keys.RunCI
+	}
 	if m.cache.PR != nil {
 		base.Status, base.Review = m.keys.Status, m.keys.Review
 		if m.cache.PR.URL != "" {
@@ -169,6 +172,7 @@ var keys = keyMap{
 	Commits:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commits")),
 	Conflicts:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "conflicts")),
 	Checks:       key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "CI checks")),
+	RunCI:        key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "run local CI")),
 	Select:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "review commit")),
 	Back:         key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "conversation")),
 	PRList:       key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "PR list")),
@@ -398,6 +402,9 @@ type Model struct {
 	ciCommandSteps            []woodpeckerStep
 	ciCommandError            string
 	ciCommandLoading          bool
+	ciSigningKey              string
+	localCIConfig             config.LocalCIConfig
+	localCI                   localCIState
 	publishing                bool
 	overlay                   overlay // open modal popup; nil when none
 	localEditor               textarea.Model
@@ -564,6 +571,8 @@ func New(version ...string) (Model, error) {
 		ciServer:          cfg.CI.Server,
 		ciCLICommand:      append([]string(nil), cfg.CI.CLICommand...),
 		ciTokenCommand:    append([]string(nil), cfg.CI.TokenCommand...),
+		ciSigningKey:      cfg.CI.SigningKey,
+		localCIConfig:     cfg.CI.Local,
 		avatarColors:      map[string]string{},
 		help:              newHelp(),
 		keys:              keys,
@@ -1153,6 +1162,7 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Commits:     false,
 		&m.keys.Conflicts:   false,
 		&m.keys.Checks:      false,
+		&m.keys.RunCI:       false,
 		&m.keys.Back:        false,
 		&m.keys.PRList:      false,
 		&m.keys.Browse:      m.selectedBrowseURL() != "",
@@ -1197,7 +1207,8 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.FocusRight:  true,
 		&m.keys.Commits:     m.fileExplorerMode() || m.detailView.active != commitsTab,
 		&m.keys.Conflicts:   m.detailView.active != conflictsTab,
-		&m.keys.Checks:      m.cache.PR != nil && m.detailView.active != checksTab,
+		&m.keys.Checks:      (m.cache.PR != nil || len(m.localCIConfig.Jobs) > 0) && m.detailView.active != checksTab,
+		&m.keys.RunCI:       m.canRunLocalCI(),
 		&m.keys.Back:        m.detailView.active != conversationTab,
 		&m.keys.PRList:      true,
 		&m.keys.Browse:      m.selectedBrowseURL() != "",

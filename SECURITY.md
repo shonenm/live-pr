@@ -23,7 +23,9 @@ Knowing where the trust boundaries sit helps when judging whether something is
 a vulnerability.
 
 **live-pr runs commands you configure.** `diff.command`, `diff.commit_command`,
-`ci.command`, and `summarize_command` are executed through a shell. This is the point of
+`ci.command`, and `summarize_command` are executed through a shell. Local CI
+(`R` or `live-pr ci run`) additionally runs the workflow's `run:` steps and the
+`ci.local.uses` replacements, but only when you start it. This is the point of
 those settings — they launch your reviewer and your summarizer — but it means
 configuration is code.
 
