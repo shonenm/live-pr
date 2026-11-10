@@ -27,8 +27,8 @@ need a local replacement, keyed by action name without the `@ref`;
 `actions/checkout` is satisfied by the checkout itself.
 
 A job stays remote-only, with the reason shown in the checks view, when it uses
-a `strategy` matrix, `services`, a `container`, `defaults`, an `if:`, a
-`${{ }}` expression in a `run:` or `env:`, or a `uses:` step without a
+a `strategy` matrix, `services`, a `container`, `defaults`, a step-level
+`if:`, a `${{ }}` expression in a `run:` or `env:`, or a `uses:` step without a
 replacement.
 
 ```toml

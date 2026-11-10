@@ -17,6 +17,8 @@ env:
   TOP: top
 jobs:
   test:
+    needs: attest
+    if: needs.attest.outputs.test != 'attested'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

@@ -47,6 +47,9 @@ var ciRunCmd = &cobra.Command{
 			}
 			supported++
 		}
+		if supported == 0 {
+			return errors.New("no configured job can run locally")
+		}
 		passed, note := localci.Execute(cmd.Context(), root, local.Workflow, cfg.CI.SigningKey, jobs, func(ev localci.Event) {
 			if ev.State == localci.StateRunning {
 				return

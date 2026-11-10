@@ -37,7 +37,6 @@ type workflowFile struct {
 
 type workflowJob struct {
 	Name      string            `yaml:"name"`
-	If        string            `yaml:"if"`
 	Env       map[string]string `yaml:"env"`
 	Strategy  yaml.Node         `yaml:"strategy"`
 	Services  yaml.Node         `yaml:"services"`
@@ -95,9 +94,10 @@ func Load(root, path string, jobIDs []string, uses map[string]string) ([]Job, er
 }
 
 func resolveSteps(wf workflowFile, job workflowJob, uses map[string]string) ([]Step, string) {
+	// A job-level `if:` only decides whether the remote runs the job at all —
+	// it is where the attestation gate itself lives — so it is not a reason
+	// to refuse a local run.
 	switch {
-	case job.If != "":
-		return nil, "job has an if condition"
 	case !job.Strategy.IsZero():
 		return nil, "job uses a strategy matrix"
 	case !job.Services.IsZero():

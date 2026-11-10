@@ -101,7 +101,7 @@ A non-zero exit means a job failed; fix the cause and rerun. Never weaken a test
 
 To set local CI up for a repository when the user asks:
 
-1. Pick workflow jobs made of `run:` steps and setup actions. Jobs with a matrix, services, a container, `if:`, or `${{ }}` expressions in `run:`/`env:` stay remote-only; rewrite such a step only with the user's agreement.
+1. Pick workflow jobs made of `run:` steps and setup actions. Jobs with a matrix, services, a container, a step-level `if:`, or `${{ }}` expressions in `run:`/`env:` stay remote-only; rewrite such a step only with the user's agreement.
 2. Add `[ci.local] jobs = [...]` to `.live-pr.toml`, plus a `[ci.local.uses]` entry for every `uses:` step except `actions/checkout`. The replacement must do locally what the action does remotely (`"actions/setup-go" = "go version"`, `"golangci/golangci-lint-action" = "golangci-lint run"`).
 3. Run `live-pr ci run` until every configured job is reported as run, not "remote only".
 4. Write `live-pr ci verify-script` to `.live-pr/verify.sh`, add an `attest` job that runs `sh .live-pr/verify.sh "${{ github.event.pull_request.base.sha || github.event.before }}"` and exposes one output per job, and gate each job with `needs: attest` and `if: needs.attest.outputs.<job> != 'attested'`.
