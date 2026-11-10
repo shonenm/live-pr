@@ -53,7 +53,8 @@ results but attests nothing.
 
 ## Remote setup
 
-Commit the verifier and the trusted keys:
+Commit the verifier and the trusted keys (make sure `.live-pr/` is not in
+`.gitignore`; older live-pr versions kept runtime state there):
 
 ```sh
 mkdir -p .live-pr
@@ -76,9 +77,12 @@ jobs:
 
   test:
     needs: attest
-    if: needs.attest.outputs.test != 'attested'
+    if: github.event_name != 'pull_request' || needs.attest.outputs.test != 'attested'
     # unchanged
 ```
+
+The `github.event_name` clause keeps a full remote run on pushes to the
+default branch. Drop it to skip there as well.
 
 GitHub reports a job skipped by `if:` as successful, so required checks keep
 working. `allowed_signers` is read from the base revision, so the pull request

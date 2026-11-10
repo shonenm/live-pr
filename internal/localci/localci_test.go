@@ -167,3 +167,14 @@ func TestAttestVerify(t *testing.T) {
 		t.Error("Tree reported a checkout with untracked files as clean")
 	}
 }
+
+// The repository's own workflow runs a committed copy of the verifier.
+func TestCommittedVerifyScriptMatchesEmbedded(t *testing.T) {
+	committed, err := os.ReadFile(filepath.Join("..", "..", ".live-pr", "verify.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(committed) != VerifyScript {
+		t.Error(".live-pr/verify.sh is stale; regenerate it with `live-pr ci verify-script`")
+	}
+}

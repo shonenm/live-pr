@@ -1,0 +1,8 @@
+# Local CI: `R` in the TUI or `live-pr ci run`. See docs/local-ci.md.
+[ci.local]
+jobs = ["test"]
+
+[ci.local.uses]
+"actions/setup-go" = "go version"
+# Same pinned version as the workflow's golangci-lint-action.
+"golangci/golangci-lint-action" = "go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1 run ./..."

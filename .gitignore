@@ -7,7 +7,6 @@
 /target/
 node_modules/
 __pycache__/
-.live-pr/
 .pi/
 .pi-subagents/
 docs/agent-plan.md
