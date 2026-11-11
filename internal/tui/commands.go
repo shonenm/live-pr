@@ -77,35 +77,61 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string
 	}
 	base = git.ResolveBase(base)
 	diffBase, headRev, reviewRange := localReviewRange(base, cache.PR, "HEAD", false)
-	_, syncErr := timeline.SyncCommits(st.Timeline(), diffBase)
-	events, err := event.Load(st.Timeline())
-	if err != nil {
-		return localData{}, err
-	}
-	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	commits, commitErr := git.Commits(diffBase)
 	fileHead := ""
 	if publishedReviewHead(cache.PR) != "" {
 		fileHead = headRev
 	}
-	files, fileErr := git.ChangedFilesRange(diffBase, fileHead)
-	stats, statsErr := git.DiffStats(diffBase, fileHead)
+	// The scans below are independent once the range is known. Run one after
+	// another, hydration cost the sum of some twenty git spawns.
+	var (
+		wg               sync.WaitGroup
+		events           []event.Event
+		commits          []git.Commit
+		remoteCommits    []git.Commit
+		files            []git.ChangedFile
+		stats            git.ChangeStats
+		localHeadOID     string
+		localSnapshot    git.LocalSnapshot
+		revisionRelation git.RevisionRelation
+		publishedCommits int
+		localDiverged    bool
+		revisionAhead    int
+		revisionBehind   int
+		mergeReadiness   git.MergeReadiness
+
+		syncErr, eventsErr, commitErr, fileErr, statsErr error
+		headErr, snapshotErr, revisionErr                error
+		mergeReadinessErr                                error
+	)
+	wg.Go(func() {
+		_, syncErr = timeline.SyncCommits(st.Timeline(), diffBase)
+		events, eventsErr = event.Load(st.Timeline())
+	})
+	wg.Go(func() {
+		commits, commitErr = git.Commits(diffBase)
+		revisionRelation, publishedCommits, localDiverged, remoteCommits = commitSections(diffBase, commits, cache.PR)
+		if cache.PR != nil && cache.PR.HeadRefOID != "" {
+			revisionAhead, revisionBehind, revisionErr = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
+			if revisionErr != nil {
+				revisionRelation = git.RevisionUnknown
+			}
+		}
+	})
+	wg.Go(func() { files, fileErr = git.ChangedFilesRange(diffBase, fileHead) })
+	wg.Go(func() { stats, statsErr = git.DiffStats(diffBase, fileHead) })
+	wg.Go(func() { localHeadOID, headErr = git.Revision("HEAD") })
+	wg.Go(func() { localSnapshot, snapshotErr = git.CurrentLocalSnapshot() })
+	wg.Go(func() { mergeReadiness, mergeReadinessErr = git.CheckMergeReadiness(base, "HEAD") })
+	wg.Wait()
+	if eventsErr != nil {
+		return localData{}, eventsErr
+	}
+	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	if len(files) > stats.Files {
 		stats.Files = len(files)
 	}
-	localHeadOID, headErr := git.Revision("HEAD")
-	localSnapshot, snapshotErr := git.CurrentLocalSnapshot()
 	if snapshotErr == nil && localSnapshot.State.Branch != st.Branch {
 		return localData{}, fmt.Errorf("checkout changed during local load: %s → %s", st.Branch, localSnapshot.State.Branch)
-	}
-	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(diffBase, commits, cache.PR)
-	revisionAhead, revisionBehind := 0, 0
-	var revisionErr error
-	if cache.PR != nil && cache.PR.HeadRefOID != "" {
-		revisionAhead, revisionBehind, revisionErr = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
-		if revisionErr != nil {
-			revisionRelation = git.RevisionUnknown
-		}
 	}
 	worktree := localSnapshot.Worktree
 	dirty := worktree.Total() > 0
@@ -129,7 +155,6 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string
 	if cache.Warning != "" {
 		warnings = append(warnings, cache.Warning)
 	}
-	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(base, "HEAD")
 	return localData{
 		cache:            cache,
 		base:             base,
