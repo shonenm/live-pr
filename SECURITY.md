@@ -23,9 +23,11 @@ Knowing where the trust boundaries sit helps when judging whether something is
 a vulnerability.
 
 **live-pr runs commands you configure.** `diff.command`, `diff.commit_command`,
-`ci.command`, and `summarize_command` are executed through a shell. This is the point of
-those settings — they launch your reviewer and your summarizer — but it means
-configuration is code.
+`diff.display`, `ci.command`, `summarize_command`, and the legacy top-level
+`reviewer` template (used when `diff.commit_command` is unset) are executed
+through a shell. This is the point of those settings — they launch your
+reviewer, your diff renderer, and your summarizer — but it means configuration
+is code.
 
 Configuration is read from `~/.config/live-pr/config.toml` and, if present,
 `.live-pr.toml` **inside the repository you are working in**. A repository you
@@ -48,6 +50,13 @@ them. The token
 command is executed without a shell, and its one-line output is passed only to
 the child CLI as `WOODPECKER_TOKEN`, without logging or persistence.
 
+**live-pr fetches avatars over HTTPS.** To color author names it sends
+unauthenticated GET requests for the avatars of the people shown in the PR list
+and conversation. This is the only network traffic that does not go through
+`gh`, `git`, or a command you configured: requests and redirects are restricted
+to `https://avatars.githubusercontent.com`, carry no credentials, and no
+setting disables them.
+
 **Static review output is terminal-sanitized.** Built-in Git diffs, commit
 patches, and configured `diff.display` output retain numeric SGR styling but
 not OSC, DCS, cursor controls, or other terminal commands. Embedded reviewers
@@ -63,7 +72,8 @@ platform equivalent.
 In scope: command injection through data live-pr does not control (repository
 contents, GitHub API responses, file names), leaking cached private data to
 other users on a shared machine, tampering with release artifacts, and any
-network traffic outside `gh` and `git`.
+network traffic outside `gh`, `git`, and the avatar requests described above
+(for example an avatar request reaching any other host).
 
 Out of scope: configuration executing configured commands (documented above),
 issues that require an attacker who already has your user account, and
