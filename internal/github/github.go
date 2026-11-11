@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -141,20 +139,6 @@ type Comment struct {
 		Login     string `json:"login"`
 		AvatarURL string `json:"avatar_url,omitempty"`
 	} `json:"user"`
-}
-
-// PRDetail is one concurrently loaded pull-request detail snapshot.
-type PRDetail struct {
-	PR                PR
-	Comments          []Comment
-	Activities        []Activity
-	Reviews           []Review
-	ReviewComments    []ReviewThreadComment
-	PreviewErr        error
-	CommentsErr       error
-	ActivitiesErr     error
-	ReviewsErr        error
-	ReviewCommentsErr error
 }
 
 // Activity is a non-comment PR timeline event from GitHub's issue events API.
@@ -488,16 +472,8 @@ func (c Client) FindChecks(number int) (PR, error) {
 }
 
 // FindPreview loads the expensive preview fields for one remote PR.
-func (c Client) FindPreview(number int) (PR, error) { return c.findPreview(number, false) }
-
-// FindLocalPreview omits diff statistics supplied authoritatively by local Git.
-func (c Client) FindLocalPreview(number int) (PR, error) { return c.findPreview(number, true) }
-
-func (c Client) findPreview(number int, local bool) (PR, error) {
-	fields := "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup"
-	if !local {
-		fields += ",additions,deletions,changedFiles"
-	}
+func (c Client) FindPreview(number int) (PR, error) {
+	const fields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup,additions,deletions,changedFiles"
 	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
 	if err != nil {
 		return PR{}, commandError("gh pr view", out, err)
@@ -510,7 +486,7 @@ func (c Client) findPreview(number int, local bool) (PR, error) {
 	// A failed rollup fetch only costs the per-commit CI states and the
 	// linked issues; discarding the whole preview over it left the PR with
 	// no metadata at all.
-	if commits, issues, err := c.loadCommitStatusRollups(number, local); err == nil {
+	if commits, issues, err := c.commitStatusRollups(number); err == nil {
 		preview.CommitCount, preview.Commits = len(commits), commits
 		preview.ClosingIssues = issues
 	}
@@ -523,10 +499,6 @@ func (c Client) findPreview(number int, local bool) (PR, error) {
 // preview's per-PR GraphQL round trip, and gh pr view --json cannot return
 // the issue titles.
 func (c Client) commitStatusRollups(number int) ([]PRCommit, []IssueRef, error) {
-	return c.loadCommitStatusRollups(number, false)
-}
-
-func (c Client) loadCommitStatusRollups(number int, local bool) ([]PRCommit, []IssueRef, error) {
 	repoName, err := c.repositoryName()
 	if err != nil {
 		return nil, nil, err
@@ -535,10 +507,7 @@ func (c Client) loadCommitStatusRollups(number int, local bool) ([]PRCommit, []I
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid repository %q", repoName)
 	}
-	query := `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:10){nodes{number title}} commits(first:100,after:$after){nodes{commit{oid statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
-	if !local {
-		query = `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:10){nodes{number title}} commits(first:100,after:$after){nodes{commit{oid committedDate messageHeadline statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
-	}
+	const query = `query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){closingIssuesReferences(first:10){nodes{number title}} commits(first:100,after:$after){nodes{commit{oid committedDate messageHeadline statusCheckRollup{state}}} pageInfo{hasNextPage endCursor}}}}}`
 	var commits []PRCommit
 	var issues []IssueRef
 	after := ""
@@ -626,56 +595,6 @@ func (c Client) IssueComments(number int) ([]Comment, error) {
 	return paginatedList[Comment](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments?per_page=100", number), "gh api issue comments")
 }
 
-// issueCommentsSince returns only the comments created or updated at or
-// after since, an RFC3339 timestamp previously reported by the server.
-func (c Client) issueCommentsSince(number int, since string) ([]Comment, error) {
-	return paginatedList[Comment](c, fmt.Sprintf("repos/{owner}/{repo}/issues/%d/comments?per_page=100&since=%s", number, url.QueryEscape(since)), "gh api issue comments")
-}
-
-// latestCommentUpdate returns the newest updated_at among comments. It
-// reports false when any timestamp is missing or unparseable — a cache that
-// cannot prove its own freshness must not seed an incremental fetch.
-func latestCommentUpdate(comments []Comment) (string, bool) {
-	var latest time.Time
-	var raw string
-	for _, comment := range comments {
-		ts, err := time.Parse(time.RFC3339, comment.UpdatedAt)
-		if err != nil {
-			return "", false
-		}
-		if ts.After(latest) {
-			latest, raw = ts, comment.UpdatedAt
-		}
-	}
-	return raw, raw != ""
-}
-
-// mergeComments upserts fetched comments into cached by ID and restores the
-// list endpoint's ordering (ascending created time, IDs breaking ties).
-func mergeComments(cached, fetched []Comment) []Comment {
-	merged := make([]Comment, len(cached))
-	copy(merged, cached)
-	index := make(map[int64]int, len(merged))
-	for i, comment := range merged {
-		index[comment.ID] = i
-	}
-	for _, comment := range fetched {
-		if i, ok := index[comment.ID]; ok {
-			merged[i] = comment
-			continue
-		}
-		index[comment.ID] = len(merged)
-		merged = append(merged, comment)
-	}
-	sort.SliceStable(merged, func(i, j int) bool {
-		if merged[i].CreatedAt != merged[j].CreatedAt {
-			return merged[i].CreatedAt < merged[j].CreatedAt
-		}
-		return merged[i].ID < merged[j].ID
-	})
-	return merged
-}
-
 // Review is a submitted pull-request review (approve / request-changes /
 // comment) with its optional summary body.
 type Review struct {
@@ -740,73 +659,6 @@ func (c Client) LoadConversation(number int) ConversationDetail {
 	go func() { defer wg.Done(); detail.Reviews, detail.ReviewsErr = c.Reviews(number) }()
 	go func() { defer wg.Done(); detail.ReviewComments, detail.ReviewCommentsErr = c.ReviewComments(number) }()
 	wg.Wait()
-	return detail
-}
-
-// LoadPRDetail loads preview metadata, comments, and activity concurrently.
-// prev is the caller's cached snapshot of the same PR: when it carries
-// comments, only those created or updated since the newest cached updated_at
-// are fetched and merged in by ID. An empty prev, a number mismatch, or any
-// doubt about the cache loads everything, exactly like a first load.
-func (c Client) LoadPRDetail(number int, prev PRDetail) PRDetail {
-	return c.loadPRDetail(number, prev, false)
-}
-
-// LoadLocalPRDetail keeps remote conversation/review metadata fresh while
-// leaving diff, file, and commit content to the checked-out repository.
-func (c Client) LoadLocalPRDetail(number int, prev PRDetail) PRDetail {
-	return c.loadPRDetail(number, prev, true)
-}
-
-func (c Client) loadPRDetail(number int, prev PRDetail, local bool) PRDetail {
-	since, incremental := "", false
-	if number != 0 && prev.PR.Number == number && len(prev.Comments) > 0 {
-		since, incremental = latestCommentUpdate(prev.Comments)
-	}
-	var detail PRDetail
-	merged := false
-	var wg sync.WaitGroup
-	wg.Add(4)
-	go func() {
-		defer wg.Done()
-		if local {
-			detail.PR, detail.PreviewErr = c.FindLocalPreview(number)
-		} else {
-			detail.PR, detail.PreviewErr = c.FindPreview(number)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		if incremental {
-			if fetched, err := c.issueCommentsSince(number, since); err == nil {
-				detail.Comments, merged = mergeComments(prev.Comments, fetched), true
-				return
-			}
-			// An incremental failure must not surface a new error mode; fall
-			// through to the same full fetch a first load performs.
-		}
-		detail.Comments, detail.CommentsErr = c.IssueComments(number)
-	}()
-	go func() {
-		defer wg.Done()
-		detail.Activities, detail.ActivitiesErr = c.IssueActivities(number)
-	}()
-	go func() {
-		defer wg.Done()
-		var rwg sync.WaitGroup
-		rwg.Add(2)
-		go func() { defer rwg.Done(); detail.Reviews, detail.ReviewsErr = c.Reviews(number) }()
-		go func() { defer rwg.Done(); detail.ReviewComments, detail.ReviewCommentsErr = c.ReviewComments(number) }()
-		rwg.Wait()
-	}()
-	wg.Wait()
-	// A remotely deleted comment survives an incremental merge — since= can
-	// never report it. The preview fetched in this same call counts the full
-	// conversation, so any disagreement (or a failed preview, which leaves no
-	// count to check against) discards the merge for a full fetch.
-	if merged && (detail.PreviewErr != nil || len(detail.Comments) != detail.PR.CommentCount) {
-		detail.Comments, detail.CommentsErr = c.IssueComments(number)
-	}
 	return detail
 }
 

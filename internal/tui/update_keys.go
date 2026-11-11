@@ -400,7 +400,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.githubStatus = "GitHub: refreshing…"
 		if m.remote && m.cache.PR != nil {
 			m.targetGeneration++
-			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
+			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.startOutboxFlush(), m.startSpinner())
 		}
 		if m.currentBranch == "HEAD" {
 			st := store.ForBranch(m.root, m.currentBranch)
@@ -411,10 +411,10 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.remoteSectionsPending = 1
 		number := m.currentPRNumber()
 		if number == 0 {
-			return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, number, m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
+			return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, number, m.targetGeneration), m.startOutboxFlush(), m.startSpinner())
 		}
 		return m, tea.Batch(
-			fetchGitHub(m.client, m.detailView.head, number, m.targetGeneration, m.cachedDetail()),
+			fetchGitHub(m.client, m.detailView.head, number, m.targetGeneration),
 			pollCI(m.client, m.targetGeneration, number),
 			m.startOutboxFlush(), m.startSpinner(),
 		)

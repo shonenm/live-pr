@@ -308,8 +308,6 @@ type githubClient interface {
 	FindPreview(number int) (gh.PR, error)
 	FindChecks(number int) (gh.PR, error)
 	LoadConversation(number int) gh.ConversationDetail
-	LoadPRDetail(number int, prev gh.PRDetail) gh.PRDetail
-	LoadLocalPRDetail(number int, prev gh.PRDetail) gh.PRDetail
 	Merge(number int, headOID string, method gh.MergeMethod) error
 	Checkout(number int) error
 	Close(number int) error
@@ -633,18 +631,6 @@ func (m Model) currentPRNumber() int {
 	return 0
 }
 
-// cachedDetail snapshots the cache as the previous detail so LoadPRDetail can
-// refresh comments incrementally. LoadPRDetail only trusts the snapshot when
-// its PR number matches the one being fetched.
-func (m Model) cachedDetail() gh.PRDetail {
-	cache := m.cache.Clone()
-	detail := gh.PRDetail{Comments: cache.Comments, Activities: cache.Activities, Reviews: cache.Reviews, ReviewComments: cache.ReviewComments}
-	if cache.PR != nil {
-		detail.PR = *cache.PR
-	}
-	return detail
-}
-
 func (m Model) canMergeCurrentPR() bool {
 	if m.cache.PR == nil || m.cache.PR.Number <= 0 || m.cache.PR.HeadRefOID == "" {
 		return false
@@ -818,7 +804,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, fetchCurrentBranchPR(m.client, m.currentBranch))
 	}
 	if m.screen == detailScreen && m.currentBranch != "HEAD" && !m.remote && m.cachePath != "" {
-		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()))
+		cmds = append(cmds, fetchGitHub(m.client, m.detailView.head, m.currentPRNumber(), m.targetGeneration))
 	}
 	cmds = append(cmds, m.nextLocalPoll())
 	if m.screen == detailScreen {
@@ -945,7 +931,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.status = "loading PR refs…"
 	m.githubStatus = "GitHub: cached · refreshing selected PR…"
 	m.layout()
-	return tea.Batch(fetchRemotePR(m.client, pr, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
+	return tea.Batch(fetchRemotePR(m.client, pr, m.targetGeneration), m.sync(), m.startSpinner())
 }
 
 func (m *Model) handleVimNavigation(msg tea.KeyPressMsg) (bool, tea.Cmd) {
