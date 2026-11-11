@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -15,6 +16,9 @@ import (
 // since.
 func countGitCommands(t *testing.T) func() map[string]int {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the shim is a sh script")
+	}
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
