@@ -1,6 +1,6 @@
 # Keybindings
 
-Press `?` inside the TUI to toggle the full help, including the merge-status legend.
+Press `?` inside the TUI to open the help modal, which lists the keys for the current screen and the merge-status legend. `?` or `Esc` closes it.
 
 PR list rows and the detail header show merge readiness as a single symbol:
 green `⇄` for mergeable, yellow `⊘` for blocked, red `⚠` for conflicts,

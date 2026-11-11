@@ -592,17 +592,23 @@ func TestURLKeysOnListAndDetail(t *testing.T) {
 	}
 }
 
-func TestPRListHelpKeyTogglesFullHelp(t *testing.T) {
-	m := testModel()
-	m.screen = prListScreen
+func TestHelpKeyTogglesTheHelpModal(t *testing.T) {
+	for _, screen := range []screen{prListScreen, detailScreen} {
+		m := testModel()
+		m.screen = screen
 
-	u, _ := m.Update(keyPress("?"))
-	m = u.(Model)
-	if !m.help.ShowAll {
-		t.Fatal("? on the PR list did not open the full help")
-	}
-	u, _ = m.Update(keyPress("?"))
-	if u.(Model).help.ShowAll {
-		t.Fatal("second ? on the PR list did not close the full help")
+		u, _ := m.Update(keyPress("?"))
+		m = u.(Model)
+		if _, ok := m.overlay.(helpOverlay); !ok {
+			t.Fatalf("? on screen %d did not open the help modal", screen)
+		}
+		// The modal lists the screen's own keys, not the popup's confirm/cancel.
+		if help := ansi.Strip(m.overlay.render(m)); !strings.Contains(help, "refresh") || strings.Contains(help, "confirm") {
+			t.Fatalf("help modal on screen %d = %q", screen, help)
+		}
+		u, _ = m.Update(keyPress("?"))
+		if u.(Model).overlay != nil {
+			t.Fatalf("second ? on screen %d did not close the help modal", screen)
+		}
 	}
 }
