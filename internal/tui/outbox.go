@@ -5,6 +5,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/shonenm/live-pr/internal/atomicfile"
 	gh "github.com/shonenm/live-pr/internal/github"
 	md "github.com/shonenm/live-pr/internal/markdown"
 	"github.com/shonenm/live-pr/internal/store"
@@ -44,7 +46,9 @@ func (m Model) queueOfflineComment(msg remoteCommentDone) (Model, tea.Cmd, bool)
 	path := store.CommentOutbox(m.root, msg.number)
 	entries, err := store.AppendOutbox(path, store.OutboxEntry{PR: msg.number, Body: msg.body, CommentID: msg.editID})
 	currentTarget := msg.generation == m.targetGeneration && m.cache.PR != nil && m.cache.PR.Number == msg.number
-	if err != nil {
+	// An unreadable queue file was moved aside and the comment queued anyway.
+	var quarantined *atomicfile.QuarantinedError
+	if err != nil && !errors.As(err, &quarantined) {
 		if currentTarget {
 			m.status = "comment: " + msg.err.Error() + " · queue failed: " + err.Error()
 		}
@@ -57,6 +61,9 @@ func (m Model) queueOfflineComment(msg remoteCommentDone) (Model, tea.Cmd, bool)
 	m.outbox = entries
 	m.detailView.invalidateConversation()
 	m.status = ""
+	if quarantined != nil {
+		m.status = "outbox: " + err.Error()
+	}
 	m.notice = "Offline · comment queued; sends on refresh (r)"
 	m.githubStatus = offlineStatus(msg.err, queuedCount(len(entries)), m.cache.FetchedAt)
 	return m, m.sync(), true
