@@ -151,16 +151,17 @@ func TestLoadSummarizeCommand(t *testing.T) {
 	}
 }
 
-func TestLoadLegacyRepoOverride(t *testing.T) {
+// .live-pr.toml is the only repository file SECURITY.md asks users to review.
+func TestLoadIgnoresLegacyRepoConfig(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".live-pr"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ".live-pr", "config.toml"), []byte("[diff]\ncommand = ''\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".live-pr", "config.toml"), []byte("[diff]\ncommand = 'planted'\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadConfig(t, repo).Diff.Command; got != "" {
-		t.Fatalf("legacy config = %q", got)
+	if got, want := loadConfig(t, repo).Diff.Command, loadConfig(t, t.TempDir()).Diff.Command; got != want {
+		t.Fatalf("legacy config was read: %q, want %q", got, want)
 	}
 }
 
