@@ -11,88 +11,33 @@ import (
 	"testing"
 )
 
-const testWorkflow = `name: CI
-on: [pull_request]
-env:
-  TOP: top
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-      - run: echo "$TOP-$STEP" > out.txt
-        env:
-          STEP: step
-      - name: pipefail
-        shell: bash
-        run: false | true
-      - run: echo unreachable > skipped.txt
-  expr:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo ${{ github.sha }}
-  matrix:
-    strategy:
-      matrix:
-        os: [a, b]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - run: "true"
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: golangci/golangci-lint-action@v9
-`
-
-func writeWorkflow(t *testing.T, root string) {
-	t.Helper()
-	path := filepath.Join(root, ".github", "workflows", "ci.yml")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(testWorkflow), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestLoadAndRun(t *testing.T) {
+func TestJobsAndRun(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("runs steps through bash")
+		t.Skip("runs checks through sh")
 	}
 	root := t.TempDir()
-	writeWorkflow(t, root)
-	jobs, err := Load(root, ".github/workflows/ci.yml", []string{"test", "expr", "matrix", "lint"}, map[string]string{"actions/setup-go": "true"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for id, want := range map[int]string{1: "expression", 2: "matrix", 3: "replacement"} {
-		if !strings.Contains(jobs[id].Unsupported, want) {
-			t.Errorf("job %s: Unsupported = %q, want mention of %q", jobs[id].ID, jobs[id].Unsupported, want)
-		}
-	}
-	if jobs[0].Unsupported != "" || len(jobs[0].Steps) != 4 {
-		t.Fatalf("test job = %+v, want 4 local steps", jobs[0])
+	jobs := Jobs(map[string]string{
+		"test": `echo "$CI" > out.txt`,
+		"lint": "echo boom >&2; exit 3",
+	})
+	if len(jobs) != 2 || jobs[0].ID != "lint" || jobs[1].ID != "test" {
+		t.Fatalf("Jobs = %+v, want lint then test", jobs)
 	}
 
-	var states []string
+	var failure string
 	passed := Run(context.Background(), root, jobs, func(ev Event) {
-		if ev.State != StateRunning {
-			states = append(states, ev.State)
+		if ev.State == StateFailure {
+			failure = ev.Job + ": " + ev.Output
 		}
 	})
-	if len(passed) != 0 {
-		t.Errorf("passed = %v, want none (pipefail step fails)", passed)
+	if !reflect.DeepEqual(passed, []string{"test"}) {
+		t.Errorf("passed = %v, want only test", passed)
 	}
-	if want := []string{StateSuccess, StateSuccess, StateFailure, StateSkipped}; !reflect.DeepEqual(states, want) {
-		t.Errorf("states = %v, want %v", states, want)
+	if failure != "lint: boom" {
+		t.Errorf("failure = %q, want the failed check's output", failure)
 	}
-	if out, _ := os.ReadFile(filepath.Join(root, "out.txt")); string(out) != "top-step\n" {
-		t.Errorf("out.txt = %q, want workflow and step env applied", out)
-	}
-
-	if _, err := Load(root, ".github/workflows/ci.yml", []string{"missing"}, nil); err == nil {
-		t.Error("Load accepted an undefined job")
+	if out, _ := os.ReadFile(filepath.Join(root, "out.txt")); string(out) != "true\n" {
+		t.Errorf("out.txt = %q, want the command run in root with CI=true", out)
 	}
 }
 
@@ -138,7 +83,7 @@ func TestAttestVerify(t *testing.T) {
 		t.Fatalf("attested without a note: %s", out)
 	}
 
-	if err := Attest(root, filepath.Join(keys, "trusted"), "ci.yml", tree, []string{"test", "lint"}); err != nil {
+	if err := Attest(root, filepath.Join(keys, "trusted"), tree, []string{"test", "lint"}); err != nil {
 		t.Fatal(err)
 	}
 	if out := verify(); !strings.Contains(out, "test=attested") || !strings.Contains(out, "lint=attested") {
@@ -155,7 +100,7 @@ func TestAttestVerify(t *testing.T) {
 	// from the base revision.
 	sh(`echo "live-pr $(cat "$KEYS/rogue.pub")" >> .live-pr/allowed_signers && git commit -q -am rogue`)
 	tree, _, _ = Tree(root)
-	if err := Attest(root, filepath.Join(keys, "rogue"), "ci.yml", tree, []string{"test"}); err != nil {
+	if err := Attest(root, filepath.Join(keys, "rogue"), tree, []string{"test"}); err != nil {
 		t.Fatal(err)
 	}
 	if out := verify(); strings.Contains(out, "=attested") {

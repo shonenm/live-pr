@@ -1,3 +1,5 @@
+// Package localci runs a repository's check commands in the local checkout
+// and records signed attestations that a remote verification step can trust.
 package localci
 
 import (
@@ -5,9 +7,35 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"sort"
 	"time"
 )
+
+// Step is one unit of progress inside a job.
+type Step struct {
+	Name string
+	Run  string
+}
+
+// Job is a named check. Its ID is the name the remote workflow gates on.
+type Job struct {
+	ID    string
+	Steps []Step
+}
+
+// Jobs turns the configured `name = command` checks into jobs, sorted by
+// name. The command is the repository's own entry point (`just check`,
+// `bin/ci`), which the remote job is expected to call as well.
+// ponytail: one step per check; split a command's output on `::group::`
+// markers when step-level progress is wanted.
+func Jobs(checks map[string]string) []Job {
+	jobs := make([]Job, 0, len(checks))
+	for name, command := range checks {
+		jobs = append(jobs, Job{ID: name, Steps: []Step{{Name: command, Run: command}}})
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+	return jobs
+}
 
 // Step states reported through Event.
 const (
@@ -29,15 +57,11 @@ type Event struct {
 
 const outputTailBytes = 4096
 
-// Run executes the supported jobs in order inside root and returns the IDs of
-// the jobs whose steps all succeeded. Steps after a failure are skipped, as
-// on GitHub Actions.
+// Run executes the jobs in order inside root and returns the IDs of the jobs
+// whose steps all succeeded. Steps after a failure are skipped.
 func Run(ctx context.Context, root string, jobs []Job, emit func(Event)) []string {
 	var passed []string
 	for _, job := range jobs {
-		if job.Unsupported != "" {
-			continue
-		}
 		ok := true
 		for i, step := range job.Steps {
 			if !ok {
@@ -46,7 +70,10 @@ func Run(ctx context.Context, root string, jobs []Job, emit func(Event)) []strin
 			}
 			emit(Event{Job: job.ID, Step: i, State: StateRunning})
 			start := time.Now()
-			out, err := runStep(ctx, root, step)
+			cmd := exec.CommandContext(ctx, "sh", "-c", step.Run)
+			cmd.Dir = root
+			cmd.Env = append(os.Environ(), "CI=true")
+			out, err := cmd.CombinedOutput()
 			ev := Event{Job: job.ID, Step: i, State: StateSuccess, Duration: time.Since(start).Truncate(time.Second)}
 			if err != nil {
 				ok = false
@@ -66,20 +93,4 @@ func Run(ctx context.Context, root string, jobs []Job, emit func(Event)) []strin
 		}
 	}
 	return passed
-}
-
-func runStep(ctx context.Context, root string, step Step) ([]byte, error) {
-	// Mirror the GitHub Actions shell templates so `run:` text behaves the
-	// same locally: unspecified is `bash -e`, explicit bash adds pipefail.
-	args := []string{"bash", "-e", "-c", step.Run}
-	switch step.Shell {
-	case "bash":
-		args = []string{"bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step.Run}
-	case "sh":
-		args = []string{"sh", "-e", "-c", step.Run}
-	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Dir = filepath.Join(root, step.Dir)
-	cmd.Env = append(append(os.Environ(), "CI=true"), step.Env...)
-	return cmd.CombinedOutput()
 }

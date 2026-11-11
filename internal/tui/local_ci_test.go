@@ -15,14 +15,10 @@ import (
 
 func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("runs steps through bash")
+		t.Skip("runs checks through sh")
 	}
 	root := t.TempDir()
-	workflow := "jobs:\n  test:\n    steps:\n      - uses: actions/checkout@v7\n      - name: unit\n        run: echo ok\n      - name: broken\n        run: echo boom >&2; exit 1\n  build:\n    strategy: {matrix: {os: [a]}}\n    steps:\n      - run: echo\n"
-	if err := os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".github", "workflows", "ci.yml"), []byte(workflow), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "file"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "init"}} {
@@ -35,7 +31,7 @@ func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {
 
 	m := testModel()
 	m.root = root
-	m.localCIConfig = config.LocalCIConfig{Workflow: ".github/workflows/ci.yml", Jobs: []string{"test", "build"}}
+	m.localCIConfig = config.LocalCIConfig{Checks: map[string]string{"unit": "echo ok", "broken": "echo boom >&2; exit 1"}}
 	if !m.canRunLocalCI() {
 		t.Fatal("local CI is not runnable")
 	}
@@ -55,7 +51,7 @@ func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {
 
 	out, _ := m.buildChecks()
 	plain := ansi.Strip(out)
-	for _, want := range []string{"Local CI", "└─ ✓ unit · success", "└─ ✗ broken · failure", "boom", "build · remote only · job uses a strategy matrix", "not attested: no job passed"} {
+	for _, want := range []string{"Local CI", "└─ ✓ echo ok · success", "└─ ✗ echo boom >&2; exit 1 · failure", "boom", "not attested: ci.signing_key"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("checks view lacks %q:\n%s", want, plain)
 		}

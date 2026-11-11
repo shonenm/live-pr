@@ -1,46 +1,50 @@
 # Local CI
 
-live-pr can run GitHub Actions workflow jobs in your checkout, sign the result,
-and let the remote workflow skip the jobs that were already proven against the
-same tree. The remote stays authoritative: without a valid attestation every
-job runs as usual.
+live-pr can run your repository's check commands in your checkout, sign the
+result, and let the remote workflow skip the jobs that were already proven
+against the same tree. The remote stays authoritative: without a valid
+attestation every job runs as usual.
 
 ## How it works
 
-1. `R` in the TUI (or `live-pr ci run`) runs the `[ci.local]` jobs in place,
-   reusing your toolchains and caches. No clone, no container.
-2. If the checkout was clean before and after the run, the passing jobs are
+1. `R` in the TUI (or `live-pr ci run`) runs the `[ci.local.checks]` commands
+   in place, reusing your toolchains and caches. No clone, no container.
+2. If the checkout was clean before and after the run, the passing checks are
    signed with your SSH key and stored as a git note on `HEAD`'s tree object
    (`refs/notes/live-pr`), which is then pushed to `origin`.
 3. A verification job at the start of the remote workflow checks the note and
-   exposes `<job>=attested` outputs. Attested jobs are skipped with `if:`.
+   exposes `<check>=attested` outputs. Attested jobs are skipped with `if:`.
 
 The attestation names a tree, not a commit. It survives a squash merge or
 rebase that produces the same tree and is void as soon as anything differs:
-the base moved, the workflow or `.live-pr.toml` changed, or a file was edited.
+the base moved, `.live-pr.toml` or a script changed, or a file was edited.
 
 ## What runs locally
 
-`run:` steps execute verbatim. They cannot be overridden, which is what makes a
-local pass comparable to a remote one. `uses:` steps are environment setup and
-need a local replacement, keyed by action name without the `@ref`;
-`actions/checkout` is satisfied by the checkout itself.
-
-A job stays remote-only, with the reason shown in the checks view, when it uses
-a `strategy` matrix, `services`, a `container`, `defaults`, an `if:`, a
-`${{ }}` expression in a `run:` or `env:`, or a `uses:` step without a
-replacement.
+A check is a name and a shell command. live-pr does not read the workflow:
+point the check at the repository's own entry point (`just check`, `bin/ci`,
+`make test`) and have the remote job call the same command. That shared
+script is what makes a local pass comparable to a remote one.
 
 ```toml
 # .live-pr.toml
-[ci.local]
-workflow = ".github/workflows/ci.yml"   # default
-jobs = ["test"]
-
-[ci.local.uses]
-"actions/setup-go" = "go version"
-"golangci/golangci-lint-action" = "golangci-lint run"
+[ci.local.checks]
+test = "just check"
 ```
+
+```yaml
+# .github/workflows/ci.yml
+  test:
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+      - run: just check
+```
+
+Pin toolchains in the repository (`go.mod`'s `toolchain`, mise, a lockfile) so
+both sides resolve the same versions; a newer local toolchain is a real
+difference, not a detail. A workflow without such a script can use a runner
+such as [act](https://github.com/nektos/act) as the command instead.
 
 ```toml
 # ~/.config/live-pr/config.toml — never read from a repository
@@ -61,7 +65,7 @@ live-pr ci verify-script > .live-pr/verify.sh
 echo "live-pr $(cat ~/.ssh/id_ed25519.pub)" >> .live-pr/allowed_signers
 ```
 
-Then gate each locally runnable job on the verifier:
+Then gate each job on the verifier, using the check name as the output:
 
 ```yaml
 jobs:
@@ -98,6 +102,7 @@ The gate is "the agent cannot open it by itself", not "tamper-proof":
 - **Ignored files and local toolchains are trusted.** That is the cost of not
   rebuilding the environment. Keep a full remote run on pushes to the default
   branch as the backstop.
-- **Weakening the checks themselves** (editing tests, the workflow, or
-  `[ci.local.uses]`) is not a signature problem. Those changes are in the diff;
+- **Weakening the checks themselves** (editing tests, the script, or
+  `[ci.local.checks]`) is not a signature problem. Neither is a remote job that
+  does more than the local command: skipping it skips the difference. Those changes are in the diff;
   review them.
