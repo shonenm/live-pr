@@ -40,11 +40,11 @@ type remoteDeleteOverlay struct {
 }
 
 // editorWidth is the widest the editor may be and still fit the popups that
-// host it. The review popup declares min(80, w-14) and pads 2 on each side,
-// so anything wider gets re-wrapped by the popup and shows breaks the text
-// does not contain.
+// host it. The review popup declares min(80, w-14), which in lipgloss covers
+// its border (1 each side) and padding (2 each side), so anything wider gets
+// re-wrapped by the popup and shows breaks the text does not contain.
 func (m Model) editorWidth() int {
-	return max(24, min(80, m.w-14)-4)
+	return max(24, min(80, m.w-14)-6)
 }
 
 func (m *Model) sizeLocalEditor() {
