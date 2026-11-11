@@ -254,8 +254,12 @@ func scheduleLocalPoll(generation uint64) (tea.Cmd, context.CancelFunc) {
 
 func pollLocalState(generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		state, err := git.CurrentLocalState()
-		return localStatePolled{generation: generation, state: state, err: err}
+		// The poll only observes checkouts, so it asks for the branch alone
+		// instead of scanning and hashing the worktree every two seconds.
+		// The poll only observes checkouts, so it asks for the branch alone
+		// instead of scanning and hashing the worktree every two seconds.
+		branch, err := git.CurrentBranch()
+		return localStatePolled{generation: generation, state: git.LocalState{Branch: branch}, err: err}
 	}
 }
 
