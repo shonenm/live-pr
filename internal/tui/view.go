@@ -84,9 +84,6 @@ func (m Model) popupContent() (string, bool) {
 	if m.overlay != nil {
 		return m.overlay.render(m), true
 	}
-	if m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction {
-		return m.renderActionPopup(), true
-	}
 	return "", false
 }
 
@@ -401,7 +398,7 @@ func (m Model) renderFooter() string {
 		// First fallback: operational status outranks metadata.
 		line = mode + " " + content
 	}
-	compactEligible := operational || m.pendingPRAction != noPRAction || m.prActionRunning != noPRAction || m.detailView.focus == focusReview
+	compactEligible := operational || m.prActionPopup().action != noPRAction || m.detailView.focus == focusReview
 	if m.w > 0 && lipgloss.Width(line) > m.w && compactEligible {
 		// Second fallback: keep the status but drop verbose key discovery.
 		if compact := m.compactFooterContent(); compact != "" {
@@ -421,10 +418,10 @@ func (m Model) footerContent() string {
 		}
 		return renderStatus(m.status)
 	}
-	if m.pendingPRAction != noPRAction {
+	if m.pendingPRAction() != noPRAction {
 		return m.keyHelp()
 	}
-	if m.prActionRunning != noPRAction {
+	if m.prActionRunning() != noPRAction {
 		return m.busyStatus("")
 	}
 	// While work is in flight the progress line wins over a lingering
@@ -455,7 +452,7 @@ func (m Model) compactFooterContent() string {
 		}
 		return renderStatus(m.status)
 	}
-	if m.prActionRunning != noPRAction {
+	if m.prActionRunning() != noPRAction {
 		return m.busyStatus("")
 	}
 	if m.notice != "" && !m.isLoading() {
@@ -470,8 +467,8 @@ func (m Model) compactFooterContent() string {
 	if m.detailView.focus == focusReview {
 		return stMuted.Render("Review focused · Tab conversation")
 	}
-	if m.pendingPRAction != noPRAction {
-		return stMuted.Render(m.pendingPRAction.confirmKeys() + " confirm · Esc cancel")
+	if m.pendingPRAction() != noPRAction {
+		return stMuted.Render(m.pendingPRAction().confirmKeys() + " confirm · Esc cancel")
 	}
 	return stMuted.Render("? help · q quit")
 }

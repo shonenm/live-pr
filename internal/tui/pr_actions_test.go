@@ -27,7 +27,7 @@ func TestMergePopupShowsMergeConditions(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
-	popup := ansi.Strip(m.renderActionPopup())
+	popup := ansi.Strip(m.overlay.render(m))
 	for _, want := range []string{"⇄ mergeable", "✓ CI 1 passed", "review approved", "✓ up to date with base"} {
 		if !strings.Contains(popup, want) {
 			t.Fatalf("clean merge popup missing %q: %q", want, popup)
@@ -49,10 +49,10 @@ func TestMergePopupShowsMergeConditions(t *testing.T) {
 	}
 	m.cache.PR = &pr
 	m.detailView.mergeReadiness = git.MergeReadiness{Behind: 2, ConflictFiles: []string{"a.go"}}
-	m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, 9, pr
+	m.overlay = prActionOverlay{action: mergePR, pr: pr}
 	u, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
-	popup = ansi.Strip(m.renderActionPopup())
+	popup = ansi.Strip(m.overlay.render(m))
 	for _, want := range []string{"◌ draft", "⚠ conflicts", "✗ CI 1 failed", "1 pending", "review changes requested", "⚠ 1 conflict file", "⚠ 2 commits behind base"} {
 		if !strings.Contains(popup, want) {
 			t.Fatalf("dirty merge popup missing %q: %q", want, popup)
@@ -62,7 +62,7 @@ func TestMergePopupShowsMergeConditions(t *testing.T) {
 	// The local behind/conflict scan belongs to the detail target only, so a
 	// popup opened from the list omits it.
 	m.screen = prListScreen
-	popup = ansi.Strip(m.renderActionPopup())
+	popup = ansi.Strip(m.overlay.render(m))
 	if strings.Contains(popup, "behind base") || strings.Contains(popup, "conflict file") {
 		t.Fatalf("list merge popup leaked detail readiness: %q", popup)
 	}
@@ -76,8 +76,8 @@ func TestDetailMergeStartsConfirmation(t *testing.T) {
 	m = u.(Model)
 	u, cmd := m.Update(keyPress("m"))
 	m = u.(Model)
-	if cmd != nil || m.pendingPRAction != mergePR || m.prActionNumber != 9 {
-		t.Fatalf("detail merge confirmation = pending:%v number:%d cmd:%v", m.pendingPRAction, m.prActionNumber, cmd)
+	if cmd != nil || m.pendingPRAction() != mergePR || m.prActionPopup().pr.Number != 9 {
+		t.Fatalf("detail merge confirmation = pending:%v number:%d cmd:%v", m.pendingPRAction(), m.prActionPopup().pr.Number, cmd)
 	}
 }
 
@@ -91,28 +91,28 @@ func TestPRListActionsRequireConfirmation(t *testing.T) {
 
 	u, cmd := m.Update(keyPress("m"))
 	m = u.(Model)
-	if cmd != nil || m.pendingPRAction != mergePR || m.prActionPR.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "merge commit") || !strings.Contains(ansi.Strip(m.viewContent()), "Merge PR #14") {
-		t.Fatalf("merge confirmation not shown: pending=%v popup=%q", m.pendingPRAction, ansi.Strip(m.renderActionPopup()))
+	if cmd != nil || m.pendingPRAction() != mergePR || m.prActionPopup().pr.HeadRefOID != "abc123" || !strings.Contains(ansi.Strip(m.overlay.render(m)), "Merge PR #14") || !strings.Contains(ansi.Strip(m.overlay.render(m)), "merge commit") || !strings.Contains(ansi.Strip(m.viewContent()), "Merge PR #14") {
+		t.Fatalf("merge confirmation not shown: pending=%v popup=%q", m.pendingPRAction(), ansi.Strip(m.overlay.render(m)))
 	}
 	u, _ = m.Update(keyPress("n"))
 	m = u.(Model)
-	if m.pendingPRAction != noPRAction {
-		t.Fatalf("merge confirmation not cancelled: %v", m.pendingPRAction)
+	if m.pendingPRAction() != noPRAction {
+		t.Fatalf("merge confirmation not cancelled: %v", m.pendingPRAction())
 	}
 
 	u, _ = m.Update(keyPress("c"))
 	m = u.(Model)
 	u, cmd = m.Update(keyPress("y"))
 	m = u.(Model)
-	if cmd == nil || m.pendingPRAction != noPRAction || m.prActionRunning != checkoutPR || m.prActionNumber != 14 {
-		t.Fatalf("checkout not confirmed: pending=%v running=%v number=%d cmd=%v", m.pendingPRAction, m.prActionRunning, m.prActionNumber, cmd)
+	if cmd == nil || m.pendingPRAction() != noPRAction || m.prActionRunning() != checkoutPR || m.prActionPopup().pr.Number != 14 {
+		t.Fatalf("checkout not confirmed: pending=%v running=%v number=%d cmd=%v", m.pendingPRAction(), m.prActionRunning(), m.prActionPopup().pr.Number, cmd)
 	}
 
-	m.prActionRunning = noPRAction
+	m.overlay = nil
 	u, _ = m.Update(keyPress("x"))
 	m = u.(Model)
-	if m.pendingPRAction != closePR || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Close PR #14") || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Close without merging") {
-		t.Fatalf("close confirmation not shown: pending=%v popup=%q", m.pendingPRAction, ansi.Strip(m.renderActionPopup()))
+	if m.pendingPRAction() != closePR || !strings.Contains(ansi.Strip(m.overlay.render(m)), "Close PR #14") || !strings.Contains(ansi.Strip(m.overlay.render(m)), "Close without merging") {
+		t.Fatalf("close confirmation not shown: pending=%v popup=%q", m.pendingPRAction(), ansi.Strip(m.overlay.render(m)))
 	}
 }
 
@@ -143,14 +143,14 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 	m = u.(Model)
 	u, _ = m.Update(keyPress("j"))
 	m = u.(Model)
-	popup := ansi.Strip(m.renderActionPopup())
-	if m.mergeMethodCursor != 1 || !strings.Contains(popup, "Squash and merge?") || !strings.Contains(popup, "Rebase") {
-		t.Fatalf("squash selection not shown: cursor=%d popup=%q", m.mergeMethodCursor, popup)
+	popup := ansi.Strip(m.overlay.render(m))
+	if m.prActionPopup().methodCursor != 1 || !strings.Contains(popup, "Squash and merge?") || !strings.Contains(popup, "Rebase") {
+		t.Fatalf("squash selection not shown: cursor=%d popup=%q", m.prActionPopup().methodCursor, popup)
 	}
 	u, cmd := m.Update(keyPress("enter"))
 	m = u.(Model)
-	if cmd == nil || m.pendingPRAction != noPRAction || m.prActionRunning != mergePR {
-		t.Fatalf("enter did not fire the merge: pending=%v running=%v", m.pendingPRAction, m.prActionRunning)
+	if cmd == nil || m.pendingPRAction() != noPRAction || m.prActionRunning() != mergePR {
+		t.Fatalf("enter did not fire the merge: pending=%v running=%v", m.pendingPRAction(), m.prActionRunning())
 	}
 	runInner(cmd)
 	if gotNumber != 14 || gotOID != "abc123" || gotMethod != gh.MergeSquash {
@@ -158,41 +158,40 @@ func TestMergePopupPicksMethodWithCursorAndShortcuts(t *testing.T) {
 	}
 
 	// Reopening resets the cursor to the merge commit; r submits a rebase.
-	m.prActionRunning = noPRAction
+	m.overlay = nil
 	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
-	if m.mergeMethodCursor != 0 || !strings.Contains(ansi.Strip(m.renderActionPopup()), "Merge with a merge commit?") {
-		t.Fatalf("reopened popup did not reset to the merge commit: cursor=%d", m.mergeMethodCursor)
+	if m.prActionPopup().methodCursor != 0 || !strings.Contains(ansi.Strip(m.overlay.render(m)), "Merge with a merge commit?") {
+		t.Fatalf("reopened popup did not reset to the merge commit: cursor=%d", m.prActionPopup().methodCursor)
 	}
 	u, cmd = m.Update(keyPress("r"))
 	m = u.(Model)
 	runInner(cmd)
-	if m.prActionRunning != mergePR || gotMethod != gh.MergeRebase {
-		t.Fatalf("r shortcut = running:%v method:%q; want an immediate rebase merge", m.prActionRunning, gotMethod)
+	if m.prActionRunning() != mergePR || gotMethod != gh.MergeRebase {
+		t.Fatalf("r shortcut = running:%v method:%q; want an immediate rebase merge", m.prActionRunning(), gotMethod)
 	}
 
 	// Esc cancels without touching the client.
-	m.prActionRunning = noPRAction
+	m.overlay = nil
 	gotNumber, gotMethod = 0, ""
 	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
 	u, cmd = m.Update(keyPress("esc"))
 	m = u.(Model)
-	if cmd != nil || m.pendingPRAction != noPRAction || m.prActionNumber != 0 || gotNumber != 0 {
-		t.Fatalf("esc did not cancel: pending=%v number=%d merged=%d", m.pendingPRAction, m.prActionNumber, gotNumber)
+	if cmd != nil || m.pendingPRAction() != noPRAction || m.prActionPopup().pr.Number != 0 || gotNumber != 0 {
+		t.Fatalf("esc did not cancel: pending=%v number=%d merged=%d", m.pendingPRAction(), m.prActionPopup().pr.Number, gotNumber)
 	}
 }
 
 func TestMergePopupUsesConfiguredMethodOrder(t *testing.T) {
 	m := testModel()
 	m.mergeMethods = configuredMergeMethods([]string{"squash", "merge", "rebase"})
-	m.pendingPRAction, m.prActionNumber = mergePR, 14
-	m.prActionPR = gh.PR{Number: 14, HeadRefOID: "abc123"}
+	m.overlay = prActionOverlay{action: mergePR, pr: gh.PR{Number: 14, HeadRefOID: "abc123"}}
 
-	popup := ansi.Strip(m.renderActionPopup())
+	popup := ansi.Strip(m.overlay.render(m))
 	squash, merge, rebase := strings.Index(popup, "Squash"), strings.Index(popup, "Merge commit"), strings.Index(popup, "Rebase")
-	if m.selectedMergeMethod() != gh.MergeSquash || squash < 0 || merge < squash || rebase < merge || !strings.Contains(popup, "Squash and merge?") {
-		t.Fatalf("configured merge picker = cursor:%d method:%q popup:%q", m.mergeMethodCursor, m.selectedMergeMethod(), popup)
+	if m.prActionPopup().selectedMethod(m) != gh.MergeSquash || squash < 0 || merge < squash || rebase < merge || !strings.Contains(popup, "Squash and merge?") {
+		t.Fatalf("configured merge picker = cursor:%d method:%q popup:%q", m.prActionPopup().methodCursor, m.prActionPopup().selectedMethod(m), popup)
 	}
 }
 
@@ -205,7 +204,7 @@ func TestPRListActionsAreDisabledForLocalEntry(t *testing.T) {
 	for _, action := range []rune{'m', 'c', 'x'} {
 		u, cmd := m.Update(keyPress(string(action)))
 		m = u.(Model)
-		if cmd != nil || m.pendingPRAction != noPRAction {
+		if cmd != nil || m.pendingPRAction() != noPRAction {
 			t.Fatalf("local action %q was enabled", action)
 		}
 	}
@@ -221,22 +220,22 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	// c still switches to the commits tab on the detail screen.
 	m.detailView.active = conversationTab
 	u, _ := m.Update(keyPress("c"))
-	if got := u.(Model); got.detailView.active != commitsTab || got.pendingPRAction != noPRAction {
-		t.Fatalf("c = tab:%v pending:%v", got.detailView.active, got.pendingPRAction)
+	if got := u.(Model); got.detailView.active != commitsTab || got.pendingPRAction() != noPRAction {
+		t.Fatalf("c = tab:%v pending:%v", got.detailView.active, got.pendingPRAction())
 	}
 
 	// C asks to check the shown PR out.
 	u, _ = m.Update(keyPress("C"))
 	m = u.(Model)
-	if m.pendingPRAction != checkoutPR || m.prActionNumber != 14 {
-		t.Fatalf("C = pending:%v number:%d", m.pendingPRAction, m.prActionNumber)
+	if m.pendingPRAction() != checkoutPR || m.prActionPopup().pr.Number != 14 {
+		t.Fatalf("C = pending:%v number:%d", m.pendingPRAction(), m.prActionPopup().pr.Number)
 	}
-	if popup := ansi.Strip(m.renderActionPopup()); !strings.Contains(popup, "Checkout feature?") {
+	if popup := ansi.Strip(m.overlay.render(m)); !strings.Contains(popup, "Checkout feature?") {
 		t.Fatalf("confirm popup = %q", popup)
 	}
 	u, cmd := m.Update(keyPress("y"))
-	if got := u.(Model); got.prActionRunning != checkoutPR || cmd == nil {
-		t.Fatalf("confirm = running:%v cmd:%v", got.prActionRunning, cmd)
+	if got := u.(Model); got.prActionRunning() != checkoutPR || cmd == nil {
+		t.Fatalf("confirm = running:%v cmd:%v", got.prActionRunning(), cmd)
 	}
 
 	// The PR already checked out offers nothing to do.
@@ -245,7 +244,7 @@ func TestCheckoutFromDetailUsesShiftC(t *testing.T) {
 	currentPR := gh.PR{Number: 14, HeadRefName: "feature"}
 	current.cache.PR = &currentPR
 	u, _ = current.Update(keyPress("C"))
-	if got := u.(Model); got.pendingPRAction != noPRAction {
+	if got := u.(Model); got.pendingPRAction() != noPRAction {
 		t.Fatal("offered to check out the branch already checked out")
 	}
 }
