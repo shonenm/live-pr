@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -51,6 +52,12 @@ func New(command, cwd string, env []string) *Terminal {
 	emulator.SetInitialCWD(cwd)
 	emulator.SetScrollbackLimit(2_000)
 	return &Terminal{sessionID: sessionID, command: command, cwd: cwd, startEnv: env, executable: executable, emulator: emulator}
+}
+
+// Matches reports whether t was built from the same command and environment,
+// so a caller about to replace it with an identical reviewer can keep it.
+func (t *Terminal) Matches(command string, env []string) bool {
+	return t != nil && t.command == command && slices.Equal(t.startEnv, env)
 }
 
 // Init starts the child before returning its first output listener. Synchronous
