@@ -35,7 +35,7 @@ a real pull request.
 - Local-first context — checked-out PR file diffs stay on the pushed head; unpushed commits and working-tree changes remain available in the commit picker
 - PR LIST / LOCAL / LIVE / REMOTE status line — distinguishes the navigator, PR-less local work, the checkout's PR, and other fetched PRs; dirty/ahead/behind stay separate
 - Live PR monitoring — LIVE checkouts poll lightweight head, state, draft, and CI metadata without replacing the local review
-- Local CI — run workflow jobs in your checkout from the TUI, sign the result, and let the remote workflow skip what was already proven
+- Local CI — run your check commands in your checkout from the TUI, sign the result, and let the remote workflow skip what was already proven
 - PR export — `live-pr pr publish` creates or updates the GitHub PR with the timeline as its body
 - Mouse support — wheel scrolling per pane, click to select or open a PR, view tabs, and popup options
 
@@ -121,8 +121,8 @@ command = ""                 # append command stdout to the hierarchical CI chec
 # provider = "woodpecker"     # use woodpecker-cli and its existing context/keyring
 # Available to command: LIVE_PR_REPO, LIVE_PR_PR_NUMBER, LIVE_PR_PR_URL, LIVE_PR_HEAD_SHA
 
-[ci.local]
-jobs = []                    # workflow job IDs that `R` / `live-pr ci run` executes in the checkout
+[ci.local.checks]            # name = command; `R` / `live-pr ci run` executes them in the checkout
+# test = "just check"
 
 [accessibility]
 monochrome = false           # remove ANSI color/style output
@@ -134,7 +134,7 @@ ascii = false                # replace UI arrows, status glyphs, spinners, and b
 See [docs/local-ci.md](docs/local-ci.md) for local CI and attestation setup,
 [docs/diff-tool-integration.md](docs/diff-tool-integration.md) for reviewer details, and [docs/local-review-modes.md](docs/local-review-modes.md) for LOCAL/LIVE/REMOTE behavior and data ownership.
 
-`diff.command`, `diff.commit_command`, `ci.command`, `ci.local.uses`, and `summarize_command` are run through a
+`diff.command`, `diff.commit_command`, `ci.command`, `ci.local.checks`, and `summarize_command` are run through a
 shell, and `.live-pr.toml` is read from the repository you are viewing — so a
 repository you clone can run a command of its author's choosing when you start
 live-pr in it, the same exposure as Vim's `exrc`. Review the per-repo

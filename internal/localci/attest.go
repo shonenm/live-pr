@@ -26,14 +26,13 @@ const (
 )
 
 // Attestation is the signed statement that jobs passed against a tree. The
-// tree hash covers the workflow and .live-pr.toml, so the definitions that
-// ran are bound without hashing them separately.
+// tree hash covers .live-pr.toml and the scripts it calls, so the definitions
+// that ran are bound without hashing them separately.
 type Attestation struct {
-	Version  int      `json:"version"`
-	Tree     string   `json:"tree"`
-	Workflow string   `json:"workflow"`
-	Jobs     []string `json:"jobs"`
-	Time     string   `json:"time"`
+	Version int      `json:"version"`
+	Tree    string   `json:"tree"`
+	Jobs    []string `json:"jobs"`
+	Time    string   `json:"time"`
 }
 
 // Tree returns HEAD's tree and whether the checkout matches it exactly
@@ -51,10 +50,10 @@ func Tree(root string) (tree string, clean bool, err error) {
 // Attest signs the result with the SSH key at keyPath (a private key, or a
 // public key whose private half is held by ssh-agent) and stores it as a git
 // note on the tree object.
-func Attest(root, keyPath, workflow, tree string, jobs []string) error {
+func Attest(root, keyPath, tree string, jobs []string) error {
 	jobs = append([]string(nil), jobs...)
 	sort.Strings(jobs)
-	payload, err := json.Marshal(Attestation{Version: 1, Tree: tree, Workflow: workflow, Jobs: jobs, Time: time.Now().UTC().Format(time.RFC3339)})
+	payload, err := json.Marshal(Attestation{Version: 1, Tree: tree, Jobs: jobs, Time: time.Now().UTC().Format(time.RFC3339)})
 	if err != nil {
 		return err
 	}
@@ -109,7 +108,7 @@ func git(ctx context.Context, root string, stdin []byte, args ...string) (string
 // Execute runs jobs and, when the result is attributable to one committed
 // tree, signs and publishes the attestation. The returned note says what was
 // attested or why nothing was.
-func Execute(ctx context.Context, root, workflow, keyPath string, jobs []Job, emit func(Event)) (passed []string, note string) {
+func Execute(ctx context.Context, root, keyPath string, jobs []Job, emit func(Event)) (passed []string, note string) {
 	tree, clean, err := Tree(root)
 	if err != nil {
 		return nil, "not started: " + err.Error()
@@ -126,7 +125,7 @@ func Execute(ctx context.Context, root, workflow, keyPath string, jobs []Job, em
 	if after, stillClean, err := Tree(root); err != nil || after != tree || !stillClean {
 		return passed, "not attested: the checkout changed during the run"
 	}
-	if err := Attest(root, keyPath, workflow, tree, passed); err != nil {
+	if err := Attest(root, keyPath, tree, passed); err != nil {
 		return passed, "not attested: " + err.Error()
 	}
 	note = "attested " + strings.Join(passed, ", ") + " for tree " + tree[:12]

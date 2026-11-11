@@ -161,21 +161,15 @@ type CIConfig struct {
 	// only from global config.
 	SigningKey string `toml:"signing_key"`
 
-	// Local selects the workflow jobs live-pr may run in the checkout.
+	// Local names the checks live-pr may run in the checkout.
 	Local LocalCIConfig `toml:"local"`
 }
 
-// LocalCIConfig maps a GitHub Actions workflow onto the local checkout.
+// LocalCIConfig configures the checks run in the local checkout.
 type LocalCIConfig struct {
-	// Workflow is the workflow file, relative to the repository root.
-	Workflow string `toml:"workflow"`
-
-	// Jobs lists the workflow job IDs to run locally.
-	Jobs []string `toml:"jobs"`
-
-	// Uses replaces `uses:` steps with a local shell command, keyed by the
-	// action name without its @ref. `run:` steps always execute verbatim.
-	Uses map[string]string `toml:"uses"`
+	// Checks maps a check name to the shell command that runs it. The name
+	// is what the remote workflow gates on.
+	Checks map[string]string `toml:"checks"`
 }
 
 // DiffConfig customizes how raw Git diff is rendered in the right pane.
@@ -210,7 +204,6 @@ func Default() Config {
 			MinPaneWidth: 24,
 		},
 		List:  ListConfig{SplitRatio: 45},
-		CI:    CIConfig{Local: LocalCIConfig{Workflow: ".github/workflows/ci.yml"}},
 		Merge: MergeConfig{Methods: []string{"merge", "squash", "rebase"}},
 		Views: DefaultViews(),
 	}

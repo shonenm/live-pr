@@ -1207,7 +1207,7 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.FocusRight:  true,
 		&m.keys.Commits:     m.fileExplorerMode() || m.detailView.active != commitsTab,
 		&m.keys.Conflicts:   m.detailView.active != conflictsTab,
-		&m.keys.Checks:      (m.cache.PR != nil || len(m.localCIConfig.Jobs) > 0) && m.detailView.active != checksTab,
+		&m.keys.Checks:      (m.cache.PR != nil || len(m.localCIConfig.Checks) > 0) && m.detailView.active != checksTab,
 		&m.keys.RunCI:       m.canRunLocalCI(),
 		&m.keys.Back:        m.detailView.active != conversationTab,
 		&m.keys.PRList:      true,

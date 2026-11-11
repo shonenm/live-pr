@@ -12,12 +12,12 @@ import (
 
 var ciCmd = &cobra.Command{
 	Use:   "ci",
-	Short: "Run workflow jobs locally and attest the result",
+	Short: "Run checks locally and attest the result",
 }
 
 var ciRunCmd = &cobra.Command{
 	Use:   "run",
-	Short: "Run the [ci.local] jobs in this checkout and sign an attestation",
+	Short: "Run the [ci.local.checks] commands in this checkout and sign an attestation",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		root, err := git.RepoRoot()
@@ -28,39 +28,22 @@ var ciRunCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		local := cfg.CI.Local
-		if len(local.Jobs) == 0 {
-			return errors.New("no local CI jobs: set [ci.local] jobs in .live-pr.toml")
-		}
-		jobs, err := localci.Load(root, local.Workflow, local.Jobs, local.Uses)
-		if err != nil {
-			return err
+		jobs := localci.Jobs(cfg.CI.Local.Checks)
+		if len(jobs) == 0 {
+			return errors.New("no local CI checks: set [ci.local.checks] in .live-pr.toml")
 		}
 		out := cmd.OutOrStdout()
-		byID := map[string]localci.Job{}
-		supported := 0
-		for _, job := range jobs {
-			byID[job.ID] = job
-			if job.Unsupported != "" {
-				_, _ = fmt.Fprintf(out, "%s: remote only (%s)\n", job.ID, job.Unsupported)
-				continue
-			}
-			supported++
-		}
-		if supported == 0 {
-			return errors.New("no configured job can run locally")
-		}
-		passed, note := localci.Execute(cmd.Context(), root, local.Workflow, cfg.CI.SigningKey, jobs, func(ev localci.Event) {
+		passed, note := localci.Execute(cmd.Context(), root, cfg.CI.SigningKey, jobs, func(ev localci.Event) {
 			if ev.State == localci.StateRunning {
 				return
 			}
-			_, _ = fmt.Fprintf(out, "%s / %s: %s (%s)\n", ev.Job, byID[ev.Job].Steps[ev.Step].Name, ev.State, ev.Duration)
+			_, _ = fmt.Fprintf(out, "%s: %s (%s)\n", ev.Job, ev.State, ev.Duration)
 			if ev.Output != "" {
 				_, _ = fmt.Fprintln(out, ev.Output)
 			}
 		})
 		_, _ = fmt.Fprintln(out, note)
-		if len(passed) != supported {
+		if len(passed) != len(jobs) {
 			return errors.New("local CI failed")
 		}
 		return nil

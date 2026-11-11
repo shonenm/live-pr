@@ -27,30 +27,25 @@ type localCIState struct {
 }
 
 func (m Model) canRunLocalCI() bool {
-	return !m.remote && len(m.localCIConfig.Jobs) > 0 && !m.localCI.running
+	return !m.remote && len(m.localCIConfig.Checks) > 0 && !m.localCI.running
 }
 
-// startLocalCI runs the configured workflow jobs in the checkout and streams
+// startLocalCI runs the configured checks in the checkout and streams
 // step events back through a channel drained one message at a time.
 func (m *Model) startLocalCI() tea.Cmd {
-	cfg := m.localCIConfig
-	jobs, err := localci.Load(m.root, cfg.Workflow, cfg.Jobs, cfg.Uses)
-	if err != nil {
-		m.localCI = localCIState{note: err.Error()}
-		return nil
-	}
+	jobs := localci.Jobs(m.localCIConfig.Checks)
 	m.localCI = localCIState{jobs: jobs, running: true}
 	for _, job := range jobs {
 		rows := make([]woodpeckerStep, len(job.Steps))
 		for i, step := range job.Steps {
-			rows[i] = woodpeckerStep{workflow: job.Name, name: step.Name, state: "pending"}
+			rows[i] = woodpeckerStep{workflow: job.ID, name: step.Name, state: "pending"}
 		}
 		m.localCI.rows = append(m.localCI.rows, rows)
 	}
 	events := make(chan tea.Msg, 16)
 	root, key := m.root, m.ciSigningKey
 	go func() {
-		_, note := localci.Execute(context.Background(), root, cfg.Workflow, key, jobs, func(ev localci.Event) {
+		_, note := localci.Execute(context.Background(), root, key, jobs, func(ev localci.Event) {
 			events <- localCIEvent{event: ev, events: events}
 		})
 		events <- localCIDone{note: note}
@@ -85,11 +80,7 @@ func (m Model) localCILines() []string {
 	}
 	lines := []string{stFg.Bold(true).Render("Local CI")}
 	for i, job := range m.localCI.jobs {
-		if job.Unsupported != "" {
-			lines = append(lines, iconLine("  ", stMuted, "–", job.Name, "remote only", job.Unsupported))
-			continue
-		}
-		lines = append(lines, "  "+stFg.Render(job.Name))
+		lines = append(lines, "  "+stFg.Render(job.ID))
 		for _, step := range m.localCI.rows[i] {
 			lines = append(lines, woodpeckerStepLine("    └─ ", step))
 		}
