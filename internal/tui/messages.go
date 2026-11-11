@@ -30,6 +30,9 @@ type currentBranchPRLoaded struct {
 	stateOnly bool
 }
 
+// prPreviewDue fires when the preview debounce for a PR-list row elapses.
+type prPreviewDue struct{ number int }
+
 type prPreviewLoaded struct {
 	generation uint64
 	number     int

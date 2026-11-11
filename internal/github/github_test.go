@@ -34,12 +34,9 @@ func TestFindForHeadFallsBackToNewestClosedPR(t *testing.T) {
 	client := Client{run: func(args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		switch {
-		case strings.Contains(joined, "--state open"):
-			states = append(states, "open")
-			return []byte(`[]`), nil
 		case strings.Contains(joined, "--state all"):
 			states = append(states, "all")
-			return []byte(`[{"number":12,"state":"MERGED","headRefName":"feature"}]`), nil
+			return []byte(`[{"number":11,"state":"CLOSED","headRefName":"feature"},{"number":12,"state":"MERGED","headRefName":"feature"}]`), nil
 		default:
 			return nil, errors.New("unexpected command")
 		}
@@ -48,7 +45,7 @@ func TestFindForHeadFallsBackToNewestClosedPR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pr.Number != 12 || pr.State != "MERGED" || !reflect.DeepEqual(states, []string{"open", "all"}) {
+	if pr.Number != 12 || pr.State != "MERGED" || !reflect.DeepEqual(states, []string{"all"}) {
 		t.Fatalf("FindForHead = %#v states=%v", pr, states)
 	}
 }

@@ -347,15 +347,20 @@ func (c Client) FindOpen(head string) (PR, error) {
 // FindForHead prefers an open PR, then returns the newest PR in any state.
 // When multiple PRs share the same head branch, the newest (highest number) wins.
 func (c Client) FindForHead(head string) (PR, error) {
-	prs, err := c.findAllHead(head, "open")
-	if err != nil && !errors.Is(err, ErrPRNotFound) {
+	prs, err := c.findAllHead(head, "all")
+	if err != nil {
 		return PR{}, err
 	}
-	if len(prs) == 0 {
-		prs, err = c.findAllHead(head, "all")
-		if err != nil {
-			return PR{}, err
+	// One listing answers both questions: a branch without a PR used to cost
+	// an open lookup and then this one.
+	var open []PR
+	for _, pr := range prs {
+		if strings.EqualFold(pr.State, "OPEN") {
+			open = append(open, pr)
 		}
+	}
+	if len(open) > 0 {
+		prs = open
 	}
 	return newestPR(prs), nil
 }
@@ -474,7 +479,18 @@ func (c Client) FindChecks(number int) (PR, error) {
 // FindPreview loads the expensive preview fields for one remote PR.
 func (c Client) FindPreview(number int) (PR, error) {
 	const fields = "number,url,title,body,state,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,isCrossRepository,mergeable,mergeStateStatus,reviewDecision,updatedAt,createdAt,author,assignees,labels,reviewRequests,comments,statusCheckRollup,additions,deletions,changedFiles"
+	// The commit rollups are an independent round trip, so they run alongside
+	// the preview instead of after it.
+	var commits []PRCommit
+	var issues []IssueRef
+	var rollupErr error
+	rollups := make(chan struct{})
+	go func() {
+		defer close(rollups)
+		commits, issues, rollupErr = c.commitStatusRollups(number)
+	}()
 	out, err := c.run("pr", "view", strconv.Itoa(number), "--json", fields)
+	<-rollups
 	if err != nil {
 		return PR{}, commandError("gh pr view", out, err)
 	}
@@ -486,7 +502,7 @@ func (c Client) FindPreview(number int) (PR, error) {
 	// A failed rollup fetch only costs the per-commit CI states and the
 	// linked issues; discarding the whole preview over it left the PR with
 	// no metadata at all.
-	if commits, issues, err := c.commitStatusRollups(number); err == nil {
+	if rollupErr == nil {
 		preview.CommitCount, preview.Commits = len(commits), commits
 		preview.ClosingIssues = issues
 	}

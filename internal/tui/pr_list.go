@@ -28,6 +28,7 @@ type prListModel struct {
 	open                      []gh.PR
 	previewLoading            map[int]bool
 	previewLoaded             map[int]bool
+	previewDue                int
 	previewedPR               int
 	view                      prView
 	state                     prListState
@@ -133,6 +134,9 @@ func (m Model) standardPRListState(view prView) prListState {
 	return openPRListState
 }
 
+// restoredPRRange is how many cached rows per view a new session starts from.
+const restoredPRRange = 2 * gh.PRPageSize
+
 func (m *Model) seedPRPages() {
 	if m.prList.pages == nil {
 		m.prList.pages = map[string]prPageState{}
@@ -148,8 +152,12 @@ func (m *Model) seedPRPages() {
 			continue
 		}
 		if cached, ok := m.navigator.Views[m.viewName(view)]; ok {
-			prs := make([]gh.PR, 0, len(cached.Numbers))
-			for _, number := range cached.Numbers {
+			// A range the user paged through is not carried into the next
+			// session: every refresh refetches the restored range page by
+			// page, so an unbounded one made startup cost a gh call per page.
+			numbers := cached.Numbers[:min(len(cached.Numbers), restoredPRRange)]
+			prs := make([]gh.PR, 0, len(numbers))
+			for _, number := range numbers {
 				if pr, exists := byNumber[number]; exists {
 					prs = append(prs, pr)
 				}
@@ -477,23 +485,54 @@ func (l *prListModel) restorePRSelection(number int) {
 	}
 }
 
-func (m *Model) ensureSelectedPRPreview() tea.Cmd {
+const (
+	// previewDebounce is how long the selection must rest on a row before its
+	// preview is fetched; rows the cursor only passes over cost nothing.
+	previewDebounce = 120 * time.Millisecond
+	// maxPreviewFetches bounds the gh processes preview loading keeps running.
+	maxPreviewFetches = 3
+)
+
+// previewWanted reports the selected PR's number when its preview still has
+// to be fetched and a fetch slot is free.
+func (m Model) previewWanted() (int, bool) {
 	pr := m.prList.selectedPR()
 	if pr == nil || pr.Number <= 0 || pr.PreviewLoaded {
+		return 0, false
+	}
+	if m.prList.previewLoading[pr.Number] || m.prList.previewLoaded[pr.Number] || len(m.prList.previewLoading) >= maxPreviewFetches {
+		return 0, false
+	}
+	return pr.Number, true
+}
+
+// ensureSelectedPRPreview arms the debounce timer for the selected row. Every
+// sync lands here, so a row whose timer is already running is left alone.
+func (m *Model) ensureSelectedPRPreview() tea.Cmd {
+	number, ok := m.previewWanted()
+	if !ok || m.prList.previewDue == number {
 		return nil
+	}
+	m.prList.previewDue = number
+	return tea.Tick(previewDebounce, func(time.Time) tea.Msg { return prPreviewDue{number: number} })
+}
+
+// handlePRPreviewDue fetches the preview if the selection is still resting on
+// the row the timer was armed for.
+func (m Model) handlePRPreviewDue(msg prPreviewDue) (Model, tea.Cmd) {
+	if m.prList.previewDue == msg.number {
+		m.prList.previewDue = 0
+	}
+	number, ok := m.previewWanted()
+	if !ok || number != msg.number || m.screen != prListScreen {
+		return m, nil
 	}
 	if m.prList.previewLoading == nil {
 		m.prList.previewLoading = map[int]bool{}
 	}
-	if m.prList.previewLoaded == nil {
-		m.prList.previewLoaded = map[int]bool{}
-	}
-	if m.prList.previewLoading[pr.Number] || m.prList.previewLoaded[pr.Number] {
-		return nil
-	}
-	m.prList.previewLoading[pr.Number] = true
-	m.status = fmt.Sprintf("loading PR #%d preview…", pr.Number)
-	return fetchPRPreview(m.client, pr.Number, m.prList.generation)
+	m.prList.previewLoading[number] = true
+	m.status = fmt.Sprintf("loading PR #%d preview…", number)
+	return m, tea.Batch(fetchPRPreview(m.client, number, m.prList.generation), m.startSpinner())
 }
 
 // filterPrompt is the styled filter-input prefix; the cursor math measures
