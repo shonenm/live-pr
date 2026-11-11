@@ -52,10 +52,11 @@ the child CLI as `WOODPECKER_TOKEN`, without logging or persistence.
 
 **live-pr fetches avatars over HTTPS.** To color author names it sends
 unauthenticated GET requests for the avatars of the people shown in the PR list
-and conversation. This is the only network traffic that does not go through
-`gh`, `git`, or a command you configured: requests and redirects are restricted
-to `https://avatars.githubusercontent.com`, carry no credentials, and no
-setting disables them.
+and conversation. These are the only network connections live-pr opens itself;
+everything else goes through the programs it runs (`gh`, `git`,
+`woodpecker-cli`, the summarizer, and the commands you configured). Requests
+and redirects are restricted to `https://avatars.githubusercontent.com`, carry
+no credentials, and no setting disables them.
 
 **Static review output is terminal-sanitized.** Built-in Git diffs, commit
 patches, and configured `diff.display` output retain numeric SGR styling but
