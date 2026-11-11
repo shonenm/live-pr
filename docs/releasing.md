@@ -54,7 +54,7 @@ for each target without imposing an arbitrary size gate.
 
 ```sh
 tmp=$(mktemp -d)
-GOTOOLCHAIN=go1.26.10 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$tmp/live-pr" .
+GOTOOLCHAIN=go1.26.11 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$tmp/live-pr" .
 wc -c < "$tmp/live-pr"
 tar -czf "$tmp/live-pr.tar.gz" -C "$tmp" live-pr
 wc -c < "$tmp/live-pr.tar.gz"
