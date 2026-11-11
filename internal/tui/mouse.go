@@ -10,8 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	gh "github.com/shonenm/live-pr/internal/github"
 )
 
 // wheelRows is how far one wheel tick moves: three PR-list selection steps
@@ -21,14 +19,6 @@ const wheelRows = 3
 func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 	if !m.ready {
 		return m, nil
-	}
-	// The PR-action popup is modal like an overlay: while one runs the mouse
-	// is dead, and while one is pending only its own clicks act.
-	if m.prActionRunning != noPRAction {
-		return m, nil
-	}
-	if m.pendingPRAction != noPRAction {
-		return m.handleActionPopupMouse(msg)
 	}
 	if m.screen == prListScreen {
 		return m.handlePRListMouse(msg)
@@ -334,22 +324,25 @@ func leftClick(msg tea.MouseMsg) (tea.Mouse, bool) {
 	return click.Mouse(), true
 }
 
-// handleActionPopupMouse drives the pending PR-action popup: the merge
-// picker's options move and confirm on clicks, and a click outside any
-// pending popup cancels it — the Esc equivalent. Confirm-only popups
-// (checkout, close) keep confirmation on y/n so a destructive action never
-// fires from a stray click.
-func (m Model) handleActionPopupMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
+// handleMouse drives the PR-action popup: the merge picker's options move
+// and confirm on clicks, and a click outside a pending popup cancels it —
+// the Esc equivalent. Confirm-only popups (checkout, close) keep
+// confirmation on y/n so a destructive action never fires from a stray
+// click, and the mouse is dead while the action runs.
+func (o prActionOverlay) handleMouse(m Model, msg tea.MouseMsg) (Model, tea.Cmd) {
+	if o.running {
+		return m, nil
+	}
 	mouse, ok := leftClick(msg)
 	if !ok {
 		return m, nil
 	}
-	popup := m.renderActionPopup()
+	popup := o.render(m)
 	if !m.mouseInPopup(popup, mouse) {
-		m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
+		m.overlay = nil
 		return m, nil
 	}
-	if m.pendingPRAction != mergePR {
+	if o.action != mergePR {
 		return m, nil
 	}
 	_, top, _, _ := m.popupRect(popup)
@@ -357,11 +350,11 @@ func (m Model) handleActionPopupMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		if popupOptionRow(popup, mergeMethodLabel(method)) != mouse.Y-top {
 			continue
 		}
-		if i == m.mergeMethodCursor {
-			next, cmd, _ := m.submitMerge(method)
-			return next, cmd
+		if i == o.methodCursor {
+			return o.submit(m, method)
 		}
-		m.mergeMethodCursor = i
+		o.methodCursor = i
+		m.overlay = o
 		return m, nil
 	}
 	return m, nil
