@@ -327,16 +327,16 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 	}
 	m.status = fmt.Sprintf("PR #%d · reloading…", msg.number)
 	m.refreshing = true
-	return m, tea.Batch(rebuildAfterCheckout(m.version, m.targetGeneration, msg), m.startSpinner())
+	return m, tea.Batch(rebuildAfterCheckout(m.version, m.options, m.targetGeneration, msg), m.startSpinner())
 
 }
 
 // rebuildAfterCheckout reconstructs the Model in a Cmd: New plus the local
 // hydration spawn a dozen git subprocesses, which froze the UI when run
 // inside the handler.
-func rebuildAfterCheckout(version string, generation uint64, msg prActionDone) tea.Cmd {
+func rebuildAfterCheckout(version string, opts []Option, generation uint64, msg prActionDone) tea.Cmd {
 	return func() tea.Msg {
-		next, err := New(version)
+		next, err := New(version, opts...)
 		if err != nil {
 			return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
 		}
@@ -499,7 +499,7 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 	if msg.state.Branch != m.currentBranch {
 		m.checkoutReloading, m.refreshing = true, true
 		m.targetGeneration++
-		return m, tea.Batch(rebuildForLocalBranchChange(m.version, msg.generation), m.nextLocalPoll(), m.startSpinner())
+		return m, tea.Batch(rebuildForLocalBranchChange(m.version, m.options, msg.generation), m.nextLocalPoll(), m.startSpinner())
 	}
 	// Checkout observation stays on a timer. File lists, diffs, and the
 	// review pane wait for `r`: agent edits would otherwise restart them
@@ -507,9 +507,9 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 	return m, m.nextLocalPoll()
 }
 
-func rebuildForLocalBranchChange(version string, generation uint64) tea.Cmd {
+func rebuildForLocalBranchChange(version string, opts []Option, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		next, err := New(version)
+		next, err := New(version, opts...)
 		if err != nil {
 			return localBranchReloaded{generation: generation, err: err}
 		}

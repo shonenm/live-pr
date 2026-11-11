@@ -431,13 +431,14 @@ type Model struct {
 	w, h       int
 	ready      bool
 	version    string
+	options    []Option
 	monochrome bool
 	ascii      bool
 }
 
 // New builds a navigator-aware model without creating branch state unless the
 // current checkout is routed to local detail.
-func New(version ...string) (Model, error) {
+func New(version string, opts ...Option) (Model, error) {
 	if done := debugtime.Start("tui startup"); done != nil {
 		defer done()
 	}
@@ -504,7 +505,8 @@ func New(version ...string) (Model, error) {
 		pollTimers:      &pollTimers{},
 		checkoutHead:    git.CheckoutPullHead,
 		screen:          prListScreen,
-		version:         first(version),
+		version:         version,
+		options:         opts,
 		root:            root,
 		monochrome:      cfg.Accessibility.Monochrome,
 		ascii:           cfg.Accessibility.ASCII,
@@ -560,6 +562,9 @@ func New(version ...string) (Model, error) {
 		avatarColors:      map[string]string{},
 		help:              newHelp(),
 		keys:              keys,
+	}
+	for _, opt := range opts {
+		opt(&m)
 	}
 	if localDetail {
 		if err := m.loadLocal(st, cache, currentPR); err != nil {
@@ -771,7 +776,6 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.layout()
 }
 
-// Run launches the TUI.
 // Option configures the TUI before launch.
 type Option func(*Model)
 
@@ -793,13 +797,11 @@ func WithDiff(name string) Option {
 	}
 }
 
+// Run launches the TUI.
 func Run(version string, opts ...Option) error {
-	m, err := New(version)
+	m, err := New(version, opts...)
 	if err != nil {
 		return err
-	}
-	for _, opt := range opts {
-		opt(&m)
 	}
 	final, runErr := tea.NewProgram(m).Run()
 	if model, ok := final.(Model); ok {
@@ -1230,11 +1232,4 @@ func keepLineVisible(v *viewport.Model, line int) {
 	if bottom := v.YOffset() + v.Height() - 1; line > bottom {
 		v.SetYOffset(line - v.Height() + 1)
 	}
-}
-
-func first(values []string) string {
-	if len(values) > 0 {
-		return values[0]
-	}
-	return ""
 }
