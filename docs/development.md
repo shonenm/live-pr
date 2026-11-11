@@ -3,12 +3,12 @@
 ## Building and checks
 
 ```sh
-GOTOOLCHAIN=go1.26.10 just check  # tests, race, lint, vulnerability scan, module and diff checks
+GOTOOLCHAIN=go1.26.11 just check  # tests, race, lint, vulnerability scan, module and diff checks
 go build -o live-pr .
 ```
 
 Use the Go patch version in `go.mod` for checks and release-size comparisons.
-Go 1.26.10 fixes GO-2026-6809; the pinned linter cannot read Go 1.27 export data.
+Go 1.26.11 fixes GO-2026-6859; the pinned linter cannot read Go 1.27 export data.
 The vulnerability gate checks reachable symbols. Non-reachable module findings
 are reported separately and do not mean the executable is affected.
 
@@ -34,8 +34,8 @@ added without a measured normal-page bottleneck. Reproduce these measurements
 with the existing benchmarks, keeping Go version, fixture and hardware fixed:
 
 ```sh
-GOTOOLCHAIN=go1.26.10 go test ./internal/markdown -run '^$' -bench BenchmarkRender -benchmem
-GOTOOLCHAIN=go1.26.10 go test ./internal/tui -run '^$' -bench 'BenchmarkRichContentKey|BenchmarkApplyPRPage' -benchmem
+GOTOOLCHAIN=go1.26.11 go test ./internal/markdown -run '^$' -bench BenchmarkRender -benchmem
+GOTOOLCHAIN=go1.26.11 go test ./internal/tui -run '^$' -bench 'BenchmarkRichContentKey|BenchmarkApplyPRPage' -benchmem
 ```
 
 ## Local state and errors
