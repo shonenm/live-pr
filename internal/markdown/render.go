@@ -169,6 +169,9 @@ func renderMarkdown(text string, width int) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// Goldmark decodes character references such as &#27; into raw
+		// controls after the input was sanitized; keep only glamour's SGR.
+		out = terminaltext.SanitizeSGR(out)
 		if p.table {
 			out = trimRendered(out)
 		} else {

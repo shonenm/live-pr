@@ -159,7 +159,7 @@ func formatWoodpeckerCI(number, pipelineState, steps string) string {
 	lastWorkflow := ""
 	for _, step := range parseWoodpeckerSteps(steps) {
 		if step.workflow != lastWorkflow {
-			lines = append(lines, stFg.Bold(true).Render(step.workflow))
+			lines = append(lines, stFg.Bold(true).Render(safeText(step.workflow)))
 			lastWorkflow = step.workflow
 		}
 		lines = append(lines, woodpeckerStepLine("  └─ ", step))

@@ -670,7 +670,7 @@ func (m *Model) buildChecks() (string, int) {
 		indent := ""
 		if check.WorkflowName != "" && check.WorkflowName != name {
 			if check.WorkflowName != lastWorkflow {
-				lines = append(lines, stFg.Bold(true).Render(check.WorkflowName))
+				lines = append(lines, stFg.Bold(true).Render(safeText(check.WorkflowName)))
 				lastWorkflow = check.WorkflowName
 			}
 			indent = "  └─ "
@@ -707,7 +707,7 @@ func (m *Model) buildChecks() (string, int) {
 			continue
 		}
 		if step.workflow != lastWF {
-			lines = append(lines, stFg.Bold(true).Render(step.workflow))
+			lines = append(lines, stFg.Bold(true).Render(safeText(step.workflow)))
 			lastWF = step.workflow
 		}
 		lines = append(lines, woodpeckerStepLine("  └─ ", step))
@@ -730,8 +730,8 @@ func (m *Model) buildChecks() (string, int) {
 }
 
 func iconLine(indent string, style lipgloss.Style, icon, name, state, duration string) string {
-	line := indent + style.Render(icon) + " " + stFg.Render(name)
-	if state != "" {
+	line := indent + style.Render(icon) + " " + stFg.Render(safeText(name))
+	if state = safeText(state); state != "" {
 		line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
 	}
 	if duration != "" {

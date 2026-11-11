@@ -180,7 +180,7 @@ func (o outboxDiscardOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, te
 }
 
 func (o outboxDiscardOverlay) render(m Model) string {
-	preview := strings.ReplaceAll(o.title, "\n", " ")
+	preview := strings.ReplaceAll(safeText(o.title), "\n", " ")
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cAttention)).
