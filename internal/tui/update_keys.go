@@ -440,7 +440,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		base := m.detailView.base
 		generation := m.targetGeneration
 		return m, tea.Batch(func() tea.Msg {
-			result, err := publish.Run(publish.Options{Base: base})
+			result, err := publish.Run(publish.Options{Base: base, NoPrompt: true})
 			return publishDone{generation: generation, result: result, err: err}
 		}, m.startSpinner())
 	case key.Matches(msg, m.keys.CopyURL):

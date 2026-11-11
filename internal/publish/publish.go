@@ -25,6 +25,9 @@ type Options struct {
 	Base             string
 	Draft            bool
 	ForceManagedBody bool
+	// NoPrompt fails the push instead of letting git or ssh prompt on the
+	// terminal; set it when the caller is drawing on that terminal.
+	NoPrompt bool
 }
 
 // Preview is the assembled local PR content before remote merge.
@@ -82,7 +85,11 @@ func buildPreview(st *store.Store, base string) (Preview, error) {
 // Run explicitly pushes the branch and creates or updates its PR.
 func Run(opts Options) (Result, error) {
 	client := gh.New()
-	return run(opts, client, git.Push)
+	push := git.Push
+	if opts.NoPrompt {
+		push = git.PushNoPrompt
+	}
+	return run(opts, client, push)
 }
 
 func run(opts Options, client githubClient, push func(string) error) (Result, error) {
