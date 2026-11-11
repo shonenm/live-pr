@@ -246,7 +246,8 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	m.prList.previewLoaded[msg.number] = true
 	if msg.err != nil {
 		m.status = fmt.Sprintf("PR #%d preview: %v", msg.number, msg.err)
-		return m, nil
+		// The failure freed a fetch slot the selected row may be waiting for.
+		return m, m.ensureSelectedPRPreview()
 	}
 	if i, ok := m.navigatorPRPosition(msg.number); ok {
 		msg.pr.ViewerReviewRequested = m.navigator.PRs[i].ViewerReviewRequested
