@@ -402,6 +402,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.targetGeneration++
 			return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.startOutboxFlush(), m.startSpinner())
 		}
+		m.reviewRestart = true
 		if m.currentBranch == "HEAD" {
 			st := store.ForBranch(m.root, m.currentBranch)
 			return m, tea.Batch(m.startLocalLoad(st, m.cache, nil), m.startSpinner())
