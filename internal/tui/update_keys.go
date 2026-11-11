@@ -81,8 +81,7 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
-		m.help.ShowAll = !m.help.ShowAll
-		return m, nil
+		return m.openHelp()
 	case key.Matches(msg, m.keys.Status):
 		return m.openPRStatus(m.prList.selectedPR())
 	case key.Matches(msg, m.keys.Merge):
@@ -391,8 +390,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
-		m.help.ShowAll = !m.help.ShowAll
-		return m, nil
+		return m.openHelp()
 	case key.Matches(msg, m.keys.Refresh):
 		if m.refreshing || m.publishing {
 			m.githubStatus = "GitHub: refreshing…"
