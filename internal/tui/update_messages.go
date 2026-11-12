@@ -441,7 +441,11 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 	active, cursors, focus := m.detailView.active, m.detailView.cursors, m.detailView.focus
 	fileCursor, reviewSHA := m.detailView.fileCursor, m.detailView.reviewSHA
 	listOffset, explorerOffset, detailOffset := m.list.YOffset(), m.explorer.YOffset(), m.detail.YOffset()
+	sameTarget := !m.remote && m.timelinePath == msg.st.Timeline()
 	m.applyLocal(msg.st, msg.data)
+	if !sameTarget {
+		m.resetListPosition()
+	}
 	m.localReloading = false
 	if reloading {
 		m.refreshing = false
