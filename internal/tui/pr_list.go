@@ -218,6 +218,13 @@ func (m *Model) applyPRViewState(selectedNumber int) tea.Cmd {
 		m.prList.activePage = key
 		m.prList.previewLoading = map[int]bool{}
 		m.prList.previewLoaded = map[int]bool{}
+		// A fetch still in flight for this page predates the new generation,
+		// so its response will be dropped: stop waiting for it and let the
+		// page be requested again below.
+		if page := m.prList.pages[key]; page.loading {
+			page.loading = false
+			m.prList.pages[key] = page
+		}
 	}
 	m.prList.state = desired
 	m.applyPRFilters(selectedNumber)
