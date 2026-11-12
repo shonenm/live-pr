@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shonenm/live-pr/internal/atomicfile"
+	"github.com/shonenm/live-pr/v2/internal/atomicfile"
 )
 
 // ViewsPath reports the config file that owns the view list: the per-repo

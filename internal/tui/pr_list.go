@@ -11,11 +11,11 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/shonenm/live-pr/internal/config"
-	gh "github.com/shonenm/live-pr/internal/github"
-	md "github.com/shonenm/live-pr/internal/markdown"
-	"github.com/shonenm/live-pr/internal/prfilter"
-	"github.com/shonenm/live-pr/internal/theme"
+	"github.com/shonenm/live-pr/v2/internal/config"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	md "github.com/shonenm/live-pr/v2/internal/markdown"
+	"github.com/shonenm/live-pr/v2/internal/prfilter"
+	"github.com/shonenm/live-pr/v2/internal/theme"
 )
 
 // prListModel groups the PR-list screen's state: the paged PR collections,

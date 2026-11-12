@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // Leaving a tab mid-fetch and coming back bumps the generation twice, so the

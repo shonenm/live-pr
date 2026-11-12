@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/shonenm/live-pr/internal/debugtime"
+	"github.com/shonenm/live-pr/v2/internal/debugtime"
 )
 
 // Kind categorizes a timeline event. Kinds drive the visual treatment in the TUI

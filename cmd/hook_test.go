@@ -3,8 +3,8 @@ package cmd
 import (
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/config"
-	"github.com/shonenm/live-pr/internal/summarize"
+	"github.com/shonenm/live-pr/v2/internal/config"
+	"github.com/shonenm/live-pr/v2/internal/summarize"
 )
 
 func TestSummarizerDefaultsToClaude(t *testing.T) {

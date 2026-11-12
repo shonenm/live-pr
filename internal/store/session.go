@@ -3,7 +3,7 @@ package store
 import (
 	"errors"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // LoadGitHubCache loads this branch's GitHub cache from its canonical path.

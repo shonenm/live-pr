@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/shonenm/live-pr/internal/prtemplate"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/prtemplate"
+	"github.com/shonenm/live-pr/v2/internal/store"
 	"github.com/spf13/cobra"
 )
 

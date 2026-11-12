@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/filelock"
-	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/filelock"
+	"github.com/shonenm/live-pr/v2/internal/git"
 )
 
 // WithCommits returns events plus every commit not already represented, without

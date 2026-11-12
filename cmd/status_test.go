@@ -4,9 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/demo"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/demo"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 func TestLoadStatusUsesCachedPullRequest(t *testing.T) {

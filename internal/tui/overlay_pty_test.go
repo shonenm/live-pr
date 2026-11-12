@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/shonenm/live-pr/internal/embeddedterm"
+	"github.com/shonenm/live-pr/v2/internal/embeddedterm"
 	"github.com/shonenm/portalis"
 )
 

@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // The head lookup ignores fork PRs, so refreshing a checked-out fork PR must

@@ -3,9 +3,9 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 // resolveCheckoutCache distinguishes an explicit checkout pin from a cached

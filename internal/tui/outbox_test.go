@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/store"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 // outboxTestModel builds a detail-screen model whose PR has an isolated

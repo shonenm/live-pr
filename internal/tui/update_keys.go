@@ -7,8 +7,8 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/publish"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/publish"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {

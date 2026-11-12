@@ -8,8 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	gh "github.com/shonenm/live-pr/internal/github"
-	md "github.com/shonenm/live-pr/internal/markdown"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	md "github.com/shonenm/live-pr/v2/internal/markdown"
 )
 
 // warmTestModel returns a sized detail screen whose conversation is far

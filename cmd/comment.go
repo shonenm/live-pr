@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/store"
 	"github.com/spf13/cobra"
 )
 

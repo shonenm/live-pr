@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/git"
 )
 
 func TestWithCommitsMatchesAcrossAbbreviationLengths(t *testing.T) {

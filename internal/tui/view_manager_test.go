@@ -8,8 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/shonenm/live-pr/internal/config"
-	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/config"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // The view manager edits a draft: Esc discards, Ctrl+S writes the config and

@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/shonenm/live-pr/internal/publish"
+	"github.com/shonenm/live-pr/v2/internal/publish"
 	"github.com/spf13/cobra"
 )
 

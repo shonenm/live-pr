@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/store"
-	"github.com/shonenm/live-pr/internal/timeline"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/timeline"
 	"github.com/spf13/cobra"
 )
 

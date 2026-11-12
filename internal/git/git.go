@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shonenm/live-pr/internal/debugtime"
+	"github.com/shonenm/live-pr/v2/internal/debugtime"
 )
 
 func run(args ...string) (string, error) {

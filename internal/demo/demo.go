@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/shonenm/live-pr/internal/tui"
+	"github.com/shonenm/live-pr/v2/internal/tui"
 )
 
 // Run builds a disposable demo repository with mocked GitHub data and opens

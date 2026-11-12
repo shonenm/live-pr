@@ -14,7 +14,7 @@ import (
 	portalis "github.com/shonenm/portalis"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/shonenm/live-pr/internal/clipboard"
+	"github.com/shonenm/live-pr/v2/internal/clipboard"
 )
 
 // Terminal embeds one interactive process and its VT screen.

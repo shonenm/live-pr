@@ -13,15 +13,15 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/config"
-	"github.com/shonenm/live-pr/internal/debugtime"
-	"github.com/shonenm/live-pr/internal/embeddedterm"
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/prbody"
-	"github.com/shonenm/live-pr/internal/store"
-	"github.com/shonenm/live-pr/internal/theme"
+	"github.com/shonenm/live-pr/v2/internal/config"
+	"github.com/shonenm/live-pr/v2/internal/debugtime"
+	"github.com/shonenm/live-pr/v2/internal/embeddedterm"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/prbody"
+	"github.com/shonenm/live-pr/v2/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/theme"
 )
 
 type tab int

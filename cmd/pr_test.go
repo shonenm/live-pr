@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/publish"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/publish"
 	"github.com/spf13/cobra"
 )
 

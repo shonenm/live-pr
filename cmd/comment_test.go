@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/event"
 	"github.com/spf13/cobra"
 )
 

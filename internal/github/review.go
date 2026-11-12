@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shonenm/live-pr/internal/atomicfile"
+	"github.com/shonenm/live-pr/v2/internal/atomicfile"
 )
 
 // ReviewComment is one pending inline GitHub review comment.
