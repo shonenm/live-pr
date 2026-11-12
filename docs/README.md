@@ -13,4 +13,8 @@ User and contributor documentation:
 - [Releasing](releasing.md) — how maintainers cut a release
 - [Prior art](prior-art.md) — how live-pr relates to neighboring tools
 
-Internal planning notes (in Japanese) live in [internal/](internal/): the current [strategy](internal/strategy.md), and historical notes that are not necessarily current, including the [legacy roadmap](internal/legacy/roadmap.md) of the original direction.
+Maintainer planning notes (in Japanese):
+
+- [Architecture](architecture.md) — what live-pr is building, why, and what already exists
+- [Roadmap](roadmap.md) — what is not built yet, in what order, and for which release
+- [Archive](archive/) — historical notes that are not necessarily current: the [legacy roadmap](archive/roadmap.md) of the original direction and the initial [technology selection](archive/tech-selection.md)

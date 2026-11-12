@@ -1,17 +1,21 @@
-> **Internal planning note (in Japanese).** This is the current product
-> strategy, kept for maintainers. It supersedes the
-> [legacy roadmap](legacy/roadmap.md). For user-facing documentation, see the
-> [docs index](../README.md).
+> **Maintainer planning note (in Japanese).** This is the current product
+> architecture, kept for maintainers. It supersedes the
+> [legacy roadmap](archive/roadmap.md). For user-facing documentation, see the
+> [docs index](README.md).
 
-# 戦略: ローカルを PR の主戦場にする (2026-11)
+# アーキテクチャ: ローカルを PR の主戦場にする (2026-11)
 
 ## この文書の位置づけ
 
 2026-11-10 に合意した方向転換と、その後の設計判断をまとめる。個々の PR や
 ドキュメントはこの文書に従う。方向が変わったらこの文書を先に直す。
 
+この文書に書くのは、何を作るか、なぜそうするか、すでにある仕組みである。
+まだないもの、着手の順番、リリースの区切りは [roadmap.md](roadmap.md) に
+書き、ここには書かない。
+
 旧方針（意思決定タイムラインを製品の中心に置く）の計画は
-[legacy/roadmap.md](legacy/roadmap.md) に残してある。タイムライン自体は柱の
+[archive/roadmap.md](archive/roadmap.md) に残してある。タイムライン自体は柱の
 1 つとして残る。
 
 ## なぜ方向を変えるか
@@ -45,17 +49,15 @@ GitHub の画面の制約に縛られない見せ方をする。
 - PR 一覧を、関連するタスクごと、または実装した worker ごとにまとめる。
 - PR の説明を、GitHub の PR で可能な Markdown と画像・動画以上の表現にする。
 
-現状: 一覧には view、filter、stack によるまとめがある。説明は Markdown と
-図の描画までである。タスク単位と worker 単位のまとめ、および説明の拡張は
-未着手で、何を表現の単位にするかは未決定である。
+すでにあるもの: 一覧の view、filter、stack によるまとめ。説明の Markdown と
+図の描画。
 
 ### 2. CI の実行と保証
 
 リポジトリのチェックをローカルで実行し、その結果をリモートが信頼できる形で
 保証する。詳細は後述の「CI の実行と保証の設計」にまとめる。
 
-現状: 実行、署名、検証、TUI の表示まで実装済みで、マージ前である（#368、
-#369）。
+すでにあるもの: 実行、署名、検証、TUI の表示。
 
 ### 3. agent との対話
 
@@ -68,23 +70,22 @@ agent とやり取りする。
   これまでどおり切る。初期の想定は native、hunk、nvim の 3 つで、hunk を
   内部で使うこともできる。
 
-現状: 行コメントは GitHub のレビューとして下書きと提出ができる。review pane
-は差し替え可能である。@mention による裏での実行は未着手である。
+すでにあるもの: GitHub のレビューとしての行コメントの下書きと提出。差し替え
+可能な review pane。
 
 ### 4. local と remote の両方の管理
 
 ローカルにしかない作業と、GitHub にある PR を同じ画面で扱う。
 
-現状: LOCAL / LIVE / REMOTE のモード、未 push の commit と作業ツリーの表示、
-他の PR を checkout せずに見る機能がある。
+すでにあるもの: LOCAL / LIVE / REMOTE のモード、未 push の commit と作業
+ツリーの表示、他の PR を checkout せずに見る機能。
 
 ### 5. ローカルであることを活かした高速化
 
 通信と GitHub の UI を待たない。キャッシュを使うが、容量は可能な限り小さく
 保つ。
 
-現状: GitHub のデータはキャッシュを先に表示し、裏で更新する。増分取得は
-残作業である。
+すでにあるもの: GitHub のデータのキャッシュを先に表示し、裏で更新する仕組み。
 
 目標値（暫定。計測の仕組みを用意した時点で見直す）:
 
@@ -101,9 +102,9 @@ agent とやり取りする。
 PR を GitHub に起票する前から、ローカルには PR が存在する。それを意識して
 開発を進め、意思決定の過程を残す。
 
-現状: `decision` / `pivot` / `note` の記録、agent の Stop hook による要約、
-タイムラインを本文に載せる `live-pr pr publish` がある。旧方針では製品の中心
-だったが、新方針では柱の 1 つである。
+すでにあるもの: `decision` / `pivot` / `note` の記録、agent の Stop hook に
+よる要約、タイムラインを本文に載せる `live-pr pr publish`。旧方針では製品の
+中心だったが、新方針では柱の 1 つである。
 
 ## CI の実行と保証の設計
 
@@ -165,30 +166,3 @@ PR を GitHub に起票する前から、ローカルには PR が存在する�
 個々の要素はどれも既存である。空いているのは、tree に束縛した署名つきの
 証跡でリモートの job を省略することと、それを他の柱と同じ TUI に載せることの
 組み合わせである。要素単体の優位は浅く、統合に価値がある。
-
-### 残りの作業
-
-1. 署名者を登録し、証跡つきで job が実際にスキップされることを確かめる。
-   ssh-agent や Secure Enclave の鍵での署名も確かめる。
-2. マージゲート。TUI の `m` で、証跡のない変更のマージを止める。
-3. step 単位の進捗とログ。GitHub Actions と同じ粒度で見られるようにする。
-   出力のストリーム化、ログの保存、ログを読むペイン、`::group::` の解釈で
-   実現する。
-4. strict モード。検証に失敗したときにフォールバックせず、job を失敗させる
-   選択肢。
-5. GitHub Actions 以外の CI。検証スクリプトは sh で書かれているので、必要
-   なのは CI ごとの検証 job の雛形だけである。最初の候補は Woodpecker。
-
-## 進め方
-
-- 現在進めているのは柱 2 である。
-- 柱の間の優先順位と、柱 1 と柱 3 の設計は未決定である。着手する前にこの
-  文書へ書き足す。
-- 公開している説明（README、prior-art）は旧方針のままである。柱 2 の実運用の
-  確認が済んだ時点で書き直す。
-
-## 未検証の事項
-
-- 証跡つきでの実際のスキップ
-- agent から届かない鍵での署名の使い勝手
-- act の host モードを、スクリプトを持たないリポジトリのコマンドとして使えるか
