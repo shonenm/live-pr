@@ -227,29 +227,23 @@ func fetchPRPreview(client githubClient, number int, generation uint64) tea.Cmd 
 }
 
 func fetchGitHub(client githubClient, head string, number int, generation uint64) tea.Cmd {
-	metadata := func() tea.Msg {
-		var pr gh.PR
-		var err error
-		if number == 0 {
-			pr, err = client.FindForHead(head)
-		} else {
-			pr, err = client.FindPreview(number)
+	if number == 0 {
+		// Resolve the branch once and feed both halves from it: looking it up
+		// per half doubled every gh pr list call.
+		return func() tea.Msg {
+			pr, err := client.FindForHead(head)
+			metadata := func() tea.Msg { return githubMetadataRefreshed{generation: generation, pr: pr, err: err} }
+			if err != nil {
+				return tea.BatchMsg{metadata, func() tea.Msg { return githubConversationRefreshed{generation: generation, err: err} }}
+			}
+			return tea.BatchMsg{metadata, fetchConversation(client, pr.Number, generation)}
 		}
+	}
+	metadata := func() tea.Msg {
+		pr, err := client.FindPreview(number)
 		return githubMetadataRefreshed{generation: generation, pr: pr, err: err}
 	}
-	conversation := func() tea.Msg {
-		conversationNumber := number
-		if conversationNumber == 0 {
-			pr, err := client.FindForHead(head)
-			if err != nil {
-				return githubConversationRefreshed{generation: generation, err: err}
-			}
-			conversationNumber = pr.Number
-		}
-		loaded := client.LoadConversation(conversationNumber)
-		return githubConversationRefreshed{generation: generation, number: conversationNumber, comments: loaded.Comments, activities: loaded.Activities, reviews: loaded.Reviews, reviewComments: loaded.ReviewComments, commentsErr: loaded.CommentsErr, activitiesErr: loaded.ActivitiesErr, reviewsErr: loaded.ReviewsErr, reviewCommentsErr: loaded.ReviewCommentsErr}
-	}
-	return tea.Batch(metadata, conversation)
+	return tea.Batch(metadata, fetchConversation(client, number, generation))
 }
 
 const localPollInterval = 2 * time.Second
@@ -528,7 +522,9 @@ func fetchRemotePR(client githubClient, pr gh.PR, generation uint64) tea.Cmd {
 		headRef, headOID, err := git.FetchPull(pr.Number, pr.BaseRefName)
 		return remoteRefsLoaded{generation: generation, number: pr.Number, prURL: pr.URL, headRef: headRef, headOID: headOID, base: git.ResolveBase(pr.BaseRefName), diffBase: remoteReviewBase(pr), err: err}
 	}
-	return tea.Batch(metadata, fetchConversation(client, pr.Number, generation), pollCI(client, generation, pr.Number), refs)
+	// No CI poll here: the preview above already carries statusCheckRollup,
+	// and the conversation result starts the poll timer.
+	return tea.Batch(metadata, fetchConversation(client, pr.Number, generation), refs)
 }
 
 func fetchRemoteCommits(number int, generation uint64, diffBase, headRef string) tea.Cmd {
