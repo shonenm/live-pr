@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // StackEntry is one PR inside a stack, at its depth in the base/head chain.

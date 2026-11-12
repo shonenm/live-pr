@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shonenm/live-pr/internal/debugtime"
+	"github.com/shonenm/live-pr/v2/internal/debugtime"
 )
 
 // ErrPRNotFound means no open pull request exists for the requested head.

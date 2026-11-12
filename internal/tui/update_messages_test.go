@@ -13,12 +13,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 
-	"github.com/shonenm/live-pr/internal/embeddedterm"
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/prfilter"
-	"github.com/shonenm/live-pr/internal/publish"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/embeddedterm"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/prfilter"
+	"github.com/shonenm/live-pr/v2/internal/publish"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 func TestTMUXColorProfileDetectsClientFeatures(t *testing.T) {

@@ -6,11 +6,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/publish"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/publish"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 type prListRefreshed struct {

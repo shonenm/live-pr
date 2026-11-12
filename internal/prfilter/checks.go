@@ -3,7 +3,7 @@ package prfilter
 import (
 	"strings"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // CheckCounts buckets a PR's checks into pending, failed, and passed.

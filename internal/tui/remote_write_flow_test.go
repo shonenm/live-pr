@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // remoteWriteResult runs cmd, descending into batches, and returns the

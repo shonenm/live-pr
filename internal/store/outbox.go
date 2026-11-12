@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/shonenm/live-pr/internal/atomicfile"
-	"github.com/shonenm/live-pr/internal/filelock"
+	"github.com/shonenm/live-pr/v2/internal/atomicfile"
+	"github.com/shonenm/live-pr/v2/internal/filelock"
 )
 
 // OutboxEntry is one conversation comment queued while offline: a new post,

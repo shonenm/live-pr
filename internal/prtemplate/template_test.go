@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 func TestLoadUsesGitHubDefaultTemplateLocations(t *testing.T) {

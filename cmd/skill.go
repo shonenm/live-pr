@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shonenm/live-pr/skills"
+	"github.com/shonenm/live-pr/v2/skills"
 	"github.com/spf13/cobra"
 )
 

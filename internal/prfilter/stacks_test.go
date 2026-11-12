@@ -3,7 +3,7 @@ package prfilter
 import (
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 func TestBuildPRStacksUsesExactBaseHeadGraph(t *testing.T) {

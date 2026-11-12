@@ -13,8 +13,8 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/shonenm/live-pr/internal/terminaltext"
-	"github.com/shonenm/live-pr/internal/theme"
+	"github.com/shonenm/live-pr/v2/internal/terminaltext"
+	"github.com/shonenm/live-pr/v2/internal/theme"
 )
 
 type cacheKey struct {

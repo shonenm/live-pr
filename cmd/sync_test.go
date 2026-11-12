@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/event"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 func TestSyncUsesCachedPRBase(t *testing.T) {

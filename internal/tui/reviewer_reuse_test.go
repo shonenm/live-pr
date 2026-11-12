@@ -10,7 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 // Windows has no embedded reviewer to keep, so this runs elsewhere only.

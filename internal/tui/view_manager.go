@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/shonenm/live-pr/internal/config"
+	"github.com/shonenm/live-pr/v2/internal/config"
 )
 
 // viewEditField identifies which line of the edit form has focus.

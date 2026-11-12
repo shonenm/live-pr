@@ -17,16 +17,16 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/clipboard"
-	"github.com/shonenm/live-pr/internal/debugtime"
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/prfilter"
-	"github.com/shonenm/live-pr/internal/prtemplate"
-	"github.com/shonenm/live-pr/internal/richcontent"
-	"github.com/shonenm/live-pr/internal/store"
-	"github.com/shonenm/live-pr/internal/timeline"
+	"github.com/shonenm/live-pr/v2/internal/clipboard"
+	"github.com/shonenm/live-pr/v2/internal/debugtime"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/prfilter"
+	"github.com/shonenm/live-pr/v2/internal/prtemplate"
+	"github.com/shonenm/live-pr/v2/internal/richcontent"
+	"github.com/shonenm/live-pr/v2/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/timeline"
 )
 
 // startLocalLoad gathers local detail in a Cmd and applies it on localLoaded.

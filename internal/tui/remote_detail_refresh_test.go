@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/embeddedterm"
-	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/embeddedterm"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // A remote refresh advances the generation without resetCaches, so a raw-diff

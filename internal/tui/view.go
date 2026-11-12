@@ -10,7 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/v2/internal/git"
 )
 
 func (m Model) busyStatus(text string) string {

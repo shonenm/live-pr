@@ -9,7 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // A branch refresh without a known PR number resolves the head once; the

@@ -10,9 +10,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/shonenm/live-pr/internal/event"
-	gh "github.com/shonenm/live-pr/internal/github"
-	md "github.com/shonenm/live-pr/internal/markdown"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	md "github.com/shonenm/live-pr/v2/internal/markdown"
 )
 
 func (m *Model) conversationItems() []conversationItem {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/event"
 )
 
 func TestTitle(t *testing.T) {
