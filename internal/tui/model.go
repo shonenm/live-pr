@@ -3,6 +3,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -337,6 +338,7 @@ type Model struct {
 	localCommitCount          int
 	localHeadOID              string
 	localFingerprint          string
+	reviewRestart             bool // `r` restarts the reviewer even when nothing changed
 	localReloading            bool
 	checkoutReloading         bool
 	localGeneration           uint64 // checkout observation is independent of detail requests
@@ -681,7 +683,18 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 		}
 	}
 	m.localStatsErr, m.localRevisionErr = data.statsErr, data.revisionErr
-	m.detailView.resetCaches()
+	// A reload that found the same review (the metadata refresh right after
+	// startup, typically) keeps the diff caches and the running reviewer;
+	// only `r` restarts it regardless.
+	sameReview := !m.reviewRestart && !m.remote && m.timelinePath == st.Timeline() &&
+		data.headErr == nil && data.snapshotErr == nil && data.filesErr == nil &&
+		data.localHeadOID == m.localHeadOID && data.localFingerprint == m.localFingerprint &&
+		data.reviewRange == m.detailView.reviewRange && data.diffBase == m.detailView.diffBase &&
+		slices.Equal(data.files, m.detailView.files)
+	m.reviewRestart = false
+	if !sameReview {
+		m.detailView.resetCaches()
+	}
 	if m.remote {
 		// Coming from a remote PR is a target switch; a local reload of the
 		// same branch keeps the rendered mermaid.
@@ -689,9 +702,6 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	}
 	if data.incomplete {
 		m.status = "local data is incomplete: " + data.warning
-	}
-	if m.diffTerminal != nil {
-		m.diffTerminal.Close()
 	}
 	cache := data.cache
 	prURL := ""
@@ -726,7 +736,13 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 		m.githubStatus = "GitHub: cached · refreshing…"
 	}
 	m.refreshing, m.publishing = true, false
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.detailView.reviewedMarksPath))
+	env := embeddedterm.Environment(m.detailView.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.detailView.reviewedMarksPath)
+	if !sameReview || !m.diffTerminal.Available() || !m.diffTerminal.Matches(m.diffCommand, env) {
+		if m.diffTerminal != nil {
+			m.diffTerminal.Close()
+		}
+		m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, env)
+	}
 	m.detailView.focus, m.detailView.fileCursor, m.detailView.active, m.detailView.reviewSHA = focusConversation, 0, conversationTab, ""
 	m.layout()
 }
