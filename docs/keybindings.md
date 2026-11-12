@@ -36,7 +36,7 @@ the descriptive state, including behind-base and hook requirements.
 | `Tab` | move focus between conversation and review pane |
 | `Shift+Tab` | toggle the focused pane full width |
 | `l` | focus the review pane |
-| `j` / `k` | move selection / scroll the focused pane |
+| `j` / `k` | scroll the conversation one line (the selection follows once its card leaves the screen, and steps at either end); move the selection in the commits / conflicts / checks views; scroll the review pane |
 | `c` / `f` / `i` | commits / conflicts / CI checks view (`Esc` back to conversation) |
 | `Enter` | on a commit: review that commit |
 | `a` | post a conversation comment (GitHub PR) or a local note |

@@ -25,6 +25,9 @@ type Options struct {
 	Base             string
 	Draft            bool
 	ForceManagedBody bool
+	// NoPrompt fails the push instead of letting git or ssh prompt on the
+	// terminal; set it when the caller is drawing on that terminal.
+	NoPrompt bool
 }
 
 // Preview is the assembled local PR content before remote merge.
@@ -82,13 +85,22 @@ func buildPreview(st *store.Store, base string) (Preview, error) {
 // Run explicitly pushes the branch and creates or updates its PR.
 func Run(opts Options) (Result, error) {
 	client := gh.New()
-	return run(opts, client, git.Push)
+	push := git.Push
+	if opts.NoPrompt {
+		push = git.PushNoPrompt
+	}
+	return run(opts, client, push)
 }
 
 func run(opts Options, client githubClient, push func(string) error) (Result, error) {
 	st, cache, err := store.LoadSession()
 	if err != nil {
 		return Result{}, err
+	}
+	// A checked-out fork PR lives on the contributor's repository: pushing
+	// this branch to origin and publishing would open a duplicate PR.
+	if cache.ExplicitCheckout && cache.PR != nil && cache.PR.IsCrossRepository {
+		return Result{}, fmt.Errorf("PR #%d comes from a fork; publishing it from this checkout is not supported", cache.PR.Number)
 	}
 	pr, findErr := client.FindOpen(st.Branch)
 	base, err := resolvePublishBase(opts.Base, cache, pr, findErr)

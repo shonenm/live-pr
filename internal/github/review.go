@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/shonenm/live-pr/internal/atomicfile"
 )
 
 // ReviewComment is one pending inline GitHub review comment.
@@ -38,6 +40,10 @@ func NewReviewDraft(pr int, commit string) ReviewDraft {
 	return ReviewDraft{Version: CacheVersion, PR: pr, Commit: commit}
 }
 
+// LoadReviewDraft reads the pending review for one pull request head. A file
+// that cannot be decoded is moved aside rather than left to block every later
+// load: the result is then a fresh draft together with an
+// *atomicfile.QuarantinedError naming where the old file went.
 func LoadReviewDraft(path string, pr int, commit string) (ReviewDraft, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -48,10 +54,10 @@ func LoadReviewDraft(path string, pr int, commit string) (ReviewDraft, error) {
 	}
 	var draft ReviewDraft
 	if err := json.Unmarshal(data, &draft); err != nil {
-		return ReviewDraft{}, fmt.Errorf("decode review draft: %w", err)
+		return NewReviewDraft(pr, commit), atomicfile.Quarantine(path, fmt.Errorf("decode review draft: %w", err))
 	}
 	if draft.Version != CacheVersion {
-		return ReviewDraft{}, fmt.Errorf("unsupported review draft version %d", draft.Version)
+		return NewReviewDraft(pr, commit), atomicfile.Quarantine(path, fmt.Errorf("unsupported review draft version %d", draft.Version))
 	}
 	if draft.PR != pr || draft.Commit != commit {
 		return NewReviewDraft(pr, commit), nil
