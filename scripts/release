@@ -34,8 +34,8 @@ if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
 fi
 
 branch=$(git branch --show-current)
-if [[ "$branch" != main ]]; then
-  echo "release must run on main (current: $branch)" >&2
+if [[ "$branch" != main && "$branch" != release/* ]]; then
+  echo "release must run on main or a release/* branch (current: $branch)" >&2
   exit 1
 fi
 
@@ -45,9 +45,9 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 head=$(git rev-parse HEAD)
-origin_head=$(git rev-parse origin/main)
+origin_head=$(git rev-parse "origin/$branch")
 if [[ "$head" != "$origin_head" ]]; then
-  echo "HEAD does not match origin/main" >&2
+  echo "HEAD does not match origin/$branch" >&2
   exit 1
 fi
 
