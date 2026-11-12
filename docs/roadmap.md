@@ -1,6 +1,6 @@
-> **Internal planning note (in Japanese).** This is the roadmap that turns the
+> **Maintainer planning note (in Japanese).** This is the roadmap that turns the
 > [architecture](architecture.md) into releases, kept for maintainers. For user-facing
-> documentation, see the [docs index](../README.md).
+> documentation, see the [docs index](README.md).
 
 # ロードマップ (2026-11)
 

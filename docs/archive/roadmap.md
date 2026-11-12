@@ -1,8 +1,8 @@
-> **Legacy internal planning note (in Japanese).** This is the implementation roadmap of the
+> **Archived planning note (in Japanese).** This is the implementation roadmap of the
 > original "decision timeline" direction, kept for maintainers. It was
 > superseded in 2026-11 by the [architecture](../architecture.md) and does not
 > reflect the current direction. For user-facing documentation, see the
-> [docs index](../../README.md).
+> [docs index](../README.md).
 
 # 実装ロードマップ
 

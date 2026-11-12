@@ -1,7 +1,7 @@
-> **Internal planning note (in Japanese).** This is the current product
+> **Maintainer planning note (in Japanese).** This is the current product
 > architecture, kept for maintainers. It supersedes the
-> [legacy roadmap](legacy/roadmap.md). For user-facing documentation, see the
-> [docs index](../README.md).
+> [legacy roadmap](archive/roadmap.md). For user-facing documentation, see the
+> [docs index](README.md).
 
 # アーキテクチャ: ローカルを PR の主戦場にする (2026-11)
 
@@ -15,7 +15,7 @@
 書き、ここには書かない。
 
 旧方針（意思決定タイムラインを製品の中心に置く）の計画は
-[legacy/roadmap.md](legacy/roadmap.md) に残してある。タイムライン自体は柱の
+[archive/roadmap.md](archive/roadmap.md) に残してある。タイムライン自体は柱の
 1 つとして残る。
 
 ## なぜ方向を変えるか
