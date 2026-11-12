@@ -57,6 +57,7 @@ func asyncCompletion(msg tea.Msg) bool {
 		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
 		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, prTargetPrepared, rawDetailLoaded, baseResolved,
+		cacheSaved, navigatorCacheSaved,
 		browserDone, tea.WindowSizeMsg, tea.ColorProfileMsg, bspinner.TickMsg:
 		return true
 	}
@@ -65,8 +66,10 @@ func asyncCompletion(msg tea.Msg) bool {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// A modal popup owns the keyboard only; async completions fall through to
-	// the main switch below so background work keeps landing.
-	if m.overlay != nil && !asyncCompletion(msg) {
+	// the main switch below so background work keeps landing. The embedded
+	// PTY's lifecycle messages pass too: its output listener is re-armed only
+	// by handling the previous chunk, so dropping one freezes the review pane.
+	if m.overlay != nil && !asyncCompletion(msg) && !m.diffTerminal.Handles(msg) {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			return m.overlay.handleKey(m, keyMsg)
 		}
