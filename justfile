@@ -7,9 +7,9 @@ default: check
 test:
     go test ./...
 
-# Run race detection where asynchronous state is concentrated.
+# Run the test suite under the race detector.
 race:
-    go test -race ./internal/github ./internal/tui ./internal/store ./internal/timeline
+    go test -race ./...
 
 # Check gofmt formatting.
 fmt-check:
@@ -42,7 +42,7 @@ diff-check:
     git diff --check
 
 # Run all local checks.
-check: test race fmt-check lint vuln mod-verify diff-check
+check: race fmt-check lint vuln mod-verify diff-check
 
 # Build the binary.
 build:
