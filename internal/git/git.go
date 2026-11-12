@@ -25,6 +25,9 @@ func run(args ...string) (string, error) {
 		defer done()
 	}
 	cmd := exec.Command("git", args...)
+	// live-pr reads in the background while agents commit in the same
+	// checkout: never take index.lock just to refresh the stat cache.
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -821,7 +824,7 @@ func workingTreeHash(path string) string {
 	}
 	var data []byte
 	if info.IsDir() {
-		data, err = exec.Command("git", "-C", path, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal").Output()
+		data, err = exec.Command("git", "--no-optional-locks", "-C", path, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal").Output()
 	} else {
 		data, err = os.ReadFile(path)
 	}
