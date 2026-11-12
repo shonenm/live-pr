@@ -273,10 +273,14 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration {
-		return m, nil
+	// A ticket belongs to the generation that dispatched it: a stale result
+	// releases only its own ticket, never the one a newer dispatch holds.
+	if pendingFor(m.detailView.diffPending, msg.key, msg.generation) {
+		delete(m.detailView.diffPending, msg.key)
 	}
-	delete(m.detailView.diffPending, msg.key)
+	if msg.generation != m.targetGeneration {
+		return m, m.sync()
+	}
 	if msg.err != nil {
 		m.detailView.cacheDiff(msg.key, msg.raw)
 	} else {
@@ -327,16 +331,16 @@ func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
 	}
 	m.status = fmt.Sprintf("PR #%d · reloading…", msg.number)
 	m.refreshing = true
-	return m, tea.Batch(rebuildAfterCheckout(m.version, m.targetGeneration, msg), m.startSpinner())
+	return m, tea.Batch(rebuildAfterCheckout(m.version, m.options, m.targetGeneration, msg), m.startSpinner())
 
 }
 
 // rebuildAfterCheckout reconstructs the Model in a Cmd: New plus the local
 // hydration spawn a dozen git subprocesses, which froze the UI when run
 // inside the handler.
-func rebuildAfterCheckout(version string, generation uint64, msg prActionDone) tea.Cmd {
+func rebuildAfterCheckout(version string, opts []Option, generation uint64, msg prActionDone) tea.Cmd {
 	return func() tea.Msg {
-		next, err := New(version)
+		next, err := New(version, opts...)
 		if err != nil {
 			return checkoutReloaded{generation: generation, number: msg.number, err: fmt.Errorf("checkout reload: %w", err)}
 		}
@@ -441,7 +445,11 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 	active, cursors, focus := m.detailView.active, m.detailView.cursors, m.detailView.focus
 	fileCursor, reviewSHA := m.detailView.fileCursor, m.detailView.reviewSHA
 	listOffset, explorerOffset, detailOffset := m.list.YOffset(), m.explorer.YOffset(), m.detail.YOffset()
+	sameTarget := !m.remote && m.timelinePath == msg.st.Timeline()
 	m.applyLocal(msg.st, msg.data)
+	if !sameTarget {
+		m.resetListPosition()
+	}
 	m.localReloading = false
 	if reloading {
 		m.refreshing = false
@@ -499,7 +507,7 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 	if msg.state.Branch != m.currentBranch {
 		m.checkoutReloading, m.refreshing = true, true
 		m.targetGeneration++
-		return m, tea.Batch(rebuildForLocalBranchChange(m.version, msg.generation), m.nextLocalPoll(), m.startSpinner())
+		return m, tea.Batch(rebuildForLocalBranchChange(m.version, m.options, msg.generation), m.nextLocalPoll(), m.startSpinner())
 	}
 	// Checkout observation stays on a timer. File lists, diffs, and the
 	// review pane wait for `r`: agent edits would otherwise restart them
@@ -507,9 +515,9 @@ func (m Model) handleLocalStatePolled(msg localStatePolled) (Model, tea.Cmd) {
 	return m, m.nextLocalPoll()
 }
 
-func rebuildForLocalBranchChange(version string, generation uint64) tea.Cmd {
+func rebuildForLocalBranchChange(version string, opts []Option, generation uint64) tea.Cmd {
 	return func() tea.Msg {
-		next, err := New(version)
+		next, err := New(version, opts...)
 		if err != nil {
 			return localBranchReloaded{generation: generation, err: err}
 		}
@@ -573,6 +581,10 @@ func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.err != nil {
+		// openRemote only seeds unresolved placeholders, so the resolved
+		// base must land even when the pull ref could not be fetched.
+		m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
+		m.detailView.reviewRange = msg.diffBase + "..." + m.detailView.headRev
 		m.refreshing = false
 		m.status = msg.err.Error()
 		m.githubStatus = "GitHub: review ref unavailable"
@@ -601,7 +613,7 @@ func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
 	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
 	m.detailView.reviewRange = msg.diffBase + "..." + head
 	m.remoteSectionsPending = 3
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.prURL, "", m.detailView.reviewedMarksPath))
+	m.replaceReviewTerminal(m.detailView.reviewSHA, msg.prURL)
 	m.layout()
 	return m, tea.Batch(fetchRemoteCommits(msg.number, msg.generation, msg.diffBase, msg.headRef), fetchRemoteConflicts(msg.number, msg.generation, msg.base, msg.headRef), fetchRemoteFiles(msg.number, msg.generation, msg.diffBase, msg.headRef), m.sync())
 }

@@ -81,8 +81,7 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
-		m.help.ShowAll = !m.help.ShowAll
-		return m, nil
+		return m.openHelp()
 	case key.Matches(msg, m.keys.Status):
 		return m.openPRStatus(m.prList.selectedPR())
 	case key.Matches(msg, m.keys.Merge):
@@ -391,8 +390,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Help):
-		m.help.ShowAll = !m.help.ShowAll
-		return m, nil
+		return m.openHelp()
 	case key.Matches(msg, m.keys.Refresh):
 		if m.refreshing || m.publishing {
 			m.githubStatus = "GitHub: refreshing…"
@@ -442,7 +440,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		base := m.detailView.base
 		generation := m.targetGeneration
 		return m, tea.Batch(func() tea.Msg {
-			result, err := publish.Run(publish.Options{Base: base})
+			result, err := publish.Run(publish.Options{Base: base, NoPrompt: true})
 			return publishDone{generation: generation, result: result, err: err}
 		}, m.startSpinner())
 	case key.Matches(msg, m.keys.CopyURL):
@@ -525,6 +523,9 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.detailView.active == conversationTab {
+			return m, m.scrollConversation(1)
+		}
 		if m.detailView.cursors[m.detailView.active] < m.activeLen()-1 {
 			m.detailView.cursors[m.detailView.active]++
 			return m, m.sync()
@@ -537,6 +538,9 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				return m, m.sync()
 			}
 			return m, nil
+		}
+		if m.detailView.active == conversationTab {
+			return m, m.scrollConversation(-1)
 		}
 		if m.detailView.cursors[m.detailView.active] > 0 {
 			m.detailView.cursors[m.detailView.active]--

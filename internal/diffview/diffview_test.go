@@ -31,10 +31,12 @@ func TestRenderFailureAndTimeout(t *testing.T) {
 		t.Fatalf("expected one-line stderr, got %v", err)
 	}
 	start := time.Now()
-	if _, err := render("sleep 1 | cat", "diff", 80, 20*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
+	// The pipeline would run for 30s if it survived, so the 5s bound only
+	// trips on a real leak, not on a slow runner.
+	if _, err := render("sleep 30 | cat", "diff", 80, 20*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout, got %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("pipeline outlived timeout: %v", elapsed)
 	}
 }

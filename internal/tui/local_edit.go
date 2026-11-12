@@ -40,11 +40,11 @@ type remoteDeleteOverlay struct {
 }
 
 // editorWidth is the widest the editor may be and still fit the popups that
-// host it. The review popup declares min(80, w-14) and pads 2 on each side,
-// so anything wider gets re-wrapped by the popup and shows breaks the text
-// does not contain.
+// host it. The review popup declares min(80, w-14), which in lipgloss covers
+// its border (1 each side) and padding (2 each side), so anything wider gets
+// re-wrapped by the popup and shows breaks the text does not contain.
 func (m Model) editorWidth() int {
-	return max(24, min(80, m.w-14)-4)
+	return max(24, min(80, m.w-14)-6)
 }
 
 func (m *Model) sizeLocalEditor() {
@@ -497,11 +497,11 @@ func (o localDeleteOverlay) render(m Model) string {
 		BorderForeground(lipgloss.Color(cAttention)).
 		Padding(1, 3).
 		Width(max(24, min(60, m.w-14))).
-		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(o.title) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
+		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(safeText(o.title)) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
 }
 
 func (o remoteDeleteOverlay) render(m Model) string {
-	preview := strings.ReplaceAll(o.title, "\n", " ")
+	preview := strings.ReplaceAll(safeText(o.title), "\n", " ")
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cDangerEmphasis)).

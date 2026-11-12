@@ -245,11 +245,6 @@ func Load(repoRoot string) (Config, error) {
 	globalTokenCommand := append([]string(nil), cfg.CI.TokenCommand...)
 
 	repoConfig := filepath.Join(repoRoot, ".live-pr.toml")
-	if _, err := os.Stat(repoConfig); os.IsNotExist(err) {
-		// Read the old location only as a migration path. It is no longer
-		// created, so a normal run leaves no .live-pr/ directory behind.
-		repoConfig = filepath.Join(repoRoot, ".live-pr", "config.toml")
-	}
 	if err := overlay(repoConfig, &cfg); err != nil {
 		return Config{}, err
 	}

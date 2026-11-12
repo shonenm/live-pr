@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -33,6 +34,9 @@ func TestMermaidFallbackAndReplacement(t *testing.T) {
 }
 
 func TestRenderMermaidUsesOptionalCLI(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX fake executable")
+	}
 	dir := t.TempDir()
 	tool := filepath.Join(dir, "termaid")
 	if err := os.WriteFile(tool, []byte("#!/bin/sh\nprintf 'A ──▶ B\\n'\n"), 0o755); err != nil {
