@@ -912,6 +912,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 		// Reopening the same PR keeps its rendered mermaid; a different
 		// target's bodies would never be looked up again.
 		m.detailView.pruneRichContent()
+		m.resetListPosition()
 	}
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
@@ -1220,6 +1221,52 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 	detail, rawCmd := m.loadDetail()
 	detailCmd := m.syncDetail(detail)
 	return tea.Batch(start, rawCmd, detailCmd, m.startSpinner())
+}
+
+// resetListPosition starts a newly opened target at the top. The left pane's
+// viewport is shared with the PR list and the cursors with the previous
+// target, so both would otherwise carry over a position that means nothing
+// here.
+func (m *Model) resetListPosition() {
+	m.detailView.cursors = [tabCount]int{}
+	m.detailView.listAnchor = listAnchor{}
+	m.list.GotoTop()
+}
+
+// scrollConversation moves the conversation one line. The selection stays
+// put while its card is on screen and is dragged to the nearest visible card
+// once it scrolls off; at either end, where the viewport cannot move, the
+// selection steps instead so every card stays reachable.
+func (m *Model) scrollConversation(delta int) tea.Cmd {
+	before := m.list.YOffset()
+	if delta > 0 {
+		m.list.ScrollDown(1)
+	} else {
+		m.list.ScrollUp(1)
+	}
+	if m.list.YOffset() == before {
+		return m.moveCursorBy(delta)
+	}
+	m.buildConversation()
+	rows := m.detailView.conversationRows
+	top, bottom := m.list.YOffset(), m.list.YOffset()+m.list.Height()
+	cursor := m.detailView.cursors[conversationTab]
+	i := cursor
+	for i+1 < len(rows) && rows[i][1] <= top {
+		i++
+	}
+	for i > 0 && i < len(rows) && rows[i][0] >= bottom {
+		i--
+	}
+	if i == cursor {
+		return nil
+	}
+	m.detailView.cursors[conversationTab] = i
+	// Record the new selection as already anchored, or sync would scroll
+	// back to the card's first line and undo the move.
+	_, line := m.buildConversation()
+	m.detailView.listAnchor = listAnchor{tab: conversationTab, line: line, pinned: true}
+	return m.sync()
 }
 
 func keepLineVisible(v *viewport.Model, line int) {
