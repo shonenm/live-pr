@@ -50,7 +50,7 @@ func reservedReviewKey(msg tea.Msg) bool {
 // remoteCommentBusy stalled, and the CI polling chain died.
 func asyncCompletion(msg tea.Msg) bool {
 	switch msg.(type) {
-	case prListRefreshed, currentBranchPRLoaded, prPreviewLoaded,
+	case prListRefreshed, currentBranchPRLoaded, prPreviewDue, prPreviewLoaded,
 		remoteRefsLoaded, remoteCommitsLoaded, remoteConflictsLoaded, remoteFilesLoaded,
 		githubMetadataRefreshed, githubConversationRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
@@ -148,6 +148,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	case currentBranchPRLoaded:
 		next, cmd := m.handleCurrentBranchPRLoaded(msg)
+		return next, cmd
+	case prPreviewDue:
+		next, cmd := m.handlePRPreviewDue(msg)
 		return next, cmd
 	case prPreviewLoaded:
 		next, cmd := m.handlePRPreviewLoaded(msg)
@@ -288,8 +291,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.avatarColors == nil {
 			m.avatarColors = map[string]string{}
 		}
+		changed := false
 		for login, color := range msg.colors {
-			m.avatarColors[login] = color
+			if m.avatarColors[login] != color {
+				m.avatarColors[login] = color
+				changed = true
+			}
+		}
+		// Most arrivals repeat colors already applied; only a new one makes
+		// the cached rows stale.
+		if !changed {
+			return m, nil
 		}
 		clear(m.prList.rowCache)
 		return m, m.sync()
