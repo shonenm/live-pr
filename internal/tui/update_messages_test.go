@@ -496,7 +496,7 @@ func TestStaleLocalAndPublishResultsCannotReplaceTarget(t *testing.T) {
 		t.Fatalf("stale local refresh replaced target: %#v", m.cache.PR)
 	}
 	m.publishing = true
-	u, _ = m.Update(publishDone{generation: 1, result: publish.Result{PR: gh.PR{Number: 1}}})
+	u, _ = m.Update(publishDone{head: "other", result: publish.Result{PR: gh.PR{Number: 1}}})
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
 		t.Fatalf("stale publish replaced target: %#v", m.cache.PR)

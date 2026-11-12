@@ -391,18 +391,29 @@ func (m Model) handleBrowserDone(msg browserDone) (Model, tea.Cmd) {
 }
 
 func (m Model) handlePublishDone(msg publishDone) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration {
+	// A publish belongs to the branch it ran for, not to display freshness:
+	// comments, reviews, and outbox flushes advance targetGeneration while it
+	// runs, and dropping the result left publishing set and the published
+	// cache unread.
+	if msg.head != m.detailView.head || msg.cachePath != m.cachePath {
 		return m, nil
 	}
 	m.publishing = false
+	shown := m.screen == detailScreen
 	if msg.err != nil {
-		m.status = "publish: " + msg.err.Error()
+		if shown {
+			m.status = "publish: " + msg.err.Error()
+		}
 		return m, nil
 	}
 	selectedKey := m.selectedConversationKey()
 	if cache, err := gh.LoadCache(m.cachePath, m.detailView.head); err == nil {
 		m.cache = cache
 		m.detailView.invalidateConversation()
+	}
+	if !shown {
+		// The PR list keeps this cache for re-entering the branch.
+		return m, nil
 	}
 	action := "updated"
 	if msg.result.Created {
@@ -412,8 +423,16 @@ func (m Model) handlePublishDone(msg publishDone) (Model, tea.Cmd) {
 	m.githubStatus = "PR " + action + ": " + msg.result.PR.URL
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
-	return m, m.sync()
-
+	if m.cache.PR == nil {
+		return m, m.sync()
+	}
+	// The reloaded cache predates anything fetched while the publish ran, and
+	// a newly created PR has no CI poll yet: refetch like a posted comment.
+	m.targetGeneration++
+	if m.remote {
+		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
+	}
+	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
 }
 
 func samePRBoundary(a, b *gh.PR) bool {

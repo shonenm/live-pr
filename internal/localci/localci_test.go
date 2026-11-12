@@ -42,6 +42,9 @@ func TestJobsAndRun(t *testing.T) {
 }
 
 func TestAttestVerify(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the verify script targets a POSIX runner")
+	}
 	for _, tool := range []string{"ssh-keygen", "jq", "sh"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not available", tool)
