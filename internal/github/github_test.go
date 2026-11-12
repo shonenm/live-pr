@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -132,39 +131,32 @@ func TestSearchPRsRejectsIncompleteResponses(t *testing.T) {
 	}
 }
 
-func TestPRDetailStartsPreviewCommentsAndActivityConcurrently(t *testing.T) {
+func TestLoadConversationStartsItsRequestsConcurrently(t *testing.T) {
 	started := make(chan string, 4)
 	release := make(chan struct{})
 	client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
 		started <- strings.Join(args, " ")
 		<-release
-		switch {
-		case args[0] == "pr":
-			return []byte(`{"number":12,"comments":[],"statusCheckRollup":[]}`), nil
-		case len(args) > 1 && args[1] == "graphql":
-			return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`), nil
-		default:
-			return []byte(`[[]]`), nil
-		}
+		return []byte(`[[]]`), nil
 	}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = client.LoadPRDetail(12, PRDetail{})
+		_ = client.LoadConversation(12)
 	}()
-	for range 3 {
+	for range 4 {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
 			close(release)
-			t.Fatal("preview/comments/activity did not start concurrently")
+			t.Fatal("comments/activity/reviews did not start concurrently")
 		}
 	}
 	close(release)
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("PR detail did not finish")
+		t.Fatal("conversation did not finish")
 	}
 }
 
@@ -236,35 +228,6 @@ func TestFindPreviewLoadsExpensiveFieldsAndCommitStatuses(t *testing.T) {
 	}
 	if strings.Contains(previewFields, "commits") {
 		t.Fatalf("gh pr preview still duplicates GraphQL commits: %q", previewFields)
-	}
-}
-
-func TestFindLocalPreviewOmitsGitDerivedFields(t *testing.T) {
-	var previewFields, graphqlQuery string
-	client := Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: func(args ...string) ([]byte, error) {
-		if args[0] == "pr" {
-			previewFields = args[len(args)-1]
-			return []byte(`{"number":12,"title":"local","labels":[{"name":"bug"}],"assignees":[{"login":"alice"}]}`), nil
-		}
-		graphqlQuery = args[len(args)-1]
-		return []byte(`{"data":{"repository":{"pullRequest":{"closingIssuesReferences":{"nodes":[]},"commits":{"nodes":[{"commit":{"oid":"aaaa","statusCheckRollup":{"state":"SUCCESS"}}}],"pageInfo":{"hasNextPage":false}}}}}}`), nil
-	}}
-	pr, err := client.FindLocalPreview(12)
-	if err != nil || pr.Title != "local" || len(pr.Labels) != 1 || len(pr.Assignees) != 1 || len(pr.Commits) != 1 || pr.Commits[0].CheckRollupState != "SUCCESS" {
-		t.Fatalf("local preview = %#v err=%v", pr, err)
-	}
-	for _, omitted := range []string{"additions", "deletions", "changedFiles"} {
-		if strings.Contains(previewFields, omitted) {
-			t.Fatalf("local preview requested git-derived %s: %q", omitted, previewFields)
-		}
-	}
-	for _, remoteCommitField := range []string{"committedDate", "messageHeadline"} {
-		if strings.Contains(graphqlQuery, remoteCommitField) {
-			t.Fatalf("local commit rollup requested %s: %q", remoteCommitField, graphqlQuery)
-		}
-	}
-	if !strings.Contains(graphqlQuery, "statusCheckRollup") || !strings.Contains(graphqlQuery, "closingIssuesReferences") {
-		t.Fatalf("local preview dropped remote-only metadata: %q", graphqlQuery)
 	}
 }
 
@@ -408,140 +371,6 @@ func TestIssueCommentsFlattensPages(t *testing.T) {
 	want := []string{"api", "--paginate", "--slurp", "repos/{owner}/{repo}/issues/12/comments?per_page=100"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("args=%v", got)
-	}
-}
-
-// detailRun serves every request LoadPRDetail issues. The preview reports
-// commentCount conversation entries, and the issue-comments endpoint answers
-// from responses in call order while recording the full argv of each call.
-type detailRun struct {
-	mu           sync.Mutex
-	commentCount int
-	responses    []commentsResponse
-	calls        []string
-}
-
-type commentsResponse struct {
-	out string
-	err error
-}
-
-func (f *detailRun) run(args ...string) ([]byte, error) {
-	endpoint := args[len(args)-1]
-	switch {
-	case args[0] == "pr":
-		entries := strings.TrimSuffix(strings.Repeat("{},", f.commentCount), ",")
-		return []byte(`{"number":12,"comments":[` + entries + `],"statusCheckRollup":[]}`), nil
-	case args[1] == "graphql":
-		return []byte(`{"data":{"repository":{"pullRequest":{"commits":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`), nil
-	case strings.Contains(endpoint, "/issues/12/comments"):
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		f.calls = append(f.calls, strings.Join(args, " "))
-		if len(f.responses) == 0 {
-			return []byte(`[[]]`), nil
-		}
-		next := f.responses[0]
-		f.responses = f.responses[1:]
-		return []byte(next.out), next.err
-	default:
-		return []byte(`[[]]`), nil
-	}
-}
-
-func detailClient(f *detailRun) Client {
-	return Client{repo: &repositoryIdentity{nameWithOwner: "acme/repo"}, run: f.run}
-}
-
-func TestLoadPRDetailFetchesCommentsIncrementally(t *testing.T) {
-	f := &detailRun{commentCount: 2, responses: []commentsResponse{
-		{out: `[[{"id":1,"body":"edited","created_at":"2026-08-01T10:00:00Z","updated_at":"2026-08-01T13:00:00Z","user":{"login":"alice"}}]]`},
-	}}
-	prev := PRDetail{PR: PR{Number: 12}, Comments: []Comment{
-		{ID: 1, Body: "old", CreatedAt: "2026-08-01T10:00:00Z", UpdatedAt: "2026-08-01T10:00:00Z"},
-		{ID: 2, Body: "kept", CreatedAt: "2026-08-01T11:00:00Z", UpdatedAt: "2026-08-01T12:00:00Z"},
-	}}
-	detail := detailClient(f).LoadPRDetail(12, prev)
-	if detail.CommentsErr != nil {
-		t.Fatal(detail.CommentsErr)
-	}
-	want := "api --paginate --slurp repos/{owner}/{repo}/issues/12/comments?per_page=100&since=2026-08-01T12%3A00%3A00Z"
-	if len(f.calls) != 1 || f.calls[0] != want {
-		t.Fatalf("comment calls = %q, want [%q]", f.calls, want)
-	}
-	if len(detail.Comments) != 2 || detail.Comments[0].ID != 1 || detail.Comments[0].Body != "edited" || detail.Comments[1].Body != "kept" {
-		t.Fatalf("merged comments = %#v", detail.Comments)
-	}
-}
-
-func TestLoadPRDetailAppendsNewCommentInOrder(t *testing.T) {
-	f := &detailRun{commentCount: 2, responses: []commentsResponse{
-		{out: `[[{"id":3,"body":"newest","created_at":"2026-08-01T12:00:00Z","updated_at":"2026-08-01T12:00:00Z"}]]`},
-	}}
-	prev := PRDetail{PR: PR{Number: 12}, Comments: []Comment{
-		{ID: 1, Body: "first", CreatedAt: "2026-08-01T10:00:00Z", UpdatedAt: "2026-08-01T10:00:00Z"},
-	}}
-	detail := detailClient(f).LoadPRDetail(12, prev)
-	if detail.CommentsErr != nil {
-		t.Fatal(detail.CommentsErr)
-	}
-	if len(detail.Comments) != 2 || detail.Comments[0].ID != 1 || detail.Comments[1].ID != 3 {
-		t.Fatalf("merged comments = %#v", detail.Comments)
-	}
-}
-
-func TestLoadPRDetailCountMismatchTriggersFullRefetch(t *testing.T) {
-	// The preview counts one comment while the incremental merge keeps two:
-	// comment 2 was deleted remotely, which since= can never report.
-	f := &detailRun{commentCount: 1, responses: []commentsResponse{
-		{out: `[[]]`},
-		{out: `[[{"id":1,"body":"kept","created_at":"2026-08-01T10:00:00Z","updated_at":"2026-08-01T10:00:00Z"}]]`},
-	}}
-	prev := PRDetail{PR: PR{Number: 12}, Comments: []Comment{
-		{ID: 1, Body: "kept", CreatedAt: "2026-08-01T10:00:00Z", UpdatedAt: "2026-08-01T10:00:00Z"},
-		{ID: 2, Body: "deleted remotely", CreatedAt: "2026-08-01T11:00:00Z", UpdatedAt: "2026-08-01T11:00:00Z"},
-	}}
-	detail := detailClient(f).LoadPRDetail(12, prev)
-	if detail.CommentsErr != nil {
-		t.Fatal(detail.CommentsErr)
-	}
-	if len(f.calls) != 2 || !strings.Contains(f.calls[0], "since=") || strings.Contains(f.calls[1], "since=") {
-		t.Fatalf("comment calls = %q, want an incremental fetch then a full refetch", f.calls)
-	}
-	if len(detail.Comments) != 1 || detail.Comments[0].ID != 1 {
-		t.Fatalf("refetched comments = %#v", detail.Comments)
-	}
-}
-
-func TestLoadPRDetailEmptyPrevDoesFullFetch(t *testing.T) {
-	f := &detailRun{commentCount: 0}
-	detail := detailClient(f).LoadPRDetail(12, PRDetail{})
-	if detail.CommentsErr != nil {
-		t.Fatal(detail.CommentsErr)
-	}
-	want := "api --paginate --slurp repos/{owner}/{repo}/issues/12/comments?per_page=100"
-	if len(f.calls) != 1 || f.calls[0] != want {
-		t.Fatalf("comment calls = %q, want [%q]", f.calls, want)
-	}
-}
-
-func TestLoadPRDetailIncrementalErrorFallsBackToFullFetch(t *testing.T) {
-	f := &detailRun{commentCount: 2, responses: []commentsResponse{
-		{out: `rate limited`, err: errors.New("exit 1")},
-		{out: `[[{"id":1,"created_at":"2026-08-01T10:00:00Z","updated_at":"2026-08-01T10:00:00Z"},{"id":2,"created_at":"2026-08-01T11:00:00Z","updated_at":"2026-08-01T11:00:00Z"}]]`},
-	}}
-	prev := PRDetail{PR: PR{Number: 12}, Comments: []Comment{
-		{ID: 1, CreatedAt: "2026-08-01T10:00:00Z", UpdatedAt: "2026-08-01T10:00:00Z"},
-	}}
-	detail := detailClient(f).LoadPRDetail(12, prev)
-	if detail.CommentsErr != nil {
-		t.Fatalf("a failed incremental fetch must fall back silently, got %v", detail.CommentsErr)
-	}
-	if len(f.calls) != 2 || !strings.Contains(f.calls[0], "since=") || strings.Contains(f.calls[1], "since=") {
-		t.Fatalf("comment calls = %q, want an incremental attempt then a full fetch", f.calls)
-	}
-	if len(detail.Comments) != 2 {
-		t.Fatalf("comments = %#v", detail.Comments)
 	}
 }
 

@@ -50,9 +50,9 @@ func reservedReviewKey(msg tea.Msg) bool {
 // remoteCommentBusy stalled, and the CI polling chain died.
 func asyncCompletion(msg tea.Msg) bool {
 	switch msg.(type) {
-	case prListRefreshed, currentBranchPRLoaded, prPreviewLoaded, remoteLoaded,
+	case prListRefreshed, currentBranchPRLoaded, prPreviewLoaded,
 		remoteRefsLoaded, remoteCommitsLoaded, remoteConflictsLoaded, remoteFilesLoaded,
-		githubMetadataRefreshed, githubConversationRefreshed, githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
+		githubMetadataRefreshed, githubConversationRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
 		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded, conversationWarmed,
@@ -205,9 +205,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case remoteFilesLoaded:
 		next, cmd := m.handleRemoteFilesLoaded(msg)
 		return next, cmd
-	case remoteLoaded:
-		next, cmd := m.handleRemoteLoaded(msg)
-		return next, cmd
 	case localLoaded:
 		next, cmd := m.handleLocalLoaded(msg)
 		return next, cmd
@@ -253,9 +250,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	case githubConversationRefreshed:
 		next, cmd := m.handleGitHubConversationRefreshed(msg)
-		return next, cmd
-	case githubRefreshed:
-		next, cmd := m.handleGitHubRefreshed(msg)
 		return next, cmd
 	case richBodiesLoaded:
 		// The key hashes width + bodies, so a match proves the result fits the
