@@ -2,6 +2,7 @@
 package timeline
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/shonenm/live-pr/internal/event"
@@ -13,14 +14,14 @@ import (
 // writing the timeline. New commit events are appended in commit order.
 func WithCommits(events []event.Event, commits []git.Commit) []event.Event {
 	merged := append([]event.Event(nil), events...)
-	seen := make(map[string]bool)
+	var seen []string
 	for _, e := range events {
 		if e.Kind == event.Commit && e.SHA != "" {
-			seen[e.SHA] = true
+			seen = append(seen, e.SHA)
 		}
 	}
 	for _, c := range commits {
-		if seen[c.SHA] {
+		if slices.ContainsFunc(seen, func(sha string) bool { return sameCommit(sha, c.SHA) }) {
 			continue
 		}
 		merged = append(merged, event.Event{
@@ -30,9 +31,16 @@ func WithCommits(events []event.Event, commits []git.Commit) []event.Event {
 			Body:  strings.TrimSpace(c.Body),
 			SHA:   c.SHA,
 		})
-		seen[c.SHA] = true
+		seen = append(seen, c.SHA)
 	}
 	return merged
+}
+
+// sameCommit reports whether two abbreviated shas name the same commit. Git's
+// abbreviation length grows with the repository (and follows core.abbrev), so
+// a sha recorded earlier may be shorter or longer than the one git prints now.
+func sameCommit(a, b string) bool {
+	return strings.HasPrefix(a, b) || strings.HasPrefix(b, a)
 }
 
 // SyncCommits appends a commit event for every base..HEAD commit not already on

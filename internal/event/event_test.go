@@ -3,6 +3,7 @@ package event
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -41,7 +42,8 @@ func TestAppendLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat timeline: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
+	// Windows does not carry Unix permission bits.
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Fatalf("timeline mode = %o, want 600", perm)
 	}
 }
