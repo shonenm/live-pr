@@ -510,7 +510,7 @@ func TestMainStartupShowsListWithoutCreatingBranchStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.Chdir(old) }()
-	m, err := New()
+	m, err := New("")
 	if err != nil {
 		t.Fatal(err)
 	}

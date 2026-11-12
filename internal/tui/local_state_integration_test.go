@@ -159,7 +159,7 @@ func TestCheckoutRebuildsPRModelAndPersistsExplicitCache(t *testing.T) {
 	// runPRAction has completed the checkout before reconstruction begins.
 	run("switch", "feature")
 	pr := gh.PR{Number: 42, State: "OPEN", BaseRefName: "main", HeadRefName: "feature", HeadRefOID: head}
-	msg := rebuildAfterCheckout("test", old.targetGeneration, prActionDone{number: 42, pr: pr})().(checkoutReloaded)
+	msg := rebuildAfterCheckout("test", nil, old.targetGeneration, prActionDone{number: 42, pr: pr})().(checkoutReloaded)
 	if msg.err != nil || msg.next == nil {
 		t.Fatalf("checkout rebuild = next:%v err:%v", msg.next, msg.err)
 	}
@@ -213,7 +213,7 @@ func TestExternalBranchSwitchRebuildsLocalModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("commit", "-am", "feature b")
-	msg := rebuildForLocalBranchChange("test", old.localGeneration)().(localBranchReloaded)
+	msg := rebuildForLocalBranchChange("test", nil, old.localGeneration)().(localBranchReloaded)
 	if msg.err != nil || msg.next == nil {
 		t.Fatalf("branch rebuild = next:%v err:%v", msg.next, msg.err)
 	}
