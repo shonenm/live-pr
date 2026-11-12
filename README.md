@@ -47,6 +47,9 @@ Stable, and versioned by [semantic versioning](https://semver.org). Within `1.x`
 - On-disk state (timelines, review drafts, cached data) written by an older
   `1.x` release is read by a newer one.
 
+`main` is where `2.0` is being developed and may break any of the above;
+`1.x` fixes are released from the `release/1.x` branch.
+
 Not covered: the layout and wording of the TUI, and the Go packages — live-pr
 is a program, not a library. Windows interactive behavior is untested; see
 Platforms below.
