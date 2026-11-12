@@ -40,10 +40,16 @@ a real pull request.
 
 ## Status
 
-Alpha, and versioned `0.x`. Releases go out several times a day; keybindings,
-configuration keys, and on-disk state can change between `0.x` releases without
-a deprecation period. `v1.0` is the point where those three stop moving without
-a migration path — a goal, not a date.
+Stable, and versioned by [semantic versioning](https://semver.org). Within `1.x`:
+
+- Commands and flags, configuration keys, and keybindings keep working. One is
+  removed or changes meaning only in a new major version.
+- On-disk state (timelines, review drafts, cached data) written by an older
+  `1.x` release is read by a newer one.
+
+Not covered: the layout and wording of the TUI, and the Go packages — live-pr
+is a program, not a library. Windows interactive behavior is untested; see
+Platforms below.
 
 ## Install
 
