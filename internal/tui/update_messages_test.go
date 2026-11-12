@@ -1254,32 +1254,29 @@ func TestAsyncCacheSaveSkipsRemoteWithoutPath(t *testing.T) {
 }
 
 func TestReviewRefFailureKeepsCIPollAlive(t *testing.T) {
-	// countBatch runs the batch wrapper only, never the inner cmds.
-	countBatch := func(cmd tea.Cmd) int {
-		if cmd == nil {
-			return 0
-		}
-		if batch, ok := cmd().(tea.BatchMsg); ok {
-			return len(batch)
-		}
-		return 1
-	}
-	load := func(pr gh.PR) int {
+	// scheduled reports whether the update armed the CI poll timer. The
+	// returned cmd is never run: it would block for the whole poll delay.
+	scheduled := func(pr gh.PR) bool {
 		m := testModel()
 		m.screen = detailScreen
 		m.navigator = gh.NewNavigatorCache()
 		m.cache = gh.NewCache("feature")
 		m.cache.PR = &pr
-		_, cmd := m.Update(remoteLoaded{generation: m.targetGeneration, pr: pr, refErr: errors.New("ref unavailable")})
-		return countBatch(cmd)
+		u, cmd := m.Update(remoteLoaded{generation: m.targetGeneration, pr: pr, refErr: errors.New("ref unavailable")})
+		got := u.(Model)
+		if got.pollTimers == nil || got.pollTimers.ci == nil {
+			return false
+		}
+		got.pollTimers.ci()
+		return cmd != nil
 	}
 	pending := gh.PR{Number: 12, State: "OPEN", HeadRefOID: "head", PreviewLoaded: true,
 		Checks: []gh.PRCheck{{Status: "IN_PROGRESS"}}}
 	done := pending
 	done.Checks = []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}
 	// LIVE polling monitors head/state even after CI reaches a terminal state.
-	if pendingCount, doneCount := load(pending), load(done); pendingCount != doneCount || pendingCount == 0 {
-		t.Fatalf("refErr result did not keep LIVE polling: pending=%d terminal=%d", pendingCount, doneCount)
+	if pendingPoll, donePoll := scheduled(pending), scheduled(done); !pendingPoll || !donePoll {
+		t.Fatalf("refErr result did not keep LIVE polling: pending=%t terminal=%t", pendingPoll, donePoll)
 	}
 }
 
@@ -1436,10 +1433,10 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 	// rawDetailLoaded arrives while the editor overlay is open.
 	m = testModel()
 	m.overlay = localEditOverlay{mode: addLocalComment}
-	m.detailView.rawPending = map[string]bool{"k": true}
+	m.detailView.rawPending = map[string]uint64{"k": m.targetGeneration}
 	m.detailView.rawCache = map[string]string{}
 	u, _ = m.Update(rawDetailLoaded{generation: m.targetGeneration, key: "k", raw: "diff"})
-	if got := u.(Model); got.detailView.rawPending["k"] || got.detailView.rawCache["k"] != "diff" {
+	if got := u.(Model); len(got.detailView.rawPending) != 0 || got.detailView.rawCache["k"] != "diff" {
 		t.Fatal("rawDetailLoaded was dropped by the editor overlay")
 	}
 

@@ -198,7 +198,7 @@ func TestModeImplicitClosedCacheYieldsToNewOpenPR(t *testing.T) {
 	if err := gh.SaveNavigatorCache(m.navigatorPath, nav); err != nil {
 		t.Fatal(err)
 	}
-	rebuilt, err := New()
+	rebuilt, err := New("")
 	if err != nil {
 		t.Fatal(err)
 	}

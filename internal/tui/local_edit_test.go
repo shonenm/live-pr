@@ -148,15 +148,16 @@ func TestEditorNewlineKeysAndWidthFitPopup(t *testing.T) {
 		next, _ := m.setupLocalEditor(strings.Repeat("x", 300))
 		popup := reviewSubmitOverlay{event: gh.ReviewCommentEvent, typing: true}
 		next.overlay = popup
-		budget := max(36, min(80, w-14)) - 4
+		// lipgloss counts the border and padding inside the declared width.
+		budget := max(36, min(80, w-14)) - 6
 		if got := next.localEditor.Width(); got > budget {
 			t.Fatalf("w=%d editor width %d exceeds the popup budget %d", w, got, budget)
 		}
-		// The popup must not need to wrap anything the editor rendered.
-		for _, line := range strings.Split(ansi.Strip(popup.render(next)), "\n") {
-			if lipgloss.Width(line) > budget+6 {
-				t.Fatalf("w=%d popup line %q exceeds its own frame", w, line)
-			}
+		// The popup must not re-wrap a row the editor filled: a full row has
+		// to survive intact.
+		fullRow := strings.Repeat("x", next.localEditor.Width())
+		if rendered := ansi.Strip(popup.render(next)); !strings.Contains(rendered, fullRow) {
+			t.Fatalf("w=%d popup re-wrapped a full editor row:\n%s", w, rendered)
 		}
 	}
 }

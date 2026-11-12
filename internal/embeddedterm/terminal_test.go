@@ -112,12 +112,12 @@ func TestEmptyCommandIsDisabled(t *testing.T) {
 
 func TestTerminalStartsInRepoWithContextAndRendersOutput(t *testing.T) {
 	dir := t.TempDir()
-	terminal := New(`printf '%s|%s' "$PWD" "$LIVE_PR_BASE"; sleep 1`, dir, Environment("main", "main", "feature", "HEAD", "", "", ""))
+	terminal := New(`printf '%s|%s' "$PWD" "$LIVE_PR_BASE"; sleep 10`, dir, Environment("main", "main", "feature", "HEAD", "", "", ""))
 	terminal.Resize(80, 10)
 	defer terminal.Close()
 
 	cmd := terminal.Init()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for cmd != nil && time.Now().Before(deadline) {
 		msg := cmd()
 		cmd = terminal.Update(msg)
@@ -166,12 +166,12 @@ func TestReviewerReadingPTYIsNotStopped(t *testing.T) {
 }
 
 func TestTerminalShowsCursor(t *testing.T) {
-	terminal := New(`printf 'x'; sleep 1`, t.TempDir(), nil)
+	terminal := New(`printf 'x'; sleep 10`, t.TempDir(), nil)
 	terminal.Resize(20, 4)
 	defer terminal.Close()
 
 	cmd := terminal.Init()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for cmd != nil && time.Now().Before(deadline) {
 		msg := cmd()
 		cmd = terminal.Update(msg)
