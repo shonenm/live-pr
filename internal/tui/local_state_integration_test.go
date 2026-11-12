@@ -159,7 +159,7 @@ func TestCheckoutRebuildsPRModelAndPersistsExplicitCache(t *testing.T) {
 	// runPRAction has completed the checkout before reconstruction begins.
 	run("switch", "feature")
 	pr := gh.PR{Number: 42, State: "OPEN", BaseRefName: "main", HeadRefName: "feature", HeadRefOID: head}
-	msg := rebuildAfterCheckout("test", old.targetGeneration, prActionDone{number: 42, pr: pr})().(checkoutReloaded)
+	msg := rebuildAfterCheckout("test", nil, old.targetGeneration, prActionDone{number: 42, pr: pr})().(checkoutReloaded)
 	if msg.err != nil || msg.next == nil {
 		t.Fatalf("checkout rebuild = next:%v err:%v", msg.next, msg.err)
 	}
@@ -170,7 +170,7 @@ func TestCheckoutRebuildsPRModelAndPersistsExplicitCache(t *testing.T) {
 	if saved := batch[len(batch)-1]().(cacheSaved); saved.err != nil {
 		t.Fatal(saved.err)
 	}
-	cached, cacheErr := gh.LoadCache(store.ForBranch(root, "feature").GitHubCache(), "feature")
+	cached, cacheErr := gh.LoadCache(store.ForBranch(next.root, "feature").GitHubCache(), "feature")
 	if cmd == nil || cacheErr != nil || cached.PR == nil || cached.PR.Number != 42 || !cached.ExplicitCheckout || next.currentBranch != "feature" || next.screen != detailScreen || next.cache.PR == nil || next.cache.PR.Number != 42 || !next.cache.ExplicitCheckout || next.w != 100 || next.h != 30 || next.targetGeneration != 4 || next.prList.generation != 5 || next.notice != "PR #42 loaded" {
 		t.Fatalf("checkout model = branch:%q screen:%v cache:%#v disk:%#v cacheErr:%v size:%dx%d generations:%d/%d notice:%q cmd:%v", next.currentBranch, next.screen, next.cache, cached, cacheErr, next.w, next.h, next.targetGeneration, next.prList.generation, next.notice, cmd)
 	}
@@ -213,7 +213,7 @@ func TestExternalBranchSwitchRebuildsLocalModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("commit", "-am", "feature b")
-	msg := rebuildForLocalBranchChange("test", old.localGeneration)().(localBranchReloaded)
+	msg := rebuildForLocalBranchChange("test", nil, old.localGeneration)().(localBranchReloaded)
 	if msg.err != nil || msg.next == nil {
 		t.Fatalf("branch rebuild = next:%v err:%v", msg.next, msg.err)
 	}

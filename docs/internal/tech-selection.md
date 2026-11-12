@@ -15,7 +15,7 @@
 | Git / GitHub | **`git` / `gh` を shell out** | go-git を持ち込まない。gh-dash と同じ流儀 |
 | reviewer表示 | Portalis PTY/VT + command config | Bubble Tea右pane内でNeovim CodeReviewを常時対話操作。tmux不要 |
 | エージェント連携 | Claude Code hooks → `live-pr hook` | 初手は Claude 専用。要約は `claude -p` headless |
-| 設定 | **TOML**（`~/.config/live-pr/config.toml`） | Go親和。per-repo overrideは`.live-pr.toml`、旧`.live-pr/config.toml`も読む |
+| 設定 | **TOML**（`~/.config/live-pr/config.toml`） | Go親和。per-repo overrideは`.live-pr.toml` |
 | 配布 | 単一バイナリ（goreleaser + Homebrew tap は後） | 依存ゼロで入る |
 
 要は **gh-dash と同じ土台に乗る**。参照実装が豊富で、狙う見た目にも最短。
@@ -81,7 +81,7 @@ CLI 一覧（Cobra）:
 ## 実装で確定した事項
 
 1. **要約トリガー**: Claude Codeの`Stop` hookは、reviewerに必要な意思決定・pivot・制約・重要指摘がある場合だけ要約する。通常進捗は記録せず、明示的な`live-pr comment add`を正本経路とする。
-2. **timelineの扱い**: XDG state配下のユーザーruntimeとして保持し、stable ID付きbase recordとedit/delete operationを追記する。repo rootにはruntimeファイルを作らず、旧`.live-pr/`とIDなしrecordは互換読込する。
+2. **timelineの扱い**: XDG state配下のユーザーruntimeとして保持し、stable ID付きbase recordとedit/delete operationを追記する。repo rootにはruntimeファイルを作らず、IDなしrecordは互換読込する。
 3. **要約手段**: `claude -p` headlessを使用。モデルはTOML設定で上書き可能。
 4. **設定形式**: TOML。グローバル設定をper-repo設定で上書き。
 5. **TUI**: default branch/対象なしはPR一覧、current/local PRはdetailへ自動routing。一覧はviewer/review-request cacheを使うSaved ViewsとGitHub風filterを持ち、`baseRefName == headRefName`の確実なbranch graphだけをstack表示する。右paneは冒頭のdescription/commentをカード表示し、metadata、CI/conflict、規模をpreview。detailは固定2paneで、`b`でlocal PRを含む一覧、他PRは通常checkoutなしで開き、一覧の`c`/`x`/`m`のみ確認付きでcheckout/close/mergeする。配色はGitHub Primer darkのsemantic tokenを正本とし、gh-dash同様、通常contentはprimary/muted、PR/review/CI/merge/diff/action/labelのsemantic stateだけを着色する。
