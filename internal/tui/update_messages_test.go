@@ -1436,10 +1436,10 @@ func TestModalPopupsDoNotDropDetailAsyncCompletions(t *testing.T) {
 	// rawDetailLoaded arrives while the editor overlay is open.
 	m = testModel()
 	m.overlay = localEditOverlay{mode: addLocalComment}
-	m.detailView.rawPending = map[string]bool{"k": true}
+	m.detailView.rawPending = map[string]uint64{"k": m.targetGeneration}
 	m.detailView.rawCache = map[string]string{}
 	u, _ = m.Update(rawDetailLoaded{generation: m.targetGeneration, key: "k", raw: "diff"})
-	if got := u.(Model); got.detailView.rawPending["k"] || got.detailView.rawCache["k"] != "diff" {
+	if got := u.(Model); len(got.detailView.rawPending) != 0 || got.detailView.rawCache["k"] != "diff" {
 		t.Fatal("rawDetailLoaded was dropped by the editor overlay")
 	}
 

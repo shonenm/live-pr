@@ -531,7 +531,7 @@ func New(version ...string) (Model, error) {
 			rawCache:          map[string]string{},
 			diffCache:         map[string]string{},
 			richBodies:        map[string]string{},
-			diffPending:       map[string]bool{},
+			diffPending:       map[string]uint64{},
 		},
 		prList: prListModel{
 			open:            navigator.PRs,
@@ -920,8 +920,12 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.screen, m.remote = detailScreen, true
 	m.remoteStats = git.ChangeStats{}
 	m.detailView.title = pr.Title
-	m.detailView.base = git.ResolveBase(pr.BaseRefName)
-	m.detailView.diffBase = remoteReviewBase(pr)
+	// Placeholders only: resolving the base runs git, which must stay off
+	// the Update goroutine. remoteRefsLoaded delivers the resolved values.
+	m.detailView.base, m.detailView.diffBase = pr.BaseRefName, pr.BaseRefOID
+	if m.detailView.diffBase == "" {
+		m.detailView.diffBase = pr.BaseRefName
+	}
 	m.detailView.head = pr.HeadRefName
 	m.detailView.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
 	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev

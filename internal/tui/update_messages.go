@@ -273,10 +273,14 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration {
-		return m, nil
+	// A ticket belongs to the generation that dispatched it: a stale result
+	// releases only its own ticket, never the one a newer dispatch holds.
+	if pendingFor(m.detailView.diffPending, msg.key, msg.generation) {
+		delete(m.detailView.diffPending, msg.key)
 	}
-	delete(m.detailView.diffPending, msg.key)
+	if msg.generation != m.targetGeneration {
+		return m, m.sync()
+	}
 	if msg.err != nil {
 		m.detailView.cacheDiff(msg.key, msg.raw)
 	} else {
@@ -577,6 +581,10 @@ func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.err != nil {
+		// openRemote only seeds unresolved placeholders, so the resolved
+		// base must land even when the pull ref could not be fetched.
+		m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
+		m.detailView.reviewRange = msg.diffBase + "..." + m.detailView.headRev
 		m.refreshing = false
 		m.status = msg.err.Error()
 		m.githubStatus = "GitHub: review ref unavailable"
@@ -605,7 +613,7 @@ func (m Model) handleRemoteRefsLoaded(msg remoteRefsLoaded) (Model, tea.Cmd) {
 	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
 	m.detailView.reviewRange = msg.diffBase + "..." + head
 	m.remoteSectionsPending = 3
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.prURL, "", m.detailView.reviewedMarksPath))
+	m.replaceReviewTerminal(m.detailView.reviewSHA, msg.prURL)
 	m.layout()
 	return m, tea.Batch(fetchRemoteCommits(msg.number, msg.generation, msg.diffBase, msg.headRef), fetchRemoteConflicts(msg.number, msg.generation, msg.base, msg.headRef), fetchRemoteFiles(msg.number, msg.generation, msg.diffBase, msg.headRef), m.sync())
 }
