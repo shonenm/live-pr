@@ -113,3 +113,30 @@ func TestViewsPathPrefersTheRepoFileThatOwnsViews(t *testing.T) {
 		t.Fatalf("repo file with views = %q", got)
 	}
 }
+
+// A dotfiles-managed config is a symlink; saving must update its target and
+// leave the link in place.
+func TestSaveViewsWritesThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "config.toml")
+	link := filepath.Join(dir, "config.toml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("[layout]\nlist = 0.4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := SaveViews(link, []View{{Name: "Mine", Query: "author:@me"}}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("save replaced the symlink: %v %v", info, err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || !strings.Contains(string(data), `name = "Mine"`) || !strings.Contains(string(data), "[layout]") {
+		t.Fatalf("target = %q, %v", data, err)
+	}
+}

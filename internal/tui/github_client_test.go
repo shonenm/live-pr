@@ -23,8 +23,6 @@ type fakeGH struct {
 	findPreview        func(number int) (gh.PR, error)
 	findChecks         func(number int) (gh.PR, error)
 	loadConversation   func(number int) gh.ConversationDetail
-	loadPRDetail       func(number int, prev gh.PRDetail) gh.PRDetail
-	loadLocalPRDetail  func(number int, prev gh.PRDetail) gh.PRDetail
 	merge              func(number int, headOID string, method gh.MergeMethod) error
 	checkout           func(number int) error
 	close              func(number int) error
@@ -69,23 +67,6 @@ func (f *fakeGH) LoadConversation(number int) gh.ConversationDetail {
 		return f.loadConversation(number)
 	}
 	return gh.ConversationDetail{}
-}
-
-func (f *fakeGH) LoadPRDetail(number int, prev gh.PRDetail) gh.PRDetail {
-	if f.loadPRDetail != nil {
-		return f.loadPRDetail(number, prev)
-	}
-	return gh.PRDetail{}
-}
-
-func (f *fakeGH) LoadLocalPRDetail(number int, prev gh.PRDetail) gh.PRDetail {
-	if f.loadLocalPRDetail != nil {
-		return f.loadLocalPRDetail(number, prev)
-	}
-	if f.loadPRDetail != nil {
-		return f.loadPRDetail(number, prev)
-	}
-	return gh.PRDetail{}
 }
 
 func (f *fakeGH) Merge(number int, headOID string, method gh.MergeMethod) error {
@@ -404,7 +385,7 @@ func TestFetchGitHubSeparatesMetadataAndConversation(t *testing.T) {
 			return gh.ConversationDetail{Comments: []gh.Comment{{ID: 7}}}
 		},
 	}
-	batch := fetchGitHub(client, "feature", 15, 3, gh.PRDetail{})().(tea.BatchMsg)
+	batch := fetchGitHub(client, "feature", 15, 3)().(tea.BatchMsg)
 	metadata := batch[0]().(githubMetadataRefreshed)
 	conversation := batch[1]().(githubConversationRefreshed)
 	if metadata.pr.Number != 15 || conversationNumber != 15 || conversation.number != 15 || len(conversation.comments) != 1 {
@@ -433,22 +414,28 @@ func TestFetchRemotePRPropagatesClientError(t *testing.T) {
 	t.Setenv("PATH", dir)
 	boom := errors.New("preview unavailable")
 	var gotNumber int
-	client := &fakeGH{loadPRDetail: func(number int, prev gh.PRDetail) gh.PRDetail {
+	client := &fakeGH{findPreview: func(number int) (gh.PR, error) {
 		gotNumber = number
-		return gh.PRDetail{PreviewErr: boom}
+		return gh.PR{}, boom
 	}}
 	pr := gh.PR{Number: 15, BaseRefName: "main", HeadRefOID: "head"}
-	msg := fetchRemotePRDetail(client, pr, 9, gh.PRDetail{})().(remoteLoaded)
+	var metadata githubMetadataRefreshed
+	var refs remoteRefsLoaded
+	for _, cmd := range fetchRemotePR(client, pr, 9)().(tea.BatchMsg) {
+		switch msg := cmd().(type) {
+		case githubMetadataRefreshed:
+			metadata = msg
+		case remoteRefsLoaded:
+			refs = msg
+		}
+	}
 	if gotNumber != 15 {
-		t.Fatalf("LoadPRDetail(%d); want 15", gotNumber)
+		t.Fatalf("FindPreview(%d); want 15", gotNumber)
 	}
-	if msg.generation != 9 || !errors.Is(msg.previewErr, boom) {
-		t.Fatalf("remoteLoaded = generation %d previewErr %v", msg.generation, msg.previewErr)
+	if metadata.generation != 9 || !errors.Is(metadata.err, boom) {
+		t.Fatalf("metadata = generation %d err %v", metadata.generation, metadata.err)
 	}
-	if msg.pr.Number != 15 {
-		t.Fatalf("a failed preview must keep the original PR, got %+v", msg.pr)
-	}
-	if msg.refErr == nil {
-		t.Fatal("a failed git fetch must surface refErr")
+	if refs.generation != 9 || refs.number != 15 || refs.err == nil {
+		t.Fatalf("a failed git fetch must surface its error: %+v", refs)
 	}
 }

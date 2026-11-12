@@ -30,9 +30,6 @@ func (m *Model) layout() {
 		}
 		listPaneW := max(4, m.w*ratio/100)
 		minPaneW := max(14, m.diffMinPaneWidth)
-		if minPaneW <= 0 {
-			minPaneW = 24
-		}
 		if listPaneW < minPaneW {
 			listPaneW = minPaneW
 		}
@@ -61,9 +58,6 @@ func (m *Model) layout() {
 		ratio = listRatio
 	}
 	minPaneW := max(14, m.diffMinPaneWidth)
-	if minPaneW <= 0 {
-		minPaneW = 24
-	}
 	if minPaneW > m.w/2 {
 		minPaneW = max(8, m.w/2)
 	}

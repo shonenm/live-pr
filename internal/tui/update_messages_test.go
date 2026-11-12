@@ -393,9 +393,9 @@ func TestLocalGitHubFailureKeepsReviewAndShowsRecoveryHint(t *testing.T) {
 	m := testModel()
 	m.screen, m.remote = detailScreen, false
 	m.cache.FetchedAt = time.Now().Add(-30 * time.Minute).UTC().Format(time.RFC3339)
-	u, _ := m.Update(githubRefreshed{generation: m.targetGeneration, err: errors.New("network unavailable")})
+	u, _ := m.Update(githubConversationRefreshed{generation: m.targetGeneration, err: errors.New("network unavailable")})
 	status := u.(Model).githubStatus
-	for _, want := range []string{"Offline", "local review available", "cached 30m ago", "r retry"} {
+	for _, want := range []string{"Offline", "showing cached conversation", "cached 30m ago", "r retry"} {
 		if !strings.Contains(status, want) {
 			t.Fatalf("recovery status missing %q: %q", want, status)
 		}
@@ -434,14 +434,14 @@ func TestStalePRListRefreshCannotRestoreMergedPR(t *testing.T) {
 
 func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
 	m := testModel()
-	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, mergePR, 14
+	m.screen, m.overlay = prListScreen, prActionOverlay{action: mergePR, pr: gh.PR{Number: 14}, running: true}
 	u, cmd := m.Update(prActionDone{action: mergePR, number: 14})
 	m = u.(Model)
-	if cmd == nil || !m.prList.refreshing || m.notice != "Merge submitted for PR #14" || m.prActionRunning != noPRAction {
-		t.Fatalf("merge completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning, cmd)
+	if cmd == nil || !m.prList.refreshing || m.notice != "Merge submitted for PR #14" || m.prActionRunning() != noPRAction {
+		t.Fatalf("merge completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning(), cmd)
 	}
 
-	m.prActionRunning = mergePR
+	m.overlay = prActionOverlay{action: mergePR, pr: gh.PR{Number: 15}, running: true}
 	u, cmd = m.Update(prActionDone{action: mergePR, number: 15, err: errors.New("blocked")})
 	m = u.(Model)
 	if cmd != nil || !strings.Contains(m.status, "PR #15") || !strings.Contains(m.status, "blocked") {
@@ -451,11 +451,11 @@ func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
 
 func TestPRListCloseCompletionRefreshes(t *testing.T) {
 	m := testModel()
-	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, closePR, 14
+	m.screen, m.overlay = prListScreen, prActionOverlay{action: closePR, pr: gh.PR{Number: 14}, running: true}
 	u, cmd := m.Update(prActionDone{action: closePR, number: 14})
 	m = u.(Model)
-	if cmd == nil || !m.prList.refreshing || m.notice != "Closed PR #14" || m.prActionRunning != noPRAction {
-		t.Fatalf("close completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning, cmd)
+	if cmd == nil || !m.prList.refreshing || m.notice != "Closed PR #14" || m.prActionRunning() != noPRAction {
+		t.Fatalf("close completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning(), cmd)
 	}
 }
 
@@ -467,7 +467,7 @@ func TestCheckoutReloadEpochRejectsPreCheckoutMessages(t *testing.T) {
 	next.advanceAsyncGenerations(old)
 	next.cache.PR = &gh.PR{Number: 2}
 	next.prList.open = []gh.PR{{Number: 2}}
-	u, _ := next.Update(remoteLoaded{generation: 7, pr: gh.PR{Number: 1}})
+	u, _ := next.Update(githubMetadataRefreshed{generation: 7, pr: gh.PR{Number: 1}})
 	next = u.(Model)
 	if next.cache.PR == nil || next.cache.PR.Number != 2 {
 		t.Fatalf("pre-checkout remote result replaced target: %#v", next.cache.PR)
@@ -490,7 +490,7 @@ func TestStaleLocalAndPublishResultsCannotReplaceTarget(t *testing.T) {
 	m.targetGeneration = 2
 	m.currentBranch = "feature"
 	m.cache.PR = &gh.PR{Number: 2, HeadRefName: "feature"}
-	u, _ := m.Update(githubRefreshed{generation: 1, pr: gh.PR{Number: 1, HeadRefName: "feature"}})
+	u, _ := m.Update(githubMetadataRefreshed{generation: 1, pr: gh.PR{Number: 1, HeadRefName: "feature"}})
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
 		t.Fatalf("stale local refresh replaced target: %#v", m.cache.PR)
@@ -529,7 +529,7 @@ func TestStaleRemoteResultCannotReplaceNewTarget(t *testing.T) {
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
 		t.Fatalf("target B not opened: %#v", m.cache.PR)
 	}
-	u, _ = m.Update(remoteLoaded{generation: generationA, pr: gh.PR{Number: 1}, headRef: "HEAD"})
+	u, _ = m.Update(remoteRefsLoaded{generation: generationA, number: 1, headRef: "HEAD"})
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 2 || m.diffTerminal != nil {
 		t.Fatalf("stale A replaced B: %#v terminal=%v", m.cache.PR, m.diffTerminal)
@@ -795,56 +795,12 @@ func TestRemoteSnapshotMismatchPreservesCurrentDetail(t *testing.T) {
 	old := gh.PR{Number: 14, Title: "old", HeadRefOID: "old"}
 	m.cache.PR, m.detailView.headRev, m.detailView.title = &old, "old-ref", "old"
 	m.detailView.commits = []git.Commit{{SHA: "old"}}
-	next := gh.PR{Number: 14, Title: "new", HeadRefOID: "new"}
-	u, _ := m.Update(remoteLoaded{generation: 3, pr: next, headRef: "new-ref", snapshotErr: errors.New("head changed")})
+	// Metadata reported one head, the fetched ref another.
+	m.remoteRefreshGeneration, m.remoteRefreshMetadataOID = 3, "new"
+	u, _ := m.Update(remoteRefsLoaded{generation: 3, number: 14, headRef: "new-ref", headOID: "newer"})
 	m = u.(Model)
 	if m.refreshing || m.cache.PR.Title != "old" || m.detailView.headRev != "old-ref" || m.detailView.commits[0].SHA != "old" || !strings.Contains(m.githubStatus, "retry required") {
 		t.Fatalf("mismatch applied: pr=%#v head=%q commits=%#v status=%q", m.cache.PR, m.detailView.headRev, m.detailView.commits, m.githubStatus)
-	}
-}
-
-func TestRemoteLoadedStartsReviewAndCachesConversation(t *testing.T) {
-	m := testModel()
-	m.root = t.TempDir()
-	m.currentBranch = "main"
-	m.remote = true
-	m.screen = detailScreen
-	m.diffCommand = "cat"
-	m.navigator = gh.NewNavigatorCache()
-	m.navigatorPath = filepath.Join(t.TempDir(), "github-prs.json")
-	pr := gh.PR{Number: 14, URL: "https://example/pr/14", Title: "remote", HeadRefName: "feature", BaseRefName: "main", BaseRefOID: "historical-base"}
-	m.cache = gh.NewCache("feature")
-	m.cache.PR = &pr
-	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
-	m = u.(Model)
-	u, cmd := m.Update(remoteLoaded{pr: pr, headRef: "HEAD", base: "main", diffBase: "historical-base", commits: []git.Commit{{SHA: "abc1234"}}, files: []git.ChangedFile{{Status: "M", Path: "a.go"}}, comments: []gh.Comment{{ID: 1, Body: "cached"}}})
-	m = u.(Model)
-	defer m.close()
-	if cmd == nil || m.diffTerminal == nil || m.refreshing || len(m.cache.Comments) != 1 {
-		t.Fatalf("remote load incomplete: terminal=%v refreshing=%v cache=%#v", m.diffTerminal, m.refreshing, m.cache)
-	}
-	if m.detailView.diffBase != "historical-base" || m.detailView.reviewRange != "historical-base...HEAD" {
-		t.Fatalf("remote review range = base:%q range:%q", m.detailView.diffBase, m.detailView.reviewRange)
-	}
-	// The handler applies the ranges gathered by fetchRemotePR instead of
-	// spawning git itself.
-	if len(m.detailView.commits) != 1 || len(m.detailView.files) != 1 || m.detailView.files[0].Path != "a.go" {
-		t.Fatalf("remote ranges not applied: commits=%d files=%#v", len(m.detailView.commits), m.detailView.files)
-	}
-	// The snapshot lands in memory synchronously; the disk write rides an
-	// async Cmd so the Update goroutine never blocks on MarshalIndent + IO.
-	if snapshot, ok := m.navigator.Snapshot(14); !ok || len(snapshot.Comments) != 1 {
-		t.Fatalf("in-memory snapshot = %#v ok=%v", snapshot, ok)
-	}
-	if msg := m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator)(); msg != nil {
-		t.Fatalf("navigator save failed: %#v", msg)
-	}
-	cached, err := gh.LoadNavigatorCache(m.navigatorPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if snapshot, ok := cached.Snapshot(14); !ok || len(snapshot.Comments) != 1 {
-		t.Fatalf("remote snapshot = %#v ok=%v", snapshot, ok)
 	}
 }
 
@@ -854,7 +810,7 @@ func TestLocalRefreshKeepsGitMetadataAuthoritative(t *testing.T) {
 	m.detailView.commits = []git.Commit{{SHA: "abc1234", Date: "2026-08-29T10:00", Subject: "local subject"}}
 	pr := gh.PR{Number: 9, HeadRefName: m.currentBranch, Additions: 999, Deletions: 999, ChangedFiles: 999,
 		Commits: []gh.PRCommit{{OID: "abc123456789", CommittedDate: "remote", MessageHeadline: "remote subject", CheckRollupState: "SUCCESS"}}}
-	u, _ := m.Update(githubRefreshed{generation: m.targetGeneration, pr: pr})
+	u, _ := m.Update(githubMetadataRefreshed{generation: m.targetGeneration, pr: pr})
 	got := u.(Model).cache.PR
 	if got == nil || got.Additions != 12 || got.Deletions != 4 || got.ChangedFiles != 3 || got.CommitCount != 1 || got.Commits[0].CommittedDate != "2026-08-29T10:00" || got.Commits[0].MessageHeadline != "local subject" || got.Commits[0].CheckRollupState != "SUCCESS" {
 		t.Fatalf("local Git metadata was not authoritative: %#v", got)
@@ -865,7 +821,7 @@ func TestLocalRefreshRejectsSameNamedFork(t *testing.T) {
 	m := testModel()
 	m.currentBranch = "feature"
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
-	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 9, HeadRefName: "feature", IsCrossRepository: true}})
+	u, _ := m.Update(githubMetadataRefreshed{pr: gh.PR{Number: 9, HeadRefName: "feature", IsCrossRepository: true}})
 	m = u.(Model)
 	if m.cache.PR != nil || !strings.Contains(m.githubStatus, "Local only") {
 		t.Fatalf("same-named fork bound as local PR: cache=%#v status=%q", m.cache.PR, m.githubStatus)
@@ -885,7 +841,7 @@ func TestEmptyLocalPRStaysOpenAfterGitHubLookup(t *testing.T) {
 	m.timelinePath, m.cachePath = st.Timeline(), st.GitHubCache()
 	m.detailView.files = nil
 
-	u, _ := m.Update(githubRefreshed{err: gh.ErrPRNotFound})
+	u, _ := m.Update(githubMetadataRefreshed{err: gh.ErrPRNotFound})
 	m = u.(Model)
 	if m.screen != detailScreen || !m.localAvailable {
 		t.Fatalf("empty explicitly opened Local PR was closed: screen=%v local=%v", m.screen, m.localAvailable)
@@ -913,9 +869,9 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 		t.Fatal("r must not start a second in-flight refresh")
 	}
 
-	u, _ = m.Update(githubRefreshed{generation: m.targetGeneration, pr: gh.PR{Number: 9, State: "OPEN", Body: "remotely edited"}})
+	u, _ = m.Update(githubMetadataRefreshed{generation: m.targetGeneration, pr: gh.PR{Number: 9, State: "OPEN", Body: "remotely edited"}})
 	m = u.(Model)
-	if m.refreshing || m.cache.PR == nil || m.cache.PR.Number != 9 {
+	if m.cache.PR == nil || m.cache.PR.Number != 9 {
 		t.Fatalf("refresh result not cached: %#v", m.cache)
 	}
 	if m.cache.LastPublishedManagedBodyHash != "published-hash" {
@@ -925,7 +881,7 @@ func TestGitHubRefreshIsExplicitAfterStartup(t *testing.T) {
 		t.Fatal("cached PR metadata should be visible in the header")
 	}
 
-	u, _ = m.Update(githubRefreshed{generation: m.targetGeneration, err: gh.ErrPRNotFound})
+	u, _ = m.Update(githubMetadataRefreshed{generation: m.targetGeneration, err: gh.ErrPRNotFound})
 	m = u.(Model)
 	if m.cache.LastPublishedManagedBodyHash != "published-hash" {
 		t.Fatal("a pull-only refresh must preserve the publish baseline when no open PR is found")
@@ -1026,7 +982,8 @@ func TestCommentFailureKeepsCachedCommentsAndUpdatesPR(t *testing.T) {
 	m.cachePath = filepath.Join(t.TempDir(), "github.json")
 	m.cache.Comments = []gh.Comment{{ID: 1, Body: "cached"}}
 	m.cache.Activities = []gh.Activity{{ID: 2, Event: "labeled"}}
-	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 9}, commentsErr: errors.New("comments unavailable"), activitiesErr: errors.New("activity unavailable")})
+	m.cache.PR = &gh.PR{Number: 9}
+	u, _ := m.Update(githubConversationRefreshed{number: 9, commentsErr: errors.New("comments unavailable"), activitiesErr: errors.New("activity unavailable")})
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 9 || len(m.cache.Comments) != 1 || len(m.cache.Activities) != 1 {
 		t.Fatalf("partial refresh lost usable state: %#v", m.cache)
@@ -1139,7 +1096,7 @@ func TestCIPollBackoffAndSuccessfulRefreshReset(t *testing.T) {
 	if cmd == nil || m.ciPollFailures != 1 || !strings.Contains(m.githubStatus, "retrying in 30s") {
 		t.Fatalf("failed poll = failures:%d status:%q cmd:%v", m.ciPollFailures, m.githubStatus, cmd)
 	}
-	u, _ = m.Update(githubRefreshed{generation: 2, pr: *m.cache.PR})
+	u, _ = m.Update(githubMetadataRefreshed{generation: 2, pr: *m.cache.PR})
 	if got := u.(Model).ciPollFailures; got != 0 {
 		t.Fatalf("failures after refresh = %d", got)
 	}
@@ -1253,7 +1210,7 @@ func TestAsyncCacheSaveSkipsRemoteWithoutPath(t *testing.T) {
 	}
 }
 
-func TestReviewRefFailureKeepsCIPollAlive(t *testing.T) {
+func TestConversationRefreshKeepsCIPollAlive(t *testing.T) {
 	// scheduled reports whether the update armed the CI poll timer. The
 	// returned cmd is never run: it would block for the whole poll delay.
 	scheduled := func(pr gh.PR) bool {
@@ -1262,7 +1219,7 @@ func TestReviewRefFailureKeepsCIPollAlive(t *testing.T) {
 		m.navigator = gh.NewNavigatorCache()
 		m.cache = gh.NewCache("feature")
 		m.cache.PR = &pr
-		u, cmd := m.Update(remoteLoaded{generation: m.targetGeneration, pr: pr, refErr: errors.New("ref unavailable")})
+		u, cmd := m.Update(githubConversationRefreshed{generation: m.targetGeneration, number: pr.Number})
 		got := u.(Model)
 		if got.pollTimers == nil || got.pollTimers.ci == nil {
 			return false
@@ -1276,7 +1233,7 @@ func TestReviewRefFailureKeepsCIPollAlive(t *testing.T) {
 	done.Checks = []gh.PRCheck{{Status: "COMPLETED", Conclusion: "SUCCESS"}}
 	// LIVE polling monitors head/state even after CI reaches a terminal state.
 	if pendingPoll, donePoll := scheduled(pending), scheduled(done); !pendingPoll || !donePoll {
-		t.Fatalf("refErr result did not keep LIVE polling: pending=%t terminal=%t", pendingPoll, donePoll)
+		t.Fatalf("conversation refresh did not keep LIVE polling: pending=%t terminal=%t", pendingPoll, donePoll)
 	}
 }
 
@@ -1292,13 +1249,13 @@ func TestModalPopupsDoNotDropAsyncCompletions(t *testing.T) {
 		t.Fatal("reviewSubmitted was dropped by the status popup")
 	}
 
-	// githubRefreshed arrives while the local editor is open.
+	// githubConversationRefreshed arrives while the local editor is open.
 	m = testModel()
 	m.refreshing = true
 	m.overlay = localEditOverlay{mode: addLocalComment}
-	u, _ = m.Update(githubRefreshed{generation: m.targetGeneration, err: gh.ErrPRNotFound})
+	u, _ = m.Update(githubConversationRefreshed{generation: m.targetGeneration, err: gh.ErrPRNotFound})
 	if got := u.(Model); got.refreshing {
-		t.Fatal("githubRefreshed was dropped by the editor overlay")
+		t.Fatal("githubConversationRefreshed was dropped by the editor overlay")
 	}
 
 	// Keys still go to the modal, not the main handler.
@@ -1376,16 +1333,16 @@ func TestCheckoutReloadRunsAsCommandAndKeepsModelOnFailure(t *testing.T) {
 	}
 }
 
-func TestRemoteLoadedKeepsCachedReviewsOnFetchFailure(t *testing.T) {
+func TestConversationRefreshKeepsCachedReviewsOnFetchFailure(t *testing.T) {
 	m := testModel()
 	m.remote, m.screen = true, detailScreen
 	m.cache = gh.NewCache("feature")
 	m.cache.Reviews = []gh.Review{{ID: 1}}
 	m.cache.ReviewComments = []gh.ReviewThreadComment{{ID: 2}}
-	m.navigatorPath = filepath.Join(t.TempDir(), "prs.json")
+	m.cache.PR = &gh.PR{Number: 5}
 
-	u, _ := m.Update(remoteLoaded{
-		pr: gh.PR{Number: 5}, headRef: "HEAD",
+	u, _ := m.Update(githubConversationRefreshed{
+		number:            5,
 		reviewsErr:        errors.New("api down"),
 		reviewCommentsErr: errors.New("api down"),
 	})
