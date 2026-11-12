@@ -36,17 +36,19 @@ const (
 	focusExplorer
 )
 
-// detailModel groups the state that only the detail screen touches: the
-// loaded target (title, refs, commits, files, events, merge readiness), the
-// tab/cursor/focus selection, the raw-diff and rendered-diff caches, reviewed
-// marks, and the conversation render caches. Shared state stays on Model —
-// the detail viewport (the list screen's preview pane renders through it),
-// remote (read by the list's current-PR marker via isCurrentTargetPR),
-// targetGeneration (bumped by list-side navigation and checkout), the diff
-// config, and the diff terminal (torn down by Model-level target switches).
 const maxDetailCacheEntries = 128
 const maxRichBodyCacheEntries = 128
 
+// detailModel groups the detail screen's state: the loaded target (title,
+// refs, commits, files, events, merge readiness), the tab/cursor/focus
+// selection, the raw-diff and rendered-diff caches, reviewed marks, and the
+// conversation render caches. It is a field group, not an encapsulation
+// boundary: Model's methods across the package read and write it directly.
+// Shared state stays on Model — the detail viewport (the list screen's
+// preview pane renders through it), remote (read by the list's current-PR
+// marker via isCurrentTargetPR), targetGeneration (bumped by list-side
+// navigation and checkout), the diff config, and the diff terminal (torn
+// down by Model-level target switches).
 type detailModel struct {
 	title                string
 	summary              string

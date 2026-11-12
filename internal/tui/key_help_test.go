@@ -41,12 +41,12 @@ func TestHelpListsKeysTheDetailHandlerAccepts(t *testing.T) {
 		t.Errorf("detail checkout help key = %q; c opens the commits tab there", got)
 	}
 	u, _ := m.Update(keyPress("m"))
-	if got := u.(Model); got.pendingPRAction != mergePR {
-		t.Fatalf("m = pending:%v", got.pendingPRAction)
+	if got := u.(Model); got.pendingPRAction() != mergePR {
+		t.Fatalf("m = pending:%v", got.pendingPRAction())
 	}
 	u, _ = m.Update(keyPress("C"))
-	if got := u.(Model); got.pendingPRAction != checkoutPR {
-		t.Fatalf("C = pending:%v", got.pendingPRAction)
+	if got := u.(Model); got.pendingPRAction() != checkoutPR {
+		t.Fatalf("C = pending:%v", got.pendingPRAction())
 	}
 
 	// The comment keys go to the reviewer once it has focus.
@@ -86,8 +86,8 @@ func TestConfirmFooterNamesTheKeysThatConfirm(t *testing.T) {
 	} {
 		u, _ := m.Update(keyPress(tc.open))
 		popup := u.(Model)
-		if popup.pendingPRAction != tc.action {
-			t.Fatalf("%s = pending:%v", tc.open, popup.pendingPRAction)
+		if popup.pendingPRAction() != tc.action {
+			t.Fatalf("%s = pending:%v", tc.open, popup.pendingPRAction())
 		}
 		if got := popup.contextualKeys().Select.Help().Key; got != tc.want {
 			t.Errorf("%s popup: confirm key in help = %q, want %q", tc.open, got, tc.want)
@@ -96,7 +96,7 @@ func TestConfirmFooterNamesTheKeysThatConfirm(t *testing.T) {
 			t.Errorf("%s popup: compact footer = %q", tc.open, got)
 		}
 		u, cmd := popup.Update(keyPress("enter"))
-		if confirmed := u.(Model).prActionRunning == tc.action && cmd != nil; confirmed != strings.Contains(tc.want, "↵") {
+		if confirmed := u.(Model).prActionRunning() == tc.action && cmd != nil; confirmed != strings.Contains(tc.want, "↵") {
 			t.Errorf("%s popup: enter confirmed = %v, footer says %q", tc.open, confirmed, tc.want)
 		}
 	}

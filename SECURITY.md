@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-live-pr is alpha software. Only the latest release receives fixes; there are no
-backports to older tags. Check your version with `live-pr --version` and
-upgrade before reporting.
+Fixes go into the latest `1.x` release; there are no backports to older tags,
+and `0.x` releases are no longer supported. Check your version with
+`live-pr --version` and upgrade before reporting.
 
 ## Reporting a vulnerability
 

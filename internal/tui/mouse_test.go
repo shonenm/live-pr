@@ -317,8 +317,7 @@ func TestOverlayAndActionPopupSwallowWheel(t *testing.T) {
 	if m.prList.cursor != 0 {
 		t.Fatalf("wheel under the status popup moved cursor to %d", m.prList.cursor)
 	}
-	m.overlay = nil
-	m.pendingPRAction, m.prActionPR, m.prActionNumber = closePR, m.prList.open[0], 1
+	m.overlay = prActionOverlay{action: closePR, pr: m.prList.open[0]}
 	u, _ = m.Update(wheel(5, 10, true))
 	m = u.(Model)
 	if m.prList.cursor != 0 {
@@ -381,10 +380,10 @@ func TestMergePopupMouse(t *testing.T) {
 
 	u, _ := m.Update(keyPress("m"))
 	m = u.(Model)
-	if m.pendingPRAction != mergePR {
-		t.Fatalf("merge popup not open: %v", m.pendingPRAction)
+	if m.pendingPRAction() != mergePR {
+		t.Fatalf("merge popup not open: %v", m.pendingPRAction())
 	}
-	popup := m.renderActionPopup()
+	popup := m.overlay.render(m)
 	left, top, _, _ := m.popupRect(popup)
 	row := popupOptionRow(popup, mergeMethodLabel(gh.MergeSquash))
 	if row < 0 {
@@ -392,13 +391,13 @@ func TestMergePopupMouse(t *testing.T) {
 	}
 	u, _ = m.Update(click(left+5, top+row))
 	m = u.(Model)
-	if m.mergeMethodCursor != 1 || m.prActionRunning != noPRAction {
-		t.Fatalf("option click: cursor=%d running=%v", m.mergeMethodCursor, m.prActionRunning)
+	if m.prActionPopup().methodCursor != 1 || m.prActionRunning() != noPRAction {
+		t.Fatalf("option click: cursor=%d running=%v", m.prActionPopup().methodCursor, m.prActionRunning())
 	}
 	u, cmd := m.Update(click(left+5, top+row))
 	m = u.(Model)
-	if m.prActionRunning != mergePR || cmd == nil {
-		t.Fatalf("second click did not confirm the merge: running=%v", m.prActionRunning)
+	if m.prActionRunning() != mergePR || cmd == nil {
+		t.Fatalf("second click did not confirm the merge: running=%v", m.prActionRunning())
 	}
 	if batch, ok := cmd().(tea.BatchMsg); ok {
 		for _, inner := range batch {
@@ -410,33 +409,33 @@ func TestMergePopupMouse(t *testing.T) {
 	}
 
 	// Outside click cancels a reopened popup without touching the client.
-	m.prActionRunning = noPRAction
+	m.overlay = nil
 	u, _ = m.Update(keyPress("m"))
 	m = u.(Model)
 	u, _ = m.Update(click(0, 0))
 	m = u.(Model)
-	if m.pendingPRAction != noPRAction || calls != 1 {
-		t.Fatalf("outside click: pending=%v calls=%d", m.pendingPRAction, calls)
+	if m.pendingPRAction() != noPRAction || calls != 1 {
+		t.Fatalf("outside click: pending=%v calls=%d", m.pendingPRAction(), calls)
 	}
 
 	// Confirm-only popups never confirm from clicks: a click inside the
 	// close popup does nothing, a click outside cancels.
 	u, _ = m.Update(keyPress("x"))
 	m = u.(Model)
-	if m.pendingPRAction != closePR {
-		t.Fatalf("close popup not open: %v", m.pendingPRAction)
+	if m.pendingPRAction() != closePR {
+		t.Fatalf("close popup not open: %v", m.pendingPRAction())
 	}
-	popup = m.renderActionPopup()
+	popup = m.overlay.render(m)
 	left, top, _, _ = m.popupRect(popup)
 	u, _ = m.Update(click(left+3, top+2))
 	m = u.(Model)
-	if m.pendingPRAction != closePR || m.prActionRunning != noPRAction {
-		t.Fatalf("inside click acted on the close popup: pending=%v running=%v", m.pendingPRAction, m.prActionRunning)
+	if m.pendingPRAction() != closePR || m.prActionRunning() != noPRAction {
+		t.Fatalf("inside click acted on the close popup: pending=%v running=%v", m.pendingPRAction(), m.prActionRunning())
 	}
 	u, _ = m.Update(click(0, 0))
 	m = u.(Model)
-	if m.pendingPRAction != noPRAction {
-		t.Fatalf("outside click did not cancel the close popup: %v", m.pendingPRAction)
+	if m.pendingPRAction() != noPRAction {
+		t.Fatalf("outside click did not cancel the close popup: %v", m.pendingPRAction())
 	}
 }
 

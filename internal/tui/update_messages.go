@@ -9,7 +9,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/embeddedterm"
 	"github.com/shonenm/live-pr/internal/git"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/prfilter"
@@ -246,7 +245,8 @@ func (m Model) handlePRPreviewLoaded(msg prPreviewLoaded) (Model, tea.Cmd) {
 	m.prList.previewLoaded[msg.number] = true
 	if msg.err != nil {
 		m.status = fmt.Sprintf("PR #%d preview: %v", msg.number, msg.err)
-		return m, nil
+		// The failure freed a fetch slot the selected row may be waiting for.
+		return m, m.ensureSelectedPRPreview()
 	}
 	if i, ok := m.navigatorPRPosition(msg.number); ok {
 		msg.pr.ViewerReviewRequested = m.navigator.PRs[i].ViewerReviewRequested
@@ -301,7 +301,9 @@ func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
 }
 
 func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
-	m.prActionRunning = noPRAction
+	if _, ok := m.overlay.(prActionOverlay); ok {
+		m.overlay = nil
+	}
 	if msg.err != nil {
 		m.status = fmt.Sprintf("PR #%d: %v", msg.number, msg.err)
 		return m, nil
@@ -430,9 +432,9 @@ func (m Model) handlePublishDone(msg publishDone) (Model, tea.Cmd) {
 	// a newly created PR has no CI poll yet: refetch like a posted comment.
 	m.targetGeneration++
 	if m.remote {
-		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
+		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.sync(), m.startSpinner())
 	}
-	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
+	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration), m.sync(), m.startSpinner())
 }
 
 func samePRBoundary(a, b *gh.PR) bool {
@@ -464,6 +466,7 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 	active, cursors, focus := m.detailView.active, m.detailView.cursors, m.detailView.focus
 	fileCursor, reviewSHA := m.detailView.fileCursor, m.detailView.reviewSHA
 	listOffset, explorerOffset, detailOffset := m.list.YOffset(), m.explorer.YOffset(), m.detail.YOffset()
+	githubStatus := m.githubStatus
 	sameTarget := !m.remote && m.timelinePath == msg.st.Timeline()
 	m.applyLocal(msg.st, msg.data)
 	if !sameTarget {
@@ -472,6 +475,9 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 	m.localReloading = false
 	if reloading {
 		m.refreshing = false
+		// No GitHub fetch follows a reload, so applyLocal's "checking…" would
+		// never be replaced: keep what the refresh already reported.
+		m.githubStatus = githubStatus
 		m.detailView.active, m.detailView.cursors, m.detailView.focus = active, cursors, focus
 		m.detailView.fileCursor = min(fileCursor, max(0, len(m.detailView.files)-1))
 		m.detailView.reviewSHA = reviewSHA
@@ -494,7 +500,7 @@ func (m Model) handleLocalLoaded(msg localLoaded) (Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	}
-	cmds := []tea.Cmd{fetchGitHub(m.client, m.currentBranch, m.currentPRNumber(), m.targetGeneration, m.cachedDetail()), m.sync(), m.nextLocalPoll()}
+	cmds := []tea.Cmd{fetchGitHub(m.client, m.currentBranch, m.currentPRNumber(), m.targetGeneration), m.sync(), m.nextLocalPoll()}
 	if m.diffTerminal != nil {
 		cmds = append(cmds, m.diffTerminal.Init())
 	}
@@ -680,93 +686,6 @@ func (m Model) handleRemoteFilesLoaded(msg remoteFilesLoaded) (Model, tea.Cmd) {
 	return m, m.finishRemoteSection()
 }
 
-func (m Model) handleRemoteLoaded(msg remoteLoaded) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration {
-		return m, nil
-	}
-	m.refreshing = false
-	if msg.snapshotErr != nil {
-		m.status = msg.snapshotErr.Error()
-		m.githubStatus = "GitHub: PR changed during refresh · retry required"
-		return m, m.sync()
-	}
-	selectedKey := m.selectedConversationKey()
-	now := time.Now().UTC().Format(time.RFC3339)
-	m.detailView.resetCaches()
-	m.cache.PR = &msg.pr
-	m.refreshMergeReadiness()
-	m.refreshReviewDraft()
-	m.refreshOutbox()
-	if strings.TrimSpace(msg.pr.Title) != "" {
-		m.detailView.title = msg.pr.Title
-	}
-	if msg.commentsErr == nil {
-		m.cache.Comments = msg.comments
-	}
-	if msg.activitiesErr == nil {
-		m.cache.Activities = msg.activities
-	}
-	// A failed fetch keeps the cached reviews: nil here means "unavailable",
-	// not "no reviews".
-	if msg.reviewsErr == nil {
-		m.cache.Reviews = msg.reviews
-	}
-	if msg.reviewCommentsErr == nil {
-		m.cache.ReviewComments = msg.reviewComments
-	}
-	m.cache.FetchedAt = now
-	m.detailView.invalidateConversation()
-	m.navigator.SetSnapshot(gh.PRSnapshot{PR: msg.pr, Comments: m.cache.Comments, Activities: m.cache.Activities, FetchedAt: now})
-	saveCmd := m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator)
-	if msg.refErr != nil {
-		m.status = msg.refErr.Error()
-		m.githubStatus = "GitHub: Conversation updated · review ref unavailable"
-		m.restoreConversationSelection(selectedKey)
-		// The refresh bumped targetGeneration, orphaning the previous CI poll
-		// chain, so this return is the only place a new one can start: without
-		// it a PR whose review ref fails never polls CI (or loads rich
-		// content) again.
-		return m, tea.Batch(saveCmd, m.sync(), m.nextCIPoll(), m.dispatchRichContent())
-	}
-	m.detailView.headRev = msg.headRef
-	m.detailView.base, m.detailView.diffBase = msg.base, msg.diffBase
-	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
-	m.detailView.commits, m.detailView.remoteCommits, m.detailView.files = msg.commits, nil, msg.files
-	m.remoteStats = msg.stats
-	m.setGitMergeReadiness(msg.readiness, msg.readinessErr)
-	m.detailView.fileCursor = 0
-	m.status = ""
-	stale := []string{}
-	if msg.previewErr != nil {
-		stale = append(stale, "metadata")
-	}
-	if msg.commentsErr != nil {
-		stale = append(stale, "comments")
-	}
-	if msg.activitiesErr != nil {
-		stale = append(stale, "activity")
-	}
-	if msg.reviewsErr != nil || msg.reviewCommentsErr != nil {
-		stale = append(stale, "reviews")
-	}
-	if msg.readinessErr != nil {
-		stale = append(stale, "merge readiness")
-	}
-	m.githubStatus = "GitHub: selected PR updated"
-	if len(stale) > 0 {
-		m.githubStatus += " · " + strings.Join(stale, "/") + " stale"
-	}
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, msg.pr.URL, "", m.detailView.reviewedMarksPath))
-	m.layout()
-	m.restoreConversationSelection(selectedKey)
-	cmds := []tea.Cmd{saveCmd, m.sync(), m.nextCIPoll(), m.dispatchRichContent(), m.startOutboxFlush()}
-	if m.diffTerminal != nil {
-		cmds = append(cmds, m.diffTerminal.Init())
-	}
-	return m, tea.Batch(cmds...)
-
-}
-
 func (m Model) handleCIPolled(msg ciPolled) (Model, tea.Cmd) {
 	// Errors carry no PR number, so the number check applies to successes only.
 	if !m.ciPollTargetsCurrentPR(msg.generation) || (msg.err == nil && m.cache.PR.Number != msg.pr.Number) {
@@ -859,17 +778,43 @@ func (m Model) applyLocalGitMetadata(pr gh.PR) gh.PR {
 	return pr
 }
 
+const noPRStatus = "Local only · no GitHub PR"
+
 func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model, tea.Cmd) {
 	if msg.generation != m.targetGeneration {
 		return m, nil
 	}
-	if msg.err != nil {
-		if !m.remote {
-			// Local changes must still reload when GitHub is unavailable.
-			return m, m.resolveBase(m.detailView.base, m.cache.PR, m.prURL())
-		}
-		return m, nil
+	if msg.err == nil && !m.remote && !m.isCurrentTargetPR(msg.pr) {
+		// A same-named fork's PR is not this checkout's PR.
+		msg.err = gh.ErrPRNotFound
 	}
+	if msg.err != nil {
+		if m.remote {
+			return m, nil
+		}
+		var saveCmd tea.Cmd
+		if errors.Is(msg.err, gh.ErrPRNotFound) {
+			// An unpublished branch is the ordinary local state, not a fetch
+			// failure.
+			selectedKey := m.selectedConversationKey()
+			m.localAvailable = m.currentBranch != "HEAD" && m.currentBranch != m.defaultBranch
+			m.cache.PR = nil
+			m.cache.Comments, m.cache.Activities, m.cache.Reviews, m.cache.ReviewComments = nil, nil, nil, nil
+			m.cache.FetchedAt = time.Now().UTC().Format(time.RFC3339)
+			m.githubStatus = noPRStatus
+			m.refreshMergeReadiness()
+			m.refreshReviewDraft()
+			m.refreshOutbox()
+			m.applyPRFilters(0)
+			m.detailView.invalidateConversation()
+			m.layout()
+			m.restoreConversationSelection(selectedKey)
+			saveCmd = m.saveCacheCmd(m.cachePath, m.cache)
+		}
+		// Local changes must still reload when GitHub is unavailable.
+		return m, tea.Batch(m.resolveBase(m.detailView.base, m.cache.PR, m.prURL()), saveCmd, m.sync())
+	}
+	m.ciPollFailures = 0
 	if m.remote {
 		if m.cache.PR == nil || m.cache.PR.Number != msg.pr.Number {
 			return m, nil
@@ -887,9 +832,6 @@ func (m Model) handleGitHubMetadataRefreshed(msg githubMetadataRefreshed) (Model
 			return m, m.sync()
 		}
 	} else {
-		if !m.isCurrentTargetPR(msg.pr) {
-			return m, nil
-		}
 		msg.pr = m.applyLocalGitMetadata(msg.pr)
 	}
 	m.cache.PR = &msg.pr
@@ -917,6 +859,14 @@ func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed
 	}
 	if m.remoteSectionsPending == 0 {
 		m.refreshing = false
+	}
+	if errors.Is(msg.err, gh.ErrPRNotFound) {
+		// The metadata result owns the cache; this side only must not report
+		// a branch without a PR as offline.
+		if m.cache.PR == nil {
+			m.githubStatus = noPRStatus
+		}
+		return m, m.sync()
 	}
 	if msg.err != nil {
 		m.githubStatus = offlineStatus(msg.err, "showing cached conversation", m.cache.FetchedAt)
@@ -958,93 +908,6 @@ func (m Model) handleGitHubConversationRefreshed(msg githubConversationRefreshed
 	m.layout()
 	m.restoreConversationSelection(selectedKey)
 	return m, tea.Batch(m.saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent(), m.startOutboxFlush())
-}
-
-func (m Model) handleGitHubRefreshed(msg githubRefreshed) (Model, tea.Cmd) {
-	if msg.generation != m.targetGeneration {
-		return m, nil
-	}
-	if msg.err == nil && !m.isCurrentTargetPR(msg.pr) {
-		msg.err = gh.ErrPRNotFound
-	}
-	m.refreshing = false
-	selectedKey := m.selectedConversationKey()
-	now := time.Now().UTC().Format(time.RFC3339)
-	var diffCmd tea.Cmd
-	switch {
-	case msg.err == nil:
-		m.ciPollFailures = 0
-		msg.pr = m.applyLocalGitMetadata(msg.pr)
-		m.detailView.resetCaches()
-		m.cache.PR = &msg.pr
-		if strings.TrimSpace(msg.pr.Title) != "" {
-			m.detailView.title = msg.pr.Title
-		}
-		m.localAvailable = false
-		m.cache.FetchedAt = now
-		m.navigator.PRs = upsertPR(m.navigator.PRs, msg.pr)
-		if closed, ok := m.closedView(); ok && matchesListState(msg.pr, closedPRListState) {
-			m.prList.view, m.prList.state, m.prList.refreshing = closed, closedPRListState, false
-			m.prList.generation++
-			m.prList.activePage = prPageKey(m.prList.view, m.prList.state, "")
-		}
-		m.applyPRFilters(msg.pr.Number)
-		diffCmd = tea.Batch(m.resolveBase(msg.pr.BaseRefName, &msg.pr, msg.pr.URL), m.saveNavigatorCacheCmd(m.navigatorPath, m.navigator))
-		m.refreshMergeReadiness()
-		stale := []string{}
-		if msg.commentsErr == nil {
-			m.cache.Comments = msg.comments
-		} else {
-			stale = append(stale, "comments")
-		}
-		if msg.activitiesErr == nil {
-			m.cache.Activities = msg.activities
-		} else {
-			stale = append(stale, "activity")
-		}
-		if msg.reviewsErr == nil {
-			m.cache.Reviews = msg.reviews
-		}
-		if msg.reviewCommentsErr == nil {
-			m.cache.ReviewComments = msg.reviewComments
-		}
-		if msg.reviewsErr != nil || msg.reviewCommentsErr != nil {
-			stale = append(stale, "reviews")
-		}
-		m.githubStatus = "GitHub: updated now"
-		if len(stale) > 0 {
-			m.githubStatus = "GitHub: PR updated · " + strings.Join(stale, "/") + " stale"
-		}
-	case errors.Is(msg.err, gh.ErrPRNotFound):
-		m.localAvailable = m.currentBranch != "HEAD" && m.currentBranch != m.defaultBranch
-		m.cache.PR = nil
-		m.refreshMergeReadiness()
-		m.cache.Comments = nil
-		m.cache.Activities = nil
-		m.cache.Reviews = nil
-		m.cache.ReviewComments = nil
-		m.cache.FetchedAt = now
-		m.githubStatus = "Local only · no GitHub PR"
-		m.applyPRFilters(0)
-	default:
-		detail := "showing cached GitHub data"
-		if !m.remote {
-			detail += " · local review available"
-		}
-		m.githubStatus = offlineStatus(msg.err, detail, m.cache.FetchedAt)
-	}
-	m.refreshReviewDraft()
-	m.refreshOutbox()
-	var flushCmd tea.Cmd
-	if msg.err == nil {
-		flushCmd = m.startOutboxFlush()
-	}
-	m.reloadLocalConversation()
-	m.detailView.invalidateConversation()
-	m.layout()
-	m.restoreConversationSelection(selectedKey)
-	return m, tea.Batch(diffCmd, flushCmd, m.saveCacheCmd(m.cachePath, m.cache), m.sync(), m.nextCIPoll(), m.dispatchRichContent())
-
 }
 
 // ciPollTargetsCurrentPR reports whether a CI poll message still belongs to
