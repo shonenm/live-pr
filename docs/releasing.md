@@ -16,15 +16,15 @@ Releases are built by GoReleaser from version tags.
 
 ## Release
 
-Complete the [local-first E2E checklist](local-first-e2e.md) when the release changes review state, polling, or Git integration. Then, from a clean, up-to-date `main` checkout:
+Complete the [local-first E2E checklist](local-first-e2e.md) when the release changes review state, polling, or Git integration. Then, from a clean, up-to-date `main` checkout (or `release/1.x` for a `1.x` fix):
 
 ```sh
 ./scripts/release v0.1.0
 ```
 
 The maintainer-only script verifies the version, branch, clean worktree,
-`origin/main` parity, existing tags, `go test ./...`, `go vet ./...`, and
-`git diff --check`. It asks for confirmation before creating an annotated tag
+parity with the branch on `origin`, existing tags, `go test ./...`,
+`go vet ./...`, and `git diff --check`. It asks for confirmation before creating an annotated tag
 and pushing it to `origin`. Use `--yes` for explicit non-interactive approval
 or `--dry-run` to run checks without creating a tag.
 
