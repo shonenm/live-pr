@@ -29,10 +29,6 @@ func (m Model) baseBranchStyle(ref string) lipgloss.Style {
 	return stBold
 }
 
-// View assembles the frame and declares terminal features: the alt screen
-// and cell-motion mouse mode that v1 passed as program options, plus the real
-// terminal cursor. When a text input is focused the cursor sits on its caret
-// cell so IME preedit text composes in place; otherwise it stays hidden.
 var asciiUI = strings.NewReplacer(
 	"←", "<", "→", ">", "↑", "^", "↓", "v", "↵", "E",
 	"…", ".", "·", "-", "•", "*", "●", "*", "○", "o", "◐", "~",
@@ -54,6 +50,10 @@ func (m Model) accessibleContent(content string) string {
 	return content
 }
 
+// View assembles the frame and declares terminal features: the alt screen
+// and cell-motion mouse mode that v1 passed as program options, plus the real
+// terminal cursor. When a text input is focused the cursor sits on its caret
+// cell so IME preedit text composes in place; otherwise it stays hidden.
 func (m Model) View() tea.View {
 	view := tea.NewView("")
 	view.AltScreen = true
