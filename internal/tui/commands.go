@@ -201,7 +201,7 @@ func fetchPRPreview(client githubClient, number int, generation uint64) tea.Cmd 
 	}
 }
 
-func fetchGitHub(client githubClient, head string, number int, generation uint64, _ gh.PRDetail) tea.Cmd {
+func fetchGitHub(client githubClient, head string, number int, generation uint64) tea.Cmd {
 	metadata := func() tea.Msg {
 		var pr gh.PR
 		var err error
@@ -494,7 +494,7 @@ func fetchConversation(client githubClient, number int, generation uint64) tea.C
 	}
 }
 
-func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, _ gh.PRDetail) tea.Cmd {
+func fetchRemotePR(client githubClient, pr gh.PR, generation uint64) tea.Cmd {
 	metadata := func() tea.Msg {
 		fresh, err := client.FindPreview(pr.Number)
 		return githubMetadataRefreshed{generation: generation, pr: fresh, err: err}
@@ -528,60 +528,6 @@ func fetchRemoteFiles(number int, generation uint64, diffBase, headRef string) t
 			err = statsErr
 		}
 		return remoteFilesLoaded{generation: generation, number: number, files: files, stats: stats, err: err}
-	}
-}
-
-func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
-	return func() tea.Msg {
-		var headRef, headOID string
-		var comments []gh.Comment
-		var activities []gh.Activity
-		var reviews []gh.Review
-		var reviewComments []gh.ReviewThreadComment
-		var refErr, snapshotErr, previewErr, commentsErr, activitiesErr, reviewsErr, reviewCommentsErr, readinessErr error
-		var readiness git.MergeReadiness
-		number, base := pr.Number, pr.BaseRefName
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			headRef, headOID, refErr = git.FetchPull(number, base)
-		}()
-		go func() {
-			defer wg.Done()
-			detail := client.LoadPRDetail(number, prev)
-			comments, activities = detail.Comments, detail.Activities
-			reviews, reviewComments = detail.Reviews, detail.ReviewComments
-			previewErr, commentsErr, activitiesErr = detail.PreviewErr, detail.CommentsErr, detail.ActivitiesErr
-			reviewsErr, reviewCommentsErr = detail.ReviewsErr, detail.ReviewCommentsErr
-			if previewErr == nil {
-				pr = detail.PR
-			}
-		}()
-		wg.Wait()
-		if refErr == nil {
-			if previewErr == nil {
-				snapshotErr = remoteSnapshotError(pr.HeadRefOID, headOID)
-			}
-			if snapshotErr == nil {
-				pr.HeadRefOID = headOID
-			}
-		}
-		// The range scans run here so handleRemoteLoaded stays subprocess-free
-		// on the Update goroutine.
-		var resolvedBase, diffBase string
-		var commits []git.Commit
-		var files []git.ChangedFile
-		var stats git.ChangeStats
-		if refErr == nil && snapshotErr == nil {
-			resolvedBase = git.ResolveBase(pr.BaseRefName)
-			diffBase = remoteReviewBase(pr)
-			readiness, readinessErr = git.CheckMergeReadiness(resolvedBase, headRef)
-			commits, _ = git.CommitsRange(diffBase, headRef)
-			files, _ = git.ChangedFilesRange(diffBase, headRef)
-			stats, _ = git.DiffStats(diffBase, headRef)
-		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, stats: stats, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, snapshotErr: snapshotErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
 	}
 }
 

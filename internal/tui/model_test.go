@@ -232,17 +232,6 @@ func TestFooterUsesTwoStageNarrowFallback(t *testing.T) {
 	}
 }
 
-func TestCachedDetailIsAnAsyncSafeSnapshot(t *testing.T) {
-	m := testModel()
-	m.cache.PR = &gh.PR{Title: "old", Checks: []gh.PRCheck{{Name: "old"}}}
-	m.cache.Comments = []gh.Comment{{Body: "old"}}
-	detail := m.cachedDetail()
-	m.cache.PR.Title, m.cache.PR.Checks[0].Name, m.cache.Comments[0].Body = "new", "new", "new"
-	if detail.PR.Title != "old" || detail.PR.Checks[0].Name != "old" || detail.Comments[0].Body != "old" {
-		t.Fatalf("snapshot changed: %#v", detail)
-	}
-}
-
 func TestFooterShowsOnlyDataMode(t *testing.T) {
 	m := testModel()
 	m.screen, m.ready = detailScreen, true
@@ -671,7 +660,7 @@ func TestPRRefreshAddsMetadataRowWithinTheHeader(t *testing.T) {
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m = u.(Model)
 	before := m.detail.Height()
-	u, _ = m.Update(githubRefreshed{pr: gh.PR{Number: 12, State: "OPEN"}})
+	u, _ = m.Update(githubMetadataRefreshed{pr: gh.PR{Number: 12, State: "OPEN"}})
 	m = u.(Model)
 	// The wordmark already reserves three header rows, so the metadata row
 	// costs no body height.
