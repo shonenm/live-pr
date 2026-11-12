@@ -7,7 +7,6 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
-	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/publish"
 	"github.com/shonenm/live-pr/internal/store"
 )
@@ -44,9 +43,6 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	}
-	if next, cmd, handled := m.handlePRActionConfirmKey(msg); handled {
-		return next, cmd
 	}
 	if key.Matches(msg, m.keys.PreviewUp, m.keys.PreviewDown) {
 		m.pendingG = false
@@ -87,9 +83,7 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Merge):
 		if m.prList.state == openPRListState {
 			if pr := m.prList.selectedPR(); pr != nil && pr.Number > 0 && pr.HeadRefOID != "" {
-				m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, pr.Number, *pr
-				m.mergeMethodCursor = 0
-				m.status, m.notice = "", ""
+				return m.openPRAction(mergePR, *pr)
 			}
 		}
 		return m, nil
@@ -99,15 +93,13 @@ func (m Model) handlePRListKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, m.copySelectedURL()
 	case key.Matches(msg, m.keys.Checkout):
 		if pr := m.prList.selectedPR(); pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
-			m.pendingPRAction, m.prActionNumber, m.prActionPR = checkoutPR, pr.Number, *pr
-			m.status, m.notice = "", ""
+			return m.openPRAction(checkoutPR, *pr)
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Close):
 		if m.prList.state == openPRListState {
 			if pr := m.prList.selectedPR(); pr != nil && pr.Number > 0 {
-				m.pendingPRAction, m.prActionNumber, m.prActionPR = closePR, pr.Number, *pr
-				m.status, m.notice = "", ""
+				return m.openPRAction(closePR, *pr)
 			}
 		}
 		return m, nil
@@ -169,76 +161,7 @@ func (m Model) openSelectedPR() (Model, tea.Cmd) {
 	return m, tea.Batch(preparePRTarget(m.root, *pr, cache, m.navigator.PRs, m.targetGeneration), m.startSpinner())
 }
 
-// handlePRActionConfirmKey drives the y/n confirmation for a pending PR
-// action and swallows keys while one runs; handled is false when neither
-// state applies. Both screens share this state machine.
-func (m Model) handlePRActionConfirmKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
-	if m.pendingPRAction == mergePR {
-		methodCount := len(m.mergeMethodOptions())
-		switch msg.String() {
-		case "up", "k":
-			m.mergeMethodCursor = (m.mergeMethodCursor + methodCount - 1) % methodCount
-			return m, nil, true
-		case "down", "j":
-			m.mergeMethodCursor = (m.mergeMethodCursor + 1) % methodCount
-			return m, nil, true
-		case "m":
-			return m.submitMerge(gh.MergeCommit)
-		case "s":
-			return m.submitMerge(gh.MergeSquash)
-		case "r":
-			return m.submitMerge(gh.MergeRebase)
-		case "y", "enter":
-			return m.submitMerge(m.selectedMergeMethod())
-		case "n", "q", "esc":
-			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
-			return m, nil, true
-		case "ctrl+c":
-			return m, tea.Quit, true
-		default:
-			return m, nil, true
-		}
-	}
-	if m.pendingPRAction != noPRAction {
-		switch msg.String() {
-		case "y":
-			action, pr := m.pendingPRAction, m.prActionPR
-			m.pendingPRAction = noPRAction
-			m.prActionRunning = action
-			m.notice = ""
-			return m, tea.Batch(runPRAction(m.client, m.checkoutHead, action, pr, gh.MergeCommit), m.startSpinner()), true
-		case "n", "q", "esc":
-			m.pendingPRAction, m.prActionNumber, m.prActionPR = noPRAction, 0, gh.PR{}
-			return m, nil, true
-		case "ctrl+c":
-			return m, tea.Quit, true
-		default:
-			return m, nil, true
-		}
-	}
-	if m.prActionRunning != noPRAction {
-		if msg.String() == "ctrl+c" {
-			return m, tea.Quit, true
-		}
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// submitMerge fires the pending merge with the chosen method.
-func (m Model) submitMerge(method gh.MergeMethod) (Model, tea.Cmd, bool) {
-	pr := m.prActionPR
-	m.pendingPRAction = noPRAction
-	m.prActionRunning = mergePR
-	m.notice = ""
-	return m, tea.Batch(runPRAction(m.client, m.checkoutHead, mergePR, pr, method), m.startSpinner()), true
-}
-
 func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
-
-	if next, cmd, handled := m.handlePRActionConfirmKey(msg); handled {
-		return next, cmd
-	}
 	if key.Matches(msg, m.keys.PRList) {
 		selected := m.currentPRNumber()
 		m.prList.view = m.listViewForReturn(selected)
@@ -423,9 +346,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.openPRStatus(m.cache.PR)
 	case key.Matches(msg, m.keys.Merge):
 		if m.canMergeCurrentPR() {
-			m.pendingPRAction, m.prActionNumber, m.prActionPR = mergePR, m.cache.PR.Number, *m.cache.PR
-			m.mergeMethodCursor = 0
-			m.status, m.notice = "", ""
+			return m.openPRAction(mergePR, *m.cache.PR)
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Publish):
@@ -451,8 +372,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case msg.String() == "C" && key.Matches(msg, m.keys.Checkout):
 		// Detail keeps c for the commits tab, so checkout answers to C only.
 		if pr := m.cache.PR; pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
-			m.pendingPRAction, m.prActionNumber, m.prActionPR = checkoutPR, pr.Number, *pr
-			m.status, m.notice = "", ""
+			return m.openPRAction(checkoutPR, *pr)
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Commits):

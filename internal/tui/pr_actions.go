@@ -51,14 +51,101 @@ func mergeMethodPrompt(method gh.MergeMethod) string {
 	}
 }
 
-// selectedMergeMethod maps the popup cursor to a method, defaulting to the
-// first configured method when the cursor is out of range.
-func (m Model) selectedMergeMethod() gh.MergeMethod {
+// prActionOverlay confirms a merge, checkout, or close before it runs, and
+// stays up, inert, while the action is in flight; prActionDone closes it.
+type prActionOverlay struct {
+	action       prAction
+	pr           gh.PR
+	methodCursor int
+	running      bool
+}
+
+// openPRAction asks for confirmation before running action on pr.
+func (m Model) openPRAction(action prAction, pr gh.PR) (Model, tea.Cmd) {
+	m.overlay = prActionOverlay{action: action, pr: pr}
+	m.status, m.notice = "", ""
+	return m, nil
+}
+
+// prActionPopup returns the open PR-action popup, or the zero value (action
+// noPRAction) when there is none.
+func (m Model) prActionPopup() prActionOverlay {
+	o, _ := m.overlay.(prActionOverlay)
+	return o
+}
+
+// pendingPRAction reports the action waiting for confirmation, if any.
+func (m Model) pendingPRAction() prAction {
+	if o := m.prActionPopup(); !o.running {
+		return o.action
+	}
+	return noPRAction
+}
+
+// prActionRunning reports the confirmed action still in flight, if any.
+func (m Model) prActionRunning() prAction {
+	if o := m.prActionPopup(); o.running {
+		return o.action
+	}
+	return noPRAction
+}
+
+// selectedMethod maps the popup cursor to a method, defaulting to the first
+// configured method when the cursor is out of range.
+func (o prActionOverlay) selectedMethod(m Model) gh.MergeMethod {
 	methods := m.mergeMethodOptions()
-	if m.mergeMethodCursor < 0 || m.mergeMethodCursor >= len(methods) {
+	if o.methodCursor < 0 || o.methodCursor >= len(methods) {
 		return methods[0]
 	}
-	return methods[m.mergeMethodCursor]
+	return methods[o.methodCursor]
+}
+
+// handleKey drives the confirmation and swallows keys while the action runs.
+// Checkout and close answer to y alone; the merge picker also takes Enter,
+// the cursor keys, and one shortcut per method.
+func (o prActionOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+	if o.running {
+		return m, nil
+	}
+	switch msg.String() {
+	case "y":
+		return o.submit(m, o.selectedMethod(m))
+	case "n", "q", "esc":
+		m.overlay = nil
+		return m, nil
+	}
+	if o.action != mergePR {
+		return m, nil
+	}
+	methodCount := len(m.mergeMethodOptions())
+	switch msg.String() {
+	case "up", "k":
+		o.methodCursor = (o.methodCursor + methodCount - 1) % methodCount
+	case "down", "j":
+		o.methodCursor = (o.methodCursor + 1) % methodCount
+	case "m":
+		return o.submit(m, gh.MergeCommit)
+	case "s":
+		return o.submit(m, gh.MergeSquash)
+	case "r":
+		return o.submit(m, gh.MergeRebase)
+	case "enter":
+		return o.submit(m, o.selectedMethod(m))
+	}
+	m.overlay = o
+	return m, nil
+}
+
+// submit fires the confirmed action; method only matters to a merge.
+func (o prActionOverlay) submit(m Model, method gh.MergeMethod) (Model, tea.Cmd) {
+	o.running = true
+	m.overlay = o
+	m.notice = ""
+	spinner := m.startSpinner()
+	return m, tea.Batch(runPRAction(m.client, m.checkoutHead, o.action, o.pr, method), spinner)
 }
 
 // runPRAction executes one confirmed PR action. checkoutHead checks out a
@@ -147,26 +234,22 @@ func (m Model) mergeConditionLines(pr gh.PR) []string {
 	return lines
 }
 
-func (m Model) renderActionPopup() string {
-	action := m.prActionRunning
-	if action == noPRAction {
-		action = m.pendingPRAction
-	}
-	label := actionLabel(action)
+func (o prActionOverlay) render(m Model) string {
+	label := actionLabel(o.action)
 	message := "Continue?"
 	var options []string
-	switch action {
+	switch o.action {
 	case mergePR:
-		message = mergeMethodPrompt(m.selectedMergeMethod())
+		message = mergeMethodPrompt(o.selectedMethod(m))
 		for i, method := range m.mergeMethodOptions() {
 			prefix, style := "  ", stFg
-			if i == m.mergeMethodCursor {
+			if i == o.methodCursor {
 				prefix, style = "▸ ", stAccent.Bold(true)
 			}
 			options = append(options, prefix+style.Render(mergeMethodLabel(method)))
 		}
 	case checkoutPR:
-		branch := m.prActionPR.HeadRefName
+		branch := o.pr.HeadRefName
 		if branch == "" {
 			branch = "its branch"
 		}
@@ -174,21 +257,21 @@ func (m Model) renderActionPopup() string {
 	case closePR:
 		message = "Close without merging?"
 	}
-	lines := []string{stBold.Render(fmt.Sprintf("%s PR #%d", label, m.prActionNumber)), ""}
-	if action == mergePR {
-		if conditions := m.mergeConditionLines(m.prActionPR); len(conditions) > 0 {
+	lines := []string{stBold.Render(fmt.Sprintf("%s PR #%d", label, o.pr.Number)), ""}
+	if o.action == mergePR {
+		if conditions := m.mergeConditionLines(o.pr); len(conditions) > 0 {
 			lines = append(lines, conditions...)
 			lines = append(lines, "")
 		}
 	}
-	if len(options) > 0 && m.prActionRunning == noPRAction {
+	if len(options) > 0 && !o.running {
 		lines = append(lines, options...)
 		lines = append(lines, "")
 	}
 	lines = append(lines, stFg.Render(message))
-	if m.prActionRunning != noPRAction {
+	if o.running {
 		lines = append(lines, "", stAttention.Render(m.loadSpinner.View()+" "+label+" in progress…"))
-	} else if action == mergePR {
+	} else if o.action == mergePR {
 		lines = append(lines, "", stMuted.Render("j/k select · y confirm · m/s/r · Esc cancel"))
 	} else {
 		lines = append(lines, "", stMuted.Render("y confirm · n / Esc cancel"))
