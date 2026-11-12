@@ -497,11 +497,11 @@ func (o localDeleteOverlay) render(m Model) string {
 		BorderForeground(lipgloss.Color(cAttention)).
 		Padding(1, 3).
 		Width(max(24, min(60, m.w-14))).
-		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(o.title) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
+		Render(stBold.Render("Delete local comment?") + "\n\n" + stFg.Render(safeText(o.title)) + "\n\n" + stMuted.Render("y confirm · n / Esc cancel"))
 }
 
 func (o remoteDeleteOverlay) render(m Model) string {
-	preview := strings.ReplaceAll(o.title, "\n", " ")
+	preview := strings.ReplaceAll(safeText(o.title), "\n", " ")
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(cDangerEmphasis)).
