@@ -76,7 +76,7 @@ jobs:
           asset="live-pr_${RELEASE_TAG#v}_${PLATFORM}.$suffix"
           gh release download "$RELEASE_TAG" --pattern "$asset" --pattern checksums.txt --dir "$tmp"
           cd "$tmp"
-          grep -F " $asset" checksums.txt > selected-checksum.txt
+          awk -v asset="$asset" '$2 == asset' checksums.txt > selected-checksum.txt
           if command -v sha256sum >/dev/null; then sha256sum -c selected-checksum.txt; else shasum -a 256 -c selected-checksum.txt; fi
           if [[ "$suffix" == zip ]]; then
             SMOKE_DIR="$(cygpath -w "$tmp")"
