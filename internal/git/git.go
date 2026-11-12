@@ -162,13 +162,30 @@ func IsAncestor(ancestor, descendant string) (bool, error) {
 // Push pushes the branch to origin, setting upstream. A stalled SSH/HTTPS
 // transport must not hang the caller forever, so the push is bounded; the
 // limit is longer than FetchPull's because a push carries data up.
-func Push(branch string) error {
+func Push(branch string) error { return push(branch, false) }
+
+// PushNoPrompt is Push for callers that own the terminal, such as the TUI:
+// a missing credential fails the push instead of prompting on the tty.
+func PushNoPrompt(branch string) error { return push(branch, true) }
+
+// noPrompt stops a network git command from asking for credentials, a key
+// passphrase or host-key confirmation on the controlling terminal, where the
+// prompt would draw over the TUI and compete with it for keystrokes.
+func noPrompt(cmd *exec.Cmd) {
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	detachTerminal(cmd)
+}
+
+func push(branch string, quiet bool) error {
 	if done := debugtime.Start("git push"); done != nil {
 		defer done()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "push", "-u", "origin", branch)
+	if quiet {
+		noPrompt(cmd)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if _, err := cmd.Output(); err != nil {
@@ -904,6 +921,7 @@ func FetchPull(number int, base string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
+	noPrompt(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", "", fmt.Errorf("git fetch PR #%d: %w: %s", number, err, strings.TrimSpace(string(out)))
 	}
@@ -931,6 +949,7 @@ func CheckoutPullHead(branch string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", refSpec)
+	noPrompt(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git fetch %s: %w: %s", branch, err, strings.TrimSpace(string(out)))
 	}
