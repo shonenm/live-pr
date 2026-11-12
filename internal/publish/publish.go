@@ -90,6 +90,11 @@ func run(opts Options, client githubClient, push func(string) error) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
+	// A checked-out fork PR lives on the contributor's repository: pushing
+	// this branch to origin and publishing would open a duplicate PR.
+	if cache.ExplicitCheckout && cache.PR != nil && cache.PR.IsCrossRepository {
+		return Result{}, fmt.Errorf("PR #%d comes from a fork; publishing it from this checkout is not supported", cache.PR.Number)
+	}
 	pr, findErr := client.FindOpen(st.Branch)
 	base, err := resolvePublishBase(opts.Base, cache, pr, findErr)
 	if err != nil {
