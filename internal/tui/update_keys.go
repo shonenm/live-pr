@@ -523,6 +523,9 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.detailView.active == conversationTab {
+			return m, m.scrollConversation(1)
+		}
 		if m.detailView.cursors[m.detailView.active] < m.activeLen()-1 {
 			m.detailView.cursors[m.detailView.active]++
 			return m, m.sync()
@@ -535,6 +538,9 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				return m, m.sync()
 			}
 			return m, nil
+		}
+		if m.detailView.active == conversationTab {
+			return m, m.scrollConversation(-1)
 		}
 		if m.detailView.cursors[m.detailView.active] > 0 {
 			m.detailView.cursors[m.detailView.active]--
