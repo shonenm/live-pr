@@ -300,7 +300,9 @@ func (m Model) handleDiffRendered(msg diffRendered) (Model, tea.Cmd) {
 }
 
 func (m Model) handlePRActionDone(msg prActionDone) (Model, tea.Cmd) {
-	m.prActionRunning = noPRAction
+	if _, ok := m.overlay.(prActionOverlay); ok {
+		m.overlay = nil
+	}
 	if msg.err != nil {
 		m.status = fmt.Sprintf("PR #%d: %v", msg.number, msg.err)
 		return m, nil

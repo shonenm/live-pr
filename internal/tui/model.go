@@ -93,8 +93,8 @@ func (k keyMap) FullHelp() [][]key.Binding { return k.helpGroups() }
 func (m Model) contextualKeys() keyMap {
 	modal := keyMap{Help: m.keys.Help, Quit: m.keys.Quit}
 	switch {
-	case m.pendingPRAction != noPRAction:
-		modal.Select = key.NewBinding(key.WithKeys("y"), key.WithHelp(m.pendingPRAction.confirmKeys(), "confirm"))
+	case m.pendingPRAction() != noPRAction:
+		modal.Select = key.NewBinding(key.WithKeys("y"), key.WithHelp(m.pendingPRAction().confirmKeys(), "confirm"))
 		modal.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
 		return modal
 	case m.overlay != nil:
@@ -373,13 +373,8 @@ type Model struct {
 	reviewDraft               gh.ReviewDraft
 	reviewDraftPath           string
 	reviewSubmitting          bool
-	pendingPRAction           prAction
-	prActionRunning           prAction
-	prActionNumber            int
 	mergeMethods              []gh.MergeMethod
-	mergeMethodCursor         int
 	pendingG                  bool
-	prActionPR                gh.PR
 	remote                    bool
 	remoteRefreshGeneration   uint64
 	remoteRefreshMetadataOID  string
@@ -804,7 +799,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.prList.refreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prList.previewLoading) > 0 || len(m.detailView.diffPending) > 0
+	return m.refreshing || m.prList.refreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning() != noPRAction || len(m.prList.previewLoading) > 0 || len(m.detailView.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {
@@ -1110,7 +1105,6 @@ func applyKeyStates(states map[*key.Binding]bool) {
 func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 	pr := m.prList.selectedPR()
 	_, stacked := m.prList.stackForPR(m.prList.selectedPRNumber())
-	idle := m.prActionRunning == noPRAction
 	applyKeyStates(map[*key.Binding]bool{
 		&m.keys.Select:       pr != nil,
 		&m.keys.PreviewUp:    true,
@@ -1129,9 +1123,9 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Browse:       m.selectedBrowseURL() != "",
 		&m.keys.CopyURL:      m.selectedBrowseURL() != "",
 		&m.keys.Publish:      false,
-		&m.keys.Merge:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
-		&m.keys.Checkout:     pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
-		&m.keys.Close:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && idle,
+		&m.keys.Merge:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "",
+		&m.keys.Checkout:     pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr),
+		&m.keys.Close:        m.prList.state == openPRListState && pr != nil && pr.Number > 0,
 		&m.keys.Status:       pr != nil && pr.Number > 0,
 		&m.keys.ManageViews:  true,
 		&m.keys.AddComment:   false,
@@ -1182,8 +1176,8 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Browse:       m.selectedBrowseURL() != "",
 		&m.keys.CopyURL:      m.selectedBrowseURL() != "",
 		&m.keys.Publish:      !m.remote && m.currentBranch != "HEAD",
-		&m.keys.Merge:        m.canMergeCurrentPR() && m.prActionRunning == noPRAction,
-		&m.keys.Checkout:     m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR) && m.prActionRunning == noPRAction,
+		&m.keys.Merge:        m.canMergeCurrentPR(),
+		&m.keys.Checkout:     m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR),
 		&m.keys.Close:        false,
 		&m.keys.Status:       m.cache.PR != nil && m.cache.PR.Number > 0,
 		&m.keys.ManageViews:  false,
