@@ -124,21 +124,32 @@ func tableRendererLocked(width int) (*glamour.TermRenderer, error) {
 	return r, nil
 }
 
-// Render formats Markdown. Glamour renders image links as their source URL;
-// ordinary video URLs remain unchanged.
-func Render(text string, width int) string {
-	text = terminaltext.Sanitize(text)
+func renderKey(text string, width int) cacheKey {
 	if width < 20 {
 		width = 20
 	}
-	key := cacheKey{width: width, text: text}
+	return cacheKey{width: width, text: terminaltext.Sanitize(text)}
+}
+
+// Cached reports whether Render(text, width) would be answered from the
+// render cache, so a caller on a latency-sensitive path can defer a cold
+// render instead of paying for glamour inline.
+func Cached(text string, width int) bool {
+	_, ok := renderCache.get(renderKey(text, width))
+	return ok
+}
+
+// Render formats Markdown. Glamour renders image links as their source URL;
+// ordinary video URLs remain unchanged.
+func Render(text string, width int) string {
+	key := renderKey(text, width)
 	if out, ok := renderCache.get(key); ok {
 		return out
 	}
 
-	out, err := renderMarkdown(text, width)
+	out, err := renderMarkdown(key.text, key.width)
 	if err != nil {
-		return text
+		return key.text
 	}
 
 	renderCache.put(key, out)
@@ -169,6 +180,9 @@ func renderMarkdown(text string, width int) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// Goldmark decodes character references such as &#27; into raw
+		// controls after the input was sanitized; keep only glamour's SGR.
+		out = terminaltext.SanitizeSGR(out)
 		if p.table {
 			out = trimRendered(out)
 		} else {

@@ -471,7 +471,7 @@ func (m Model) compactFooterContent() string {
 		return stMuted.Render("Review focused · Tab conversation")
 	}
 	if m.pendingPRAction != noPRAction {
-		return stMuted.Render("Enter confirm · Esc cancel")
+		return stMuted.Render(m.pendingPRAction.confirmKeys() + " confirm · Esc cancel")
 	}
 	return stMuted.Render("? help · q quit")
 }
