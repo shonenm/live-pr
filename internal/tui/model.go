@@ -3,6 +3,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -92,8 +93,8 @@ func (k keyMap) FullHelp() [][]key.Binding { return k.helpGroups() }
 func (m Model) contextualKeys() keyMap {
 	modal := keyMap{Help: m.keys.Help, Quit: m.keys.Quit}
 	switch {
-	case m.pendingPRAction != noPRAction:
-		modal.Select = key.NewBinding(key.WithKeys("y"), key.WithHelp(m.pendingPRAction.confirmKeys(), "confirm"))
+	case m.pendingPRAction() != noPRAction:
+		modal.Select = key.NewBinding(key.WithKeys("y"), key.WithHelp(m.pendingPRAction().confirmKeys(), "confirm"))
 		modal.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
 		return modal
 	case m.overlay != nil:
@@ -337,6 +338,7 @@ type Model struct {
 	localCommitCount          int
 	localHeadOID              string
 	localFingerprint          string
+	reviewRestart             bool // `r` restarts the reviewer even when nothing changed
 	localReloading            bool
 	checkoutReloading         bool
 	localGeneration           uint64 // checkout observation is independent of detail requests
@@ -371,13 +373,8 @@ type Model struct {
 	reviewDraft               gh.ReviewDraft
 	reviewDraftPath           string
 	reviewSubmitting          bool
-	pendingPRAction           prAction
-	prActionRunning           prAction
-	prActionNumber            int
 	mergeMethods              []gh.MergeMethod
-	mergeMethodCursor         int
 	pendingG                  bool
-	prActionPR                gh.PR
 	remote                    bool
 	remoteRefreshGeneration   uint64
 	remoteRefreshMetadataOID  string
@@ -681,7 +678,18 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 		}
 	}
 	m.localStatsErr, m.localRevisionErr = data.statsErr, data.revisionErr
-	m.detailView.resetCaches()
+	// A reload that found the same review (the metadata refresh right after
+	// startup, typically) keeps the diff caches and the running reviewer;
+	// only `r` restarts it regardless.
+	sameReview := !m.reviewRestart && !m.remote && m.timelinePath == st.Timeline() &&
+		data.headErr == nil && data.snapshotErr == nil && data.filesErr == nil &&
+		data.localHeadOID == m.localHeadOID && data.localFingerprint == m.localFingerprint &&
+		data.reviewRange == m.detailView.reviewRange && data.diffBase == m.detailView.diffBase &&
+		slices.Equal(data.files, m.detailView.files)
+	m.reviewRestart = false
+	if !sameReview {
+		m.detailView.resetCaches()
+	}
 	if m.remote {
 		// Coming from a remote PR is a target switch; a local reload of the
 		// same branch keeps the rendered mermaid.
@@ -689,9 +697,6 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	}
 	if data.incomplete {
 		m.status = "local data is incomplete: " + data.warning
-	}
-	if m.diffTerminal != nil {
-		m.diffTerminal.Close()
 	}
 	cache := data.cache
 	prURL := ""
@@ -726,7 +731,13 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 		m.githubStatus = "GitHub: cached · refreshing…"
 	}
 	m.refreshing, m.publishing = true, false
-	m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, embeddedterm.Environment(m.detailView.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.detailView.reviewedMarksPath))
+	env := embeddedterm.Environment(m.detailView.reviewRange, data.diffBase, st.Branch, "HEAD", prURL, "", m.detailView.reviewedMarksPath)
+	if !sameReview || !m.diffTerminal.Available() || !m.diffTerminal.Matches(m.diffCommand, env) {
+		if m.diffTerminal != nil {
+			m.diffTerminal.Close()
+		}
+		m.diffTerminal = embeddedterm.New(m.diffCommand, m.root, env)
+	}
 	m.detailView.focus, m.detailView.fileCursor, m.detailView.active, m.detailView.reviewSHA = focusConversation, 0, conversationTab, ""
 	m.layout()
 }
@@ -788,7 +799,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) isLoading() bool {
-	return m.refreshing || m.prList.refreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning != noPRAction || len(m.prList.previewLoading) > 0 || len(m.detailView.diffPending) > 0
+	return m.refreshing || m.prList.refreshing || m.publishing || m.reviewSubmitting || m.prStatusRunning() || m.remoteCommentBusy || m.prActionRunning() != noPRAction || len(m.prList.previewLoading) > 0 || len(m.detailView.diffPending) > 0
 }
 
 func (m *Model) startSpinner() tea.Cmd {
@@ -1094,7 +1105,6 @@ func applyKeyStates(states map[*key.Binding]bool) {
 func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 	pr := m.prList.selectedPR()
 	_, stacked := m.prList.stackForPR(m.prList.selectedPRNumber())
-	idle := m.prActionRunning == noPRAction
 	applyKeyStates(map[*key.Binding]bool{
 		&m.keys.Select:       pr != nil,
 		&m.keys.PreviewUp:    true,
@@ -1113,9 +1123,9 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Browse:       m.selectedBrowseURL() != "",
 		&m.keys.CopyURL:      m.selectedBrowseURL() != "",
 		&m.keys.Publish:      false,
-		&m.keys.Merge:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
-		&m.keys.Checkout:     pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
-		&m.keys.Close:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && idle,
+		&m.keys.Merge:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "",
+		&m.keys.Checkout:     pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr),
+		&m.keys.Close:        m.prList.state == openPRListState && pr != nil && pr.Number > 0,
 		&m.keys.Status:       pr != nil && pr.Number > 0,
 		&m.keys.ManageViews:  true,
 		&m.keys.AddComment:   false,
@@ -1166,8 +1176,8 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 		&m.keys.Browse:       m.selectedBrowseURL() != "",
 		&m.keys.CopyURL:      m.selectedBrowseURL() != "",
 		&m.keys.Publish:      !m.remote && m.currentBranch != "HEAD",
-		&m.keys.Merge:        m.canMergeCurrentPR() && m.prActionRunning == noPRAction,
-		&m.keys.Checkout:     m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR) && m.prActionRunning == noPRAction,
+		&m.keys.Merge:        m.canMergeCurrentPR(),
+		&m.keys.Checkout:     m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR),
 		&m.keys.Close:        false,
 		&m.keys.Status:       m.cache.PR != nil && m.cache.PR.Number > 0,
 		&m.keys.ManageViews:  false,

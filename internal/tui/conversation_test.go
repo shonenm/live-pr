@@ -252,7 +252,7 @@ func TestPublishInsertionPreservesConversationSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	u, _ := m.Update(publishDone{result: publish.Result{PR: *cache.PR, Created: true}})
+	u, _ := m.Update(publishDone{head: m.detailView.head, cachePath: m.cachePath, result: publish.Result{PR: *cache.PR, Created: true}})
 	m = u.(Model)
 	selected := m.selectedConversationItem()
 	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.detailView.cursors[conversationTab] != 1 {

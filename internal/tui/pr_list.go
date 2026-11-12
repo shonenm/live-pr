@@ -18,10 +18,12 @@ import (
 	"github.com/shonenm/live-pr/internal/theme"
 )
 
-// prListModel groups the state that only the PR-list screen touches: the
-// paged PR collections, tab/filter selection, stack grouping, the row render
-// cache, and preview bookkeeping. Shared state (views config, navigator,
-// viewports, spinners) stays on Model.
+// prListModel groups the PR-list screen's state: the paged PR collections,
+// tab/filter selection, stack grouping, the row render cache, and preview
+// bookkeeping. It is a field group, not an encapsulation boundary: Model's
+// methods across the package read and write it directly, detail-screen
+// handlers included (a metadata refresh re-filters the list). Shared state
+// (views config, navigator, viewports, spinners) stays on Model.
 type prListModel struct {
 	all                       []gh.PR
 	filtered                  []gh.PR

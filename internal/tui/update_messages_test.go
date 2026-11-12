@@ -434,14 +434,14 @@ func TestStalePRListRefreshCannotRestoreMergedPR(t *testing.T) {
 
 func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
 	m := testModel()
-	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, mergePR, 14
+	m.screen, m.overlay = prListScreen, prActionOverlay{action: mergePR, pr: gh.PR{Number: 14}, running: true}
 	u, cmd := m.Update(prActionDone{action: mergePR, number: 14})
 	m = u.(Model)
-	if cmd == nil || !m.prList.refreshing || m.notice != "Merge submitted for PR #14" || m.prActionRunning != noPRAction {
-		t.Fatalf("merge completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning, cmd)
+	if cmd == nil || !m.prList.refreshing || m.notice != "Merge submitted for PR #14" || m.prActionRunning() != noPRAction {
+		t.Fatalf("merge completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning(), cmd)
 	}
 
-	m.prActionRunning = mergePR
+	m.overlay = prActionOverlay{action: mergePR, pr: gh.PR{Number: 15}, running: true}
 	u, cmd = m.Update(prActionDone{action: mergePR, number: 15, err: errors.New("blocked")})
 	m = u.(Model)
 	if cmd != nil || !strings.Contains(m.status, "PR #15") || !strings.Contains(m.status, "blocked") {
@@ -451,11 +451,11 @@ func TestPRListMergeCompletionRefreshesAndReportsErrors(t *testing.T) {
 
 func TestPRListCloseCompletionRefreshes(t *testing.T) {
 	m := testModel()
-	m.screen, m.prActionRunning, m.prActionNumber = prListScreen, closePR, 14
+	m.screen, m.overlay = prListScreen, prActionOverlay{action: closePR, pr: gh.PR{Number: 14}, running: true}
 	u, cmd := m.Update(prActionDone{action: closePR, number: 14})
 	m = u.(Model)
-	if cmd == nil || !m.prList.refreshing || m.notice != "Closed PR #14" || m.prActionRunning != noPRAction {
-		t.Fatalf("close completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning, cmd)
+	if cmd == nil || !m.prList.refreshing || m.notice != "Closed PR #14" || m.prActionRunning() != noPRAction {
+		t.Fatalf("close completion = refreshing:%v notice:%q running:%v cmd:%v", m.prList.refreshing, m.notice, m.prActionRunning(), cmd)
 	}
 }
 
@@ -496,7 +496,7 @@ func TestStaleLocalAndPublishResultsCannotReplaceTarget(t *testing.T) {
 		t.Fatalf("stale local refresh replaced target: %#v", m.cache.PR)
 	}
 	m.publishing = true
-	u, _ = m.Update(publishDone{generation: 1, result: publish.Result{PR: gh.PR{Number: 1}}})
+	u, _ = m.Update(publishDone{head: "other", result: publish.Result{PR: gh.PR{Number: 1}}})
 	m = u.(Model)
 	if m.cache.PR == nil || m.cache.PR.Number != 2 {
 		t.Fatalf("stale publish replaced target: %#v", m.cache.PR)

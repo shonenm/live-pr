@@ -119,9 +119,11 @@ type githubConversationRefreshed struct {
 }
 
 type publishDone struct {
-	generation uint64
-	result     publish.Result
-	err        error
+	// head and cachePath name the target the publish started on.
+	head      string
+	cachePath string
+	result    publish.Result
+	err       error
 }
 
 type browserDone struct {
