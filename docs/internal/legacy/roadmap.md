@@ -1,7 +1,8 @@
-> **Internal planning note (in Japanese).** This is a historical implementation roadmap kept for
-> maintainers. It predates the public release and does not necessarily
-> reflect the current state of the project. For user-facing documentation,
-> see the [docs index](../README.md).
+> **Legacy internal planning note (in Japanese).** This is the implementation roadmap of the
+> original "decision timeline" direction, kept for maintainers. It was
+> superseded in 2026-11 by the [strategy](../strategy.md) and does not
+> reflect the current direction. For user-facing documentation, see the
+> [docs index](../../README.md).
 
 # 実装ロードマップ
 
