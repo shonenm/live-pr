@@ -1,3 +1,5 @@
+//go:build !windows
+
 package tui
 
 import (
@@ -11,6 +13,8 @@ import (
 	"github.com/shonenm/live-pr/internal/store"
 )
 
+// Windows has no embedded reviewer to keep, so this runs elsewhere only.
+//
 // The metadata refresh right after startup rescans the same review; it must
 // not throw away the running reviewer and the diff caches.
 func TestLocalReloadKeepsReviewerUntilTheReviewChanges(t *testing.T) {
