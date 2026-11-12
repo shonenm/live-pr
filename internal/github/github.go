@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -354,8 +355,8 @@ func (c Client) Find(number int) (PR, error) {
 	return pr, nil
 }
 
-// FindOpen finds the open PR for head. Operational errors are returned as-is;
-// only a successful empty list becomes ErrPRNotFound.
+// FindOpen finds the open same-repository PR for head. Operational errors are
+// returned as-is; only a list without such a PR becomes ErrPRNotFound.
 func (c Client) FindOpen(head string) (PR, error) {
 	return c.findHead(head, "open")
 }
@@ -390,6 +391,9 @@ func (c Client) findAllHead(head, state string) ([]PR, error) {
 	if err := json.Unmarshal(out, &prs); err != nil {
 		return nil, fmt.Errorf("decode gh pr list: %w", err)
 	}
+	// gh matches --head by branch name alone, so a fork PR opened from a
+	// same-named branch comes back too. It is not this branch's PR.
+	prs = slices.DeleteFunc(prs, func(pr PR) bool { return pr.IsCrossRepository })
 	if len(prs) == 0 {
 		return nil, ErrPRNotFound
 	}
