@@ -195,7 +195,8 @@ func TestCommentSelectionSurvivesRefresh(t *testing.T) {
 	m.detailView.cursors[conversationTab] = 1
 
 	newer := gh.Comment{ID: 43, NodeID: "IC_43", Body: "new", CreatedAt: "2026-08-02T10:00:00Z"}
-	u, _ := m.Update(githubRefreshed{pr: gh.PR{Number: 1}, comments: []gh.Comment{comment, newer}})
+	u, _ := m.Update(githubMetadataRefreshed{pr: gh.PR{Number: 1}})
+	u, _ = u.(Model).Update(githubConversationRefreshed{number: 1, comments: []gh.Comment{comment, newer}})
 	m = u.(Model)
 	if selected := m.selectedConversationItem(); selected == nil || selected.comment == nil || selected.comment.NodeID != "IC_42" {
 		t.Fatalf("selection moved after refresh: %#v", selected)
@@ -215,11 +216,8 @@ func TestDescriptionOrderAndSelectionSurviveRefresh(t *testing.T) {
 		t.Fatalf("conversation order = %#v", items)
 	}
 	m.detailView.cursors[conversationTab] = 0
-	u, _ := m.Update(githubRefreshed{
-		pr:         gh.PR{URL: "https://example/pr/1", Body: "edited", CreatedAt: "2026-08-01T10:00:00Z"},
-		comments:   m.cache.Comments,
-		activities: m.cache.Activities,
-	})
+	u, _ := m.Update(githubMetadataRefreshed{pr: gh.PR{URL: "https://example/pr/1", Body: "edited", CreatedAt: "2026-08-01T10:00:00Z"}})
+	u, _ = u.(Model).Update(githubConversationRefreshed{comments: m.cache.Comments, activities: m.cache.Activities})
 	m = u.(Model)
 	selected := m.selectedConversationItem()
 	if selected == nil || selected.pr == nil || selected.pr.Body != "edited" || m.detailView.cursors[conversationTab] != 0 {
@@ -254,7 +252,7 @@ func TestPublishInsertionPreservesConversationSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	u, _ := m.Update(publishDone{result: publish.Result{PR: *cache.PR, Created: true}})
+	u, _ := m.Update(publishDone{head: m.detailView.head, cachePath: m.cachePath, result: publish.Result{PR: *cache.PR, Created: true}})
 	m = u.(Model)
 	selected := m.selectedConversationItem()
 	if selected == nil || selected.event == nil || selected.event.Title != "selected" || m.detailView.cursors[conversationTab] != 1 {
@@ -372,7 +370,7 @@ func TestConversationKeepsScrollAcrossSyncsAndReloads(t *testing.T) {
 		t.Fatalf("a background sync moved the view to %d, want %d", m.list.YOffset(), scrolled)
 	}
 
-	u, _ := m.Update(githubRefreshed{generation: m.targetGeneration, pr: pr, comments: m.cache.Comments})
+	u, _ := m.Update(githubConversationRefreshed{generation: m.targetGeneration, number: pr.Number, comments: m.cache.Comments})
 	reloaded := u.(Model)
 	if got := reloaded.list.YOffset(); got != scrolled {
 		t.Fatalf("a reload moved the view to %d, want %d", got, scrolled)

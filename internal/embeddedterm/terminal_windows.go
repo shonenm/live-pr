@@ -47,3 +47,5 @@ func (t *Terminal) Err() error {
 	return t.err
 }
 func (t *Terminal) Close() {}
+
+func (t *Terminal) Matches(string, []string) bool { return false }

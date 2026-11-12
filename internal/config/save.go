@@ -25,6 +25,12 @@ func ViewsPath(repoRoot string) string {
 // setting — and the comments and layout around them — exactly as written.
 func SaveViews(path string, views []View) error {
 	views = NormalizeViews(views)
+	// A config managed by a dotfiles tool is a symlink into its repository.
+	// Write the file it points at: renaming over the link would leave a
+	// private copy that the tool's next run replaces, losing the views.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
 	existing, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read config %s: %w", path, err)

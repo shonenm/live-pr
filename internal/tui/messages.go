@@ -30,6 +30,9 @@ type currentBranchPRLoaded struct {
 	stateOnly bool
 }
 
+// prPreviewDue fires when the preview debounce for a PR-list row elapses.
+type prPreviewDue struct{ number int }
+
 type prPreviewLoaded struct {
 	generation uint64
 	number     int
@@ -68,30 +71,6 @@ type remoteFilesLoaded struct {
 	files      []git.ChangedFile
 	stats      git.ChangeStats
 	err        error
-}
-
-type remoteLoaded struct {
-	generation        uint64
-	pr                gh.PR
-	headRef           string
-	base              string
-	diffBase          string
-	commits           []git.Commit
-	files             []git.ChangedFile
-	stats             git.ChangeStats
-	comments          []gh.Comment
-	activities        []gh.Activity
-	reviews           []gh.Review
-	reviewComments    []gh.ReviewThreadComment
-	readiness         git.MergeReadiness
-	refErr            error
-	snapshotErr       error
-	previewErr        error
-	commentsErr       error
-	activitiesErr     error
-	reviewsErr        error
-	reviewCommentsErr error
-	readinessErr      error
 }
 
 type localPollTick struct{ generation uint64 }
@@ -139,24 +118,12 @@ type githubConversationRefreshed struct {
 	reviewCommentsErr error
 }
 
-type githubRefreshed struct {
-	generation        uint64
-	pr                gh.PR
-	comments          []gh.Comment
-	activities        []gh.Activity
-	reviews           []gh.Review
-	reviewComments    []gh.ReviewThreadComment
-	err               error
-	commentsErr       error
-	activitiesErr     error
-	reviewsErr        error
-	reviewCommentsErr error
-}
-
 type publishDone struct {
-	generation uint64
-	result     publish.Result
-	err        error
+	// head and cachePath name the target the publish started on.
+	head      string
+	cachePath string
+	result    publish.Result
+	err       error
 }
 
 type browserDone struct {

@@ -77,35 +77,61 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string
 	}
 	base = git.ResolveBase(base)
 	diffBase, headRev, reviewRange := localReviewRange(base, cache.PR, "HEAD", false)
-	_, syncErr := timeline.SyncCommits(st.Timeline(), diffBase)
-	events, err := event.Load(st.Timeline())
-	if err != nil {
-		return localData{}, err
-	}
-	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
-	commits, commitErr := git.Commits(diffBase)
 	fileHead := ""
 	if publishedReviewHead(cache.PR) != "" {
 		fileHead = headRev
 	}
-	files, fileErr := git.ChangedFilesRange(diffBase, fileHead)
-	stats, statsErr := git.DiffStats(diffBase, fileHead)
+	// The scans below are independent once the range is known. Run one after
+	// another, hydration cost the sum of some twenty git spawns.
+	var (
+		wg               sync.WaitGroup
+		events           []event.Event
+		commits          []git.Commit
+		remoteCommits    []git.Commit
+		files            []git.ChangedFile
+		stats            git.ChangeStats
+		localHeadOID     string
+		localSnapshot    git.LocalSnapshot
+		revisionRelation git.RevisionRelation
+		publishedCommits int
+		localDiverged    bool
+		revisionAhead    int
+		revisionBehind   int
+		mergeReadiness   git.MergeReadiness
+
+		syncErr, eventsErr, commitErr, fileErr, statsErr error
+		headErr, snapshotErr, revisionErr                error
+		mergeReadinessErr                                error
+	)
+	wg.Go(func() {
+		_, syncErr = timeline.SyncCommits(st.Timeline(), diffBase)
+		events, eventsErr = event.Load(st.Timeline())
+	})
+	wg.Go(func() {
+		commits, commitErr = git.Commits(diffBase)
+		revisionRelation, publishedCommits, localDiverged, remoteCommits = commitSections(diffBase, commits, cache.PR)
+		if cache.PR != nil && cache.PR.HeadRefOID != "" {
+			revisionAhead, revisionBehind, revisionErr = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
+			if revisionErr != nil {
+				revisionRelation = git.RevisionUnknown
+			}
+		}
+	})
+	wg.Go(func() { files, fileErr = git.ChangedFilesRange(diffBase, fileHead) })
+	wg.Go(func() { stats, statsErr = git.DiffStats(diffBase, fileHead) })
+	wg.Go(func() { localHeadOID, headErr = git.Revision("HEAD") })
+	wg.Go(func() { localSnapshot, snapshotErr = git.CurrentLocalSnapshot() })
+	wg.Go(func() { mergeReadiness, mergeReadinessErr = git.CheckMergeReadiness(base, "HEAD") })
+	wg.Wait()
+	if eventsErr != nil {
+		return localData{}, eventsErr
+	}
+	sort.SliceStable(events, func(i, j int) bool { return events[i].TS < events[j].TS })
 	if len(files) > stats.Files {
 		stats.Files = len(files)
 	}
-	localHeadOID, headErr := git.Revision("HEAD")
-	localSnapshot, snapshotErr := git.CurrentLocalSnapshot()
 	if snapshotErr == nil && localSnapshot.State.Branch != st.Branch {
 		return localData{}, fmt.Errorf("checkout changed during local load: %s → %s", st.Branch, localSnapshot.State.Branch)
-	}
-	revisionRelation, publishedCommits, localDiverged, remoteCommits := commitSections(diffBase, commits, cache.PR)
-	revisionAhead, revisionBehind := 0, 0
-	var revisionErr error
-	if cache.PR != nil && cache.PR.HeadRefOID != "" {
-		revisionAhead, revisionBehind, revisionErr = git.RevisionDistance("HEAD", cache.PR.HeadRefOID)
-		if revisionErr != nil {
-			revisionRelation = git.RevisionUnknown
-		}
 	}
 	worktree := localSnapshot.Worktree
 	dirty := worktree.Total() > 0
@@ -129,7 +155,6 @@ func loadLocalData(st *store.Store, cache gh.Cache, hintedPR *gh.PR, base string
 	if cache.Warning != "" {
 		warnings = append(warnings, cache.Warning)
 	}
-	mergeReadiness, mergeReadinessErr := git.CheckMergeReadiness(base, "HEAD")
 	return localData{
 		cache:            cache,
 		base:             base,
@@ -201,30 +226,24 @@ func fetchPRPreview(client githubClient, number int, generation uint64) tea.Cmd 
 	}
 }
 
-func fetchGitHub(client githubClient, head string, number int, generation uint64, _ gh.PRDetail) tea.Cmd {
-	metadata := func() tea.Msg {
-		var pr gh.PR
-		var err error
-		if number == 0 {
-			pr, err = client.FindForHead(head)
-		} else {
-			pr, err = client.FindPreview(number)
+func fetchGitHub(client githubClient, head string, number int, generation uint64) tea.Cmd {
+	if number == 0 {
+		// Resolve the branch once and feed both halves from it: looking it up
+		// per half doubled every gh pr list call.
+		return func() tea.Msg {
+			pr, err := client.FindForHead(head)
+			metadata := func() tea.Msg { return githubMetadataRefreshed{generation: generation, pr: pr, err: err} }
+			if err != nil {
+				return tea.BatchMsg{metadata, func() tea.Msg { return githubConversationRefreshed{generation: generation, err: err} }}
+			}
+			return tea.BatchMsg{metadata, fetchConversation(client, pr.Number, generation)}
 		}
+	}
+	metadata := func() tea.Msg {
+		pr, err := client.FindPreview(number)
 		return githubMetadataRefreshed{generation: generation, pr: pr, err: err}
 	}
-	conversation := func() tea.Msg {
-		conversationNumber := number
-		if conversationNumber == 0 {
-			pr, err := client.FindForHead(head)
-			if err != nil {
-				return githubConversationRefreshed{generation: generation, err: err}
-			}
-			conversationNumber = pr.Number
-		}
-		loaded := client.LoadConversation(conversationNumber)
-		return githubConversationRefreshed{generation: generation, number: conversationNumber, comments: loaded.Comments, activities: loaded.Activities, reviews: loaded.Reviews, reviewComments: loaded.ReviewComments, commentsErr: loaded.CommentsErr, activitiesErr: loaded.ActivitiesErr, reviewsErr: loaded.ReviewsErr, reviewCommentsErr: loaded.ReviewCommentsErr}
-	}
-	return tea.Batch(metadata, conversation)
+	return tea.Batch(metadata, fetchConversation(client, number, generation))
 }
 
 const localPollInterval = 2 * time.Second
@@ -494,7 +513,7 @@ func fetchConversation(client githubClient, number int, generation uint64) tea.C
 	}
 }
 
-func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, _ gh.PRDetail) tea.Cmd {
+func fetchRemotePR(client githubClient, pr gh.PR, generation uint64) tea.Cmd {
 	metadata := func() tea.Msg {
 		fresh, err := client.FindPreview(pr.Number)
 		return githubMetadataRefreshed{generation: generation, pr: fresh, err: err}
@@ -503,7 +522,9 @@ func fetchRemotePR(client githubClient, pr gh.PR, generation uint64, _ gh.PRDeta
 		headRef, headOID, err := git.FetchPull(pr.Number, pr.BaseRefName)
 		return remoteRefsLoaded{generation: generation, number: pr.Number, prURL: pr.URL, headRef: headRef, headOID: headOID, base: git.ResolveBase(pr.BaseRefName), diffBase: remoteReviewBase(pr), err: err}
 	}
-	return tea.Batch(metadata, fetchConversation(client, pr.Number, generation), pollCI(client, generation, pr.Number), refs)
+	// No CI poll here: the preview above already carries statusCheckRollup,
+	// and the conversation result starts the poll timer.
+	return tea.Batch(metadata, fetchConversation(client, pr.Number, generation), refs)
 }
 
 func fetchRemoteCommits(number int, generation uint64, diffBase, headRef string) tea.Cmd {
@@ -528,60 +549,6 @@ func fetchRemoteFiles(number int, generation uint64, diffBase, headRef string) t
 			err = statsErr
 		}
 		return remoteFilesLoaded{generation: generation, number: number, files: files, stats: stats, err: err}
-	}
-}
-
-func fetchRemotePRDetail(client githubClient, pr gh.PR, generation uint64, prev gh.PRDetail) tea.Cmd {
-	return func() tea.Msg {
-		var headRef, headOID string
-		var comments []gh.Comment
-		var activities []gh.Activity
-		var reviews []gh.Review
-		var reviewComments []gh.ReviewThreadComment
-		var refErr, snapshotErr, previewErr, commentsErr, activitiesErr, reviewsErr, reviewCommentsErr, readinessErr error
-		var readiness git.MergeReadiness
-		number, base := pr.Number, pr.BaseRefName
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			headRef, headOID, refErr = git.FetchPull(number, base)
-		}()
-		go func() {
-			defer wg.Done()
-			detail := client.LoadPRDetail(number, prev)
-			comments, activities = detail.Comments, detail.Activities
-			reviews, reviewComments = detail.Reviews, detail.ReviewComments
-			previewErr, commentsErr, activitiesErr = detail.PreviewErr, detail.CommentsErr, detail.ActivitiesErr
-			reviewsErr, reviewCommentsErr = detail.ReviewsErr, detail.ReviewCommentsErr
-			if previewErr == nil {
-				pr = detail.PR
-			}
-		}()
-		wg.Wait()
-		if refErr == nil {
-			if previewErr == nil {
-				snapshotErr = remoteSnapshotError(pr.HeadRefOID, headOID)
-			}
-			if snapshotErr == nil {
-				pr.HeadRefOID = headOID
-			}
-		}
-		// The range scans run here so handleRemoteLoaded stays subprocess-free
-		// on the Update goroutine.
-		var resolvedBase, diffBase string
-		var commits []git.Commit
-		var files []git.ChangedFile
-		var stats git.ChangeStats
-		if refErr == nil && snapshotErr == nil {
-			resolvedBase = git.ResolveBase(pr.BaseRefName)
-			diffBase = remoteReviewBase(pr)
-			readiness, readinessErr = git.CheckMergeReadiness(resolvedBase, headRef)
-			commits, _ = git.CommitsRange(diffBase, headRef)
-			files, _ = git.ChangedFilesRange(diffBase, headRef)
-			stats, _ = git.DiffStats(diffBase, headRef)
-		}
-		return remoteLoaded{generation: generation, pr: pr, headRef: headRef, base: resolvedBase, diffBase: diffBase, commits: commits, files: files, stats: stats, comments: comments, activities: activities, reviews: reviews, reviewComments: reviewComments, readiness: readiness, refErr: refErr, snapshotErr: snapshotErr, previewErr: previewErr, commentsErr: commentsErr, activitiesErr: activitiesErr, reviewsErr: reviewsErr, reviewCommentsErr: reviewCommentsErr, readinessErr: readinessErr}
 	}
 }
 
