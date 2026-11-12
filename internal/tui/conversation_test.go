@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -514,5 +515,57 @@ func TestActivitySummaryFormatsEventDetails(t *testing.T) {
 				t.Fatalf("activitySummary(%s) = %q, want %q", tc.activity.Event, got, tc.want)
 			}
 		})
+	}
+}
+
+func longConversationModel(t *testing.T) Model {
+	t.Helper()
+	m := testModel()
+	for i := range 6 {
+		comment := gh.Comment{ID: int64(i + 1), Body: strings.Repeat("line\n\n", 8), CreatedAt: fmt.Sprintf("2026-08-01T10:0%d:00Z", i)}
+		comment.User.Login = "alice"
+		m.cache.Comments = append(m.cache.Comments, comment)
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	return u.(Model)
+}
+
+// j/k read the conversation a line at a time; the selection follows only
+// when its card leaves the screen, and still reaches the last card.
+func TestConversationScrollsByLineAndDragsSelection(t *testing.T) {
+	m := longConversationModel(t)
+	u, _ := m.Update(keyPress("j"))
+	m = u.(Model)
+	if m.list.YOffset() != 1 || m.detailView.cursors[conversationTab] != 0 {
+		t.Fatalf("j: offset=%d cursor=%d, want one line and the same card", m.list.YOffset(), m.detailView.cursors[conversationTab])
+	}
+	last := len(m.conversationItems()) - 1
+	for range 500 {
+		u, _ = m.Update(keyPress("j"))
+		m = u.(Model)
+		cursor := m.detailView.cursors[conversationTab]
+		row := m.detailView.conversationRows[cursor]
+		if row[1] <= m.list.YOffset() || row[0] >= m.list.YOffset()+m.list.Height() {
+			t.Fatalf("selected card %d left the screen at offset %d", cursor, m.list.YOffset())
+		}
+	}
+	if !m.list.AtBottom() || m.detailView.cursors[conversationTab] != last {
+		t.Fatalf("after scrolling down: bottom=%v cursor=%d, want the last card %d", m.list.AtBottom(), m.detailView.cursors[conversationTab], last)
+	}
+	offset := m.list.YOffset()
+	u, _ = m.Update(keyPress("k"))
+	m = u.(Model)
+	if m.list.YOffset() != offset-1 {
+		t.Fatalf("k: offset=%d, want %d", m.list.YOffset(), offset-1)
+	}
+}
+
+func TestOpeningAnotherPRStartsAtTheTop(t *testing.T) {
+	m := longConversationModel(t)
+	m.list.SetYOffset(7)
+	m.detailView.cursors[conversationTab] = 3
+	m.openRemote(gh.PR{Number: 9, Title: "other", HeadRefName: "other", BaseRefName: "main"})
+	if m.list.YOffset() != 0 || m.detailView.cursors[conversationTab] != 0 {
+		t.Fatalf("offset=%d cursor=%d, want the top", m.list.YOffset(), m.detailView.cursors[conversationTab])
 	}
 }

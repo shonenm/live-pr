@@ -43,7 +43,15 @@ func loadStatus(refresh bool) (statusOutput, error) {
 		return statusOutput{}, err
 	}
 	if refresh {
-		pr, findErr := gh.New().FindForHead(st.Branch)
+		// A checked-out fork PR is never this branch's PR by head, so refresh
+		// the pin by number rather than dropping it.
+		var pr gh.PR
+		var findErr error
+		if cache.ExplicitCheckout && cache.PR != nil && cache.PR.IsCrossRepository {
+			pr, findErr = gh.New().Find(cache.PR.Number)
+		} else {
+			pr, findErr = gh.New().FindForHead(st.Branch)
+		}
 		switch {
 		case findErr == nil:
 			cache.PR = &pr

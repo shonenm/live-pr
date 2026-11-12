@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,6 +38,9 @@ func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a real demo git repository")
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the demo gh is a POSIX shell script")
+	}
 	root := t.TempDir()
 	if err := CreateRepo(root, "git"); err != nil {
 		t.Fatal(err)
@@ -66,6 +70,9 @@ func TestDemoProvidesMermaidAndAvatarMetadata(t *testing.T) {
 func TestSetupDemoGitHubProvidesStatefulActions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a real demo git repository and mock gh")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the demo gh is a POSIX shell script")
 	}
 	root := t.TempDir()
 	if err := CreateRepo(root, "git"); err != nil {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/shonenm/live-pr/internal/atomicfile"
 	"github.com/shonenm/live-pr/internal/filelock"
 )
 
@@ -28,6 +29,8 @@ func CommentOutbox(root string, number int) string {
 	return filepath.Join(repoStateRoot(root), "outbox", fmt.Sprintf("%d.json", number))
 }
 
+var errOutboxCorrupt = errors.New("parse comment outbox")
+
 // LoadOutbox reads the queued comments; a missing file is an empty queue.
 func LoadOutbox(path string) ([]OutboxEntry, error) {
 	data, err := os.ReadFile(path)
@@ -39,13 +42,15 @@ func LoadOutbox(path string) ([]OutboxEntry, error) {
 	}
 	var entries []OutboxEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("parse comment outbox %s: %w", path, err)
+		return nil, fmt.Errorf("%w %s: %w", errOutboxCorrupt, path, err)
 	}
 	return entries, nil
 }
 
 // AppendOutbox queues one entry, stamping its identity and creation time,
-// and returns the updated queue.
+// and returns the updated queue. An undecodable queue file is moved aside
+// first: the entry is still queued, and the returned queue is valid alongside
+// an *atomicfile.QuarantinedError naming where the old file went.
 func AppendOutbox(path string, entry OutboxEntry) ([]OutboxEntry, error) {
 	return mutateOutbox(path, func(entries []OutboxEntry) []OutboxEntry {
 		if entry.ID == "" {
@@ -88,12 +93,23 @@ func mutateOutbox(path string, mutate func([]OutboxEntry) []OutboxEntry) ([]Outb
 	defer func() { _ = unlock() }()
 
 	entries, err := LoadOutbox(path)
+	var quarantined *atomicfile.QuarantinedError
+	if errors.Is(err, errOutboxCorrupt) {
+		// Refusing the mutation would drop the comment text an append
+		// carries, which exists nowhere else; start over from an empty queue.
+		if err = atomicfile.Quarantine(path, err); errors.As(err, &quarantined) {
+			err = nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	entries = mutate(entries)
 	if err := saveOutbox(path, entries); err != nil {
 		return nil, err
+	}
+	if quarantined != nil {
+		return entries, quarantined
 	}
 	return entries, nil
 }

@@ -55,8 +55,9 @@ func asyncCompletion(msg tea.Msg) bool {
 		githubMetadataRefreshed, githubConversationRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
 		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
-		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
+		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded, conversationWarmed,
 		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, prTargetPrepared, rawDetailLoaded, baseResolved,
+		cacheSaved, navigatorCacheSaved,
 		browserDone, tea.WindowSizeMsg, tea.ColorProfileMsg, bspinner.TickMsg:
 		return true
 	}
@@ -65,8 +66,10 @@ func asyncCompletion(msg tea.Msg) bool {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// A modal popup owns the keyboard only; async completions fall through to
-	// the main switch below so background work keeps landing.
-	if m.overlay != nil && !asyncCompletion(msg) {
+	// the main switch below so background work keeps landing. The embedded
+	// PTY's lifecycle messages pass too: its output listener is re-armed only
+	// by handling the previous chunk, so dropping one freezes the review pane.
+	if m.overlay != nil && !asyncCompletion(msg) && !m.diffTerminal.Handles(msg) {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			return m.overlay.handleKey(m, keyMsg)
 		}
@@ -265,6 +268,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailView.invalidateConversation()
 		m.layout()
 		return m, m.sync()
+	case conversationWarmed:
+		return m, m.handleConversationWarmed(msg)
 	case avatarColorsLoaded:
 		// Key-only check for the same reason as richBodiesLoaded above.
 		if msg.key != richContentKey(m.list.Width()-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {

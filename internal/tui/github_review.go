@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/shonenm/live-pr/internal/atomicfile"
 	gh "github.com/shonenm/live-pr/internal/github"
 	"github.com/shonenm/live-pr/internal/store"
 )
@@ -22,7 +23,12 @@ func (m *Model) loadReviewDraft() error {
 	}
 	m.reviewDraftPath = store.PullRequestReviewDraft(m.root, m.cache.PR.Number)
 	draft, err := gh.LoadReviewDraft(m.reviewDraftPath, m.cache.PR.Number, m.cache.PR.HeadRefOID)
-	if err != nil {
+	var quarantined *atomicfile.QuarantinedError
+	if errors.As(err, &quarantined) {
+		// The unreadable draft was moved aside; reviewing continues on the
+		// fresh one and the status line says where the old file went.
+		m.status = "review draft: " + err.Error()
+	} else if err != nil {
 		return err
 	}
 	m.reviewDraft = draft
@@ -220,6 +226,13 @@ func (o reviewSubmitOverlay) handleKey(m Model, msg tea.KeyPressMsg) (Model, tea
 			m.overlay = o
 			return m, nil
 		case "ctrl+s":
+			// Reload first: inline comments added since the popup opened (for
+			// example by `live-pr review add`) must be submitted, not
+			// overwritten by the copy read when it opened.
+			if err := m.loadReviewDraft(); err != nil {
+				m.status = err.Error()
+				return m, nil
+			}
 			m.reviewDraft.Body = strings.TrimSpace(m.localEditor.Value())
 			if o.event == gh.ReviewRequestChangesEvent && m.reviewDraft.Body == "" {
 				m.status = "request changes requires a general review body"

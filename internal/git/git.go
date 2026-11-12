@@ -3,12 +3,14 @@
 package git
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +27,9 @@ func run(args ...string) (string, error) {
 		defer done()
 	}
 	cmd := exec.Command("git", args...)
+	// live-pr reads in the background while agents commit in the same
+	// checkout: never take index.lock just to refresh the stat cache.
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -162,13 +167,30 @@ func IsAncestor(ancestor, descendant string) (bool, error) {
 // Push pushes the branch to origin, setting upstream. A stalled SSH/HTTPS
 // transport must not hang the caller forever, so the push is bounded; the
 // limit is longer than FetchPull's because a push carries data up.
-func Push(branch string) error {
+func Push(branch string) error { return push(branch, false) }
+
+// PushNoPrompt is Push for callers that own the terminal, such as the TUI:
+// a missing credential fails the push instead of prompting on the tty.
+func PushNoPrompt(branch string) error { return push(branch, true) }
+
+// noPrompt stops a network git command from asking for credentials, a key
+// passphrase or host-key confirmation on the controlling terminal, where the
+// prompt would draw over the TUI and compete with it for keystrokes.
+func noPrompt(cmd *exec.Cmd) {
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	detachTerminal(cmd)
+}
+
+func push(branch string, quiet bool) error {
 	if done := debugtime.Start("git push"); done != nil {
 		defer done()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "push", "-u", "origin", branch)
+	if quiet {
+		noPrompt(cmd)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if _, err := cmd.Output(); err != nil {
@@ -368,7 +390,7 @@ func contentConflicts(base, head string) ([]string, error) {
 	}
 	overlap := make([]string, 0, min(len(baseFiles), len(headFiles)))
 	for path := range baseFiles {
-		if headFiles[path] {
+		if _, ok := headFiles[path]; ok {
 			overlap = append(overlap, path)
 		}
 	}
@@ -381,36 +403,52 @@ func contentConflicts(base, head string) ([]string, error) {
 		return nil, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	var blobs blobReader
+	defer blobs.close()
 	var files []string
 	for _, path := range overlap {
-		ours, oursOK := blob(head, path)
-		theirs, theirsOK := blob(base, path)
-		ancestor, ancestorOK := blob(mergeBase, path)
-		if !oursOK || !theirsOK {
+		ours, theirs, ancestor := headFiles[path].after, baseFiles[path].after, headFiles[path].before
+		if ours == "" || theirs == "" {
 			// The path changed on both sides but is absent on one: a
 			// modify/delete overlap, which is a conflict. (Absent on both
 			// is delete/delete, which is not.)
-			if oursOK != theirsOK {
+			if ours != theirs {
 				files = append(files, path)
 			}
 			continue
 		}
-		if len(ours) > maxContentConflictBlob || len(theirs) > maxContentConflictBlob {
+		if ours == theirs || ours == ancestor || theirs == ancestor {
+			// Both sides hold the same content, or one side left the
+			// content alone (a mode change): nothing to merge.
 			continue
 		}
-		if !ancestorOK {
-			ancestor = nil
+		oursData, err := blobs.read(ours)
+		if err != nil {
+			return nil, err
+		}
+		theirsData, err := blobs.read(theirs)
+		if err != nil {
+			return nil, err
+		}
+		if len(oursData) > maxContentConflictBlob || len(theirsData) > maxContentConflictBlob {
+			continue
+		}
+		var ancestorData []byte
+		if ancestor != "" {
+			if ancestorData, err = blobs.read(ancestor); err != nil {
+				return nil, err
+			}
 		}
 		oursPath := filepath.Join(dir, "ours")
 		basePath := filepath.Join(dir, "base")
 		theirsPath := filepath.Join(dir, "theirs")
-		if err := os.WriteFile(oursPath, ours, 0o600); err != nil {
+		if err := os.WriteFile(oursPath, oursData, 0o600); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(basePath, ancestor, 0o600); err != nil {
+		if err := os.WriteFile(basePath, ancestorData, 0o600); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(theirsPath, theirs, 0o600); err != nil {
+		if err := os.WriteFile(theirsPath, theirsData, 0o600); err != nil {
 			return nil, err
 		}
 		cmd := exec.Command("git", "merge-file", "--quiet", oursPath, basePath, theirsPath)
@@ -425,26 +463,102 @@ func contentConflicts(base, head string) ([]string, error) {
 	return files, nil
 }
 
-func changedPaths(from, to string) (map[string]bool, error) {
-	out, err := run("diff", "--name-only", "-z", from, to)
+// pathChange holds the blob IDs of one changed path on either end of a diff.
+// An empty ID means there is no file content there: the path is absent, or
+// it is a submodule.
+type pathChange struct {
+	before, after string
+}
+
+func changedPaths(from, to string) (map[string]pathChange, error) {
+	out, err := run("diff", "--raw", "--no-abbrev", "-z", from, to)
 	if err != nil {
 		return nil, err
 	}
-	paths := map[string]bool{}
-	for _, path := range strings.Split(out, "\x00") {
-		if path != "" {
-			paths[path] = true
+	paths := map[string]pathChange{}
+	fields := strings.Split(out, "\x00")
+	for i := 0; i+1 < len(fields); i += 2 {
+		// ":<old mode> <new mode> <old id> <new id> <status>", then the path.
+		meta := strings.Fields(strings.TrimPrefix(fields[i], ":"))
+		if len(meta) != 5 {
+			return nil, fmt.Errorf("git diff --raw %s %s: unexpected record %q", from, to, fields[i])
 		}
+		change := pathChange{before: blobID(meta[0], meta[2]), after: blobID(meta[1], meta[3])}
+		path := fields[i+1]
+		if meta[4][0] == 'R' || meta[4][0] == 'C' {
+			// A rename or copy names its source first; the "before" ID
+			// belongs to that source, and the destination did not exist.
+			if i+2 >= len(fields) {
+				return nil, fmt.Errorf("git diff --raw %s %s: truncated record %q", from, to, fields[i])
+			}
+			i++
+			path = fields[i+1]
+			change.before = ""
+		}
+		paths[path] = change
 	}
 	return paths, nil
 }
 
-func blob(rev, path string) ([]byte, bool) {
-	out, err := exec.Command("git", "show", rev+":"+path).Output()
-	if err != nil {
-		return nil, false
+// blobID returns id when a diff side holds file content, and "" when the
+// path is absent there (all-zero ID) or is a submodule.
+func blobID(mode, id string) string {
+	if mode == "160000" || strings.Trim(id, "0") == "" {
+		return ""
 	}
-	return out, true
+	return id
+}
+
+// blobReader reads blobs through one `git cat-file --batch` process, started
+// on first use.
+type blobReader struct {
+	cmd   *exec.Cmd
+	stdin io.WriteCloser
+	out   *bufio.Reader
+}
+
+func (r *blobReader) read(id string) ([]byte, error) {
+	if r.cmd == nil {
+		cmd := exec.Command("git", "cat-file", "--batch")
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			return nil, err
+		}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return nil, err
+		}
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("git cat-file --batch: %w", err)
+		}
+		r.cmd, r.stdin, r.out = cmd, stdin, bufio.NewReader(stdout)
+	}
+	if _, err := io.WriteString(r.stdin, id+"\n"); err != nil {
+		return nil, fmt.Errorf("git cat-file --batch: %w", err)
+	}
+	// "<id> <type> <size>", the contents, then a newline.
+	header, err := r.out.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("git cat-file --batch %s: %w", id, err)
+	}
+	var gotID, kind string
+	var size int
+	if _, err := fmt.Sscan(header, &gotID, &kind, &size); err != nil {
+		return nil, fmt.Errorf("git cat-file --batch %s: unexpected reply %q", id, strings.TrimSpace(header))
+	}
+	data := make([]byte, size+1)
+	if _, err := io.ReadFull(r.out, data); err != nil {
+		return nil, fmt.Errorf("git cat-file --batch %s: %w", id, err)
+	}
+	return data[:size], nil
+}
+
+func (r *blobReader) close() {
+	if r.cmd == nil {
+		return
+	}
+	_ = r.stdin.Close()
+	_ = r.cmd.Wait()
 }
 
 func looksLikeOID(value string) bool {
@@ -804,7 +918,7 @@ func workingTreeHash(path string) string {
 	}
 	var data []byte
 	if info.IsDir() {
-		data, err = exec.Command("git", "-C", path, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal").Output()
+		data, err = exec.Command("git", "--no-optional-locks", "-C", path, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal").Output()
 	} else {
 		data, err = os.ReadFile(path)
 	}
@@ -904,6 +1018,7 @@ func FetchPull(number int, base string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", baseSpec, headSpec)
+	noPrompt(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", "", fmt.Errorf("git fetch PR #%d: %w: %s", number, err, strings.TrimSpace(string(out)))
 	}
@@ -931,6 +1046,7 @@ func CheckoutPullHead(branch string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "fetch", "--no-tags", "origin", refSpec)
+	noPrompt(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git fetch %s: %w: %s", branch, err, strings.TrimSpace(string(out)))
 	}
