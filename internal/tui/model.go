@@ -1206,6 +1206,7 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 	})
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
+	warmCmd := m.warmConversation()
 	// Chase the selection only when it actually moved. Syncing runs on every
 	// background arrival and on every reload, and scrolling back to the
 	// selection there would drag a reader who had scrolled elsewhere.
@@ -1221,7 +1222,7 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 
 	detail, rawCmd := m.loadDetail()
 	detailCmd := m.syncDetail(detail)
-	return tea.Batch(start, rawCmd, detailCmd, m.startSpinner())
+	return tea.Batch(start, rawCmd, detailCmd, warmCmd, m.startSpinner())
 }
 
 // resetListPosition starts a newly opened target at the top. The left pane's
