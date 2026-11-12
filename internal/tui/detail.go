@@ -88,6 +88,7 @@ type detailModel struct {
 	conversationRenderValid bool
 	conversationRows        [][2]int // per-item [start, end) line ranges of the cached render
 	convItemCache           map[string][]string
+	convWarm                *conversationWarmup
 	richBodies              map[string]string
 	richContentWidth        int
 	lastRichContentKey      [sha256.Size]byte

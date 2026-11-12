@@ -262,6 +262,12 @@ type diffRendered struct {
 	err              error
 }
 
+// conversationWarmed reports that warmConversation rendered jobs into the
+// markdown cache.
+type conversationWarmed struct {
+	jobs []markdownJob
+}
+
 type richBodiesLoaded struct {
 	key    [sha256.Size]byte
 	bodies map[string]string

@@ -55,7 +55,7 @@ func asyncCompletion(msg tea.Msg) bool {
 		githubMetadataRefreshed, githubConversationRefreshed, githubRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
 		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
-		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded,
+		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded, conversationWarmed,
 		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, prTargetPrepared, rawDetailLoaded, baseResolved,
 		cacheSaved, navigatorCacheSaved,
 		browserDone, tea.WindowSizeMsg, tea.ColorProfileMsg, bspinner.TickMsg:
@@ -271,6 +271,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailView.invalidateConversation()
 		m.layout()
 		return m, m.sync()
+	case conversationWarmed:
+		return m, m.handleConversationWarmed(msg)
 	case avatarColorsLoaded:
 		// Key-only check for the same reason as richBodiesLoaded above.
 		if msg.key != richContentKey(m.list.Width()-7, m.cache.PR, m.cache.Comments, m.cache.Activities) {
