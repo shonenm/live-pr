@@ -238,71 +238,18 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	}
 	if m.detailView.focus == focusReview {
-		if key.Matches(msg, m.keys.Quit) {
-			return m, tea.Quit
-		}
-		if m.diffTerminal != nil && m.diffTerminal.Available() {
-			return m, m.diffTerminal.Update(msg)
-		}
-		if m.fileExplorerMode() && key.Matches(msg, m.keys.Commits) {
-			return m, m.toggleFileCheck()
-		}
-		if msg.String() == "g" {
-			if m.pendingG {
-				m.pendingG = false
-				m.detail.GotoTop()
-			} else {
-				m.pendingG = true
-			}
-			return m, nil
-		}
-		m.pendingG = false
-		if key.Matches(msg, m.keys.Bottom) {
-			m.detail.GotoBottom()
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.PreviewUp) {
-			scrollQuarter(&m.detail, false)
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.PreviewDown) {
-			scrollQuarter(&m.detail, true)
-			return m, nil
-		}
-		switch msg.String() {
-		case "k":
-			m.detail.ScrollUp(1)
-			return m, nil
-		case "j":
-			m.detail.ScrollDown(1)
-			return m, nil
-		}
-		var cmd tea.Cmd
-		m.detail, cmd = m.detail.Update(msg)
-		return m, cmd
+		return m.handleReviewFocusKey(msg)
 	}
-	if m.detailView.focus == focusExplorer {
+	// Ctrl+U/D page the pane the cursor drives: the conversation list, or
+	// the diff next to the file explorer.
+	if key.Matches(msg, m.keys.PreviewUp, m.keys.PreviewDown) {
+		down := key.Matches(msg, m.keys.PreviewDown)
+		if m.detailView.focus == focusConversation {
+			scrollQuarter(&m.list, down)
+			return m, nil
+		}
 		if m.fileExplorerMode() {
-			if key.Matches(msg, m.keys.PreviewUp) {
-				scrollQuarter(&m.detail, false)
-				return m, nil
-			}
-			if key.Matches(msg, m.keys.PreviewDown) {
-				scrollQuarter(&m.detail, true)
-				return m, nil
-			}
-		}
-		if handled, cmd := m.handleVimNavigation(msg); handled {
-			return m, cmd
-		}
-	}
-	if m.screen == detailScreen && m.detailView.focus == focusConversation {
-		if key.Matches(msg, m.keys.PreviewUp) {
-			scrollQuarter(&m.list, false)
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.PreviewDown) {
-			scrollQuarter(&m.list, true)
+			scrollQuarter(&m.detail, down)
 			return m, nil
 		}
 	}
@@ -437,39 +384,65 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmd, m.sync())
 	case key.Matches(msg, m.keys.Down):
-		if m.detailView.focus == focusExplorer {
-			if m.detailView.fileCursor < len(m.detailView.files)-1 {
-				m.detailView.fileCursor++
-				return m, m.sync()
-			}
-			return m, nil
-		}
-		if m.detailView.active == conversationTab {
+		if m.detailView.focus != focusExplorer && m.detailView.active == conversationTab {
 			return m, m.scrollConversation(1)
 		}
-		if m.detailView.cursors[m.detailView.active] < m.activeLen()-1 {
-			m.detailView.cursors[m.detailView.active]++
-			return m, m.sync()
-		}
-		return m, nil
+		return m, m.moveCursorBy(1)
 	case key.Matches(msg, m.keys.Up):
-		if m.detailView.focus == focusExplorer {
-			if m.detailView.fileCursor > 0 {
-				m.detailView.fileCursor--
-				return m, m.sync()
-			}
-			return m, nil
-		}
-		if m.detailView.active == conversationTab {
+		if m.detailView.focus != focusExplorer && m.detailView.active == conversationTab {
 			return m, m.scrollConversation(-1)
 		}
-		if m.detailView.cursors[m.detailView.active] > 0 {
-			m.detailView.cursors[m.detailView.active]--
-			return m, m.sync()
+		return m, m.moveCursorBy(-1)
+	}
+
+	var cmd tea.Cmd
+	m.detail, cmd = m.detail.Update(msg)
+	return m, cmd
+}
+
+// handleReviewFocusKey handles keys while the review pane has focus: the
+// embedded reviewer takes them all when it runs, and the raw-diff fallback
+// scrolls its viewport.
+func (m Model) handleReviewFocusKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Quit) {
+		return m, tea.Quit
+	}
+	if m.diffTerminal != nil && m.diffTerminal.Available() {
+		return m, m.diffTerminal.Update(msg)
+	}
+	if m.fileExplorerMode() && key.Matches(msg, m.keys.Commits) {
+		return m, m.toggleFileCheck()
+	}
+	if msg.String() == "g" {
+		if m.pendingG {
+			m.pendingG = false
+			m.detail.GotoTop()
+		} else {
+			m.pendingG = true
 		}
 		return m, nil
 	}
-
+	m.pendingG = false
+	if key.Matches(msg, m.keys.Bottom) {
+		m.detail.GotoBottom()
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.PreviewUp) {
+		scrollQuarter(&m.detail, false)
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.PreviewDown) {
+		scrollQuarter(&m.detail, true)
+		return m, nil
+	}
+	switch msg.String() {
+	case "k":
+		m.detail.ScrollUp(1)
+		return m, nil
+	case "j":
+		m.detail.ScrollDown(1)
+		return m, nil
+	}
 	var cmd tea.Cmd
 	m.detail, cmd = m.detail.Update(msg)
 	return m, cmd
