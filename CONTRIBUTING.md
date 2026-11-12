@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for taking a look. live-pr is an alpha-stage project maintained by one
-person, so the fastest way to land a change is to open an issue first and agree
-on the approach before writing code.
+Thanks for taking a look. live-pr is maintained by one person, so the fastest
+way to land a change is to open an issue first and agree on the approach before
+writing code.
 
 ## Before you start
 
