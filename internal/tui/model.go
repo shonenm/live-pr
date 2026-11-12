@@ -84,61 +84,33 @@ func (k keyMap) ShortHelp() []key.Binding {
 
 func (k keyMap) FullHelp() [][]key.Binding { return k.helpGroups() }
 
+// contextualKeys reports the bindings that work right now, for the footer and
+// the help modal. The per-screen tables in syncPRListScreen and
+// syncDetailScreen are the single source of that answer: they enable exactly
+// the bindings the key handlers match. Only the states that replace the
+// screen's keys altogether are spelled out here.
 func (m Model) contextualKeys() keyMap {
-	base := keyMap{Help: m.keys.Help, Quit: m.keys.Quit}
-	if m.overlay != nil || m.pendingPRAction != noPRAction {
-		base.Select = key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "confirm"))
-		base.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
-		return base
+	modal := keyMap{Help: m.keys.Help, Quit: m.keys.Quit}
+	switch {
+	case m.pendingPRAction != noPRAction:
+		modal.Select = key.NewBinding(key.WithKeys("y"), key.WithHelp(m.pendingPRAction.confirmKeys(), "confirm"))
+		modal.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
+		return modal
+	case m.overlay != nil:
+		modal.Select = key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "confirm"))
+		modal.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
+		return modal
+	case m.screen == prListScreen && m.prList.filterEditing:
+		modal.Select = key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "apply filter"))
+		modal.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel filter"))
+		return modal
 	}
-	if m.screen == prListScreen {
-		if m.prList.filterEditing {
-			base.Select = key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "apply filter"))
-			base.Back = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel filter"))
-			return base
-		}
-		base.Up, base.Down, base.PreviewUp, base.PreviewDown = m.keys.Up, m.keys.Down, m.keys.PreviewUp, m.keys.PreviewDown
-		base.Top, base.Bottom, base.PrevView, base.NextView = m.keys.Top, m.keys.Bottom, m.keys.PrevView, m.keys.NextView
-		base.Filter, base.Refresh, base.ManageViews = m.keys.Filter, m.keys.Refresh, m.keys.ManageViews
-		if pr := m.prList.selectedPR(); pr != nil {
-			base.Select, base.Status = m.keys.Select, m.keys.Status
-			if pr.URL != "" {
-				base.CopyURL = m.keys.CopyURL
-			}
-			if pr.Number > 0 && !m.isCurrentTargetPR(*pr) {
-				base.Checkout = m.keys.Checkout
-			}
-			if m.prList.state == openPRListState && pr.Number > 0 {
-				base.Close = m.keys.Close
-				if pr.HeadRefOID != "" {
-					base.Merge = m.keys.Merge
-				}
-			}
-			if _, ok := m.prList.stackForPR(pr.Number); ok {
-				base.ToggleStack = m.keys.ToggleStack
-			}
-		}
-		return base
+	current := m.keys
+	if m.screen == detailScreen {
+		// Detail keeps c for the commits tab, so checkout answers to C only.
+		current.Checkout.SetHelp("C", current.Checkout.Help().Desc)
 	}
-	base.Up, base.Down, base.PreviewUp, base.PreviewDown = m.keys.Up, m.keys.Down, m.keys.PreviewUp, m.keys.PreviewDown
-	base.Top, base.Bottom, base.Focus, base.PRList = m.keys.Top, m.keys.Bottom, m.keys.Focus, m.keys.PRList
-	base.Commits, base.Conflicts, base.Checks, base.Refresh = m.keys.Commits, m.keys.Conflicts, m.keys.Checks, m.keys.Refresh
-	if !m.remote {
-		base.Publish = m.keys.Publish
-	}
-	if m.cache.PR != nil {
-		base.Status, base.Review = m.keys.Status, m.keys.Review
-		if m.cache.PR.URL != "" {
-			base.Browse, base.CopyURL = m.keys.Browse, m.keys.CopyURL
-		}
-		if m.detailView.focus == focusConversation {
-			base.AddComment = m.keys.AddComment
-		}
-		if m.detailView.selectedFile() != nil {
-			base.InlineReview = m.keys.InlineReview
-		}
-	}
-	return base
+	return current
 }
 
 func (m Model) keyHelp() string {
@@ -1138,28 +1110,33 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 	_, stacked := m.prList.stackForPR(m.prList.selectedPRNumber())
 	idle := m.prActionRunning == noPRAction
 	applyKeyStates(map[*key.Binding]bool{
-		&m.keys.Select:      true,
-		&m.keys.PreviewUp:   true,
-		&m.keys.PreviewDown: true,
-		&m.keys.PrevView:    true,
-		&m.keys.NextView:    true,
-		&m.keys.Filter:      true,
-		&m.keys.ToggleStack: stacked,
-		&m.keys.Focus:       false,
-		&m.keys.FocusRight:  false,
-		&m.keys.Commits:     false,
-		&m.keys.Conflicts:   false,
-		&m.keys.Checks:      false,
-		&m.keys.Back:        false,
-		&m.keys.PRList:      false,
-		&m.keys.Browse:      m.selectedBrowseURL() != "",
-		&m.keys.CopyURL:     m.selectedBrowseURL() != "",
-		&m.keys.Publish:     false,
-		&m.keys.Merge:       m.prList.state == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
-		&m.keys.Checkout:    pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
-		&m.keys.Close:       m.prList.state == openPRListState && pr != nil && pr.Number > 0 && idle,
-		&m.keys.Status:      pr != nil && pr.Number > 0,
-		&m.keys.ManageViews: true,
+		&m.keys.Select:       pr != nil,
+		&m.keys.PreviewUp:    true,
+		&m.keys.PreviewDown:  true,
+		&m.keys.PrevView:     true,
+		&m.keys.NextView:     true,
+		&m.keys.Filter:       true,
+		&m.keys.ToggleStack:  stacked,
+		&m.keys.Focus:        false,
+		&m.keys.FocusRight:   false,
+		&m.keys.Commits:      false,
+		&m.keys.Conflicts:    false,
+		&m.keys.Checks:       false,
+		&m.keys.Back:         false,
+		&m.keys.PRList:       false,
+		&m.keys.Browse:       m.selectedBrowseURL() != "",
+		&m.keys.CopyURL:      m.selectedBrowseURL() != "",
+		&m.keys.Publish:      false,
+		&m.keys.Merge:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && pr.HeadRefOID != "" && idle,
+		&m.keys.Checkout:     pr != nil && pr.Number > 0 && !m.isCurrentTargetPR(*pr) && idle,
+		&m.keys.Close:        m.prList.state == openPRListState && pr != nil && pr.Number > 0 && idle,
+		&m.keys.Status:       pr != nil && pr.Number > 0,
+		&m.keys.ManageViews:  true,
+		&m.keys.AddComment:   false,
+		&m.keys.InlineReview: false,
+		&m.keys.EditLocal:    false,
+		&m.keys.DeleteLocal:  false,
+		&m.keys.Review:       false,
 	})
 	content, selectedLine := m.buildPRListRows()
 	m.list.SetContent(content)
@@ -1182,29 +1159,37 @@ func (m *Model) syncPRListScreen(start tea.Cmd) tea.Cmd {
 }
 
 func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
+	// The comment and review keys act on the conversation pane only; with the
+	// reviewer focused the handler forwards them to it.
+	conversation := m.detailView.focus == focusConversation
 	applyKeyStates(map[*key.Binding]bool{
-		&m.keys.Select:      m.detailView.active == commitsTab,
-		&m.keys.PreviewUp:   true,
-		&m.keys.PreviewDown: true,
-		&m.keys.PrevView:    false,
-		&m.keys.NextView:    false,
-		&m.keys.Filter:      false,
-		&m.keys.ToggleStack: false,
-		&m.keys.Focus:       true,
-		&m.keys.FocusRight:  true,
-		&m.keys.Commits:     m.fileExplorerMode() || m.detailView.active != commitsTab,
-		&m.keys.Conflicts:   m.detailView.active != conflictsTab,
-		&m.keys.Checks:      m.cache.PR != nil && m.detailView.active != checksTab,
-		&m.keys.Back:        m.detailView.active != conversationTab,
-		&m.keys.PRList:      true,
-		&m.keys.Browse:      m.selectedBrowseURL() != "",
-		&m.keys.CopyURL:     m.selectedBrowseURL() != "",
-		&m.keys.Publish:     !m.remote && m.currentBranch != "HEAD",
-		&m.keys.Merge:       m.canMergeCurrentPR() && m.prActionRunning == noPRAction,
-		&m.keys.Checkout:    m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR) && m.prActionRunning == noPRAction,
-		&m.keys.Close:       false,
-		&m.keys.Status:      m.cache.PR != nil && m.cache.PR.Number > 0,
-		&m.keys.ManageViews: false,
+		&m.keys.Select:       m.detailView.active == commitsTab,
+		&m.keys.PreviewUp:    true,
+		&m.keys.PreviewDown:  true,
+		&m.keys.PrevView:     false,
+		&m.keys.NextView:     false,
+		&m.keys.Filter:       false,
+		&m.keys.ToggleStack:  false,
+		&m.keys.Focus:        true,
+		&m.keys.FocusRight:   true,
+		&m.keys.Commits:      m.fileExplorerMode() || m.detailView.active != commitsTab,
+		&m.keys.Conflicts:    m.detailView.active != conflictsTab,
+		&m.keys.Checks:       m.cache.PR != nil && m.detailView.active != checksTab,
+		&m.keys.Back:         m.detailView.active != conversationTab,
+		&m.keys.PRList:       true,
+		&m.keys.Browse:       m.selectedBrowseURL() != "",
+		&m.keys.CopyURL:      m.selectedBrowseURL() != "",
+		&m.keys.Publish:      !m.remote && m.currentBranch != "HEAD",
+		&m.keys.Merge:        m.canMergeCurrentPR() && m.prActionRunning == noPRAction,
+		&m.keys.Checkout:     m.cache.PR != nil && m.cache.PR.Number > 0 && !m.isCurrentTargetPR(*m.cache.PR) && m.prActionRunning == noPRAction,
+		&m.keys.Close:        false,
+		&m.keys.Status:       m.cache.PR != nil && m.cache.PR.Number > 0,
+		&m.keys.ManageViews:  false,
+		&m.keys.AddComment:   conversation,
+		&m.keys.InlineReview: conversation && m.cache.PR != nil,
+		&m.keys.EditLocal:    conversation,
+		&m.keys.DeleteLocal:  conversation,
+		&m.keys.Review:       conversation && m.cache.PR != nil,
 	})
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)

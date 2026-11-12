@@ -116,13 +116,17 @@ func TestContextualKeysMatchCurrentInteraction(t *testing.T) {
 		}
 		return strings.Join(items, ",")
 	}
+	// The help reads the key states sync sets, so sync after each change.
 	m := testModel()
 	m.screen = prListScreen
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = u.(Model)
 	list := descriptions(m.contextualKeys())
 	if !strings.Contains(list, "filter") || strings.Contains(list, "merge PR") || strings.Contains(list, "PR status") {
 		t.Fatalf("empty PR list keys = %q", list)
 	}
 	m.prList.open = []gh.PR{{Number: 7, State: "OPEN", URL: "https://example/pr/7", HeadRefOID: "abc", HeadRefName: "other"}}
+	m.sync()
 	selected := descriptions(m.contextualKeys())
 	for _, want := range []string{"merge PR", "checkout PR", "PR status", "copy URL"} {
 		if !strings.Contains(selected, want) {
@@ -130,8 +134,10 @@ func TestContextualKeysMatchCurrentInteraction(t *testing.T) {
 		}
 	}
 	m.screen, m.cache.PR = detailScreen, nil
+	m.sync()
 	detail := descriptions(m.contextualKeys())
-	if !strings.Contains(detail, "publish PR") || !strings.Contains(detail, "PR list") || strings.Contains(detail, "comment") || strings.Contains(detail, "open on GitHub") {
+	// a still adds a local timeline note without a PR; the review keys need one.
+	if !strings.Contains(detail, "publish PR") || !strings.Contains(detail, "PR list") || !strings.Contains(detail, "comment") || strings.Contains(detail, "inline review comment") || strings.Contains(detail, "review (verdict+body)") || strings.Contains(detail, "open on GitHub") {
 		t.Fatalf("local detail keys = %q", detail)
 	}
 	m.overlay = localDeleteOverlay{target: "x"}

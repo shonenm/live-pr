@@ -96,6 +96,16 @@ func actionLabel(action prAction) string {
 	}
 }
 
+// confirmKeys names the keys that confirm the action's popup, for the footer:
+// Enter picks the highlighted merge method, while checkout and close answer
+// to y alone.
+func (a prAction) confirmKeys() string {
+	if a == mergePR {
+		return "y/↵"
+	}
+	return "y"
+}
+
 // mergeConditionLines summarizes the merge conditions the confirmation is
 // about to act on: draft state, mergeability, the CI rollup, the review
 // decision when GitHub reported one, and — when the popup targets the PR
