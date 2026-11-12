@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/shonenm/live-pr/internal/debugtime"
+	"github.com/shonenm/live-pr/v2/internal/debugtime"
 )
 
 const maxNavigatorSnapshots = 50

@@ -1,4 +1,4 @@
-module github.com/shonenm/live-pr
+module github.com/shonenm/live-pr/v2
 
 go 1.26.11
 

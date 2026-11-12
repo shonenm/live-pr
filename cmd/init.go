@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/store"
 	"github.com/spf13/cobra"
 )
 

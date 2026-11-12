@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/atomicfile"
+	"github.com/shonenm/live-pr/v2/internal/atomicfile"
 )
 
 func TestAppendOutboxQueuesPastUnreadableFile(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/publish"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/publish"
 )
 
 // publishDoneModel is a detail screen mid-publish whose on-disk cache already

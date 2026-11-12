@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // Sequences the Bubble Tea cell renderer would replay or honour: DCS, APC and

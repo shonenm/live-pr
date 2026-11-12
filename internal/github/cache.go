@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shonenm/live-pr/internal/atomicfile"
+	"github.com/shonenm/live-pr/v2/internal/atomicfile"
 )
 
 const CacheVersion = 1

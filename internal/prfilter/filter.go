@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // Split partitions a filter query into the part GitHub's search evaluates

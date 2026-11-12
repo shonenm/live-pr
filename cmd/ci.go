@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/shonenm/live-pr/internal/config"
-	"github.com/shonenm/live-pr/internal/git"
-	"github.com/shonenm/live-pr/internal/localci"
+	"github.com/shonenm/live-pr/v2/internal/config"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	"github.com/shonenm/live-pr/v2/internal/localci"
 	"github.com/spf13/cobra"
 )
 

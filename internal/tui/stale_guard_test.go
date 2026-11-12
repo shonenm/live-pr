@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // Switching branches A→B→A leaves a rebuild for B in flight. Its result must

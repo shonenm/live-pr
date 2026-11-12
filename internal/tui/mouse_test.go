@@ -8,9 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/git"
-	gh "github.com/shonenm/live-pr/internal/github"
-	"github.com/shonenm/live-pr/internal/prfilter"
+	"github.com/shonenm/live-pr/v2/internal/git"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
+	"github.com/shonenm/live-pr/v2/internal/prfilter"
 )
 
 func click(x, y int) tea.MouseClickMsg {

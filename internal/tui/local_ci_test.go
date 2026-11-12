@@ -10,7 +10,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/shonenm/live-pr/internal/config"
+	"github.com/shonenm/live-pr/v2/internal/config"
 )
 
 func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
-	gh "github.com/shonenm/live-pr/internal/github"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 // setupSessionRepo builds a real git repository on a feature branch and makes

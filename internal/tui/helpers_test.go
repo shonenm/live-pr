@@ -5,9 +5,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/config"
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/v2/internal/config"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/git"
 )
 
 // keyPress builds a Bubble Tea v2 key-press message from a readable name:

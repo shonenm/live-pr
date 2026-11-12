@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/shonenm/live-pr/cmd"
+	"github.com/shonenm/live-pr/v2/cmd"
 )
 
 func main() {

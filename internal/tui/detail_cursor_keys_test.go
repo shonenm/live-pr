@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/v2/internal/git"
 )
 
 // j/k on the detail screen move the active tab's cursor, or the file cursor

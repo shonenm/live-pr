@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/shonenm/live-pr/internal/localci"
+	"github.com/shonenm/live-pr/v2/internal/localci"
 )
 
 type localCIEvent struct {

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/shonenm/live-pr/internal/atomicfile"
-	"github.com/shonenm/live-pr/internal/git"
+	"github.com/shonenm/live-pr/v2/internal/atomicfile"
+	"github.com/shonenm/live-pr/v2/internal/git"
 )
 
 // Layout lives outside the repository:

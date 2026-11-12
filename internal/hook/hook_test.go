@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shonenm/live-pr/internal/event"
-	"github.com/shonenm/live-pr/internal/summarize"
+	"github.com/shonenm/live-pr/v2/internal/event"
+	"github.com/shonenm/live-pr/v2/internal/summarize"
 )
 
 type fakeSummarizer struct {

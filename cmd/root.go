@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/shonenm/live-pr/internal/tui"
+	"github.com/shonenm/live-pr/v2/internal/tui"
 	"github.com/spf13/cobra"
 )
 

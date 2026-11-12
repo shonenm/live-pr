@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shonenm/live-pr/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/store"
 )
 
 func TestSeedSummaryUsesRepositoryPullRequestTemplate(t *testing.T) {

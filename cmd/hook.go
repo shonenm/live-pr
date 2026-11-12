@@ -6,11 +6,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/shonenm/live-pr/internal/config"
-	"github.com/shonenm/live-pr/internal/hook"
-	"github.com/shonenm/live-pr/internal/store"
-	"github.com/shonenm/live-pr/internal/summarize"
-	"github.com/shonenm/live-pr/internal/transcript"
+	"github.com/shonenm/live-pr/v2/internal/config"
+	"github.com/shonenm/live-pr/v2/internal/hook"
+	"github.com/shonenm/live-pr/v2/internal/store"
+	"github.com/shonenm/live-pr/v2/internal/summarize"
+	"github.com/shonenm/live-pr/v2/internal/transcript"
 	"github.com/spf13/cobra"
 )
 
