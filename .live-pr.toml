@@ -1,0 +1,5 @@
+# Local CI: `R` in the TUI or `live-pr ci run`. See docs/local-ci.md.
+[ci.local.checks]
+# The recipes behind the workflow's `test` job. GOTOOLCHAIN pins the toolchain
+# to go.mod, as setup-go does remotely.
+test = 'GOTOOLCHAIN=go$(sed -n "s/^go //p" go.mod) just test race fmt-check lint mod-verify'
