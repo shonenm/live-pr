@@ -54,7 +54,7 @@ func asyncCompletion(msg tea.Msg) bool {
 		remoteRefsLoaded, remoteCommitsLoaded, remoteConflictsLoaded, remoteFilesLoaded,
 		githubMetadataRefreshed, githubConversationRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
-		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, diffRendered,
+		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, localCIEvent, localCIDone, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded, conversationWarmed,
 		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, prTargetPrepared, rawDetailLoaded, baseResolved,
 		cacheSaved, navigatorCacheSaved,
@@ -165,6 +165,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailView.checksRenderValid = false
 			m.layout()
 		}
+		return m, m.sync()
+	case localCIEvent:
+		m.applyLocalCIEvent(msg.event)
+		m.detailView.checksRenderValid = false
+		return m, tea.Batch(m.sync(), waitLocalCI(msg.events))
+	case localCIDone:
+		m.localCI.running, m.localCI.note = false, msg.note
+		m.detailView.checksRenderValid = false
 		return m, m.sync()
 	case diffRendered:
 		next, cmd := m.handleDiffRendered(msg)
