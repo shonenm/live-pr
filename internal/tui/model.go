@@ -398,13 +398,14 @@ type Model struct {
 	w, h       int
 	ready      bool
 	version    string
+	options    []Option
 	monochrome bool
 	ascii      bool
 }
 
 // New builds a navigator-aware model without creating branch state unless the
 // current checkout is routed to local detail.
-func New(version ...string) (Model, error) {
+func New(version string, opts ...Option) (Model, error) {
 	if done := debugtime.Start("tui startup"); done != nil {
 		defer done()
 	}
@@ -415,9 +416,6 @@ func New(version ...string) (Model, error) {
 	branch, err := git.CurrentBranch()
 	if err != nil {
 		return Model{}, err
-	}
-	if err := store.MigrateLegacy(root); err != nil {
-		return Model{}, fmt.Errorf("migrate live-pr state: %w", err)
 	}
 	cfg, err := config.Load(root)
 	if err != nil {
@@ -471,7 +469,8 @@ func New(version ...string) (Model, error) {
 		pollTimers:      &pollTimers{},
 		checkoutHead:    git.CheckoutPullHead,
 		screen:          prListScreen,
-		version:         first(version),
+		version:         version,
+		options:         opts,
 		root:            root,
 		monochrome:      cfg.Accessibility.Monochrome,
 		ascii:           cfg.Accessibility.ASCII,
@@ -498,7 +497,7 @@ func New(version ...string) (Model, error) {
 			rawCache:          map[string]string{},
 			diffCache:         map[string]string{},
 			richBodies:        map[string]string{},
-			diffPending:       map[string]bool{},
+			diffPending:       map[string]uint64{},
 		},
 		prList: prListModel{
 			open:            navigator.PRs,
@@ -527,6 +526,9 @@ func New(version ...string) (Model, error) {
 		avatarColors:      map[string]string{},
 		help:              newHelp(),
 		keys:              keys,
+	}
+	for _, opt := range opts {
+		opt(&m)
 	}
 	if localDetail {
 		if err := m.loadLocal(st, cache, currentPR); err != nil {
@@ -738,7 +740,6 @@ func (m *Model) applyLocal(st *store.Store, data localData) {
 	m.layout()
 }
 
-// Run launches the TUI.
 // Option configures the TUI before launch.
 type Option func(*Model)
 
@@ -760,13 +761,11 @@ func WithDiff(name string) Option {
 	}
 }
 
+// Run launches the TUI.
 func Run(version string, opts ...Option) error {
-	m, err := New(version)
+	m, err := New(version, opts...)
 	if err != nil {
 		return err
-	}
-	for _, opt := range opts {
-		opt(&m)
 	}
 	final, runErr := tea.NewProgram(m).Run()
 	if model, ok := final.(Model); ok {
@@ -879,6 +878,7 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 		// Reopening the same PR keeps its rendered mermaid; a different
 		// target's bodies would never be looked up again.
 		m.detailView.pruneRichContent()
+		m.resetListPosition()
 	}
 	if m.diffTerminal != nil {
 		m.diffTerminal.Close()
@@ -886,8 +886,12 @@ func (m *Model) openRemote(pr gh.PR) tea.Cmd {
 	m.screen, m.remote = detailScreen, true
 	m.remoteStats = git.ChangeStats{}
 	m.detailView.title = pr.Title
-	m.detailView.base = git.ResolveBase(pr.BaseRefName)
-	m.detailView.diffBase = remoteReviewBase(pr)
+	// Placeholders only: resolving the base runs git, which must stay off
+	// the Update goroutine. remoteRefsLoaded delivers the resolved values.
+	m.detailView.base, m.detailView.diffBase = pr.BaseRefName, pr.BaseRefOID
+	if m.detailView.diffBase == "" {
+		m.detailView.diffBase = pr.BaseRefName
+	}
 	m.detailView.head = pr.HeadRefName
 	m.detailView.headRev = fmt.Sprintf("refs/live-pr/pulls/%d/head", pr.Number)
 	m.detailView.reviewRange = m.detailView.diffBase + "..." + m.detailView.headRev
@@ -1183,6 +1187,7 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 	})
 	content, selectedLine := m.buildList()
 	m.list.SetContent(content)
+	warmCmd := m.warmConversation()
 	// Chase the selection only when it actually moved. Syncing runs on every
 	// background arrival and on every reload, and scrolling back to the
 	// selection there would drag a reader who had scrolled elsewhere.
@@ -1198,7 +1203,53 @@ func (m *Model) syncDetailScreen(start tea.Cmd) tea.Cmd {
 
 	detail, rawCmd := m.loadDetail()
 	detailCmd := m.syncDetail(detail)
-	return tea.Batch(start, rawCmd, detailCmd, m.startSpinner())
+	return tea.Batch(start, rawCmd, detailCmd, warmCmd, m.startSpinner())
+}
+
+// resetListPosition starts a newly opened target at the top. The left pane's
+// viewport is shared with the PR list and the cursors with the previous
+// target, so both would otherwise carry over a position that means nothing
+// here.
+func (m *Model) resetListPosition() {
+	m.detailView.cursors = [tabCount]int{}
+	m.detailView.listAnchor = listAnchor{}
+	m.list.GotoTop()
+}
+
+// scrollConversation moves the conversation one line. The selection stays
+// put while its card is on screen and is dragged to the nearest visible card
+// once it scrolls off; at either end, where the viewport cannot move, the
+// selection steps instead so every card stays reachable.
+func (m *Model) scrollConversation(delta int) tea.Cmd {
+	before := m.list.YOffset()
+	if delta > 0 {
+		m.list.ScrollDown(1)
+	} else {
+		m.list.ScrollUp(1)
+	}
+	if m.list.YOffset() == before {
+		return m.moveCursorBy(delta)
+	}
+	m.buildConversation()
+	rows := m.detailView.conversationRows
+	top, bottom := m.list.YOffset(), m.list.YOffset()+m.list.Height()
+	cursor := m.detailView.cursors[conversationTab]
+	i := cursor
+	for i+1 < len(rows) && rows[i][1] <= top {
+		i++
+	}
+	for i > 0 && i < len(rows) && rows[i][0] >= bottom {
+		i--
+	}
+	if i == cursor {
+		return nil
+	}
+	m.detailView.cursors[conversationTab] = i
+	// Record the new selection as already anchored, or sync would scroll
+	// back to the card's first line and undo the move.
+	_, line := m.buildConversation()
+	m.detailView.listAnchor = listAnchor{tab: conversationTab, line: line, pinned: true}
+	return m.sync()
 }
 
 func keepLineVisible(v *viewport.Model, line int) {
@@ -1209,11 +1260,4 @@ func keepLineVisible(v *viewport.Model, line int) {
 	if bottom := v.YOffset() + v.Height() - 1; line > bottom {
 		v.SetYOffset(line - v.Height() + 1)
 	}
-}
-
-func first(values []string) string {
-	if len(values) > 0 {
-		return values[0]
-	}
-	return ""
 }

@@ -76,9 +76,9 @@ type detailModel struct {
 	shownKey          string
 	rawCache          map[string]string
 	rawErrs           map[string]string
-	rawPending        map[string]bool
+	rawPending        map[string]uint64
 	diffCache         map[string]string
-	diffPending       map[string]bool
+	diffPending       map[string]uint64
 	checkedFiles      map[string]string
 	reviewedMarksPath string
 
@@ -90,6 +90,7 @@ type detailModel struct {
 	conversationRenderValid bool
 	conversationRows        [][2]int // per-item [start, end) line ranges of the cached render
 	convItemCache           map[string][]string
+	convWarm                *conversationWarmup
 	richBodies              map[string]string
 	richContentWidth        int
 	lastRichContentKey      [sha256.Size]byte
@@ -130,9 +131,9 @@ func fingerprintStrings(h *maphash.Hash, fields ...string) {
 func (d *detailModel) resetCaches() {
 	d.rawCache = map[string]string{}
 	d.rawErrs = map[string]string{}
-	d.rawPending = map[string]bool{}
+	d.rawPending = map[string]uint64{}
 	d.diffCache = map[string]string{}
-	d.diffPending = map[string]bool{}
+	d.diffPending = map[string]uint64{}
 	// richBodies survives: it is keyed by body content, so stale entries are
 	// unused rather than wrong, and wiping it here would blank rendered
 	// mermaid on refreshes whose content (and thus dispatch key) is unchanged.
@@ -313,8 +314,10 @@ func (m Model) handleBaseResolved(msg baseResolved) (Model, tea.Cmd) {
 	return m, tea.Batch(m.restartReview(m.detailView.reviewSHA, msg.prURL), m.sync(), localPoll, m.nextCIPoll())
 }
 
-func (m *Model) restartReview(sha, prURL string) tea.Cmd {
-	m.detailView.reviewSHA = sha
+// replaceReviewTerminal closes the current review terminal and builds its
+// replacement for the current review range: the whole range, or one commit
+// when sha is set. The caller decides when to Init it.
+func (m *Model) replaceReviewTerminal(sha, prURL string) {
 	command := m.diffCommand
 	if sha != "" {
 		command = m.diffCommitCommand
@@ -323,6 +326,11 @@ func (m *Model) restartReview(sha, prURL string) tea.Cmd {
 		m.diffTerminal.Close()
 	}
 	m.diffTerminal = embeddedterm.New(command, m.root, embeddedterm.Environment(m.detailView.reviewRange, m.detailView.diffBase, m.detailView.head, m.detailView.headRev, prURL, sha, m.detailView.reviewedMarksPath))
+}
+
+func (m *Model) restartReview(sha, prURL string) tea.Cmd {
+	m.detailView.reviewSHA = sha
+	m.replaceReviewTerminal(sha, prURL)
 	m.detailView.focus = focusConversation
 	m.layout()
 	if m.diffTerminal != nil {
@@ -371,13 +379,13 @@ func (m *Model) syncDetail(detail detailContent) tea.Cmd {
 			m.detailView.diffCache = map[string]string{}
 		}
 		if m.detailView.diffPending == nil {
-			m.detailView.diffPending = map[string]bool{}
+			m.detailView.diffPending = map[string]uint64{}
 		}
 		if cached, ok := m.detailView.diffCache[key]; ok {
 			output = cached
 			shownKey = "rendered\x00" + key
-		} else if !m.detailView.diffPending[key] {
-			m.detailView.diffPending[key] = true
+		} else if !pendingFor(m.detailView.diffPending, key, m.targetGeneration) {
+			m.detailView.diffPending[key] = m.targetGeneration
 			cmd = renderDiff(m.targetGeneration, key, m.diffDisplay, detail.raw, m.detail.Width())
 		}
 	}
@@ -672,7 +680,7 @@ func (m *Model) buildChecks() (string, int) {
 		indent := ""
 		if check.WorkflowName != "" && check.WorkflowName != name {
 			if check.WorkflowName != lastWorkflow {
-				lines = append(lines, stFg.Bold(true).Render(check.WorkflowName))
+				lines = append(lines, stFg.Bold(true).Render(safeText(check.WorkflowName)))
 				lastWorkflow = check.WorkflowName
 			}
 			indent = "  └─ "
@@ -709,7 +717,7 @@ func (m *Model) buildChecks() (string, int) {
 			continue
 		}
 		if step.workflow != lastWF {
-			lines = append(lines, stFg.Bold(true).Render(step.workflow))
+			lines = append(lines, stFg.Bold(true).Render(safeText(step.workflow)))
 			lastWF = step.workflow
 		}
 		lines = append(lines, woodpeckerStepLine("  └─ ", step))
@@ -732,8 +740,8 @@ func (m *Model) buildChecks() (string, int) {
 }
 
 func iconLine(indent string, style lipgloss.Style, icon, name, state, duration string) string {
-	line := indent + style.Render(icon) + " " + stFg.Render(name)
-	if state != "" {
+	line := indent + style.Render(icon) + " " + stFg.Render(safeText(name))
+	if state = safeText(state); state != "" {
 		line += stMuted.Render(" · " + strings.ToLower(strings.ReplaceAll(state, "_", " ")))
 	}
 	if duration != "" {
@@ -942,13 +950,13 @@ func (m *Model) cachedRawDetail(key string, load func() (string, error)) (raw, l
 		return raw, m.detailView.rawErrs[key], true, nil
 	}
 	if m.detailView.rawPending == nil {
-		m.detailView.rawPending = map[string]bool{}
+		m.detailView.rawPending = map[string]uint64{}
 	}
-	if m.detailView.rawPending[key] {
+	generation := m.targetGeneration
+	if pendingFor(m.detailView.rawPending, key, generation) {
 		return "", "", false, nil
 	}
-	m.detailView.rawPending[key] = true
-	generation := m.targetGeneration
+	m.detailView.rawPending[key] = generation
 	return "", "", false, func() tea.Msg {
 		raw, err := load()
 		msg := rawDetailLoaded{generation: generation, key: key, raw: raw}
@@ -987,15 +995,26 @@ func (d *detailModel) cacheDiff(key, diff string) {
 	d.diffCache[key] = diff
 }
 
+// pendingFor reports whether key has a load in flight for generation. A
+// ticket records the generation that dispatched it, so one left behind by an
+// older generation never suppresses a fresh dispatch: remote refreshes advance
+// the generation without going through resetCaches.
+func pendingFor(pending map[string]uint64, key string, generation uint64) bool {
+	ticket, ok := pending[key]
+	return ok && ticket == generation
+}
+
 func (m Model) handleRawDetailLoaded(msg rawDetailLoaded) (Model, tea.Cmd) {
-	// rawPending is the ticket: resetCaches clears it, so results
-	// computed against a discarded review range are dropped and the next
-	// sync re-dispatches against the fresh state.
-	if msg.generation != m.targetGeneration || !m.detailView.rawPending[msg.key] {
+	// rawPending is the ticket: resetCaches clears it and a newer generation
+	// replaces it, so results computed against a discarded review range are
+	// dropped and the next sync re-dispatches against the fresh state.
+	if !pendingFor(m.detailView.rawPending, msg.key, msg.generation) {
 		return m, nil
 	}
 	delete(m.detailView.rawPending, msg.key)
-	m.detailView.cacheRaw(msg.key, msg.raw, msg.err)
+	if msg.generation == m.targetGeneration {
+		m.detailView.cacheRaw(msg.key, msg.raw, msg.err)
+	}
 	return m, m.sync()
 }
 

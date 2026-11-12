@@ -308,7 +308,7 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		base := m.detailView.base
 		generation := m.targetGeneration
 		return m, tea.Batch(func() tea.Msg {
-			result, err := publish.Run(publish.Options{Base: base})
+			result, err := publish.Run(publish.Options{Base: base, NoPrompt: true})
 			return publishDone{generation: generation, result: result, err: err}
 		}, m.startSpinner())
 	case key.Matches(msg, m.keys.CopyURL):
@@ -383,8 +383,14 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmd, m.sync())
 	case key.Matches(msg, m.keys.Down):
+		if m.detailView.focus != focusExplorer && m.detailView.active == conversationTab {
+			return m, m.scrollConversation(1)
+		}
 		return m, m.moveCursorBy(1)
 	case key.Matches(msg, m.keys.Up):
+		if m.detailView.focus != focusExplorer && m.detailView.active == conversationTab {
+			return m, m.scrollConversation(-1)
+		}
 		return m, m.moveCursorBy(-1)
 	}
 

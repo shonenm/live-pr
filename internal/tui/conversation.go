@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/shonenm/live-pr/internal/event"
@@ -195,12 +196,25 @@ func (m *Model) renderConversation(items []conversationItem) (string, int) {
 	var lines []string
 	selectedLine := 0
 	rows := make([][2]int, len(items))
+	if m.detailView.convWarm == nil {
+		m.detailView.convWarm = &conversationWarmup{}
+	}
+	warm := m.detailView.convWarm
+	warm.pending = nil
+	// Only cards near the viewport (and the selection) pay for a cold
+	// markdown render here; the rest show plain text until warmConversation
+	// has rendered them off the Update goroutine. An unsized list defers
+	// nothing.
+	height := m.list.Height()
+	top, bottom := m.list.YOffset()-height, m.list.YOffset()+2*height
 	for i, item := range items {
 		selected := i == m.detailView.cursors[conversationTab]
 		if selected {
 			selectedLine = len(lines)
 		}
+		warm.deferring = !selected && height > 0 && (len(lines) < top || len(lines) >= bottom)
 		itemLines := m.conversationItemLines(item, selected)
+		warm.deferring = false
 		rows[i] = [2]int{len(lines), len(lines) + len(itemLines)}
 		lines = append(lines, itemLines...)
 		nextCompactActivity := i+1 < len(items) && items[i+1].compactActivity()
@@ -229,8 +243,13 @@ func (m *Model) conversationIndexAtLine(line int) int {
 // conversationItemLines renders one card. Unselected renders are cached by
 // (item key, width): invalidateConversation clears the cache on content
 // changes, so cursor moves re-render only the selected card instead of every
-// card in the conversation.
+// card in the conversation. A card whose body was deferred is not cached, so
+// the rebuild after warmConversation replaces its plain-text stand-in.
 func (m *Model) conversationItemLines(item conversationItem, selected bool) []string {
+	deferred := 0
+	if m.detailView.convWarm != nil {
+		deferred = len(m.detailView.convWarm.pending)
+	}
 	cacheKey := fmt.Sprintf("%s\x00%d", item.key, m.list.Width())
 	if !selected {
 		if cached, ok := m.detailView.convItemCache[cacheKey]; ok {
@@ -268,11 +287,85 @@ func (m *Model) conversationItemLines(item conversationItem, selected bool) []st
 		}
 		return itemLines
 	}
+	if m.detailView.convWarm != nil && len(m.detailView.convWarm.pending) > deferred {
+		return itemLines
+	}
 	if m.detailView.convItemCache == nil {
 		m.detailView.convItemCache = map[string][]string{}
 	}
 	m.detailView.convItemCache[cacheKey] = itemLines
 	return itemLines
+}
+
+// markdownJob is one card body awaiting its markdown render.
+type markdownJob struct {
+	text  string
+	width int
+}
+
+// conversationWarmup tracks the card bodies renderConversation left as plain
+// text. It is shared by pointer so the value-receiver card renderers can
+// record what they deferred.
+type conversationWarmup struct {
+	deferring bool          // the card being rendered may defer a cold body
+	pending   []markdownJob // bodies deferred by the latest render
+	running   bool          // a warmConversation command is in flight
+	// warmed holds the bodies of the last finished warm-up. They are never
+	// deferred again: a body the markdown cache declined or evicted would
+	// otherwise bounce between stand-in and warm-up forever.
+	warmed map[markdownJob]bool
+}
+
+// conversationMarkdown renders one card body. While renderConversation is
+// deferring, a body missing from the markdown cache is queued for
+// warmConversation and stands in as wrapped plain text.
+func (m Model) conversationMarkdown(text string, width int) string {
+	warm := m.detailView.convWarm
+	if warm == nil || !warm.deferring || md.Cached(text, width) {
+		return md.Render(text, width)
+	}
+	job := markdownJob{text: text, width: width}
+	if warm.warmed[job] {
+		return md.Render(text, width)
+	}
+	warm.pending = append(warm.pending, job)
+	return md.WrapText(strings.ReplaceAll(safeText(text), "\t", "    "), width)
+}
+
+// warmConversation renders the deferred card bodies off the Update goroutine.
+// md.Render fills the shared markdown cache, so the rebuild triggered by
+// conversationWarmed is all cache hits.
+func (m *Model) warmConversation() tea.Cmd {
+	warm := m.detailView.convWarm
+	if warm == nil || warm.running || len(warm.pending) == 0 {
+		return nil
+	}
+	warm.running = true
+	jobs := warm.pending
+	warm.pending = nil
+	return func() tea.Msg {
+		for _, job := range jobs {
+			md.Render(job.text, job.width)
+		}
+		return conversationWarmed{jobs: jobs}
+	}
+}
+
+// handleConversationWarmed swaps the plain-text stand-ins for their rendered
+// cards. Only the assembled render is dropped: the cached cards are still
+// current, so the rebuild re-frames just the cards that were deferred.
+func (m *Model) handleConversationWarmed(msg conversationWarmed) tea.Cmd {
+	warm := m.detailView.convWarm
+	if warm == nil {
+		return nil
+	}
+	warm.running = false
+	warm.warmed = make(map[markdownJob]bool, len(msg.jobs))
+	for _, job := range msg.jobs {
+		warm.warmed[job] = true
+	}
+	m.detailView.conversationRenderValid = false
+	return m.sync()
 }
 
 func (m Model) eventLines(e event.Event, selected bool, width int) []string {
@@ -290,14 +383,14 @@ func (m Model) eventLines(e event.Event, selected bool, width int) []string {
 	// closing punctuation at line starts.
 	body := md.WrapText(stBold.Render(safeText(e.Title)), width-8)
 	if strings.TrimSpace(e.Body) != "" {
-		body += "\n" + md.Render(e.Body, width-8)
+		body += "\n" + m.conversationMarkdown(e.Body, width-8)
 	}
 	return cardLines(header, body, selected, width, cBorder)
 }
 
 func (m Model) summaryLines(summary string, selected bool, width int) []string {
 	header := stMuted.Render("📝 local PR · final summary")
-	return cardLines(header, md.Render(summary, width-8), selected, width, cBorder)
+	return cardLines(header, m.conversationMarkdown(summary, width-8), selected, width, cBorder)
 }
 
 func (m Model) descriptionLines(pr gh.PR, selected bool, width int) []string {
@@ -398,7 +491,7 @@ func annotateLinkTypes(rendered string) string {
 // renderRichMarkdown renders one conversation body: mermaid replacement from
 // the rich-content cache, glamour, then link-type annotation.
 func (m Model) renderRichMarkdown(body string, width int) string {
-	return annotateLinkTypes(md.Render(safeText(m.richBody(body)), width))
+	return annotateLinkTypes(m.conversationMarkdown(safeText(m.richBody(body)), width))
 }
 
 func (m Model) userIcon(login string) string { return m.userIconOn(login, "") }

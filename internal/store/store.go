@@ -39,9 +39,6 @@ func Discover() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := MigrateLegacy(root); err != nil {
-		return nil, err
-	}
 	branch, err := git.CurrentBranch()
 	if err != nil {
 		return nil, err
@@ -108,56 +105,6 @@ func NavigatorCache(root string) string { return filepath.Join(repoStateRoot(roo
 // PullRequestReviewDraft is an unpublished review isolated by pull-request number.
 func PullRequestReviewDraft(root string, number int) string {
 	return filepath.Join(repoStateRoot(root), "reviews", fmt.Sprintf("%d.json", number))
-}
-
-// MigrateLegacy moves data from the old repository-local .live-pr/ layout.
-// Legacy config.toml is renamed to .live-pr.toml when possible; the old path
-// remains readable through config.Load if migration cannot move it.
-func MigrateLegacy(root string) error {
-	legacy := filepath.Join(root, ".live-pr")
-	entries, err := os.ReadDir(legacy)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	state := repoStateRoot(root)
-	legacyConfig := filepath.Join(legacy, "config.toml")
-	newConfig := filepath.Join(root, ".live-pr.toml")
-	if _, err := os.Stat(legacyConfig); err == nil {
-		if _, targetErr := os.Stat(newConfig); errors.Is(targetErr, os.ErrNotExist) {
-			if err := os.Rename(legacyConfig, newConfig); err != nil {
-				return err
-			}
-		}
-	}
-	for _, entry := range entries {
-		if entry.Name() == "config.toml" {
-			continue
-		}
-		var target string
-		if entry.Name() == "github-prs.json" {
-			target = NavigatorCache(root)
-		} else if entry.IsDir() {
-			target = filepath.Join(state, entry.Name())
-		} else {
-			continue
-		}
-		if _, err := os.Stat(target); err == nil {
-			continue
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-			return err
-		}
-		if err := os.Rename(filepath.Join(legacy, entry.Name()), target); err != nil {
-			return err
-		}
-	}
-	_ = os.Remove(legacy)
-	return nil
 }
 
 // sharedRoots caches the per-checkout repository identity: resolving it runs
