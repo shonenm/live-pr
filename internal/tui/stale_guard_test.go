@@ -114,13 +114,13 @@ func TestStaleOutboxFlushCannotReportOnCurrentTarget(t *testing.T) {
 func TestStaleRawDetailCannotFillCache(t *testing.T) {
 	m := testModel()
 	m.targetGeneration = 2
-	m.detailView.rawPending = map[string]bool{"file:a.go": true}
+	m.detailView.rawPending = map[string]uint64{"file:a.go": 2}
 	u, cmd := m.Update(rawDetailLoaded{generation: 1, key: "file:a.go", raw: "stale diff"})
 	got := u.(Model)
 	if _, cached := got.detailView.rawCache["file:a.go"]; cached {
 		t.Fatalf("stale raw diff was cached: %q", got.detailView.rawCache["file:a.go"])
 	}
-	if !got.detailView.rawPending["file:a.go"] {
+	if got.detailView.rawPending["file:a.go"] != 2 {
 		t.Fatal("stale raw diff consumed the current request's ticket")
 	}
 	if cmd != nil {
