@@ -25,9 +25,10 @@ a vulnerability.
 **live-pr runs commands you configure.** `diff.command`, `diff.commit_command`,
 `diff.display`, `ci.command`, `summarize_command`, and the legacy top-level
 `reviewer` template (used when `diff.commit_command` is unset) are executed
-through a shell. This is the point of those settings — they launch your
-reviewer, your diff renderer, and your summarizer — but it means configuration
-is code.
+through a shell. Local CI (`R` or `live-pr ci run`) additionally runs the
+`ci.local.checks` commands, but only when you start it. This is the point of
+those settings — they launch your reviewer, your diff renderer, and your
+summarizer — but it means configuration is code.
 
 Configuration is read from `~/.config/live-pr/config.toml` and, if present,
 `.live-pr.toml` **inside the repository you are working in**. A repository you

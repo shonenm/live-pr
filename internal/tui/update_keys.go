@@ -355,6 +355,15 @@ func (m Model) handleDetailKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(m.sync(), ciCmd)
+	case key.Matches(msg, m.keys.RunCI):
+		if !m.canRunLocalCI() {
+			return m, nil
+		}
+		m.detailView.active, m.status = checksTab, ""
+		m.detailView.checksRenderValid = false
+		run := m.startLocalCI()
+		m.layout()
+		return m, tea.Batch(m.sync(), run)
 	case key.Matches(msg, m.keys.Back):
 		if m.detailView.active == conversationTab {
 			return m, nil

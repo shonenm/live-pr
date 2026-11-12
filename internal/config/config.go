@@ -155,6 +155,21 @@ type CIConfig struct {
 	Server       string   `toml:"server"`
 	CLICommand   []string `toml:"cli_command"`
 	TokenCommand []string `toml:"token_command"`
+
+	// SigningKey is the SSH key that signs local CI attestations: a private
+	// key, or a public key whose private half is held by ssh-agent. Loaded
+	// only from global config.
+	SigningKey string `toml:"signing_key"`
+
+	// Local names the checks live-pr may run in the checkout.
+	Local LocalCIConfig `toml:"local"`
+}
+
+// LocalCIConfig configures the checks run in the local checkout.
+type LocalCIConfig struct {
+	// Checks maps a check name to the shell command that runs it. The name
+	// is what the remote workflow gates on.
+	Checks map[string]string `toml:"checks"`
 }
 
 // DiffConfig customizes how raw Git diff is rendered in the right pane.
@@ -243,6 +258,7 @@ func Load(repoRoot string) (Config, error) {
 	globalServer := cfg.CI.Server
 	globalCLICommand := append([]string(nil), cfg.CI.CLICommand...)
 	globalTokenCommand := append([]string(nil), cfg.CI.TokenCommand...)
+	globalSigningKey := cfg.CI.SigningKey
 
 	repoConfig := filepath.Join(repoRoot, ".live-pr.toml")
 	if err := overlay(repoConfig, &cfg); err != nil {
@@ -252,6 +268,7 @@ func Load(repoRoot string) (Config, error) {
 	cfg.CI.Server = globalServer
 	cfg.CI.CLICommand = globalCLICommand
 	cfg.CI.TokenCommand = globalTokenCommand
+	cfg.CI.SigningKey = globalSigningKey
 	// Migrate the old built-in command while preserving explicit custom commands.
 	if cfg.Diff.Command == `nvim -c "CodeDiff $LIVE_PR_RANGE"` {
 		cfg.Diff.Command = `nvim -c "CodeDiff --inline $LIVE_PR_RANGE"`

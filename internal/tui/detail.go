@@ -639,6 +639,7 @@ func (m *Model) checksFingerprint(header string) uint64 {
 	var h maphash.Hash
 	h.SetSeed(tabRenderSeed)
 	fingerprintStrings(&h, header, m.ciCommandOutput, m.ciCommandError, fmt.Sprint(m.ciCommandLoading))
+	fingerprintStrings(&h, m.localCILines()...)
 	for _, step := range m.ciCommandSteps {
 		fingerprintStrings(&h, step.workflow, step.name, step.state, step.duration)
 	}
@@ -651,6 +652,9 @@ func (m *Model) checksFingerprint(header string) uint64 {
 func (m *Model) buildChecks() (string, int) {
 	header := m.baseFreshnessHeader()
 	if m.cache.PR == nil {
+		if local := m.localCILines(); len(local) > 0 {
+			return strings.Join(local, "\n"), 0
+		}
 		return stMuted.Render("(no CI checks)"), 0
 	}
 	key := tabRenderKey{cursor: m.detailView.cursors[checksTab], width: m.list.Width(), content: m.checksFingerprint(header)}
@@ -666,6 +670,7 @@ func (m *Model) buildChecks() (string, int) {
 	if header != "" {
 		lines = append(lines, header, "")
 	}
+	lines = append(lines, m.localCILines()...)
 	selected := len(lines)
 	checkRows := make([][2]int, 0, len(m.cache.PR.Checks))
 	lastWorkflow := ""
