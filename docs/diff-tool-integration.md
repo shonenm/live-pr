@@ -56,7 +56,7 @@ An open/current local PR starts in detail. The default branch, detached HEAD, or
 - while CodeReview has focus, keys other than reserved `q` and `Shift+Tab` are sent directly to Neovim;
 - the active CodeReview border uses the accent color.
 
-The PTY is resized with the right pane. live-pr runtime state is kept in the XDG state directory rather than `.live-pr/` in the repository; old repository-local state is migrated on first access.
+The PTY is resized with the right pane. live-pr runtime state is kept in the XDG state directory rather than `.live-pr/` in the repository.
 
 Each branch/commit switch closes and reaps the previous process, and generation-specific IDs discard its late messages.
 

@@ -68,7 +68,7 @@
 - **Done**: reviews / inline review commentsを取得しConversationへ時系列統合（review verdictカードとinline commentカード）。`a`でtop-levelコメント投稿、`A`でinline draft、`v`でreview提出。
 - **Done**: コメント投稿のoutbox — オフライン失敗をXDG stateへキューし、pendingカードとして表示、refresh/再接続時に順序保持で自動送信。認証系エラーはキューせず即表示。
 - **Done**: CodeReviewのreviewed markをXDG stateへ保存し、チェック後に対象ファイルのdiffが変わった場合は自動解除。
-- **Done**: repo-local `.live-pr/` runtimeを廃止し、XDG stateへ移行。旧stateは初回アクセス時に移行。
+- **Done**: repo-local `.live-pr/` runtimeを廃止し、XDG stateへ移行。旧stateの自動移行は廃止済み。
 
 ### P5.2 — Local PR authoring + Agent Skill ✅
 - **Done**: repositoryのdefault PR templateからfinal summaryをseedし、CLIまたはTUIの`e`で更新。local TUIのConversation先頭へ表示する。

@@ -449,9 +449,6 @@ func New(version ...string) (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
-	if err := store.MigrateLegacy(root); err != nil {
-		return Model{}, fmt.Errorf("migrate live-pr state: %w", err)
-	}
 	cfg, err := config.Load(root)
 	if err != nil {
 		return Model{}, err
