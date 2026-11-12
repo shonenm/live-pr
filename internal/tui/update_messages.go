@@ -431,9 +431,9 @@ func (m Model) handlePublishDone(msg publishDone) (Model, tea.Cmd) {
 	// a newly created PR has no CI poll yet: refetch like a posted comment.
 	m.targetGeneration++
 	if m.remote {
-		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
+		return m, tea.Batch(fetchRemotePR(m.client, *m.cache.PR, m.targetGeneration), m.sync(), m.startSpinner())
 	}
-	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration, m.cachedDetail()), m.sync(), m.startSpinner())
+	return m, tea.Batch(fetchGitHub(m.client, m.detailView.head, m.cache.PR.Number, m.targetGeneration), m.sync(), m.startSpinner())
 }
 
 func samePRBoundary(a, b *gh.PR) bool {
