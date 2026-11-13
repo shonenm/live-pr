@@ -20,7 +20,7 @@ changes from other worktrees or unrelated files; never `git add -A` or
    verification results.
 2. Summary only: if the branch has no commits ahead of `origin/main`, use the
    staged diff, and stop if it is empty. Return `# <type>(<scope>): <subject>`
-   followed by `### Background` and `### Changes`. Explain how the changes
+   followed by `### Background` and `### Changes`, written in Japanese. Explain how the changes
    relate instead of listing every path. Do not create an issue or a pull
    request.
 3. Resolve the issue this implements from the request or the branch, and
@@ -65,6 +65,8 @@ record the measurement as not verified rather than reconstructing it.
 
 ## Body
 
+- Write the body in Japanese. Keep the headings and the checklist items in
+  English, exactly as the template has them.
 - Start from the template for the type and keep every heading and the
   checklist. The HTML comment under each heading is the guidance for that
   section; follow it, then delete the comment. Templates are the single
