@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -146,13 +147,67 @@ func git(ctx context.Context, root string, stdin []byte, args ...string) (string
 	return strings.TrimSpace(string(out)), nil
 }
 
+// Verify returns the jobs that a signer listed in .live-pr/allowed_signers at
+// base attested for tree, as the remote verifier (verify.sh) would. reason
+// says why nothing is attested. Origin's notes are merged in first.
+func Verify(ctx context.Context, root, base, tree string) (jobs []string, reason string) {
+	if release, err := lockNotes(ctx, root); err == nil {
+		syncNotes(ctx, root)
+		_ = release()
+	}
+	signers, err := git(ctx, root, nil, "show", base+":.live-pr/allowed_signers")
+	if err != nil {
+		return nil, "no .live-pr/allowed_signers at " + base
+	}
+	note, err := git(ctx, root, nil, "notes", "--ref="+notesRef, "show", tree)
+	if err != nil {
+		return nil, "no attestation for tree " + tree
+	}
+	payload, sig, _ := strings.Cut(note, "\n")
+	dir, err := os.MkdirTemp("", "live-pr-verify-")
+	if err != nil {
+		return nil, err.Error()
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	signersFile, sigFile := filepath.Join(dir, "signers"), filepath.Join(dir, "sig")
+	if err := os.WriteFile(signersFile, []byte(signers+"\n"), 0o600); err != nil {
+		return nil, err.Error()
+	}
+	if err := os.WriteFile(sigFile, []byte(sig+"\n"), 0o600); err != nil {
+		return nil, err.Error()
+	}
+	check := exec.CommandContext(ctx, "ssh-keygen", "-Y", "verify", "-f", signersFile, "-I", sigNamespace, "-n", sigNamespace, "-s", sigFile)
+	check.Stdin = strings.NewReader(payload + "\n")
+	if err := check.Run(); err != nil {
+		return nil, "attestation signature is not trusted"
+	}
+	var att Attestation
+	// A note can be copied onto another tree, so the payload must name this one.
+	if json.Unmarshal([]byte(payload), &att) != nil || att.Tree != tree {
+		return nil, "attestation is for another tree"
+	}
+	return att.Jobs, ""
+}
+
 // Execute runs jobs and, when the result is attributable to one committed
-// tree, signs and publishes the attestation. The returned note says what was
-// attested or why nothing was.
-func Execute(ctx context.Context, root, keyPath string, jobs []Job, emit func(Event)) (passed []string, note string) {
+// tree, signs and publishes the attestation. When a signer trusted at base
+// already attested every job for the tree, nothing runs unless force is set.
+// The returned note says what was attested or why nothing was.
+func Execute(ctx context.Context, root, keyPath, base string, force bool, jobs []Job, emit func(Event)) (passed []string, note string) {
 	tree, clean, err := Tree(root)
 	if err != nil {
 		return nil, "not started: " + err.Error()
+	}
+	if clean && !force && base != "" {
+		if attested, _ := Verify(ctx, root, base, tree); covers(attested, jobs) {
+			for _, job := range jobs {
+				for i := range job.Steps {
+					emit(Event{Job: job.ID, Step: i, State: StateSkipped})
+				}
+				passed = append(passed, job.ID)
+			}
+			return passed, "already attested " + strings.Join(passed, ", ") + " for tree " + tree[:12] + "; nothing ran"
+		}
 	}
 	passed = Run(ctx, root, jobs, emit)
 	switch {
@@ -174,4 +229,16 @@ func Execute(ctx context.Context, root, keyPath string, jobs []Job, emit func(Ev
 		note += " (not pushed: " + err.Error() + ")"
 	}
 	return passed, note
+}
+
+func covers(attested []string, jobs []Job) bool {
+	if len(jobs) == 0 {
+		return false
+	}
+	for _, job := range jobs {
+		if !slices.Contains(attested, job.ID) {
+			return false
+		}
+	}
+	return true
 }

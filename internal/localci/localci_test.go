@@ -92,6 +92,18 @@ func TestAttestVerify(t *testing.T) {
 	if out := verify(); !strings.Contains(out, "test=attested") || !strings.Contains(out, "lint=attested") {
 		t.Fatalf("trusted attestation rejected: %s", out)
 	}
+	if jobs, reason := Verify(context.Background(), root, "main", tree); !reflect.DeepEqual(jobs, []string{"lint", "test"}) {
+		t.Fatalf("Verify = %v (%s), want what verify.sh attests", jobs, reason)
+	}
+
+	// An attested tree is not run again; the commands here would fail.
+	failing := Jobs(map[string]string{"test": "exit 1", "lint": "exit 1"})
+	if passed, note := Execute(context.Background(), root, "", "main", false, failing, func(Event) {}); !reflect.DeepEqual(passed, []string{"lint", "test"}) || !strings.Contains(note, "already attested") {
+		t.Fatalf("Execute on an attested tree = %v, %q; want a skip", passed, note)
+	}
+	if passed, _ := Execute(context.Background(), root, "", "main", true, failing, func(Event) {}); len(passed) != 0 {
+		t.Fatalf("forced Execute = %v, want the failing commands to run", passed)
+	}
 
 	// A pull request checks out a test merge into its base: the attestation
 	// carries over only while the branch is up to date with base.
@@ -108,6 +120,10 @@ func TestAttestVerify(t *testing.T) {
 	if out := verify(); strings.Contains(out, "=attested") {
 		t.Fatalf("attestation followed a copied note: %s", out)
 	}
+	copied, _, _ := Tree(root)
+	if jobs, reason := Verify(context.Background(), root, "main", copied); jobs != nil || !strings.Contains(reason, "another tree") {
+		t.Fatalf("Verify on a copied note = %v (%s)", jobs, reason)
+	}
 
 	// A signer added by the change under test is not trusted: keys are read
 	// from the base revision.
@@ -118,6 +134,9 @@ func TestAttestVerify(t *testing.T) {
 	}
 	if out := verify(); strings.Contains(out, "=attested") {
 		t.Fatalf("self-added signer was trusted: %s", out)
+	}
+	if jobs, reason := Verify(context.Background(), root, "main", tree); jobs != nil || !strings.Contains(reason, "not trusted") {
+		t.Fatalf("Verify trusted a self-added signer: %v (%s)", jobs, reason)
 	}
 
 	sh(`echo dirty > untracked`)
