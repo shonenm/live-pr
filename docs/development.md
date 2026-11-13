@@ -86,6 +86,7 @@ live-pr review show --json
 live-pr review submit --event REQUEST_CHANGES   # or COMMENT / APPROVE
 
 live-pr ci run            # run the [ci.local.checks] commands in the checkout and sign an attestation
+live-pr ci run --force    # run even when the tree is already attested
 live-pr ci verify-script  # print the verifier a remote CI job runs
 
 live-pr pr preview        # preview the generated managed PR body

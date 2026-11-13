@@ -15,6 +15,10 @@ attestation every job runs as usual.
 3. A verification job at the start of the remote workflow checks the note and
    exposes `<check>=attested` outputs. Attested jobs are skipped with `if:`.
 
+A run on a tree that a trusted signer already attested for every check does
+nothing: live-pr verifies the note the same way the remote job does, with the
+signers from the base. `live-pr ci run --force` runs it anyway.
+
 The attestation names a tree, not a commit. It survives a squash merge or
 rebase that produces the same tree and is void as soon as anything differs:
 the base moved, `.live-pr.toml` or a script changed, or a file was edited.

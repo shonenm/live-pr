@@ -97,7 +97,7 @@ When the repository configures `[ci.local.checks]` in `.live-pr.toml`, check you
 live-pr ci run
 ```
 
-A non-zero exit means a check failed; fix the cause and rerun. Never weaken a test, the check script, or `[ci.local.checks]` to make it pass. Attestation needs a clean checkout and the user's signing key, so "not attested" after a passing run is expected for agents and is not an error to work around.
+A non-zero exit means a check failed; fix the cause and rerun. A tree that a trusted signer already attested is not run again; `--force` reruns it. Never weaken a test, the check script, or `[ci.local.checks]` to make it pass. Attestation needs a clean checkout and the user's signing key, so "not attested" after a passing run is expected for agents and is not an error to work around.
 
 To set local CI up for a repository when the user asks:
 
