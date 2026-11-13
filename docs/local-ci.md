@@ -104,18 +104,21 @@ that first adds it — or adds a new signer — is itself verified remotely.
 
 ## Trust model
 
-The gate is "the agent cannot open it by itself", not "tamper-proof":
+Skipping is opt-in: without a signer in `allowed_signers`, every job runs
+remotely as usual. Registering a signer means trusting that signer's machine.
 
 - **Forged or replayed results** fail verification: the signature covers the
   tree hash, and a note copied onto another tree is rejected.
 - **A signer added by the change under test** is ignored: keys come from the
   base revision.
-- **The signing key** must be out of the agent's reach. Use a key that needs
-  user presence (Secure Enclave, a hardware key, or an ssh-agent that prompts)
-  rather than an unencrypted file the agent can read.
-- **Ignored files and local toolchains are trusted.** That is the cost of not
-  rebuilding the environment. Keep a full remote run on pushes to the default
-  branch as the backstop.
+- **Tampering on the signer's machine is out of scope.** Anything that runs as
+  the signer's user (the signer, a script, a coding agent) can change the
+  toolchains, caches, or ignored files the checks read, or use the signing
+  key, and attest a tree the remote would fail. The attestation cannot show
+  this, and live-pr does not try to prevent it; build caches such as Bazel's
+  draw the same line by letting only CI write. If that is not acceptable, do
+  not register signers. Keep a full remote run on pushes to the default branch
+  as the backstop.
 - **Weakening the checks themselves** (editing tests, the script, or
   `[ci.local.checks]`) is not a signature problem. Neither is a remote job that
   does more than the local command: skipping it skips the difference. Those changes are in the diff;
