@@ -98,9 +98,26 @@ On a pull request, GitHub checks out a test merge of the branch into its base.
 That merge has the attested tree only while the branch is up to date with the
 base; otherwise the job runs remotely and the verifier says why.
 
-GitHub reports a job skipped by `if:` as successful, so required checks keep
-working. `allowed_signers` is read from the base revision, so the pull request
-that first adds it — or adds a new signer — is itself verified remotely.
+`allowed_signers` is read from the base revision, so the pull request that
+first adds it — or adds a new signer — is itself verified remotely.
+
+## Blocking merges
+
+live-pr does not stop a merge itself. To refuse a change that has neither an
+attestation nor a passing remote run, make each gated job a required status
+check: in the repository settings, add a branch ruleset (or branch protection
+rule) for the default branch with "Require status checks to pass", and add the
+job names (`test` above).
+
+That is enough because GitHub reports a job skipped by `if:` as successful. An
+attested job is skipped and passes; an unattested one runs remotely, and the
+pull request cannot merge until it passes. The `attest` job does not need to
+be required: when it fails, the gated jobs run instead of being skipped.
+
+Whether the branch must be up to date with the base before merging is the
+ruleset's choice ("Require branches to be up to date before merging"). With
+it, the attested tree is always the one GitHub tests; without it, a branch
+behind its base simply runs its jobs remotely.
 
 ## Trust model
 
