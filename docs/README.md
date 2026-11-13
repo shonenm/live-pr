@@ -17,4 +17,5 @@ Maintainer planning notes (in Japanese):
 
 - [Architecture](architecture.md) — what live-pr is building, why, and what already exists
 - [Roadmap](roadmap.md) — what is not built yet, in what order, and for which release
+- [Principles](principles.md) — how to decide when the architecture and roadmap do not settle a question
 - [Archive](archive/) — historical notes that are not necessarily current: the [legacy roadmap](archive/roadmap.md) of the original direction and the initial [technology selection](archive/tech-selection.md)
