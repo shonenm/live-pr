@@ -1,171 +1,128 @@
 ---
 name: pr
-description: Creates or updates a pull request for live-pr itself, from branch checks and verification to a description that follows .github/PULL_REQUEST_TEMPLATE.md. Use when asked to create, open, or update a pull request in this repository.
+description: Creates or updates a pull request for live-pr itself, or writes a change summary without opening one. Use when asked to create, open, or update a pull request in this repository, or to summarize the changes on a branch.
 ---
 
 # Pull request
 
-Create a pull request from the current branch to `main`. The rules come from
-`CONTRIBUTING.md`; this skill is the order to apply them in.
-
-## Prerequisites
-
-- `gh auth status` succeeds.
-- The branch is not `main`. If it is, create a branch first (step 2).
-
-## 1. Check the state
-
-```sh
-git branch --show-current
-git status --short
-git fetch -q origin
-git log --oneline origin/main..HEAD
-git diff --stat origin/main...HEAD
-gh pr view --json number,url,state 2>/dev/null
-```
-
-- An open pull request for this branch already exists: update it (step 6)
-  instead of creating another.
-- The branch mixes concerns (a fix and a refactor, a feature and an unrelated
-  cleanup): stop and propose splitting it. Each concern is reviewed with
-  different eyes.
-- The branch is behind `origin/main`: merge or rebase it before verifying, so
-  the checks run against what will be merged.
-
-## 2. Branch and commit
-
-Branch names are `<type>/<slug>` (`feat/list-split-ratio`,
-`fix/popup-wide-rune-overlay`). On `main`, infer the type from the changes and
-create the branch.
-
-Take the commit type from the branch name:
-
-| Branch | Type |
-| --- | --- |
-| `feat/*` | `feat` |
-| `fix/*` | `fix` |
-| `perf/*` | `perf` |
-| `refactor/*` | `refactor` |
-| `docs/*` | `docs` |
-| `test/*` | `test` |
-| `ci/*` | `ci` |
-| `chore/*` | `chore` |
-
-Commit subjects follow Conventional Commits, with the package as the optional
-scope: `fix(tui): keep the cursor on the selected row`. Release notes are
-grouped by `feat`, `fix`, and `perf`, and `docs`, `test`, `chore`, and `ci`
-are left out, so pick the type for the changelog reader. Mark a breaking
-change with `!` (`feat(config)!: ...`).
-
-Stage only the paths that belong to this change; never `git add -A` or
+Use the narrowest mode that was asked for: a pull request from the current
+branch, an update to an existing one, or a change summary only. Never include
+changes from other worktrees or unrelated files; never `git add -A` or
 `git commit -a`.
 
-Fixes land on `main` first, including ones that also apply to 1.x; the
-maintainer backports them to `release/1.x`.
+## Prepare
 
-## 3. Verify
+1. Resolve the repository, the branch, an existing pull request
+   (`gh pr view --json number,url,state,isDraft`), and the base (`main`;
+   fixes that also apply to 1.x still target `main`, and the maintainer
+   backports them to `release/1.x`). Read the full diff
+   (`git diff origin/main...HEAD`), the relevant callers, and the
+   verification results.
+2. Summary only: if the branch has no commits ahead of `origin/main`, use the
+   staged diff, and stop if it is empty. Return `# <type>(<scope>): <subject>`
+   followed by `### Background` and `### Changes`. Explain how the changes
+   relate instead of listing every path. Do not create an issue or a pull
+   request.
+3. Resolve the issue this implements from the request or the branch, and
+   check it with `gh issue view`. Never invent one. Use `Closes #N` for an
+   issue the change completes, and `Refs #N` otherwise.
+4. On `main`, create a branch named `<type>/<slug>` first. Commit only the
+   paths that belong to the change, with a Conventional Commits subject.
+5. Pick the type from the change, not from the paths:
 
-Run the checks for what changed, and keep the results for the description:
+   | Type | Template | Label |
+   | --- | --- | --- |
+   | `feat` | `.github/PULL_REQUEST_TEMPLATE/feat.md` | `enhancement` |
+   | `fix` | `.github/PULL_REQUEST_TEMPLATE/fix.md` | `bug` |
+   | `perf`, `refactor` | `.github/PULL_REQUEST_TEMPLATE/refactor.md` | — |
+   | `test` | `.github/PULL_REQUEST_TEMPLATE/test.md` | — |
+   | `docs` | `.github/PULL_REQUEST_TEMPLATE/docs.md` | `documentation` |
+   | `chore`, `ci` | `.github/PULL_REQUEST_TEMPLATE/docs.md` | — |
+
+   The title is `<type>(<scope>): <subject>`, with the package as the
+   optional scope. Release notes group `feat`, `fix`, and `perf` and leave
+   out `docs`, `test`, `chore`, and `ci`, so the type is for the changelog
+   reader. A change that requires existing users to change something (a
+   removed or changed CLI flag, config key, or key binding, or on-disk state
+   the previous version can no longer read) adds `!` after the type.
+
+## Verify
+
+Run what the change touches before writing the description:
 
 | Changed | Run |
 | --- | --- |
-| Any Go code | `just check` (tests with `-race`, gofmt, golangci-lint, govulncheck, module verification, diff check) |
-| Any Go code | `GOOS=windows go vet ./...` |
-| `internal/tui/` | Also try it in a real terminal: `go run .` in a repository with a pull request, in a narrow and a short window |
-| `internal/localci/verify.sh` | `go run . ci verify-script > .live-pr/verify.sh` (a test fails if the committed copy is stale) |
-| `.goreleaser.yaml`, `release.yml`, `scripts/release` | `goreleaser release --snapshot --clean` |
+| Any Go code | `just check` and `GOOS=windows go vet ./...` |
+| `internal/tui/` | Also run it in a real terminal against a repository with a pull request, in a narrow and a short window |
+| `internal/localci/verify.sh` | `go run . ci verify-script > .live-pr/verify.sh` |
+| `.goreleaser.yaml`, `.github/workflows/release.yml`, `scripts/release` | `goreleaser release --snapshot --clean` |
 | Only Markdown | Check that every link you added resolves |
 
-A behavior change needs a test. TUI tests drive `Update` with messages
-directly; see `internal/tui/*_test.go`. Fix failures caused by the change.
-Report unrelated failures in the description instead of fixing them here.
+A behavior change needs a test; TUI tests drive `Update` with messages
+directly (`internal/tui/*_test.go`). Collect performance baselines before
+implementing a performance claim; if they are missing at pull request time,
+record the measurement as not verified rather than reconstructing it.
 
-## 4. Write the description
+## Body
 
-Read `.github/PULL_REQUEST_TEMPLATE.md` first and follow its structure
-exactly: keep every heading, the HTML comments, and every checklist item.
-Delete only the conditional checklist sections (`#### If ... changed`) that do
-not apply, and the Screenshots section when nothing visible changed.
+- Start from the template for the type and keep every heading and the
+  checklist. The HTML comment under each heading is the guidance for that
+  section; follow it, then delete the comment. Templates are the single
+  definition of the sections; do not keep another copy of their wording here.
+- Write for a reviewer who has seen neither the code nor this session, from
+  the whole to the details: before any detail, the reader must know what
+  changes and in which situation. Name each code element uniquely on first
+  mention (path and symbol, command, config key, key binding) with its role,
+  never a bare generic noun such as "the handler".
+- Classify the prior state before explaining it: an observed defect, a
+  planned increment not built yet, a dependency or contract change not yet
+  followed, or a new requirement. Call it a problem only for an observed
+  defect, and say which change or broken assumption introduced it.
+- Distinguish what tests will keep guaranteeing (new, removed or weakened,
+  and unguarded) from what you ran once. If a `feat` or `refactor` changes no
+  tests, state the unguarded behavior. Write "not verified" with the reason
+  for anything you did not run.
+- Open every source you cite and check its version and location. Trace each
+  important claim from the diff to a source or an observed result.
+- Use at most one Mermaid diagram, and only when a flow across components or
+  a state machine would otherwise have to be reconstructed by the reader.
+- Leave Screenshots empty unless you have media you actually captured. A
+  unit test is not a screen check.
+- Provenance: one line each for who implemented the change (a person, or an
+  agent and the tool it ran in) and who wrote this description. Do not
+  infer people from logins or hostnames, and do not include session IDs.
+  This is how CONTRIBUTING.md's request to disclose AI assistance is met; do
+  not add co-author trailers or "Generated with" lines to commits or the
+  description.
+- Roadmap stage names (A1, A2) go only in Related requests and plans, with
+  what the stage is and where it is described. The title and the rationale
+  must make sense without them.
+- Leave every checklist item unchecked. The checklist belongs to a human.
+- No `## Summary` or `## Test plan` headings, and no bold text.
 
-Write the body to a temporary file (`mktemp`).
+Write the body to a temporary file (`mktemp`), then check it before posting:
+every heading of the template is present, no `- [x]`, no `**`, and the title
+matches `^(feat|fix|perf|refactor|docs|test|chore|ci)(\([a-z0-9-]+\))?!?: `.
 
-### Summary
+## Create or update
 
-- What changed and why, and what a user will notice.
-- `Closes #123` for the issue this implements. Never invent an issue number.
+- Create: push with `git push -u origin HEAD`, then
 
-### Technical details
+  ```sh
+  gh pr create --draft --base main --title "<title>" --body-file "$body" --assignee @me [--label <label>]
+  ```
 
-- Design decisions and the alternatives you rejected.
-- Limitations, the reason for any new dependency, benchmarks.
-- Breaking changes: CLI flags, config keys, keybindings, on-disk state.
-- The prior art the change follows, with a link.
+  Agent-authored pull requests are always drafts. Marking one ready for
+  review, and checking the checklist, belong to a human; never mark it ready
+  yourself.
+- When live-pr is installed and the branch has a living summary,
+  `live-pr pr preview` and `live-pr pr publish` create it from that summary
+  instead; the summary must still follow the template.
+- Update: `gh pr edit <number> --title "<title>" --body-file "$body"`. Keep
+  Implemented by as it was; record yourself only under Description written
+  by. Once a human has checked any checklist item, change nothing but what
+  was asked. If `gh pr edit` fails on a deprecated Projects warning, use
+  `gh api -X PATCH "repos/{owner}/{repo}/pulls/<number>" -F "body=@$body"`.
 
-Describe the changes as a flow, not a file list: group related changes, name
-files and functions in `code`, and explain how they connect. Leave out files
-that changed only mechanically.
-
-### How to verify
-
-Steps a reviewer can follow:
-
-1. Check out the branch and build it (`go build -o live-pr .`).
-2. Prepare the situation the change is about (a branch, a pull request, a
-   config entry).
-3. Run the command or press the keys, and say what should appear.
-
-### Screenshots
-
-Attach a screenshot or recording for visible TUI changes. Never claim one you
-did not take; if you could not capture it, say so.
-
-### Checklist
-
-Check an item only when it was actually done:
-
-| Item | When to check |
-| --- | --- |
-| Description, verification steps | After writing them |
-| Screenshot or recording | When attached; leave unchecked if nothing visible changed |
-| Issue linked | When an issue exists and is linked, or the change is a small fix |
-| Title format | After checking it against the type table |
-| One concern | After step 1 found no mix |
-| AI assistance disclosed | When the description says so (always, for agent-written changes) |
-| `just check`, `GOOS=windows go vet` | When they ran and passed in step 3 |
-| Tests added | When the change adds or updates tests |
-| Conditional sections | When the matching command or manual check ran |
-| Compatibility | When you confirmed it, not by default |
-| Final check | Last, once every other item is decided |
-
-CONTRIBUTING.md asks for AI assistance to be disclosed: add a line such as
-`AI-assisted (<tool>).` at the end. Do not add co-author trailers or
-"Generated with" lines to commits or the description.
-
-## 5. Create
-
-```sh
-git push -u origin HEAD
-gh pr create --base main --title "<type>(<scope>): <subject>" --body-file "$body" --assignee @me
-```
-
-When live-pr is installed and the branch has a living summary, `live-pr pr
-preview` and `live-pr pr publish` create the pull request from that summary
-instead.
-
-Return the pull request URL.
-
-## 6. Update an existing pull request
-
-```sh
-gh pr edit <number> --title "<title>" --body-file "$body"
-```
-
-Rewrite the description to match the current diff; do not append a log of
-revisions.
-
-If `gh pr edit` fails (for example on a deprecated Projects warning), update
-it through the API:
-
-```sh
-gh api -X PATCH "repos/{owner}/{repo}/pulls/<number>" -F "body=@$body"
-```
+Report the issue, the branch, the pull request URL, the verification results,
+and what is left for a human (the checklist and ready for review).

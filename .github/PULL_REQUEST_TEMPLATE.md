@@ -1,79 +1,48 @@
-<!-- Thanks for contributing! See CONTRIBUTING.md for what a reviewable pull
-     request looks like here. -->
+<!-- The comments below are the guidance for each section. The same section has the same guidance in every template under .github/; change them together. -->
 
-## Summary
+Use the template for your change type: [feat](https://github.com/shonenm/live-pr/compare/main...?expand=1&template=feat.md) / [fix](https://github.com/shonenm/live-pr/compare/main...?expand=1&template=fix.md) / [refactor](https://github.com/shonenm/live-pr/compare/main...?expand=1&template=refactor.md) / [test](https://github.com/shonenm/live-pr/compare/main...?expand=1&template=test.md) / [docs](https://github.com/shonenm/live-pr/compare/main...?expand=1&template=docs.md). `perf` uses refactor; `chore` and `ci` use docs.
 
-<!-- What changed and why, and how it affects the user. Link the issue this
-     implements, if there is one (`Closes #123`). -->
+## Background and purpose
 
-## Technical details
+<!-- Before any detail, say what changes and in which situation. Name each target uniquely (path and symbol, command, config key, key binding), say who uses it and when (an interactive TUI session, the CLI, an agent, CI), and whether released behavior changes. Classify the prior state: an observed defect, a planned increment not built yet, a dependency or contract change not yet followed, or a new requirement. Call it a problem only for an observed defect, and say how it arose. Then state the purpose. A roadmap stage name alone is not a reason. -->
 
-<!-- Design decisions and the alternatives you rejected, limitations, the
-     reason for any new dependency, benchmarks, and breaking changes. Link the
-     prior art the change follows. -->
+## Changes
 
-## How to verify
+<!-- The content after the change, its effect on the intended readers or users, and why. -->
 
-<!-- Steps to reproduce the issue or try the change: the commands to run, the
-     keys to press in the TUI, and what you should see. -->
+## Evidence and verification
+
+<!-- Short paragraphs: each claim, the explanation that supports it, what was done, and the concrete results or numbers. Split by claim with ### headings if needed. No bullet lists or field records, and no metadata such as claim type, status, commit SHA, or environment. Link the sources you actually opened, at the version and location you read, inside the explanation; a URL that resolves is not evidence by itself. State what was not verified and why; never write that something unread, unmeasured, or not run was confirmed. -->
+
+## Impact
+
+<!-- Only what applies: compatibility (CLI flags, config keys, key bindings, on-disk state and caches), anything GitHub shows that live-pr would stop showing, whether the fix also applies to 1.x, local CI trust (.live-pr.toml, .live-pr/, the attest gate), migration, security, performance, dependencies. If nothing applies, say why. A breaking change also needs `!` in the title. -->
 
 ## Screenshots
 
-<!-- For visible TUI changes, attach a screenshot or a short recording. Delete
-     this section otherwise. -->
+<!-- For a change in how the TUI looks or behaves on screen: a screenshot or short recording. Attach only media you actually captured; otherwise leave this empty. -->
 
 ---
 
+## Provenance
+
+<!-- Only what you can confirm, one line per part. Do not infer people from a GitHub login, OS user, or hostname. No session IDs or private records. -->
+
+### Implemented by
+
+<!-- Who implemented the change: a person, or an agent and the tool it ran in, and with whom. Later description updates do not replace this. -->
+
+### Description written by
+
+<!-- Who wrote or last updated this description, separately from who implemented the change. -->
+
+## Related requests and plans
+
+<!-- Only the requests, issues, and plans this relates to, in about one line (`Closes #123`). A roadmap stage (A1, A2) appears only here, with what the stage is and where it is described. -->
+
 ## Checklist
 
-### Pull request
+<!-- For a human to check after the pull request is opened. Leave every item unchecked when creating it, and do not add notes. -->
 
-- [ ] The description says what changed and why
-- [ ] The verification steps are written down
-- [ ] Visible TUI changes come with a screenshot or recording
-- [ ] The related issue is linked, or this is a small fix that does not need one
-- [ ] The title follows Conventional Commits (`type(scope): subject`) and reads well in the release notes
-- [ ] It addresses one concern (a fix, a refactor, or a feature, not a mix)
-- [ ] AI assistance, if any, is disclosed, and I have read and verified the diff myself
-
-<!-- Fill in the sections below that apply to your change and delete the
-     rest. -->
-
-### Quality
-
-- [ ] `just check` passes
-- [ ] Tests for the change are added (a behavior change needs one)
-- [ ] A refactor leaves the tests unchanged apart from mechanical relocation
-- [ ] `GOOS=windows go vet ./...` passes
-
-#### If `internal/tui/` changed
-
-- [ ] Tests drive `Update` with messages directly (see `internal/tui/*_test.go`)
-- [ ] Checked in a real terminal, including a narrow and a short window
-- [ ] New or changed keys are reflected in the help and `docs/keybindings.md`
-
-#### If `internal/localci/` changed
-
-- [ ] `.live-pr/verify.sh` is regenerated with `go run . ci verify-script`
-- [ ] The trust model in `docs/local-ci.md` still holds, or is updated
-
-#### If `skills/live-pr/SKILL.md` changed
-
-- [ ] Every command the skill mentions exists in this version (the skill ships inside the binary)
-
-#### If the release setup changed (`.goreleaser.yaml`, `.github/workflows/release.yml`, `scripts/release`)
-
-- [ ] `goreleaser release --snapshot --clean` succeeds
-- [ ] `docs/releasing.md` is updated
-
-### Compatibility
-
-- [ ] On-disk state and caches written by the previous version are still read, or migrated
-- [ ] CLI flags, config keys, and keybindings keep working, or the break is described above
-- [ ] Nothing that GitHub shows on a pull request is dropped from live-pr's view
-- [ ] If the fix also applies to `1.x`, the description says so, so it can be backported to `release/1.x`
-- [ ] Changes to `.live-pr.toml`, `.live-pr/`, or the workflow's `attest` gate are called out above (they change what the remote trusts)
-
-### Final check
-
-- [ ] Every applicable item above is checked; anything unchecked does not apply or is deliberately left out
+- [ ] The description is adequate for a reviewer who has not seen the code
+- [ ] I can explain why every changed line is implemented the way it is
