@@ -97,7 +97,7 @@ When the repository configures `[ci.local.checks]` in `.live-pr.toml`, check you
 live-pr ci run
 ```
 
-A non-zero exit means a check failed; fix the cause and rerun. A tree that a trusted signer already attested is not run again; `--force` reruns it. Never weaken a test, the check script, or `[ci.local.checks]` to make it pass. Attestation needs a clean checkout and the user's signing key, so "not attested" after a passing run is expected for agents and is not an error to work around.
+A non-zero exit means a check failed; fix the cause and rerun. A tree that a trusted signer already attested is not run again; `--force` reruns it. Never weaken a test, the check script, or `[ci.local.checks]` to make it pass. Attestation needs a clean checkout; without the user's signing key it is unsigned, which the remote accepts only when the workflow passes `--unsigned`. "Not attested" after a passing run is not an error to work around.
 
 To set local CI up for a repository when the user asks:
 
@@ -105,7 +105,7 @@ To set local CI up for a repository when the user asks:
 2. Add `[ci.local.checks]` to `.live-pr.toml` with one `name = "command"` per job, named after the job.
 3. Run `live-pr ci run` until every check passes.
 4. Write `live-pr ci verify-script` to `.live-pr/verify.sh`, add an `attest` job that runs `sh .live-pr/verify.sh "${{ github.event.pull_request.base.sha || github.event.before }}"` and exposes one output per check, and gate each job with `needs: attest` and `if: needs.attest.outputs.<check> != 'attested'`.
-5. Ask the user to add their public key to `.live-pr/allowed_signers` (`live-pr <public key>` per line) and to set `ci.signing_key` in their global config. Do not create, choose, or read signing keys yourself.
+5. Ask the user whether to require signatures. If so, ask them to add their public key to `.live-pr/allowed_signers` (`live-pr <public key>` per line) and to set `ci.signing_key` in their global config; do not create, choose, or read signing keys yourself. If not, pass `--unsigned` to the verifier, which trusts everyone who can push `refs/notes/live-pr`.
 
 ## Finalize the summary
 
