@@ -24,23 +24,18 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: sh .live-pr/verify.sh "$BASE_SHA"
-      - name: Check committed whitespace
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          if [[ "$BASE_SHA" =~ ^0+$ ]]; then
-            git show --check --format= "$HEAD_SHA"
-          else
-            git diff --check "$BASE_SHA...$HEAD_SHA"
-          fi
 
   test:
     needs: attest
     # Pushes to main always run in full: the backstop for trusting local
     # toolchains and caches.
-    if: github.event_name != 'pull_request' || needs.attest.outputs.test != 'attested'
+    # Skip only on a positive attestation: if the verifier itself fails, a
+    # plain `needs` would skip this job too, and GitHub reports a skipped job
+    # as passing.
+    if: >-
+      !cancelled() && (github.event_name != 'pull_request'
+      || needs.attest.result != 'success'
+      || needs.attest.outputs.test != 'attested')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,6 +59,24 @@ jobs:
         with:
           version: v2.13.1
       - run: go mod verify
+
+  whitespace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check committed whitespace
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$BASE_SHA" =~ ^0+$ ]]; then
+            git show --check --format= "$HEAD_SHA"
+          else
+            git diff --check "$BASE_SHA...$HEAD_SHA"
+          fi
 
   vuln:
     runs-on: ubuntu-latest
