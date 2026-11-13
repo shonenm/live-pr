@@ -81,12 +81,22 @@ jobs:
 
   test:
     needs: attest
-    if: github.event_name != 'pull_request' || needs.attest.outputs.test != 'attested'
+    if: >-
+      !cancelled() && (github.event_name != 'pull_request'
+      || needs.attest.result != 'success'
+      || needs.attest.outputs.test != 'attested')
     # unchanged
 ```
 
-The `github.event_name` clause keeps a full remote run on pushes to the
-default branch. Drop it to skip there as well.
+The job is skipped only on a positive attestation. `!cancelled()` and the
+`needs.attest.result` clause make it run when the verifier itself fails:
+otherwise `needs` would skip it, and GitHub reports a skipped job as
+successful. The `github.event_name` clause keeps a full remote run on pushes
+to the default branch. Drop it to skip there as well.
+
+On a pull request, GitHub checks out a test merge of the branch into its base.
+That merge has the attested tree only while the branch is up to date with the
+base; otherwise the job runs remotely and the verifier says why.
 
 GitHub reports a job skipped by `if:` as successful, so required checks keep
 working. `allowed_signers` is read from the base revision, so the pull request

@@ -93,6 +93,16 @@ func TestAttestVerify(t *testing.T) {
 		t.Fatalf("trusted attestation rejected: %s", out)
 	}
 
+	// A pull request checks out a test merge into its base: the attestation
+	// carries over only while the branch is up to date with base.
+	if out := sh(`git checkout -q --detach main && git merge -q --no-ff --no-edit feature && sh "$KEYS/verify.sh" main`); !strings.Contains(out, "test=attested") {
+		t.Fatalf("up-to-date merge rejected: %s", out)
+	}
+	if out := sh(`git checkout -q main && echo other > other && git add other && git commit -q -m other && git checkout -q --detach && git merge -q --no-ff --no-edit feature && sh "$KEYS/verify.sh" main`); strings.Contains(out, "=attested") || !strings.Contains(out, "behind base") {
+		t.Fatalf("merge of a branch behind base: %s", out)
+	}
+	sh(`git checkout -q feature`)
+
 	// A valid note copied onto a different tree must not carry over.
 	sh(`echo more > file && git commit -q -am more && git notes --ref=live-pr copy "` + tree + `" "$(git rev-parse 'HEAD^{tree}')"`)
 	if out := verify(); strings.Contains(out, "=attested") {
