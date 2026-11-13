@@ -92,6 +92,9 @@ func TestAttestVerify(t *testing.T) {
 	if out := verify(); !strings.Contains(out, "test=attested") || !strings.Contains(out, "lint=attested") {
 		t.Fatalf("trusted attestation rejected: %s", out)
 	}
+	if err := Attest(root, "", tree, []string{"test"}); err == nil {
+		t.Fatal("an unsigned attestation replaced a signed one")
+	}
 	if jobs, reason := Verify(context.Background(), root, "main", tree); !reflect.DeepEqual(jobs, []string{"lint", "test"}) {
 		t.Fatalf("Verify = %v (%s), want what verify.sh attests", jobs, reason)
 	}
@@ -137,6 +140,22 @@ func TestAttestVerify(t *testing.T) {
 	}
 	if jobs, reason := Verify(context.Background(), root, "main", tree); jobs != nil || !strings.Contains(reason, "not trusted") {
 		t.Fatalf("Verify trusted a self-added signer: %v (%s)", jobs, reason)
+	}
+
+	// Without a key the note is unsigned: only --unsigned accepts it.
+	sh(`echo unsigned > file && git commit -q -am unsigned`)
+	tree, _, _ = Tree(root)
+	if err := Attest(root, "", tree, []string{"test"}); err != nil {
+		t.Fatal(err)
+	}
+	if out := verify(); strings.Contains(out, "=attested") || !strings.Contains(out, "not signed") {
+		t.Fatalf("unsigned attestation without --unsigned: %s", out)
+	}
+	if jobs, reason := Verify(context.Background(), root, "main", tree); jobs != nil || !strings.Contains(reason, "not signed") {
+		t.Fatalf("Verify accepted an unsigned attestation: %v (%s)", jobs, reason)
+	}
+	if out := sh(`sh "$KEYS/verify.sh" --unsigned main`); !strings.Contains(out, "test=attested") {
+		t.Fatalf("--unsigned rejected an unsigned attestation: %s", out)
 	}
 
 	sh(`echo dirty > untracked`)
