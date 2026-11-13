@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/shonenm/live-pr/v2/internal/filelock"
 )
 
 // VerifyScript is the remote-side verifier: it checks the attestation for the
@@ -21,8 +23,10 @@ import (
 var VerifyScript string
 
 const (
-	notesRef     = "refs/notes/live-pr"
-	sigNamespace = "live-pr"
+	notesRef = "refs/notes/live-pr"
+	// originNotesRef holds origin's notes while they are merged into notesRef.
+	originNotesRef = "refs/notes/live-pr-origin"
+	sigNamespace   = "live-pr"
 )
 
 // Attestation is the signed statement that jobs passed against a tree. The
@@ -75,20 +79,57 @@ func Attest(root, keyPath, tree string, jobs []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// ponytail: adopt the remote notes before writing so the push below is a
-	// fast-forward; unpushed notes from an offline run are dropped. Use
-	// `git notes merge` if concurrent offline signers ever matter.
-	_, _ = git(ctx, root, nil, "fetch", "-q", "origin", "+"+notesRef+":"+notesRef)
+	// Sign before taking the lock: the key may wait for the user to approve.
+	release, err := lockNotes(ctx, root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = release() }()
+	syncNotes(ctx, root)
 	_, err = git(ctx, root, append(payload, sig...), "notes", "--ref="+notesRef, "add", "-f", "-F", "-", tree)
 	return err
 }
 
-// PushNotes publishes the attestation notes to origin.
+// PushNotes publishes the attestation notes to origin. When another machine
+// pushed first, it merges origin's notes and pushes again.
 func PushNotes(root string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	_, err := git(ctx, root, nil, "push", "-q", "origin", notesRef)
-	return err
+	release, err := lockNotes(ctx, root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = release() }()
+	for attempt := 1; ; attempt++ {
+		_, err = git(ctx, root, nil, "push", "-q", "origin", notesRef)
+		if err == nil || attempt == 3 {
+			return err
+		}
+		syncNotes(ctx, root)
+	}
+}
+
+// lockNotes serializes note writes across the worktrees of one repository,
+// which share the notes ref.
+func lockNotes(ctx context.Context, root string) (func() error, error) {
+	dir, err := git(ctx, root, nil, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return nil, err
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(root, dir)
+	}
+	return filelock.Acquire(filepath.Join(dir, "live-pr-notes"))
+}
+
+// syncNotes merges origin's notes into the local ref, keeping the local note
+// when both have one for the same tree. Replacing the ref with origin's would
+// drop notes not pushed yet. Without origin or its notes, the local ref stays.
+func syncNotes(ctx context.Context, root string) {
+	if _, err := git(ctx, root, nil, "fetch", "-q", "origin", "+"+notesRef+":"+originNotesRef); err != nil {
+		return
+	}
+	_, _ = git(ctx, root, nil, "notes", "--ref="+notesRef, "merge", "-q", "-s", "ours", originNotesRef)
 }
 
 func git(ctx context.Context, root string, stdin []byte, args ...string) (string, error) {
