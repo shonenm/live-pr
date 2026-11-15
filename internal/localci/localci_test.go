@@ -136,3 +136,54 @@ func TestCommittedVerifyScriptMatchesEmbedded(t *testing.T) {
 		t.Error(".live-pr/verify.sh is stale; regenerate it with `live-pr ci verify-script`")
 	}
 }
+
+// Two clones that attest before either pushes must both end up on origin:
+// the second push is rejected, merges origin's notes, and pushes again.
+func TestPushNotesMergesConcurrentAttestations(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("signing runs ssh-keygen through a POSIX shell setup")
+	}
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen not available")
+	}
+	base := t.TempDir()
+	for key, value := range map[string]string{
+		"GIT_CONFIG_GLOBAL": os.DevNull, "GIT_CONFIG_SYSTEM": os.DevNull,
+		"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+	} {
+		t.Setenv(key, value)
+	}
+	sh := func(dir, script string) string {
+		t.Helper()
+		cmd := exec.Command("sh", "-ec", script)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", script, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	sh(base, `ssh-keygen -q -t ed25519 -N "" -f key && git init -q --bare -b main origin.git && git clone -q origin.git a 2>/dev/null && cd a && echo a > a && git add a && git commit -q -m a && git push -q origin main && cd .. && git clone -q origin.git b`)
+	a, b := filepath.Join(base, "a"), filepath.Join(base, "b")
+	sh(b, `echo b > b && git add b && git commit -q -m b`)
+	key := filepath.Join(base, "key")
+
+	treeA, _, _ := Tree(a)
+	treeB, _, _ := Tree(b)
+	if err := Attest(b, key, treeB, []string{"test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Attest(a, key, treeA, []string{"test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := PushNotes(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := PushNotes(b); err != nil {
+		t.Fatalf("second push after a concurrent one: %v", err)
+	}
+	notes := sh(base, `git --git-dir=origin.git notes --ref=live-pr list`)
+	if !strings.Contains(notes, treeA) || !strings.Contains(notes, treeB) {
+		t.Fatalf("origin notes = %q, want both %s and %s", notes, treeA, treeB)
+	}
+}
