@@ -104,7 +104,7 @@ To set local CI up for a repository when the user asks:
 1. Find the command each remote job runs. If a job lists its steps inline, move them into a repository script (`just check`, `bin/ci`) with the user's agreement and make the job call it, so both sides run the same thing.
 2. Add `[ci.local.checks]` to `.live-pr.toml` with one `name = "command"` per job, named after the job.
 3. Run `live-pr ci run` until every check passes.
-4. Write `live-pr ci verify-script` to `.live-pr/verify.sh`, add an `attest` job that runs `sh .live-pr/verify.sh "${{ github.event.pull_request.base.sha || github.event.before }}"` and exposes one output per check, and gate each job with `needs: attest` and `if: needs.attest.outputs.<check> != 'attested'`.
+4. Write `live-pr ci verify-script` to `.live-pr/verify.sh`, add an `attest` job that runs `sh .live-pr/verify.sh "${{ github.event.pull_request.base.sha || github.event.before }}"` and exposes one output per check, and gate each job with `needs: attest` and `if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.attest.result != 'success' || needs.attest.outputs.<check> != 'attested') }}`, so a job is skipped only on a positive attestation and still runs when the verifier itself fails (see docs/local-ci.md).
 5. Ask the user to add their public key to `.live-pr/allowed_signers` (`live-pr <public key>` per line) and to set `ci.signing_key` in their global config. Do not create, choose, or read signing keys yourself.
 
 ## Finalize the summary
