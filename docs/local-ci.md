@@ -56,8 +56,9 @@ such as [act](https://github.com/nektos/act) as the command instead.
 signing_key = "~/.ssh/id_ed25519.pub"   # private key, or a public key held by ssh-agent
 ```
 
-Without `signing_key`, or with uncommitted changes, the run still reports
-results but attests nothing.
+With uncommitted changes the run still reports results but attests nothing.
+Without `signing_key` the attestation is unsigned: it never replaces an
+existing note, and the remote accepts it only with `--unsigned` (below).
 
 ## Remote setup
 
@@ -69,6 +70,15 @@ mkdir -p .live-pr
 live-pr ci verify-script > .live-pr/verify.sh
 echo "live-pr $(cat ~/.ssh/id_ed25519.pub)" >> .live-pr/allowed_signers
 ```
+
+Signatures are optional. Run the verifier as `sh .live-pr/verify.sh --unsigned
+<base>` to accept any note for the tree, signed or not, and skip
+`allowed_signers`. That trusts everyone who can push `refs/notes/live-pr`
+(collaborators, bots, cloud agents with a push token), the same honor system
+as a commit status posted with your own token. Signatures narrow it to the
+listed keys. The setting lives in the workflow, so a change to it shows up in
+review. Not running an already attested tree again (see How it works) still
+needs a signature.
 
 Then gate each job on the verifier, using the check name as the output:
 
@@ -125,11 +135,15 @@ behind its base simply runs its jobs remotely.
 
 ## Trust model
 
-Skipping is opt-in: without a signer in `allowed_signers`, every job runs
-remotely as usual. Registering a signer means trusting that signer's machine.
+Skipping is opt-in: without a signer in `allowed_signers` or `--unsigned`,
+every job runs remotely as usual. Registering a signer means trusting that
+signer's machine; `--unsigned` trusts the machine of everyone who can push
+`refs/notes/live-pr`.
 
-- **Forged or replayed results** fail verification: the signature covers the
-  tree hash, and a note copied onto another tree is rejected.
+- **Forged or replayed results** fail verification when signatures are
+  required: the signature covers the tree hash, and a note copied onto another
+  tree is rejected. With `--unsigned`, anyone who can push the notes can
+  attest any tree.
 - **A signer added by the change under test** is ignored: keys come from the
   base revision.
 - **Tampering on the signer's machine is out of scope.** Anything that runs as
@@ -138,7 +152,7 @@ remotely as usual. Registering a signer means trusting that signer's machine.
   key, and attest a tree the remote would fail. The attestation cannot show
   this, and live-pr does not try to prevent it; build caches such as Bazel's
   draw the same line by letting only CI write. If that is not acceptable, do
-  not register signers. Keep a full remote run on pushes to the default branch
+  not register signers or pass `--unsigned`. Keep a full remote run on pushes to the default branch
   as the backstop.
 - **Weakening the checks themselves** (editing tests, the script, or
   `[ci.local.checks]`) is not a signature problem. Neither is a remote job that

@@ -17,11 +17,17 @@ func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("runs checks through sh")
 	}
+	for key, value := range map[string]string{
+		"GIT_CONFIG_GLOBAL": os.DevNull, "GIT_CONFIG_SYSTEM": os.DevNull,
+		"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+	} {
+		t.Setenv(key, value)
+	}
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "file"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "init"}} {
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"commit", "-q", "-m", "init"}} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = root
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -51,7 +57,7 @@ func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {
 
 	out, _ := m.buildChecks()
 	plain := ansi.Strip(out)
-	for _, want := range []string{"Local CI", "└─ ✓ echo ok · success", "└─ ✗ echo boom >&2; exit 1 · failure", "boom", "not attested: ci.signing_key"} {
+	for _, want := range []string{"Local CI", "└─ ✓ echo ok · success", "└─ ✗ echo boom >&2; exit 1 · failure", "boom", "attested unit", "without a signature"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("checks view lacks %q:\n%s", want, plain)
 		}

@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,9 +53,10 @@ func Tree(root string) (tree string, clean bool, err error) {
 	return tree, status == "", err
 }
 
-// Attest signs the result with the SSH key at keyPath (a private key, or a
-// public key whose private half is held by ssh-agent) and stores it as a git
-// note on the tree object.
+// Attest stores the result as a git note on the tree object, signed with the
+// SSH key at keyPath (a private key, or a public key whose private half is
+// held by ssh-agent). Without keyPath the note is unsigned and never replaces
+// an existing one, which may be signed.
 func Attest(root, keyPath, tree string, jobs []string) error {
 	jobs = append([]string(nil), jobs...)
 	sort.Strings(jobs)
@@ -63,20 +65,11 @@ func Attest(root, keyPath, tree string, jobs []string) error {
 		return err
 	}
 	payload = append(payload, '\n')
-	if strings.HasPrefix(keyPath, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
+	var sig []byte
+	if keyPath != "" {
+		if sig, err = sign(keyPath, payload); err != nil {
 			return err
 		}
-		keyPath = filepath.Join(home, keyPath[2:])
-	}
-	sign := exec.Command("ssh-keygen", "-Y", "sign", "-f", keyPath, "-n", sigNamespace)
-	sign.Stdin = bytes.NewReader(payload)
-	var stderr bytes.Buffer
-	sign.Stderr = &stderr
-	sig, err := sign.Output()
-	if err != nil {
-		return fmt.Errorf("sign attestation: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -87,8 +80,32 @@ func Attest(root, keyPath, tree string, jobs []string) error {
 	}
 	defer func() { _ = release() }()
 	syncNotes(ctx, root)
+	if sig == nil {
+		if _, err := git(ctx, root, nil, "notes", "--ref="+notesRef, "show", tree); err == nil {
+			return errors.New("the tree already has an attestation, and an unsigned one does not replace it")
+		}
+	}
 	_, err = git(ctx, root, append(payload, sig...), "notes", "--ref="+notesRef, "add", "-f", "-F", "-", tree)
 	return err
+}
+
+func sign(keyPath string, payload []byte) ([]byte, error) {
+	if strings.HasPrefix(keyPath, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		keyPath = filepath.Join(home, keyPath[2:])
+	}
+	cmd := exec.Command("ssh-keygen", "-Y", "sign", "-f", keyPath, "-n", sigNamespace)
+	cmd.Stdin = bytes.NewReader(payload)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	sig, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("sign attestation: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return sig, nil
 }
 
 // PushNotes publishes the attestation notes to origin. When another machine
@@ -164,6 +181,9 @@ func Verify(ctx context.Context, root, base, tree string) (jobs []string, reason
 		return nil, "no attestation for tree " + tree
 	}
 	payload, sig, _ := strings.Cut(note, "\n")
+	if sig == "" {
+		return nil, "attestation is not signed"
+	}
 	dir, err := os.MkdirTemp("", "live-pr-verify-")
 	if err != nil {
 		return nil, err.Error()
@@ -213,8 +233,6 @@ func Execute(ctx context.Context, root, keyPath, base string, force bool, jobs [
 	switch {
 	case len(passed) == 0:
 		return passed, "not attested: no job passed"
-	case keyPath == "":
-		return passed, "not attested: ci.signing_key is not set in the global config"
 	case !clean:
 		return passed, "not attested: the checkout had uncommitted changes"
 	}
@@ -225,6 +243,9 @@ func Execute(ctx context.Context, root, keyPath, base string, force bool, jobs [
 		return passed, "not attested: " + err.Error()
 	}
 	note = "attested " + strings.Join(passed, ", ") + " for tree " + tree[:12]
+	if keyPath == "" {
+		note += " without a signature (ci.signing_key is not set)"
+	}
 	if err := PushNotes(root); err != nil {
 		note += " (not pushed: " + err.Error() + ")"
 	}
