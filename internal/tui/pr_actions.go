@@ -58,12 +58,18 @@ type prActionOverlay struct {
 	pr           gh.PR
 	methodCursor int
 	running      bool
+	// attestation is the local verification of pr's head tree, nil until
+	// verifyMergeAttestation answers.
+	attestation *mergeAttestation
 }
 
 // openPRAction asks for confirmation before running action on pr.
 func (m Model) openPRAction(action prAction, pr gh.PR) (Model, tea.Cmd) {
 	m.overlay = prActionOverlay{action: action, pr: pr}
 	m.status, m.notice = "", ""
+	if action == mergePR && !m.remote && len(m.localCIConfig.Checks) > 0 {
+		return m, verifyMergeAttestation(m.root, pr)
+	}
 	return m, nil
 }
 
@@ -261,6 +267,10 @@ func (o prActionOverlay) render(m Model) string {
 	if o.action == mergePR {
 		if conditions := m.mergeConditionLines(o.pr); len(conditions) > 0 {
 			lines = append(lines, conditions...)
+			lines = append(lines, "")
+		}
+		if checks := o.localCheckLines(m); len(checks) > 0 {
+			lines = append(lines, checks...)
 			lines = append(lines, "")
 		}
 	}

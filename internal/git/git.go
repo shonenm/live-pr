@@ -98,6 +98,9 @@ func CurrentBranch() (string, error) {
 // Revision resolves rev to its full object ID.
 func Revision(rev string) (string, error) { return run("rev-parse", "--verify", rev+"^{commit}") }
 
+// RevisionTree resolves rev to the ID of its tree.
+func RevisionTree(rev string) (string, error) { return run("rev-parse", "--verify", rev+"^{tree}") }
+
 // RevisionRelation describes local relative to a published revision.
 type RevisionRelation uint8
 
