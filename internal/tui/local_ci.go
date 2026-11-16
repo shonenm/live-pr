@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/shonenm/live-pr/v2/internal/git"
 	"github.com/shonenm/live-pr/v2/internal/localci"
 )
 
@@ -44,8 +45,13 @@ func (m *Model) startLocalCI() tea.Cmd {
 	}
 	events := make(chan tea.Msg, 16)
 	root, key := m.root, m.ciSigningKey
+	// Signers are trusted as the remote verifier trusts them: from the base.
+	base := git.DefaultBase()
+	if m.cache.PR != nil && m.cache.PR.BaseRefOID != "" {
+		base = m.cache.PR.BaseRefOID
+	}
 	go func() {
-		_, note := localci.Execute(context.Background(), root, key, jobs, func(ev localci.Event) {
+		_, note := localci.Execute(context.Background(), root, key, base, false, jobs, func(ev localci.Event) {
 			events <- localCIEvent{event: ev, events: events}
 		})
 		events <- localCIDone{note: note}

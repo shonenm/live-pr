@@ -33,7 +33,8 @@ var ciRunCmd = &cobra.Command{
 			return errors.New("no local CI checks: set [ci.local.checks] in .live-pr.toml")
 		}
 		out := cmd.OutOrStdout()
-		passed, note := localci.Execute(cmd.Context(), root, cfg.CI.SigningKey, jobs, func(ev localci.Event) {
+		force, _ := cmd.Flags().GetBool("force")
+		passed, note := localci.Execute(cmd.Context(), root, cfg.CI.SigningKey, git.DefaultBase(), force, jobs, func(ev localci.Event) {
 			if ev.State == localci.StateRunning {
 				return
 			}
@@ -61,6 +62,7 @@ var ciVerifyScriptCmd = &cobra.Command{
 }
 
 func init() {
+	ciRunCmd.Flags().Bool("force", false, "run even when the tree is already attested")
 	ciCmd.AddCommand(ciRunCmd, ciVerifyScriptCmd)
 	rootCmd.AddCommand(ciCmd)
 }
