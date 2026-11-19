@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shonenm/live-pr/v2/internal/config"
+	gh "github.com/shonenm/live-pr/v2/internal/github"
 )
 
 func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {
@@ -60,6 +61,33 @@ func TestLocalCIRunsFromChecksViewWithoutPR(t *testing.T) {
 	for _, want := range []string{"Local CI", "└─ ✓ echo ok · success", "└─ ✗ echo boom >&2; exit 1 · failure", "boom", "attested unit", "without a signature"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("checks view lacks %q:\n%s", want, plain)
+		}
+	}
+}
+
+func TestMergeConfirmationShowsLocalCheckStates(t *testing.T) {
+	m := testModel()
+	m.localCIConfig = config.LocalCIConfig{Checks: map[string]string{"test": "x", "lint": "x", "vet": "x", "build": "x", "docs": "x"}}
+	pr := gh.PR{Number: 7, HeadRefOID: "abc", PreviewLoaded: true, Checks: []gh.PRCheck{
+		{Name: "test", Status: "COMPLETED", Conclusion: "SKIPPED"},
+		{Name: "lint", Status: "COMPLETED", Conclusion: "FAILURE"},
+		{Name: "vet", Status: "COMPLETED", Conclusion: "SKIPPED"},
+		{Name: "build", Status: "IN_PROGRESS"},
+	}}
+	m, cmd := m.openPRAction(mergePR, pr)
+	if cmd == nil {
+		t.Fatal("opening the merge confirmation does not verify the attestation")
+	}
+	if out := ansi.Strip(m.prActionPopup().render(m)); !strings.Contains(out, "verifying attestation") {
+		t.Errorf("confirmation before verification:\n%s", out)
+	}
+
+	next, _ := m.Update(mergeAttestation{number: 7, jobs: []string{"test"}})
+	m = next.(Model)
+	out := ansi.Strip(m.prActionPopup().render(m))
+	for _, want := range []string{"✓ test attested", "✗ lint failed", "◌ vet skipped remotely", "◌ build running remotely", "· docs not reported"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("confirmation lacks %q:\n%s", want, out)
 		}
 	}
 }

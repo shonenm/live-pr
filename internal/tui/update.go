@@ -54,7 +54,7 @@ func asyncCompletion(msg tea.Msg) bool {
 		remoteRefsLoaded, remoteCommitsLoaded, remoteConflictsLoaded, remoteFilesLoaded,
 		githubMetadataRefreshed, githubConversationRefreshed, publishDone, reviewSubmitted, remoteCommentDone,
 		outboxFlushed,
-		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, localCIEvent, localCIDone, diffRendered,
+		prStatusDone, prActionDone, ciPolled, ciPollTick, ciCommandDone, localCIEvent, localCIDone, mergeAttestation, diffRendered,
 		richBodiesLoaded, avatarColorsLoaded, listAvatarColorsLoaded, conversationWarmed,
 		localLoaded, localPollTick, localStatePolled, localBranchReloaded, checkoutReloaded, prTargetPrepared, rawDetailLoaded, baseResolved,
 		cacheSaved, navigatorCacheSaved,
@@ -180,6 +180,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rawDetailLoaded:
 		next, cmd := m.handleRawDetailLoaded(msg)
 		return next, cmd
+	case mergeAttestation:
+		if o := m.prActionPopup(); o.action == mergePR && o.pr.Number == msg.number {
+			o.attestation = &msg
+			m.overlay = o
+		}
+		return m, nil
 	case prActionDone:
 		next, cmd := m.handlePRActionDone(msg)
 		return next, cmd
